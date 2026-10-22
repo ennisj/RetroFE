@@ -15,6 +15,7 @@
  */
 
 #include "Video/GStreamerVideo.h"
+#include "Builtin/Builtin.h"
 #include "Database/Configuration.h"
 #include "Database/DB.h"
 #include "Database/GlobalOpts.h"
@@ -361,19 +362,12 @@ static bool ImportConfiguration(Configuration* c) {
     fs::path collectionsPath = Utils::combinePath(Configuration::absolutePath, "collections"); // Gets collections directory
     std::string settingsConfPath = Utils::combinePath(configPath, "settings"); // Gets root settings
     
-    if(!fs::exists(Utils::combinePath(Configuration::absolutePath, "settings.conf"))) {
-        std::string logFile = "\nCheck the log for details: " + Utils::combinePath(Configuration::absolutePath, "log.txt");
-        if(Utils::isOutputATerminal()) {
-            std::cout << std::endl << "RetroFE failed to find a valid settings.conf in the current directory" + logFile << std::endl;
-            sendEnterKey();
-        }
-        else {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Configuration", ("RetroFE failed to find a valid settings.conf in the current directory" + logFile).c_str(), NULL);
-        }
-        exit(EXIT_FAILURE);
+    if (!fs::exists(settingsConfPath + ".conf")) {
+        // Nothing installed yet: start with the built-in defaults
+        c->importString("", Builtin::settings);
+        LOG_NOTICE("RetroFE", "No settings.conf found in \"" + Configuration::absolutePath + "\", using built-in defaults");
     }
-    
-    if (!c->import("", settingsConfPath + ".conf")) {
+    else if (!c->import("", settingsConfPath + ".conf")) {
         LOG_ERROR("RetroFE", "Could not import \"" + settingsConfPath + ".conf\"");
         return false;
     }
@@ -442,12 +436,11 @@ static bool ImportConfiguration(Configuration* c) {
 
 
     // Process collections
-    if (!fs::exists(collectionsPath) || !fs::is_directory(collectionsPath)) {
-        LOG_ERROR("RetroFE", "Could not read directory \"" + collectionsPath.string() + "\"");
-        return false;
+    if (!fs::is_directory(collectionsPath)) {
+        LOG_NOTICE("RetroFE", "No collections directory found at \"" + collectionsPath.string() + "\", starting with no collections");
     }
 
-    for (const auto& entry : fs::directory_iterator(collectionsPath)) {
+    for (const auto& entry : fs::is_directory(collectionsPath) ? fs::directory_iterator(collectionsPath) : fs::directory_iterator()) {
         std::string collection = entry.path().filename().string();
         if (fs::is_directory(entry) && !collection.empty() && collection[0] != '_' && collection != "." && collection != "..") {
             std::string prefix = "collections." + collection;

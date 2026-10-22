@@ -14,6 +14,7 @@
 * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "Font.h"
+#include "../Builtin/Builtin.h"
 #include "../SDL.h"
 #include "../Utility/Log.h"
 #include <SDL2/SDL.h>
@@ -92,10 +93,17 @@ bool FontManager::getRect(unsigned int charCode, GlyphInfo& glyph) {
 }
 
 bool FontManager::initialize() {
-    TTF_Font* font = TTF_OpenFont(fontPath_.c_str(), fontSize_);
+    TTF_Font* font = fontPath_.empty() ? nullptr : TTF_OpenFont(fontPath_.c_str(), fontSize_);
     if (!font) {
-        LOG_WARNING("Font", "Failed to open font: " + std::string(TTF_GetError()));
-        return false;
+        // No font, or it couldn't be opened: use the font compiled into RetroFE
+        if (!fontPath_.empty()) {
+            LOG_WARNING("Font", "Failed to open font: " + std::string(TTF_GetError()) + " Using the built-in font.");
+        }
+        font = TTF_OpenFontRW(SDL_RWFromConstMem(retrofe_builtin_font, static_cast<int>(retrofe_builtin_font_size)), 1, fontSize_);
+        if (!font) {
+            LOG_ERROR("Font", "Failed to open the built-in font: " + std::string(TTF_GetError()));
+            return false;
+        }
     }
 
     const int GLYPH_SPACING = fontSize_ / 16; // Scale spacing with font size

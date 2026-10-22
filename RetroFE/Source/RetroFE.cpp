@@ -15,6 +15,7 @@
  */
 
 #include "RetroFE.h"
+#include "Builtin/Builtin.h"
 #include "Collection/CollectionInfo.h"
 #include "Collection/CollectionInfoBuilder.h"
 #include "Collection/Item.h"
@@ -369,27 +370,6 @@ bool RetroFE::deInitialize()
 bool RetroFE::run()
 {
 	std::string controlsConfPath = Utils::combinePath(Configuration::absolutePath, "controls");
-	if (!fs::exists(controlsConfPath + ".conf"))
-	{
-		std::string logFile = Utils::combinePath(Configuration::absolutePath, "log.txt");
-		if (Utils::isOutputATerminal())
-		{
-			fprintf(stderr,
-				"RetroFE failed to find a valid controls.conf in the current directory\nCheck the log for details: "
-				"%s\n",
-				logFile.c_str());
-		}
-		else
-		{
-			SDL_ShowSimpleMessageBox(
-				SDL_MESSAGEBOX_ERROR, "Configuration Error",
-				("RetroFE failed to find a valid controls.conf in the current directory\nCheck the log for details: " +
-					logFile)
-				.c_str(),
-				NULL);
-		}
-		exit(EXIT_FAILURE);
-	}
 
 	// Initialize SDL
 	if (!SDL::initialize(config_))
@@ -427,7 +407,16 @@ bool RetroFE::run()
 	}
 #endif
 	// Define control configuration
-	config_.import("controls", controlsConfPath + ".conf");
+	if (fs::exists(controlsConfPath + ".conf"))
+	{
+		config_.import("controls", controlsConfPath + ".conf");
+	}
+	else
+	{
+		// Nothing installed yet: start with the built-in controls
+		config_.importString("controls", Builtin::controls);
+		LOG_NOTICE("RetroFE", "No controls.conf found in \"" + Configuration::absolutePath + "\", using built-in controls");
+	}
 	for (int i = 1; i < 10; i++)
 	{
 		std::string numberedControlsFile = controlsConfPath + std::to_string(i) + ".conf";
@@ -699,8 +688,8 @@ bool RetroFE::run()
 				cycleVector_.clear();
 				config_.setProperty("currentCollection", firstCollection);
 
-				// Get collection info with error checking
-				CollectionInfo* info = getCollection(firstCollection);
+				// Get collection info with error checking; an empty first collection is fine
+				CollectionInfo* info = getCollection(firstCollection, true);
 				if (!info) {
 					LOG_ERROR("RetroFE", "Failed to load collection info for: " + firstCollection);
 					state = RETROFE_QUIT_REQUEST;
@@ -3250,7 +3239,7 @@ Page* RetroFE::loadSplashPage()
 }
 
 // Load a collection
-CollectionInfo* RetroFE::getCollection(const std::string& collectionName)
+CollectionInfo* RetroFE::getCollection(const std::string& collectionName, bool allowMissing)
 {
 
 	// Check if subcollections should be merged or split
@@ -3265,14 +3254,19 @@ CollectionInfo* RetroFE::getCollection(const std::string& collectionName)
 
 	// Check collection folder exists
 	fs::path path = Utils::combinePath(Configuration::absolutePath, "collections", collectionName);
-	if (!fs::exists(path) || !fs::is_directory(path))
+	bool pathExists = fs::exists(path) && fs::is_directory(path);
+	if (!pathExists && !allowMissing)
 	{
 		LOG_ERROR("RetroFE", "Failed to load collection " + collectionName);
 		return nullptr;
 	}
+	if (!pathExists)
+	{
+		LOG_NOTICE("RetroFE", "Collection " + collectionName + " does not exist, starting with it empty");
+	}
 
 	// Loading sub collection files
-	for (const auto& entry : fs::directory_iterator(path))
+	for (const auto& entry : pathExists ? fs::directory_iterator(path) : fs::directory_iterator())
 	{
 		if (entry.is_regular_file() && entry.path().extension() == ".sub")
 		{

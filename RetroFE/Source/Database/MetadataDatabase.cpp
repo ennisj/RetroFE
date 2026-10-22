@@ -565,6 +565,11 @@ fs::file_time_type MetadataDatabase::timeDir(const std::string& path)
 {
     fs::file_time_type lastTime = fs::file_time_type::min();
 
+    // No meta folder means there's nothing newer to import
+    if (!fs::is_directory(path)) {
+        return lastTime;
+    }
+
     for (const auto& entry : fs::recursive_directory_iterator(path)) {
         if (!fs::is_regular_file(entry) && !fs::is_directory(entry)) {
             continue;

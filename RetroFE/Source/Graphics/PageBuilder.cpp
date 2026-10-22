@@ -28,6 +28,7 @@
 #include "Component/VideoBuilder.h"
 #include "Animate/AnimationEvents.h"
 #include "Animate/TweenTypes.h"
+#include "../Builtin/Builtin.h"
 #include "../Sound/Sound.h"
 #include "../Collection/Item.h"
 #include "../SDL.h"
@@ -107,6 +108,11 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		layoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
 	}
 
+	// Fall back to the layout compiled into RetroFE when the configured one isn't installed
+	bool useBuiltinLayout = !isMenu_ && (layoutName.empty() || !fs::is_directory(layoutPathDefault));
+	if (useBuiltinLayout) {
+		LOG_NOTICE("Layout", "Layout \"" + layoutName + "\" is not installed, using the built-in layout");
+	}
 
 	std::vector<std::string> layouts;
 	layouts.push_back(layoutPage);
@@ -134,7 +140,19 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		// Build layoutFile path using currentLayoutPath
 		layoutFile = Utils::combinePath(currentLayoutPath, currentLayoutName + ".xml");
 
-		if (fixedResLayouts) {
+		// The built-in layout only provides a splash page and a single main layout
+		const char* builtinXml = nullptr;
+		if (useBuiltinLayout) {
+			if (layoutIndex == 0) {
+				builtinXml = Builtin::layoutXml(currentLayoutName == "splash" ? "splash" : "layout");
+			}
+			if (!builtinXml) {
+				continue;
+			}
+			layoutFile = "built-in " + currentLayoutName + " layout";
+		}
+
+		if (!builtinXml && fixedResLayouts) {
 			// Use fixed resolution layout, e.g., layout1920x1080.xml
 			if (!fixedResLayoutsInitialized) {
 				LOG_INFO("Layout", "Fixed resolution layouts have been enabled");
@@ -153,7 +171,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		}
 
 		// Check if the layout file exists
-		if (fs::exists(layoutFile)) {
+		if (builtinXml || fs::exists(layoutFile)) {
 			LOG_INFO("Layout", "Attempting to initialize layout: " + layoutFile);
 		}
 		else {
@@ -185,17 +203,23 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			}
 		}
 
-		// Try to open the file
-		file.open(layoutFile.c_str());
-		if (!file.is_open()) {
-			LOG_ERROR("Layout", "Failed to open file: " + layoutFile);
-			continue; // Skip to next layout
+		std::vector<char> buffer;
+		if (builtinXml) {
+			buffer.assign(builtinXml, builtinXml + std::char_traits<char>::length(builtinXml));
 		}
+		else {
+			// Try to open the file
+			file.open(layoutFile.c_str());
+			if (!file.is_open()) {
+				LOG_ERROR("Layout", "Failed to open file: " + layoutFile);
+				continue; // Skip to next layout
+			}
 
-		// Read the file into buffer
-		std::vector<char> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+			// Read the file into buffer
+			buffer.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+			file.close();
+		}
 		buffer.push_back('\0'); // Null-terminate
-		file.close();
 
 		try {
 			doc->parse<0>(&buffer[0]);

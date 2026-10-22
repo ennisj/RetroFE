@@ -32,6 +32,8 @@ public:
     // gets the global configuration
     bool import(const std::string& keyPrefix, const std::string& file, bool mustExist = true);
     bool import(const std::string& collection, const std::string& keyPrefix, const std::string& file, bool mustExist = true);
+    // imports settings from text in .conf format instead of from a file
+    bool importString(const std::string& keyPrefix, const std::string& text);
     bool getProperty(const std::string& key, std::string &value);
     bool getProperty(const std::string& key, int &value);
     bool getProperty(const std::string& key, bool &value);

@@ -184,6 +184,26 @@ bool Configuration::import(const std::string& collection, const std::string& key
 }
 
 
+bool Configuration::importString(const std::string& keyPrefix, const std::string& text)
+{
+    bool retVal = true;
+    int lineCount = 0;
+    std::string line;
+    std::istringstream iss(text);
+
+    while (std::getline(iss, line)) {
+        lineCount++;
+        retVal = parseLine("", keyPrefix, line, lineCount) && retVal;
+    }
+
+    // Start logging if the text set a log level
+    if (properties_.find(OPTION_LOG) != properties_.end()) {
+        StartLogging(this);
+    }
+
+    return retVal;
+}
+
 bool Configuration::parseLine(const std::string& collection, std::string keyPrefix, std::string line, int lineCount)
 {
     bool retVal = false;

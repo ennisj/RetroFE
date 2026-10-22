@@ -22,6 +22,18 @@ add_custom_target(GenerateVersioningHeader ALL DEPENDS "${CMAKE_BINARY_DIR}/auto
 include_directories("${CMAKE_BINARY_DIR}/autogen")
 
 ##############################################################
+# Built-in font
+# Compiled into the executable so RetroFE can render text with no layout installed
+set(BUILTIN_FONT_FILE "${RETROFE_DIR}/ThirdParty/fonts/Roboto-Regular.ttf")
+set(BUILTIN_FONT_SOURCE "${CMAKE_BINARY_DIR}/autogen/BuiltinFont.cpp")
+add_custom_command(
+    OUTPUT "${BUILTIN_FONT_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -DINPUT=${BUILTIN_FONT_FILE} -DOUTPUT=${BUILTIN_FONT_SOURCE} -DSYMBOL=retrofe_builtin_font -P "${RETROFE_DIR}/CMake/EmbedFile.cmake"
+    DEPENDS "${BUILTIN_FONT_FILE}" "${RETROFE_DIR}/CMake/EmbedFile.cmake"
+    COMMENT "Embedding built-in font"
+)
+
+##############################################################
 # Setup some variables to help find external libraries
 ##############################################################
 
@@ -189,6 +201,7 @@ if(NOT WIN32)
 endif()
 
 set(RETROFE_HEADERS
+	"${RETROFE_DIR}/Source/Builtin/Builtin.h"
 	"${RETROFE_DIR}/Source/Collection/CollectionInfo.h"
 	"${RETROFE_DIR}/Source/Collection/CollectionInfoBuilder.h"
 	"${RETROFE_DIR}/Source/Collection/Item.h"
@@ -245,6 +258,8 @@ set(RETROFE_HEADERS
 )
 
 set(RETROFE_SOURCES
+	"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
+	"${BUILTIN_FONT_SOURCE}"
 	"${RETROFE_DIR}/Source/Collection/CollectionInfo.cpp"
 	"${RETROFE_DIR}/Source/Collection/CollectionInfoBuilder.cpp"
 	"${RETROFE_DIR}/Source/Collection/Item.cpp"

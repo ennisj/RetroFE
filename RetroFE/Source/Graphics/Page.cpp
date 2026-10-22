@@ -1444,8 +1444,8 @@ void Page::draw() {
                 }
 
                 for (Component* c : menu->getComponents()) {
+                    // Empty slots are normal, e.g. a menu with fewer items than positions
                     if (!c) {
-                        LOG_WARNING("Page::draw", "Null component in menu->getComponents().");
                         continue;
                     }
                     if (c->baseViewInfo.Layer == i) {
