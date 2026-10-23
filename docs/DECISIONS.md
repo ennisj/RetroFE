@@ -208,6 +208,22 @@ Each section's agent chose these; the alternatives are in brackets.
   code page) and can't shadow another launcher (RetroFE looks up local, then
   collection, then global launchers).
 
+### M13. Theme editor screen choices — Decided
+- **The editor is a screen in the normal navigation stack** (behind a small
+  `ImGuiScreen` interface), so Back, F10 and unsaved-changes warnings work as
+  elsewhere; leaving with unsaved changes always asks Save / Don't save /
+  Cancel [the forms' "leave again to discard"].
+- **Use this theme requires a `splash.xml`** for every theme: RetroFE can't
+  start on a theme without one. The editor writes a simple splash page on
+  every save unless the theme has its own.
+- **Use is refused for an editor theme with no wheel**, and Delete for the
+  theme in use.
+- **Automated editor checks use a one-shot `-editorScript <file>` option**
+  [an environment variable, which could linger and re-run saves]; a banner
+  shows while a script runs. ImGui can't be driven by posted key messages.
+- **Pages the engine would crash on are reported, never built** — see R3 for
+  the engine fix.
+
 ## Catalog
 
 ### C1. This fork from GitHub — Decided (publishing is Open)

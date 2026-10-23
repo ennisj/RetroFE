@@ -4,6 +4,41 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 2 — the Manage screens (2026-10-23)
+
+Six agents in parallel, each followed by a Fable adversarial review and
+fixes. Unit tests: 2,766 → 3,879 checks.
+
+- **Games.** Search every game (by system, merged collection or menu; "only
+  without metadata"), with thumbnails. A game's screen links to: Metadata
+  (edit nine fields, each back to the shipped value), Launcher (a per-game
+  launcher or the system's), Media (every art/video/text slot: own file,
+  fallback or missing; replace, clear, put back), Playlists and collections
+  (favourite per page, playlists, merged collections) and Description.
+- **Systems and Videos.** Search, details, settings (extensions, sort,
+  missing items, metadata type), default launcher (keeps alternatives),
+  info, artwork, playlists (create, rename, delete, entries; points out
+  playlists RetroFE won't show because of `cyclePlaylist`), "Check this
+  system" warnings, add a system or a video collection, delete an empty one.
+- **Menus.** The menu tree from Browse down with loops, missing and
+  wrong-case entries flagged; reorder, add and remove entries; a merged
+  collection's sources; info and artwork; new menu, new merged collection,
+  delete (entries move up).
+- **Emulators.** Every launcher (global, per collection, local) with what
+  uses it and names used but not defined; add a launcher with presets
+  (game file, RetroArch core, MAME), duplicate, delete unused ones.
+- **Themes and the theme editor.** Installed layouts with their facts; use
+  a theme, new, duplicate, delete (editor-made). The editor (ImGui) previews
+  the page RetroFE builds, with select, move, resize and snap, an Add widget
+  dialog, properties, undo/redo and save. `retrofe --theme-check <layout>`
+  checks a theme from the command line.
+- **Form rendering.** Long text ends in "..." instead of losing letters;
+  pictures refresh after a replace; focus never jumps onto a file field;
+  new `<form>` styling attributes, used by Aeon Nox (blue headers,
+  separators, green/red messages, a tint on buttons awaiting confirmation).
+- **Tests run in their own folders**, so several test runs (one per agent)
+  no longer delete each other's files.
+
 ## Round 1 — foundations (2026-10-23)
 
 Five agents in parallel, each followed by a Fable adversarial review and a
