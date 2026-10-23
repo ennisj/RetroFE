@@ -42,6 +42,7 @@
 #include "Emulators/EmulatorProvider.h"
 
 // themes
+#include "Themes/ThemeProvider.h"
 
 void Manager::registerProviders(ManagerModel& model, const Services& services)
 {
@@ -64,4 +65,5 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     model.addProvider(std::make_unique<EmulatorProvider>(services));
 
     // themes
+    model.addProvider(Themes::makeProvider(services));
 }

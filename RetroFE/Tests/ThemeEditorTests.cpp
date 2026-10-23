@@ -595,7 +595,7 @@ void runThemeEditorTests()
                        "</layout>\n",
                        "golden page");
             checkEqual(menuItemsXml(0, 0, 300, 900, 5, true, 0, 1920, 3),
-                       "<itemDefaults x=\"150\" xOrigin=\"center\" yOrigin=\"center\" width=\"195\" maxHeight=\"300\" layer=\"5\"/>\n"
+                       "<itemDefaults x=\"150\" xOrigin=\"center\" yOrigin=\"center\" width=\"195\" maxHeight=\"300\" fontSize=\"120\" layer=\"5\"/>\n"
                        "<item y=\"150\"/>\n"
                        "<item y=\"450\" width=\"300\" maxHeight=\"500\" selected=\"true\"/>\n"
                        "<item y=\"750\"/>\n",

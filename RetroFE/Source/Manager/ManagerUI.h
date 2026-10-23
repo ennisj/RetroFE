@@ -16,6 +16,7 @@
 #pragma once
 
 #include "FormView.h"
+#include "ImGuiScreen.h"
 #include "ManagerModel.h"
 #include "Navigator.h"
 #include "../Catalog/Service.h"
@@ -26,11 +27,13 @@
 #include "../Graphics/Component/KeyboardWidget.h"
 #include <SDL2/SDL.h>
 #include <array>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 
+class CollectionInfo;
 class Configuration;
 class FontCache;
 class Page;
@@ -133,7 +136,18 @@ public:
     // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
     void setLayoutPage(const std::string& page) { layoutPage_ = page; }
 
+    // For screens that preview a collection (the theme editor): builds one the
+    // way RetroFE does (the caller owns it), and names the one RetroFE shows now
+    void setCollectionSource(std::function<CollectionInfo*(const std::string&)> load, std::function<std::string()> current)
+    {
+        loadCollection_ = std::move(load);
+        currentCollection_ = std::move(current);
+    }
+
 private:
+    // Screens that draw themselves with ImGui (Manager::ImGuiScreen), by form id
+    bool showImGuiScreen(const Navigator::Frame& frame);
+    void retireScreen();
     void drawWindow();
     void startCatalog();
     void startLibrary();
@@ -193,4 +207,9 @@ private:
     std::string status_;
     bool statusIsError_ = false;
     std::string layoutPage_ = "layout";
+
+    std::unique_ptr<Manager::ImGuiScreen> screen_;                 // the current screen, when it draws itself
+    std::vector<std::unique_ptr<Manager::ImGuiScreen>> retired_;   // left; shut down and freed in update()
+    std::function<CollectionInfo*(const std::string&)> loadCollection_;
+    std::function<std::string()> currentCollection_;
 };

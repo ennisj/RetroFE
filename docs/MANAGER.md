@@ -310,6 +310,29 @@ arguments) and Manage writes `launchers.<os>/VideoPlayer.conf`. Video
 collections are listed under Videos, not Systems. Playing videos inside a
 page (jukebox mode) and previewing video art on these screens come later.
 
+### Themes
+
+**Manage > Themes** lists the layouts in `layouts/`, each with what it is:
+which one RetroFE uses, its size and orientation, whether it was made with
+the theme editor or by hand, and which pages it has (the main page, other
+main pages such as `layout 4x3`, a splash page, pages for particular
+collections). Choosing one shows the details and what you can do with it:
+
+| Button | What it does |
+|--------|--------------|
+| Use this theme | Sets `layout` in your settings; RetroFE switches to it when you close the manager. Not for a theme without `splash.xml` (RetroFE wouldn't start); a theme made with the editor needs a wheel too. |
+| Edit | Opens the [theme editor](THEME_EDITOR.md). Editor-made themes only. |
+| Duplicate | Copies the theme as "*name* Copy". Editor-made themes only. |
+| Delete | Deletes the theme's folder, after a second Select. Editor-made themes only, and not the one in use. |
+
+**New theme** at the top of the list makes an editor-made theme: give it a
+name and choose landscape (1920 x 1080) or portrait (1080 x 1920). It starts
+empty; Edit it to place a wheel, titles, art and video.
+
+Hand-made themes, Aeon Nox included, can be used but not edited, duplicated
+or deleted here: the editor only changes themes it made, and the screen says
+so.
+
 ### Styling the screens
 
 A screen is drawn as a page from your layout, so it can use backgrounds,

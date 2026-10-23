@@ -391,6 +391,10 @@ bool RetroFE::run()
 	if (!fontcache_.initialize())
 		return false;
 	manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0), &fontcache_);
+	// The theme editor previews pages with a real collection
+	manager_.setCollectionSource(
+		[this](const std::string& name) { return getCollection(name, true); },
+		[this]() { return currentPage_ ? currentPage_->getCollectionName() : std::string(); });
 	SDL_RestoreWindow(SDL::getWindow(0));
 	SDL_RaiseWindow(SDL::getWindow(0));
 	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
