@@ -37,12 +37,15 @@ jobs:
       - name: Read the version from the tag
         id: version
         shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^[vV]', ''
-          if ($version -notmatch '^[0-9][0-9A-Za-z.+_-]*$') {
-            throw "The tag $tag isn't a version such as v2504.3"
+          # The tag is only ever read from the environment, and checked before use
+          $tag = $env:TAG
+          if ($tag -notmatch '^[vV][0-9][0-9A-Za-z.+_-]{0,63}$') {
+            throw "The tag isn't a version such as v2504.3"
           }
+          $version = $tag.Substring(1)
           "version=$version" >> $env:GITHUB_OUTPUT
           "prerelease=$(if ($version.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
 
@@ -54,8 +57,11 @@ jobs:
       - name: Configure
         # RETROFE_RELEASE_VERSION makes the build report the tag's version, which
         # is what the Catalog compares with releases when offering updates
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=D:\gstreamer\1.0\msvc_x86_64 -D RETROFE_RELEASE_VERSION=${{ steps.version.outputs.version }} -S .\RetroFE\Source
+          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=D:\gstreamer\1.0\msvc_x86_64 "-DRETROFE_RELEASE_VERSION=$env:VERSION" -S .\RetroFE\Source
 
       - name: Build RetroFE
         run: |
@@ -64,8 +70,10 @@ jobs:
       - name: Package
         id: package
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $version = "${{ steps.version.outputs.version }}"
+          $version = $env:VERSION
           $out = "dist\RetroFE"
           New-Item -ItemType Directory -Force "$out\retrofe" | Out-Null
           Copy-Item -Recurse -Path "Package\Environment\Windows\retrofe\*" -Destination "$out\retrofe" -Exclude ".gitignore"
@@ -78,24 +86,33 @@ jobs:
             New-Item -ItemType Directory -Force "$out\layouts" | Out-Null
             Copy-Item -Recurse $from "$out\layouts\$name"
           }
-          $zip = "dist\RetroFE-$version-windows-x64.zip"
+          $name = "RetroFE-$version-windows-x64.zip"
+          $zip = "dist\$name"
           Compress-Archive -Path "$out\*" -DestinationPath $zip
+          # The checksum beside it, in sha256sum's format: the Catalog uses it if GitHub's digest is missing
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$zip.sha256" -Value "$hash  $name" -NoNewline -Encoding ascii
           "zip=$zip" >> $env:GITHUB_OUTPUT
-          Get-FileHash $zip -Algorithm SHA256 | Format-List
+          "SHA-256 $hash"
 
       - name: Create or update the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          ZIP: ${{ steps.package.outputs.zip }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:TAG
+          if ($tag -notmatch '^[vV][0-9][0-9A-Za-z.+_-]{0,63}$') { throw "The tag isn't a version" }
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            $options = @('--title', "RetroFE ${{ steps.version.outputs.version }}", '--generate-notes', '--verify-tag')
-            if ("${{ steps.version.outputs.prerelease }}" -eq 'true') { $options += '--prerelease' }
+            $options = @('--title', "RetroFE $env:VERSION", '--generate-notes', '--verify-tag')
+            if ($env:PRERELEASE -eq 'true') { $options += '--prerelease' }
             gh release create $tag @options
             if ($LASTEXITCODE -ne 0) { throw "Could not create the release" }
           }
-          # GitHub records the asset's SHA-256 digest, which the Catalog checks
-          gh release upload $tag "${{ steps.package.outputs.zip }}" --clobber
+          # GitHub also records each asset's SHA-256 digest, which the Catalog checks first
+          gh release upload $tag $env:ZIP "$($env:ZIP).sha256" --clobber
           if ($LASTEXITCODE -ne 0) { throw "Could not upload the archive" }

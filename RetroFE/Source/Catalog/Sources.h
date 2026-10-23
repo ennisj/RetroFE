@@ -33,6 +33,7 @@ namespace Catalog
         std::string path;      // folder: the folder to scan
         std::string repo;      // github: owner/name
         bool prerelease = false;   // github: offer pre-releases too
+        bool app = false;          // github: may offer RetroFE itself though it isn't the official repository
         bool enabled = true;
     };
 

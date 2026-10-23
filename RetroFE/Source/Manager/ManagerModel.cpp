@@ -266,9 +266,12 @@ std::string ManagerModel::packageValue(const std::string& key)
         return text;
     }
     if (key == "checksum") {
-        bool checked = std::any_of(package.files.begin(), package.files.end(),
-                                   [](const Catalog::PackageFile& file) { return !file.sha256.empty() || !file.md5.empty(); });
-        return checked ? "" : "The source gives no checksums, so this download can't be checked for damage.";
+        bool checked = std::any_of(package.files.begin(), package.files.end(), [](const Catalog::PackageFile& file) {
+            return !file.sha256.empty() || !file.md5.empty() || !file.sha256Url.empty();
+        });
+        if (checked) return "";
+        return isApp ? "This release has no checksum, so RetroFE won't install it."
+                     : "The source gives no checksums, so this download can't be checked for damage.";
     }
     if (key == "progress") {
         Catalog::Service::Activity activity;
@@ -456,6 +459,11 @@ std::string ManagerModel::catalogProblem(const std::string& action)
         if (busy) return "Already working on it.";
         if (action == "package.remove" && entry.package.kind == "app") return "RetroFE can't remove itself.";
         if (action == "package.remove") return installed ? "" : "It isn't installed.";
+        if (entry.package.kind == "app" && std::none_of(entry.package.files.begin(), entry.package.files.end(), [](const Catalog::PackageFile& file) {
+                return !file.sha256.empty() || !file.sha256Url.empty();
+            })) {
+            return "This release has no checksum, so RetroFE won't install it.";
+        }
         return installed && !entry.updateAvailable ? "Installed, and up to date." : "";
     }
     if (action == "source.add") {
@@ -527,6 +535,7 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
         Catalog::SourceConfig source;
         source.type = "github";
         source.repo = Catalog::retrofeRepository;
+        source.app = true;   // it offers RetroFE itself
         std::vector<Catalog::SourceConfig> sources = catalog_->sources();
         for (int n = 1; source.name.empty() || !Catalog::validateSource(source, sources).empty(); n++) {
             source.name = n == 1 ? "retrofe" : "retrofe-" + std::to_string(n);

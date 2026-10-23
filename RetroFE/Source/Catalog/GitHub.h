@@ -53,12 +53,22 @@ namespace Catalog
     Platform currentPlatform();
 
     // Which asset name is the package for platform: a .zip naming the system
-    // and either this architecture or none; -1 if there isn't one
+    // and either this architecture or none, and not symbols, debug or source;
+    // of equals, the shortest name. -1 if there isn't one.
     int pickAsset(const std::vector<std::string>& names, const Platform& platform);
+
+    // Whether repo is RetroFE's own (retrofeRepository), which may offer RetroFE
+    // without the source saying app = yes
+    bool isOfficialRepository(const std::string& repo);
+
+    // The SHA-256 in a <asset>.sha256 file ("<hex>" or "<hex>  <name>"), or ""
+    std::string parseSha256File(const std::string& text);
 
     // Turns GitHub's list of releases into the RetroFE package: the highest
     // version that isn't a draft (nor a pre-release, unless the source allows
-    // them) and has an asset for platform
+    // them) and has an asset for platform. Only the official repository, or a
+    // source with app = yes, offers it. The SHA-256 comes from the asset's
+    // digest, or else sha256Url names the <asset>.sha256 beside it.
     bool parseReleases(const std::string& json, const SourceConfig& source, const Platform& platform,
                        std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error);
 

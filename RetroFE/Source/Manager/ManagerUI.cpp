@@ -169,7 +169,6 @@ void ManagerUI::startCatalog()
         targets.media = targets.collections;
     }
     // RetroFE's own program folder, when it's a folder of its own (retrofe/ under the root)
-    Catalog::AppInstall app;
     if (char* base = SDL_GetBasePath()) {
         std::filesystem::path program = std::filesystem::path(base).lexically_normal();
         SDL_free(base);
@@ -178,13 +177,16 @@ void ManagerUI::startCatalog()
         if (program != root && program.parent_path() == root) {
             targets.protectedFolders.push_back(program.string());
         }
-        app.program = program.string();
     }
 
     catalog_ = std::make_unique<Catalog::Service>(folder, targets, Catalog::createHttp());
-    // GitHub sources can update RetroFE itself (SelfUpdater checks it's in a folder of its own)
-    app.root = Configuration::absolutePath;
+    // GitHub sources can update RetroFE itself (SelfUpdater checks it's in a folder of its own). UTF-8 paths.
+    Catalog::AppInstall app;
     app.executable = Catalog::currentExecutable();
+    if (!app.executable.empty()) {
+        app.program = std::filesystem::u8path(app.executable).parent_path().u8string();
+    }
+    app.root = std::filesystem::path(Configuration::absolutePath).u8string();
     app.version = RETROFE_VERSION_DESCRIBE;
     catalog_->setApp(app);
     catalog_->start();

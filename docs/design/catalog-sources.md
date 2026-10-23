@@ -221,43 +221,61 @@ RetroFE itself.
 ```ini
 sources.retrofe.type = github
 sources.retrofe.repo = ennisj/RetroFE    # owner/name
+sources.retrofe.app = yes                # may offer RetroFE (needed unless it's the official repository)
 sources.retrofe.prerelease = yes         # optional: offer pre-releases too
 sources.retrofe.url = https://...        # optional: another releases API address (GitHub Enterprise, tests)
 ```
 
 **Adding it.** Manage → Sources has **Add RetroFE from GitHub**: one button,
 after the same "I trust this source" confirmation as any source, adding a
-source `retrofe` for `ennisj/RetroFE` (the constant `Catalog::retrofeRepository`
-in `Catalog/GitHub.h`). The ordinary form adds any repository with the type
-"GitHub releases", taking `owner/name` or the repository's github.com address.
+source `retrofe` for `ennisj/RetroFE` with `app = yes`. The repository is the
+constant `Catalog::retrofeRepository` in `Catalog/GitHub.h`. The ordinary form
+adds any repository with the type "GitHub releases", taking `owner/name` or the
+repository's github.com address.
+
+**Which repositories may offer RetroFE.** Only the official one
+(`retrofeRepository`), or one whose source says `app = yes`. Any other GitHub
+source offers nothing and says why, with the line to add to
+`catalog/sources.conf`. The package is named after where it's from:
+"RetroFE from ennisj/RetroFE".
 
 **Reading releases.** The adapter fetches
 `https://api.github.com/repos/<repo>/releases?per_page=30` with
 `Accept: application/vnd.github+json` (WinHTTP sends `User-Agent: RetroFE`).
-Of the releases that aren't drafts, and aren't pre-releases unless the source
-allows them, it takes the **highest version that has an asset for this
-system**. That becomes the package:
+Every field is read type-checked, so a malformed or hostile answer is skipped
+rather than failing. Of the releases that aren't drafts, and aren't
+pre-releases unless the source allows them, it takes the **highest version
+that has an asset for this system**. That becomes the package:
 
 | Field | From |
 |-------|------|
-| `id`, `name`, `kind` | `retrofe`, `RetroFE`, `app` |
-| `version` | The tag without a leading `v` (`v2504.3` → `2504.3`); tags that aren't versions are skipped with a warning |
+| `id`, `kind` | `retrofe`, `app` |
+| `name` | "RetroFE from `<repo>`" |
+| `version` | The tag without a leading `v` (`v2504.3` → `2504.3`); tags that aren't versions are left out, with one warning listing them |
 | `description` | The release notes, trimmed (at most 1500 characters) |
-| `files[0]` | The asset's `browser_download_url` and `size`, and `sha256` from its `digest` (`sha256:…`), which GitHub records for uploads |
+| `files[0]` | The asset's `browser_download_url` and `size`; `sha256` from its `digest` (`sha256:…`), which GitHub records for uploads, or else from `<asset>.sha256` beside it, fetched when installing |
+
+**A checksum is required.** RetroFE won't install a release of itself it
+can't check: without a digest or a `.sha256`, the package screen says "This
+release has no checksum, so RetroFE won't install it", and the Catalog refuses
+it. The release workflow uploads both.
 
 **Asset naming.** `RetroFE-<version>-<os>-<arch>.zip`, e.g.
 `RetroFE-2504.3-windows-x64.zip`. An asset is this system's if it's a `.zip`
 whose name (split at `-`, `_`, `.` and spaces) includes the system
 (`windows`/`win`/`win64`, `linux`, `macos`/`osx`/`mac`/`darwin`) and either
-this architecture (`x64`/`x86_64`/`amd64`, `arm64`/`aarch64`, `x86`) or none;
-naming the architecture wins. Assets still uploading are ignored.
+this architecture (`x64`/`x86_64`/`amd64`, `arm64`/`aarch64`, `x86`) or none,
+and isn't symbols, a debug build or sources (`symbols`, `pdb`, `debug`, `dbg`,
+`src`, `source`). Naming the architecture beats naming none; of equals, the
+shortest name wins. Assets still uploading are ignored.
 
-**Archive layout.** `retrofe/` holds the program (what goes in the program
-folder: `retrofe.exe`, its DLLs, `OpenSans.ttf`…), and `layouts/<name>/`
-optionally holds layouts shipped with it. Anything else at the top, such as
-`RetroFE.lnk` for new installs, is left out when updating.
+**Archive layout.** `retrofe/` holds the whole program folder (`retrofe.exe`,
+its DLLs, `OpenSans.ttf`…), and `layouts/<name>/` optionally holds layouts
+shipped with it. Anything else at the top, such as `RetroFE.lnk` for new
+installs, is left out when updating. Names ending in `.old`, `.oldN`, `.new`,
+`.failed` or `.part` are refused, since updates use them.
 `.github/workflows/release-windows.yml` builds exactly this when a `v*` tag is
-pushed.
+pushed, plus `<asset>.sha256`.
 
 **Rate limits.** GitHub allows 60 unauthenticated requests an hour per
 address. The list is cached in `catalog/cache/<source>/releases.json` with its
@@ -272,71 +290,126 @@ address. The list is cached in `catalog/cache/<source>/releases.json` with its
 - offline, it shows the last copy, as index sources do.
 
 **What "installed" means for RetroFE.** The installed version is the running
-build's (`RETROFE_VERSION_DESCRIBE`, which a release build sets to its tag with
-`-DRETROFE_RELEASE_VERSION`), so a fresh install shows **Update** when a newer
-release exists. Any GitHub source may update it (it can't be removed to
-switch sources, unlike other packages), and it can't be removed.
+build's (`RETROFE_VERSION_DESCRIBE`). A release build sets it to its tag with
+`-DRETROFE_RELEASE_VERSION`; other builds report `RETROFE_VERSION_MAJOR.MINOR`
+from `RetroFE/CMake/Versioning.cmake` (2504.2 today), so a development build
+is offered any release tagged higher than that. Bump those numbers, or tag
+releases above them, to keep development builds from being offered an older
+release. The Catalog never installs a version that isn't newer than the
+running one, and after an update it shows the new version as installed until
+the restart, so the same update isn't offered twice. Any allowed GitHub source
+may update it (it can't be removed to switch sources, unlike other packages).
 
 ### Updating RetroFE in place
 
-Windows can't overwrite a running exe or a loaded DLL, but it can rename them
-within their folder. `Catalog/SelfUpdate.cpp` uses that:
+Windows can't overwrite a running exe or a loaded DLL, nor replace one in a
+single step (checked on Windows 11: `MoveFileEx` with replace, and a
+POSIX-semantics rename, both fail on a running exe). It can rename them, and
+it can rename the folder holding a running exe, as long as nothing has a file
+in it open without delete sharing and it isn't any process's working folder.
+`Catalog/SelfUpdate.cpp` uses both:
 
-1. **Download and verify** as for any package (size, and SHA-256 from the
-   asset's digest).
-2. **Stage and check** into `catalog/update/staged/`. `retrofe/<path>` maps to
-   the program folder, `layouts/<name>/<path>` to `<root>/layouts/<name>/`,
+1. **Download and verify** as for any package (size, and the SHA-256).
+2. **Extract and check** into `catalog/update/staged/`. `retrofe/<path>` maps
+   to the program folder, `layouts/<name>/<path>` to `<root>/layouts/<name>/`,
    nothing else is installed. Refused outright: any path that could escape
-   (the usual checks), programs or scripts in a layout, and an archive without
-   `retrofe/<the running exe's name>` (so a package for another system, or not
-   RetroFE at all, is never applied). Files identical to what's there are
-   left alone.
+   (the usual checks), programs or scripts in a layout, names updates use for
+   themselves, and an archive without `retrofe/<the running exe's name>` (so
+   a package for another system, or not RetroFE at all, is never applied).
+   **Stop** works until this step and the next are done.
 3. **Back up** every file about to be replaced or removed into
    `catalog/backups/retrofe/<running version>/`, at the same paths under the
-   root. With the unchanged files still in place, that's the whole previous
-   version. Only the last update's backup is kept.
-4. **Journal, then swap.** `catalog/update/journal.json` lists every step
-   before the first rename. For each file: rename the old one to
-   `<name>.old` (or `.old2`… if that's taken and in use), then move the new
-   one in (a rename, or a copy to `<name>.new` and a rename when the catalog
-   is on another drive). Files the previous version installed that this one
-   doesn't have are set aside too, unless they've been changed. The program
-   file goes last. If any step fails, every step so far is undone and the
-   message says nothing was changed.
-5. **Record.** The journal is marked done, `catalog/installed/retrofe.json`
-   lists the version's files, and the `.old` files go into
-   `catalog/update/leftovers.json`. The ones not in use are deleted at once.
-6. **Restart.** The Service asks for a restart; RetroFE leaves its main loop
+   root, each checked against its SHA-256. With the unchanged files still in
+   place, that's the whole previous version. Only the last update's backup is
+   kept.
+4. **Prepare everything beside where it goes**, so the swap itself is renames
+   only, even when the catalog is on another drive:
+   - `<root>/retrofe.new/` becomes the complete new program folder: the
+     release's files, plus every file of the current folder the release
+     doesn't replace or drop (hard-linked, so it's instant and takes no space;
+     copied if linking fails). Files the previous version installed that this
+     one doesn't have, and haven't been changed, are left out.
+   - each changed layout file gets `<file>.new` beside it.
+5. **Journal.** `<root>/retrofe.update.json` (next to the program folder, so
+   it's found before anything is configured, and independent of where the
+   catalog is) lists every step, with the SHA-256 of the file each step
+   places and of the file it replaces. `<root>/retrofe-UPDATE-INTERRUPTED.txt`
+   tells anyone looking how to put the previous version back by hand.
+6. **Swap**, renames only, back to back:
+   - layout files: `<file>` → `<file>.old`, `<file>.new` → `<file>`;
+   - then the program folder: `retrofe` → `retrofe.old`, `retrofe.new` →
+     `retrofe`. That second rename is the commit point. RetroFE first moves
+     its own working folder to the root if it's inside `retrofe\` (the
+     restarted RetroFE gets the original one back).
+   - If the program folder can't be renamed (another program has a file in it
+     open), the program's changed files are swapped one by one the same way
+     instead, removals first and the program file last. That's two renames
+     per changed file, with nothing copied in between.
+   - If any rename fails, every step so far is undone and the message says
+     nothing was changed.
+7. **Record.** The journal is marked swapped, `catalog/installed/retrofe.json`
+   lists the version's files, and the journal keeps the list of what was set
+   aside (`retrofe.old`, or the `.old` files). What isn't in use is deleted at
+   once.
+8. **Restart.** The Service asks for a restart; RetroFE leaves its main loop
    (without running `exit.bat`, since it isn't really exiting), shuts
    everything down, and `main()` starts the program again with the same
-   command line before returning.
-7. **Next start.** The Catalog's start-up job deletes the leftovers, retrying
-   for about five seconds while the old process lets go of them; any still
-   held wait for the start after.
+   command line and working folder.
+9. **Next start.** The Catalog's start-up job deletes the rest of what was set
+   aside, retrying for about five seconds while the old process lets go of
+   it, then removes the journal.
 
-If RetroFE stops during step 4 (a crash or power cut), the next start finds an
-unfinished journal and puts every file back, then restarts so the old version
-runs; a journal marked done is finished instead. The journal only ever names
-files in the program folder, under `layouts/`, and in the staging folder;
-anything else makes it ignored. User content (`collections/`, `settings*.conf`,
-`controls.conf`, `launchers*`, `meta/`, the catalog's own records) is never
-touched. Self-update is refused unless the program is in a folder of its own
-under the root (`<root>/retrofe/` on Windows), so on an install where the exe
-sits in the root it can't reach anything else.
+**If RetroFE stops part way** (a crash or power cut), the very first thing
+`main()` does on the next start, before configuration, logging, SDL or
+GStreamer, is look for `<root>/retrofe.update.json`:
+- If the new program folder is in place (the commit point was reached), the
+  update is finished.
+- Otherwise every step is undone, last first: a file is only deleted or put
+  back if its SHA-256 is what the journal says the update placed or replaced,
+  so a damaged or tampered journal can't delete or swap anything else. If
+  program files were put back, RetroFE starts again at once so they're what
+  runs.
+- The journal may only name files in the program folder and under `layouts/`,
+  under the names updates use, and its spare folders must be
+  `retrofe.new`/`retrofe.old…`; anything else, or a journal that can't be
+  read, is set aside as `retrofe.update.damaged.json` and the user is told
+  (a message box) where the backup is and what to copy back.
+- It tries at most three starts. After that the journal is set aside the same
+  way, with the same message, and updates work again.
+- Leftovers are only deleted if the journal lists them and they're
+  `retrofe.old…` folders in the root or files named `<name>.old`, `.oldN` or
+  `.failed` in RetroFE's folders.
+
+**What a power cut can still do.** With the folder swap, the program folder is
+never a mix of versions: between the two folder renames it's briefly missing
+(`retrofe.old` and `retrofe.new` both exist). Windows has no way to make the
+pair atomic. If the power goes in that instant, `retrofe.exe` isn't where the
+shortcut points, so nothing of RetroFE's can run to fix it. The note in the
+root says what to do: rename `retrofe.old` back to `retrofe`. In the
+file-by-file fallback, a cut between a file's two renames leaves that one file
+missing. If it's a DLL `retrofe.exe` loads at start (SDL2, GStreamer and the
+other import-table DLLs), Windows can't start RetroFE, so again only the note
+and the backup help. Otherwise the next start undoes it. The window is the
+time between two renames, not the update's length.
+
+User content (`collections/`, `settings*.conf`, `controls.conf`, `launchers*`,
+`meta/`, the catalog's own records) is never touched. Self-update is refused
+unless the program is in a folder of its own directly under the root
+(`<root>/retrofe/` on Windows), so on an install where the exe sits in the root
+it can't reach anything else.
 
 **Why swap in-process and restart, rather than at the next start?** At any
 start the exe and its DLLs are already loaded, so applying "at the next
-start" would still need the rename trick, plus a way to stop RetroFE from
-running a half-updated program in between. Swapping right after the download,
-then restarting at once, keeps the window where old code runs beside new
-files to the restart itself. The alternative, a separate updater program that
-waits for RetroFE to exit and then copies, avoids in-use files entirely but
-is one more program to ship and to update.
+start" would still need renames, plus a way to stop RetroFE from running a
+half-updated program in between. Swapping right after the download, then
+restarting at once, keeps old code running beside new files only until the
+restart. The alternative, a separate updater program that waits for RetroFE
+to exit and then copies, avoids in-use files entirely but is one more program
+to ship and to update.
 
-**Restoring the previous version by hand:** copy
-`catalog/backups/retrofe/<version>/` over the root. A crash can only leave a
-mixed set of files if it happens during the swap itself (milliseconds), and
-the next start then undoes it.
+**Restoring the previous version by hand:** if `retrofe.old` exists, rename it
+back to `retrofe`; otherwise copy `catalog/backups/retrofe/<version>/` over the
+root.
 
 ## Screens
 
@@ -365,10 +438,14 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
 - Packages can only write under their targets (see Install), never into
   the catalog folder or RetroFE's program folder, and phase 1 refuses
   programs and scripts outright (no emulator packages yet).
-- The one exception is RetroFE itself (kind `app`), which only a `github`
-  source the user added can offer, which may only write into the program
-  folder and the layouts it ships, and which must contain the running
-  program's file (see [Updating RetroFE in place](#updating-retrofe-in-place)).
+- The one exception is RetroFE itself (kind `app`). Only a `github` source
+  the user added can offer it, and only for the official repository or with
+  `app = yes`. It must have a SHA-256, be newer than the running version,
+  contain the running program's file, and it may only write into the program
+  folder and the layouts it ships (see [Updating RetroFE in place](#updating-retrofe-in-place)).
+- JSON the Catalog reads (indexes, GitHub's answers, caches, manifests,
+  journals) is read field by field with type checks, and every Catalog job
+  runs inside a handler, so bad data becomes a warning, never a crash.
 - Paths are checked for every system: no `..`, absolute paths, drives or
   streams (`:`), Windows device names, forbidden characters, or segments
   ending in a dot or space. Ids and source names get the same device-name check.
@@ -433,12 +510,17 @@ Copied deliberately, with One Saucier itself unchanged:
 6. **OnesaUCE content keeps its `version.txt` markers** when installed
    through the `archiveorg` adapter.
 7. **RetroFE updates itself only from `github` sources** (kind `app`, id
-   `retrofe`). Index and folder sources can't offer it.
-8. **Self-update swaps files in-process by renaming them aside, then
-   restarts** (see [Updating RetroFE in place](#updating-retrofe-in-place)),
-   rather than at the next start or through a separate updater program.
+   `retrofe`): the official repository, or one whose source says `app = yes`.
+   Index and folder sources can't offer it, and a release without a SHA-256
+   isn't installed.
+8. **Self-update swaps in-process, then restarts** (see
+   [Updating RetroFE in place](#updating-retrofe-in-place)): the program
+   folder is swapped whole with two renames, falling back to renaming files
+   aside one by one, rather than at the next start or through a separate
+   updater program. Interrupted updates are finished or undone first thing
+   in `main()`.
 9. **Release assets are named `RetroFE-<version>-<os>-<arch>.zip`** and hold
-   `retrofe/` plus optional `layouts/<name>/`.
+   `retrofe/` plus optional `layouts/<name>/`, with `<asset>.sha256` beside them.
 
 ## Background: could a source suggest other sources?
 

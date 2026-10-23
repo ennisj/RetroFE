@@ -385,12 +385,32 @@ namespace Catalog
             }
             lock.unlock();
 
-            switch (job.kind) {
-            case Job::Kind::Recover: doRecover(); break;
-            case Job::Kind::Refresh: doRefresh(); break;
-            case Job::Kind::Install: doInstall(job.id); break;
-            case Job::Kind::Remove:  doRemove(job.id); break;
-            case Job::Kind::Artwork: doArtwork(); break;
+            // Nothing a source or a damaged file holds may take RetroFE down
+            std::string failure;
+            try {
+                switch (job.kind) {
+                case Job::Kind::Recover: doRecover(); break;
+                case Job::Kind::Refresh: doRefresh(); break;
+                case Job::Kind::Install: doInstall(job.id); break;
+                case Job::Kind::Remove:  doRemove(job.id); break;
+                case Job::Kind::Artwork: doArtwork(); break;
+                }
+            }
+            catch (const std::exception& e) {
+                failure = e.what();
+            }
+            catch (...) {
+                failure = "unknown error";
+            }
+            if (!failure.empty()) {
+                LOG_ERROR("Catalog", "A Catalog job failed: " + failure);
+                if (job.isPackageJob()) {
+                    finish(job.id, false, "Something went wrong: " + failure);
+                }
+                else if (job.kind == Job::Kind::Refresh) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    warnings_.push_back("Reading the sources failed: " + failure);
+                }
             }
 
             lock.lock();
@@ -612,20 +632,35 @@ namespace Catalog
         finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + ".");
     }
 
-    void Service::doUpdateApp(const Package& package)
+    void Service::doUpdateApp(const Package& original)
     {
-        // Only a GitHub source the user added may replace RetroFE's program
+        Package package = original;
+        // Only a GitHub source the user added may replace RetroFE's program: its
+        // official repository, or one the user allowed with app = yes
         AppInstall app;
-        bool fromGitHub = false;
+        const SourceConfig* source = nullptr;
+        SourceConfig config;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             app = app_;
-            for (const SourceConfig& source : sources_) {
-                if (source.name == package.source && source.type == "github") fromGitHub = true;
+            for (const SourceConfig& s : sources_) {
+                if (s.name == package.source && s.type == "github") {
+                    config = s;
+                    source = &config;
+                }
             }
         }
-        if (package.kind != "app" || package.id != appPackageId || !fromGitHub) {
+        if (package.kind != "app" || package.id != appPackageId || !source) {
             finish(package.id, false, "Updates of RetroFE itself only come from GitHub sources.");
+            return;
+        }
+        if (!isOfficialRepository(source->repo) && !source->app) {
+            finish(package.id, false, source->repo + " isn't RetroFE's own repository, and its source doesn't say app = yes.");
+            return;
+        }
+        // Never back to the same or an older version
+        if (!app.version.empty() && compareVersions(package.version, app.version) <= 0) {
+            finish(package.id, false, "RetroFE " + app.version + " is already this version or newer.");
             return;
         }
         SelfUpdater updater(folder_, app);
@@ -636,6 +671,23 @@ namespace Catalog
         }
         if (package.files.size() != 1) {
             finish(package.id, false, "An update of RetroFE is a single archive.");
+            return;
+        }
+
+        // A program is only installed when it can be checked
+        PackageFile& file = package.files[0];
+        if (file.sha256.empty() && !file.sha256Url.empty() && http_ && isAllowedLocation(file.sha256Url)) {
+            std::string text;
+            std::string error;
+            if (http_->get(file.sha256Url, text, error)) {
+                file.sha256 = parseSha256File(text.substr(0, 4096));
+            }
+            else {
+                LOG_WARNING("Catalog", "Could not read " + file.sha256Url + ": " + error);
+            }
+        }
+        if (file.sha256.empty()) {
+            finish(package.id, false, "This release has no checksum, so RetroFE won't install it.");
             return;
         }
 
@@ -659,17 +711,21 @@ namespace Catalog
             return;
         }
 
-        updater.setStopFlag(&stopping_);
+        // Stop and leaving RetroFE give up until files start moving
+        updater.shouldStop = [this] { return stopping_ || cancelRequested_; };
         std::string error;
         if (!updater.apply(package, result.files[0], error)) {
             LOG_ERROR("Catalog", "RetroFE update: " + error);
-            finish(package.id, false, error);
+            finish(package.id, false, error == "Stopped" ? "Stopped. Install again to continue." : error);
             return;
         }
         downloader.discard(package.id);
         {
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
+            // What's in place now, so the same update isn't offered again before the restart
+            app_.version = package.version;
+            rebuildEntries();
             restartRequested_ = true;
         }
         finish(package.id, true, "Updated RetroFE to " + package.version + ". Restarting...");

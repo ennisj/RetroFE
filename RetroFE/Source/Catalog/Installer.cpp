@@ -16,6 +16,7 @@
 #include "Installer.h"
 #include "Hash.h"
 #include "Index.h"
+#include "JsonFields.h"
 #include "../Utility/Log.h"
 #include "minizip/unzip.h"
 #include <nlohmann/json.hpp>
@@ -28,6 +29,7 @@
 
 namespace fs = std::filesystem;
 using nlohmann::json;
+namespace J = Catalog::JsonFields;
 
 namespace
 {
@@ -265,11 +267,12 @@ namespace
     bool fromJson(const json& value, Catalog::InstalledFile& file)
     {
         if (!value.is_object()) return false;
-        file.target = value.value("target", "");
-        file.path = value.value("path", "");
-        file.size = value.value("size", uint64_t{ 0 });
-        file.sha256 = value.value("sha256", "");
-        file.backup = value.value("backup", "");
+        file.target = J::text(value, "target");
+        file.path = J::text(value, "path");
+        file.size = 0;
+        J::count(value, "size", file.size);
+        file.sha256 = J::text(value, "sha256");
+        file.backup = J::text(value, "backup");
         return Catalog::isKnownTarget(file.target) && !file.path.empty() && Catalog::isSafeRelativePath(file.path)
             && (file.backup.empty() || folderName(file.backup) == file.backup);
     }
@@ -288,8 +291,8 @@ namespace
         if (!readText(path, text)) return false;
         json document = json::parse(text, nullptr, false);
         if (!document.is_object()) return false;
-        journal.backup = document.value("backup", "");
-        for (const json& key : document.value("existing", json::array())) {
+        journal.backup = J::text(document, "backup");
+        for (const json& key : J::list(document, "existing")) {
             if (key.is_string()) journal.existing.insert(key.get<std::string>());
         }
         return !journal.backup.empty() && folderName(journal.backup) == journal.backup;
@@ -335,11 +338,11 @@ bool readManifest(const std::string& file, Manifest& manifest, std::string& erro
         return false;
     }
     manifest = Manifest();
-    manifest.id = document.value("id", "");
-    manifest.name = document.value("name", "");
-    manifest.kind = document.value("kind", "");
-    manifest.version = document.value("version", "");
-    manifest.source = document.value("source", "");
+    manifest.id = J::text(document, "id");
+    manifest.name = J::text(document, "name");
+    manifest.kind = J::text(document, "kind");
+    manifest.version = J::text(document, "version");
+    manifest.source = J::text(document, "source");
     if (auto files = document.find("files"); files != document.end() && files->is_array()) {
         for (const json& value : *files) {
             InstalledFile installedFile;
@@ -521,11 +524,11 @@ bool Installer::commit(const std::string& staging, std::string& error)
     }
 
     Manifest manifest;
-    manifest.id = plan.value("id", "");
-    manifest.name = plan.value("name", "");
-    manifest.kind = plan.value("kind", "");
-    manifest.version = plan.value("version", "");
-    manifest.source = plan.value("source", "");
+    manifest.id = J::text(plan, "id");
+    manifest.name = J::text(plan, "name");
+    manifest.kind = J::text(plan, "kind");
+    manifest.version = J::text(plan, "version");
+    manifest.source = J::text(plan, "source");
     if (!isValidId(manifest.id) || manifest.id != fs::path(staging).filename().string()) {
         error = "The staged install has no valid package id";
         return false;
@@ -547,7 +550,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
         fs::path destination;
     };
     std::vector<Step> steps;
-    for (const json& entry : plan.value("files", json::array())) {
+    for (const json& entry : J::list(plan, "files")) {
         Step step;
         if (!fromJson(entry, step.file)) {
             error = "The staged install has an invalid file";
@@ -559,7 +562,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
             return false;
         }
         // Staged files can only come from this install's own staging folder
-        std::string staged = entry.value("staged", "");
+        std::string staged = J::text(entry, "staged");
         if (staged.rfind("files/", 0) != 0 || !isSafeRelativePath(staged)) {
             error = "The staged install has an invalid file";
             return false;

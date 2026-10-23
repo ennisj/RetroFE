@@ -16,36 +16,39 @@
 #pragma once
 
 #include "Package.h"
-#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <vector>
 
-// RetroFE updating itself from an "app" package (see docs/design/catalog-sources.md).
+// RetroFE updating itself from an "app" package (see docs/design/catalog-sources.md,
+// "Updating RetroFE in place").
 //
-// The package's archive holds retrofe/ (the program: exe, DLLs, plugins) and
-// optionally layouts/<name>/. retrofe/ maps onto the program folder and
-// layouts/<name>/ onto <root>/layouts/<name>/; nothing else in the archive is
-// installed, and nothing outside those folders is touched.
+// The archive holds retrofe/ (the program) and optionally layouts/<name>/.
+// retrofe/ becomes the program folder and layouts/<name>/ goes to
+// <root>/layouts/<name>/; nothing else is installed or touched.
 //
-// Windows can't overwrite a running exe or a loaded DLL, but it can rename
-// them. So the update is:
-//   1. Extract into catalog/update/staged/ and check it (it must contain the
-//      running program's file; layouts may not hold programs).
-//   2. Copy every file about to be replaced or removed to
-//      catalog/backups/retrofe/<running version>/.
-//   3. Write catalog/update/journal.json, then for each file rename the old
-//      one to <name>.old and move the new one in, the program file last.
-//      If any step fails, every step so far is undone.
-//   4. Mark the journal done, record the files in catalog/installed/retrofe.json,
-//      and list the .old files in catalog/update/leftovers.json.
-//   5. RetroFE starts the new version and exits; on its next start recover()
-//      deletes the .old files (once the old process has let go of them).
-// If RetroFE stops in the middle of step 3, recover() puts the old files back
-// on the next start and asks for a restart, so the old version runs again.
+//   1. Extract into catalog/update/staged/ and check it.
+//   2. Back up what will be replaced or removed to catalog/backups/retrofe/<running version>/.
+//   3. Prepare everything next to where it goes, so the swap is renames only:
+//      <root>/retrofe.new/ is the complete new program folder (unchanged files
+//      hard-linked, or copied), and each changed layout file gets <file>.new.
+//   4. Write the journal <root>/retrofe.update.json (beside the program folder,
+//      where it's found before anything is configured), holding each step with
+//      the SHA-256 of the file it places and of the one it replaces.
+//   5. Swap: layout files (rename the old one to <file>.old, the .new in), then
+//      the program folder in two renames: retrofe -> retrofe.old, retrofe.new
+//      -> retrofe. That last rename is the commit point. If the folder can't
+//      be renamed (something has a file in it open), the program's changed
+//      files are swapped one by one the same way instead, the program file last.
+//   6. Mark the journal swapped, record catalog/installed/retrofe.json, and
+//      delete what was set aside once nothing holds it (at the next start).
+// recoverAtStart(), first thing in main(), finishes or undoes an interrupted
+// swap, touching only files whose SHA-256 is what the journal says, and gives
+// up after a few attempts, leaving the journal as retrofe.update.damaged.json.
 namespace Catalog
 {
-    // Where RetroFE's own files are
+    // Where RetroFE's own files are. Paths are UTF-8.
     struct AppInstall
     {
         std::string root;        // the RetroFE root
@@ -54,48 +57,82 @@ namespace Catalog
         std::string version;     // the running version
     };
 
-    // The running program's file, or "" if it can't be found. Ask before an
-    // update renames it.
+    // The running program's file (UTF-8), or "" if it can't be found. Ask
+    // before an update renames it.
     std::string currentExecutable();
 
     class SelfUpdater
     {
     public:
+        // catalogFolder may be "" when it isn't known yet (at start); then the
+        // installed record isn't written and backups aren't named
         SelfUpdater(const std::string& catalogFolder, const AppInstall& app);
 
         // Installs the package from its downloaded archive. On failure nothing
         // is changed and error says why.
         bool apply(const Package& package, const std::string& archive, std::string& error);
 
-        // At start: finishes or undoes an interrupted update, and deletes what
-        // the last one set aside. True if files were put back, so RetroFE
-        // should restart to run the version that's now there.
+        // Finishes or undoes an interrupted update, records a finished one,
+        // and deletes what the last one set aside. True if RetroFE's program
+        // files were put back, so it should restart to run what's there now.
         bool recover();
+
+        // The same at start, before anything else: without waiting for
+        // set-aside files or recording the install (the catalog isn't known yet)
+        bool recoverAtStartup();
 
         // "" if RetroFE can update itself in this install, otherwise why not
         std::string problem() const;
 
-        // While *stop is set, extracting gives up (safe until files are swapped)
-        void setStopFlag(const std::atomic<bool>* stop) { stop_ = stop; }
+        // Something for the user from the last recover(), e.g. that it gave up
+        const std::string& message() const { return message_; }
 
-        // For tests: how files are renamed and deleted, to act like files in use
+        // Checked while extracting and preparing: true gives up (nothing has been swapped yet)
+        std::function<bool()> shouldStop;
+
+        // For tests: how files and folders are renamed and files deleted,
+        // to act like files in use
         std::function<bool(const std::filesystem::path& from, const std::filesystem::path& to)> renameFile;
         std::function<bool(const std::filesystem::path& file)> removeFile;
         std::function<void(int milliseconds)> sleep;
-        int removeTries = 20;    // rounds of trying to delete set-aside files at start, 250 ms apart
+        int removeTries = 20;    // rounds of deleting set-aside files at start, 250 ms apart
+        bool folderSwap = true;  // for tests: false swaps program files one by one
+
+        // Where log lines go; the Catalog's log by default (before logging is
+        // set up, main() collects them instead)
+        std::function<void(const std::string& level, const std::string& text)> log;
+
+        static constexpr int maxRecoveryAttempts = 3;
 
     private:
-        std::filesystem::path updateFolder() const;
-        bool place(const std::filesystem::path& staged, const std::filesystem::path& destination, std::string& error);
-        // Finishes a done update or undoes an unfinished one; false if files couldn't be put back
+        struct Plan;
+        std::filesystem::path journalPath() const;
         bool finishOrUndo(bool& putBack);
         void deleteLeftovers(int tries);
+        void recordInstalled();
         bool isOurs(const std::filesystem::path& path) const;
+        bool isOldFolder(const std::filesystem::path& path) const;
+        bool stopped() const { return shouldStop && shouldStop(); }
 
-        std::string catalog_;
-        AppInstall app_;
-        const std::atomic<bool>* stop_ = nullptr;
+        std::filesystem::path catalog_;
+        std::filesystem::path root_;
+        std::filesystem::path program_;
+        std::filesystem::path executable_;
+        std::string version_;
+        std::string message_;
     };
+
+    // What main() learns from recoverAtStart()
+    struct StartupRecovery
+    {
+        bool restart = false;               // program files were put back: start again
+        std::string message;                // for the user, e.g. where the backup is
+        std::vector<std::pair<std::string, std::string>> log;   // level, text: for the log once it's set up
+    };
+
+    // First thing in main(): deals with an interrupted update of the program
+    // in executable's folder, before anything else loads
+    StartupRecovery recoverAtStart(const std::string& executable);
 
     // After an update RetroFE exits and starts the new version: the main
     // loop asks for it, and main() starts it once everything is shut down
@@ -103,6 +140,7 @@ namespace Catalog
     bool relaunchPending();
     bool takeRelaunch(std::string& executable);
 
-    // Starts executable with this process's arguments (argv is used off Windows)
+    // Starts executable (UTF-8) with this process's arguments, in the folder
+    // RetroFE was started in (argv is used off Windows)
     bool relaunch(const std::string& executable, char** argv, std::string& error);
 }

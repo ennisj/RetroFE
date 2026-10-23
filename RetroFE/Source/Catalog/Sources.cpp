@@ -302,6 +302,10 @@ bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, st
             std::string v = lower(value);
             it->prerelease = v == "yes" || v == "true" || v == "on" || v == "1";
         }
+        else if (setting == "app") {
+            std::string v = lower(value);
+            it->app = v == "yes" || v == "true" || v == "on" || v == "1";
+        }
         else if (setting == "enabled") {
             std::string v = lower(value);
             it->enabled = !(v == "no" || v == "false" || v == "off" || v == "0");
@@ -329,6 +333,9 @@ bool saveSources(const std::string& file, const std::vector<SourceConfig>& sourc
         }
         if (source.prerelease) {
             out << "sources." << source.name << ".prerelease = yes\n";
+        }
+        if (source.app) {
+            out << "sources." << source.name << ".app = yes\n";
         }
         out << "sources." << source.name << ".enabled = " << (source.enabled ? "yes" : "no") << "\n";
     }

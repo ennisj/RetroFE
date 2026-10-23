@@ -16,6 +16,7 @@
 #include "GitHub.h"
 #include "Http.h"
 #include "Index.h"
+#include "JsonFields.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
@@ -27,6 +28,7 @@
 
 namespace fs = std::filesystem;
 using nlohmann::json;
+namespace J = Catalog::JsonFields;
 
 namespace
 {
@@ -34,12 +36,6 @@ namespace
     {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return s;
-    }
-
-    std::string stringField(const json& object, const char* name)
-    {
-        auto it = object.find(name);
-        return it != object.end() && it->is_string() ? it->get<std::string>() : "";
     }
 
     bool readFile(const fs::path& path, std::string& content)
@@ -108,9 +104,11 @@ namespace
     std::vector<std::string> tokens(std::string name)
     {
         // Spellings of the architectures that would otherwise split apart
-        for (const auto& [from, to] : { std::pair<const char*, const char*>{ "x86_64", "x64" }, { "x86-64", "x64" } }) {
+        static const char* const spellings[][2] = { { "x86_64", "x64" }, { "x86-64", "x64" } };
+        for (const auto& spelling : spellings) {
+            const std::string from = spelling[0];
             size_t at;
-            while ((at = name.find(from)) != std::string::npos) name.replace(at, std::string(from).size(), to);
+            while ((at = name.find(from)) != std::string::npos) name.replace(at, from.size(), spelling[1]);
         }
         std::vector<std::string> result;
         std::string token;
@@ -170,10 +168,9 @@ namespace
         std::string text;
         if (!readFile(file, text)) return state;
         json document = json::parse(text, nullptr, false);
-        if (!document.is_object()) return state;
-        state.etag = document.value("etag", "");
-        state.checked = document.value("checked", int64_t{ 0 });
-        state.blockedUntil = document.value("blockedUntil", int64_t{ 0 });
+        state.etag = J::text(document, "etag");
+        state.checked = J::integer(document, "checked");
+        state.blockedUntil = J::integer(document, "blockedUntil");
         return state;
     }
 
@@ -262,20 +259,39 @@ int pickAsset(const std::vector<std::string>& names, const Platform& platform)
         std::string name = lower(names[i]);
         if (name.size() < 5 || name.compare(name.size() - 4, 4, ".zip") != 0) continue;
         bool os = false;
+        bool extra = false;
         std::string arch;
         for (const std::string& token : tokens(name.substr(0, name.size() - 4))) {
             if (osOf(token) == platform.os) os = true;
             std::string a = archOf(token);
             if (!a.empty() && (arch.empty() || a == platform.arch)) arch = a;
+            // Debug symbols and sources aren't the program
+            if (token == "symbols" || token == "pdb" || token == "debug" || token == "dbg" || token == "src" || token == "source") extra = true;
         }
-        if (!os || (!arch.empty() && arch != platform.arch)) continue;
+        if (!os || extra || (!arch.empty() && arch != platform.arch)) continue;
         int score = arch.empty() ? 1 : 2;   // naming this architecture beats naming none
-        if (score > bestScore) {
+        // Of equals, the plainest name: RetroFE-1-windows-x64.zip over RetroFE-1-windows-x64-portable.zip
+        if (score > bestScore || (score == bestScore && name.size() < names[best].size())) {
             best = static_cast<int>(i);
             bestScore = score;
         }
     }
     return best;
+}
+
+bool isOfficialRepository(const std::string& repo)
+{
+    return lower(repo) == lower(retrofeRepository);
+}
+
+std::string parseSha256File(const std::string& text)
+{
+    // "<hex>" or sha256sum's "<hex>  <file name>"
+    size_t start = text.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    std::string hex = lower(text.substr(start, text.find_first_of(" \t\r\n*", start) - start));
+    if (hex.rfind("sha256:", 0) == 0) hex = hex.substr(7);
+    return hex.size() == 64 && hex.find_first_not_of("0123456789abcdef") == std::string::npos ? hex : "";
 }
 
 bool parseReleases(const std::string& text, const SourceConfig& source, const Platform& platform,
@@ -287,33 +303,38 @@ bool parseReleases(const std::string& text, const SourceConfig& source, const Pl
         return false;
     }
     if (!document.is_array()) {
-        std::string message = document.is_object() ? stringField(document, "message") : "";
+        std::string message = J::text(document, "message");
         error = message.empty() ? "GitHub's answer isn't a list of releases" : "GitHub says: " + message;
         return false;
+    }
+    // RetroFE itself only from its own repository, unless the user said this one may offer it too
+    if (!isOfficialRepository(source.repo) && !source.app) {
+        warnings.push_back(source.repo + " isn't RetroFE's own repository (" + retrofeRepository
+                           + "), so its releases aren't offered as RetroFE. Add \"sources." + source.name
+                           + ".app = yes\" to catalog/sources.conf to allow it.");
+        return true;
     }
 
     bool found = false;
     Package best;
+    std::vector<std::string> otherTags;
     for (const json& release : document) {
         if (!release.is_object()) continue;
-        if (release.value("draft", false)) continue;
-        bool prerelease = release.value("prerelease", false);
-        if (prerelease && !source.prerelease) continue;
-        std::string tag = stringField(release, "tag_name");
+        if (J::flag(release, "draft")) continue;
+        if (J::flag(release, "prerelease") && !source.prerelease) continue;
+        std::string tag = J::text(release, "tag_name");
         std::string version = versionFromTag(tag);
         if (version.empty()) {
-            warnings.push_back("release " + tag + ": its tag isn't a version such as v2504.3");
+            otherTags.push_back(tag.empty() ? "(no tag)" : tag);
             continue;
         }
 
-        auto assets = release.find("assets");
-        if (assets == release.end() || !assets->is_array()) continue;
         std::vector<std::string> names;
         std::vector<const json*> entries;
-        for (const json& asset : *assets) {
+        for (const json& asset : J::list(release, "assets")) {
             // Assets still being uploaded aren't ready
-            if (!asset.is_object() || (asset.contains("state") && stringField(asset, "state") != "uploaded")) continue;
-            names.push_back(stringField(asset, "name"));
+            if (!asset.is_object() || (asset.contains("state") && J::text(asset, "state") != "uploaded")) continue;
+            names.push_back(J::text(asset, "name"));
             entries.push_back(&asset);
         }
         int pick = pickAsset(names, platform);
@@ -321,19 +342,23 @@ bool parseReleases(const std::string& text, const SourceConfig& source, const Pl
         const json& asset = *entries[pick];
 
         PackageFile file;
-        file.url = stringField(asset, "browser_download_url");
+        file.url = J::text(asset, "browser_download_url");
         if (!isUrl(file.url) || !isAllowedLocation(file.url)) {
             warnings.push_back("release " + tag + ": " + names[pick] + " has no https:// download address");
             continue;
         }
-        if (auto size = asset.find("size"); size != asset.end() && size->is_number_unsigned()) {
-            file.size = size->get<uint64_t>();
+        J::count(asset, "size", file.size);
+        std::string digest = J::text(asset, "digest");
+        if (lower(digest).rfind("sha256:", 0) == 0) {
+            file.sha256 = parseSha256File(digest);
         }
-        std::string digest = lower(stringField(asset, "digest"));
-        if (digest.rfind("sha256:", 0) == 0) {
-            std::string hex = digest.substr(7);
-            if (hex.size() == 64 && hex.find_first_not_of("0123456789abcdef") == std::string::npos) {
-                file.sha256 = hex;
+        if (file.sha256.empty()) {
+            // Without GitHub's digest, a <name>.sha256 next to it
+            for (size_t i = 0; i < names.size(); i++) {
+                std::string url = J::text(*entries[i], "browser_download_url");
+                if (lower(names[i]) == lower(names[pick] + ".sha256") && isUrl(url) && isAllowedLocation(url)) {
+                    file.sha256Url = url;
+                }
             }
         }
         file.target = "root";
@@ -343,13 +368,20 @@ bool parseReleases(const std::string& text, const SourceConfig& source, const Pl
         best = Package();
         best.source = source.name;
         best.id = appPackageId;
-        best.name = "RetroFE";
+        best.name = "RetroFE from " + source.repo;
         best.kind = "app";
         best.version = version;
-        best.description = describe(stringField(release, "body"));
+        best.description = describe(J::text(release, "body"));
         best.files = { file };
     }
 
+    if (!otherTags.empty()) {
+        std::string list;
+        for (size_t i = 0; i < otherTags.size() && i < 3; i++) list += (i ? ", " : "") + otherTags[i];
+        warnings.push_back(std::to_string(otherTags.size()) + (otherTags.size() == 1 ? " release has a tag" : " releases have tags")
+                           + " that isn't a version such as v2504.3, so " + (otherTags.size() == 1 ? "it's" : "they're")
+                           + " left out: " + list + (otherTags.size() > 3 ? "..." : ""));
+    }
     if (found) {
         packages.push_back(best);
     }
