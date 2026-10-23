@@ -36,13 +36,15 @@ class Image;
 //             keySpacing="6" keyImage="images/key.png" focusKeyImage="images/key_focus.png"
 //             backgroundColor="0d1014" backgroundAlpha="1"/>
 //
-// Arrows move between keys, Select presses one, Back cancels.
+// Arrows move between keys, Select presses one, Back cancels. For a
+// multi-line field it has a New line key and a row of cursor keys.
 class KeyboardWidget : public Component
 {
 public:
-    enum class Result { None, Done, Cancel };
+    // LineUp / LineDown: the owner moves the cursor a line as the field draws it
+    enum class Result { None, Done, Cancel, LineUp, LineDown };
 
-    enum class Action { Insert, Shift, Space, Delete, Done };
+    enum class Action { Insert, Shift, Space, Delete, Done, NewLine, CursorLeft, CursorRight, LineUp, LineDown };
     struct Key
     {
         std::string label;
@@ -68,8 +70,9 @@ public:
 
     void setStyle(const Style& style) { style_ = style; }
 
-    // Types into text until detached. numeric shows a number pad.
-    void attach(std::string* text, const std::string& title, bool numeric);
+    // Types into text, at its cursor, until detached. numeric shows a number
+    // pad; multiline adds a New line key and cursor keys.
+    void attach(Forms::TextEdit* text, const std::string& title, bool numeric, bool multiline = false);
     void detach();
 
     Result navigate(FormWidget::Nav nav);
@@ -86,9 +89,10 @@ private:
 
     WidgetPainter painter_;
     Style style_;
-    std::string* text_ = nullptr;
+    Forms::TextEdit* text_ = nullptr;
     std::string title_;
     bool numeric_ = false;
+    bool multiline_ = false;
     bool shift_ = false;
     int row_ = 1;
     int column_ = 0;

@@ -487,16 +487,20 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	// Step 2: Retrieve executable, extensions, and directory
 	std::string executablePath, selectedItemsDirectory, selectedItemsPath, extensionstr, matchedExtension, args;
 
+	failure_.clear();
 	if (!launcherExecutable(executablePath, launcherName)) {
 		LOG_ERROR("Launcher", "Launcher executable not found for: " + launcherName);
+		failure_ = "It couldn't start: there's no launcher called " + launcherName + " with a program.";
 		return false;
 	}
 	if (!extensions(extensionstr, collection)) {
 		LOG_ERROR("Launcher", "No file extensions configured for collection: " + collection);
+		failure_ = "It couldn't start: " + collection + " has no list.extensions.";
 		return false;
 	}
 	if (!collectionDirectory(selectedItemsDirectory, collection)) {
 		LOG_ERROR("Launcher", "No valid directory found for collection: " + collection);
+		failure_ = "It couldn't start: " + collection + " has no games folder.";
 		return false;
 	}
 
@@ -537,6 +541,7 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	// Step 6: Execute the command
 	if (!execute(executablePath, args, currentDirectory, true, currentPage, isAttractMode, collectionItem)) {
 		LOG_ERROR("Launcher", "Execution failed for: " + executablePath);
+		failure_ = "It didn't start, or ended with an error: " + executablePath + " (see log.txt).";
 		return false;
 	}
 
@@ -692,6 +697,10 @@ bool Launcher::simpleExecute(std::string executable, std::string args, std::stri
 bool Launcher::execute(std::string executable, std::string args, std::string currentDirectory, bool wait, Page* currentPage, bool isAttractMode, Item* collectionItem) {
 	bool retVal = false;
 	std::string executionString = "\"" + executable + "\" " + args;
+	// The game's controls (ServoStik): the item launched, which a page launch has
+	// selected and Manage's "Start this game" doesn't
+	const std::string ctrlType = collectionItem ? collectionItem->ctrlType
+		: (currentPage && currentPage->getSelectedItem() ? currentPage->getSelectedItem()->ctrlType : std::string());
 
 	LOG_INFO("Launcher", "Attempting to launch: " + executionString);
 	LOG_INFO("Launcher", "     from within folder: " + currentDirectory);
@@ -868,7 +877,7 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 		bool is4waySet = false;
 		bool isServoStikEnabled = false;
 		config_.getProperty(OPTION_SERVOSTIKENABLED, isServoStikEnabled);
-		if (currentPage->getSelectedItem()->ctrlType.find("4") != std::string::npos && isServoStikEnabled) {
+		if (ctrlType.find("4") != std::string::npos && isServoStikEnabled) {
 			if (!PacSetServoStik4Way()) {
 				LOG_ERROR("RetroFE", "Failed to set ServoStik to 4-way mode");
 			}
@@ -1259,7 +1268,7 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 
 					// Use kill with signal 0 to check if process is running
 					if (kill(pid, 0) == 0) {  // Process is running
-						if (currentPage->getSelectedItem()->ctrlType.find("4") != std::string::npos) {
+						if (ctrlType.find("4") != std::string::npos) {
 							if (!SetServoStik4Way()) {
 								LOG_ERROR("RetroFE", "Failed to set ServoStik to 4-way mode");
 							}
@@ -1294,7 +1303,7 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 					LOG_INFO("Launcher", "User input detected. Stopping attract mode timer.");
 
 					// Perform ServoStik check if necessary
-					if (currentPage->getSelectedItem()->ctrlType.find("4") != std::string::npos && isServoStikEnabled) {
+					if (ctrlType.find("4") != std::string::npos && isServoStikEnabled) {
 						if (!SetServoStik4Way()) {
 							LOG_ERROR("RetroFE", "Failed to set ServoStik to 4-way mode");
 						}

@@ -199,6 +199,17 @@ Things to know:
   arrives on every keystroke, on a real or the on-screen keyboard. Cancelling
   the edit sets the old text back. Other text fields only `set()` when the
   edit is kept.
+- **Multi-line text** is `<text bind="game:story:text" multiline="yes" rows="8"/>`
+  (an attribute rather than a new element, so it's a text field in every
+  other way: `live`, `hint`, `status`, `help`, `enabledWhen`). `get()`
+  returns the lines joined with `"\n"` and `set()` gets them back the same
+  way, never `"\r\n"`: the provider decides the file's line endings when it
+  writes (the Games story keeps each line's original ending; see
+  `GameProvider::textToStory`). The page draws `rows` wrapped lines, ending in
+  "..." when there's more; while editing, it scrolls to the cursor. The
+  layout and cursor logic is `Forms::layoutLines`, `Forms::TextEdit` and
+  friends in `Forms/Form.h`, and is unit-tested (`Tests/TextEditTests.cpp`).
+  ImGui draws it with `InputTextMultiline`.
 - **Pictures**: a row's `image` (thumbnail) and an `image` field's value are
   absolute paths; return "" for missing media. Files are loaded at the size
   they're drawn at, a couple of new thumbnails per frame, the least recently
@@ -235,8 +246,21 @@ Things to know:
   user closes the manager, so they can keep working. `Result::reload`
   instead closes the manager and reloads straight away; Settings' Save and
   Add a system use that, because the user expects to see the result at once.
+- **Starting a game**: `services.requestLaunch(system, game)` from an action
+  (Games' `game.launch`); check `services.launchProblem()` in
+  `actionProblem` first: it refuses while a reload is due and a Catalog
+  install is running (RetroFE can't reload then, and a game starting minutes
+  later would be a surprise). After the action succeeds the manager closes,
+  asking `leaving()` like Close does: if a screen objects, nothing starts and
+  its warning shows; running the same action again leaves the changes and
+  starts the game. RetroFE reloads first when changes are pending (the
+  request is kept across that reload and dropped by any other shutdown),
+  launches the game as its system's page would, and opens Manage > Games >
+  that game again afterwards, with "Back from ..." or why it couldn't start
+  (`Launcher::failure()`). The rules are `Manager/LaunchQueue.h`, tested in
+  `GamesTests.cpp`. Both are null in tests unless a test sets them.
 - `Manager::Services` (`Provider.h`) is what providers can use: the
-  configuration, the Catalog, `requestReload`, and the shared library:
+  configuration, the Catalog, `requestReload`, `requestLaunch`, and the shared library:
   `library` (one `Library::Indexer` for every section, rebuilt each time the
   manager opens) and `editor` (the `Library::Editor` all writes go through).
   After a write, call `library->changed("what")`; when the manager closes with
