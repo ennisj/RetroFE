@@ -85,6 +85,11 @@ namespace ThemeEditor
     // Second-screen pages aren't written yet (a warning says so).
     SavePlan buildSavePlan(const ThemeProject& p, const WidgetLibrary& lib, const SaveInputs& inputs);
 
+    // The splash page a theme gets when it has none of its own: the theme's
+    // name, centred (a Static Text with id theme_name). False without the
+    // static_text widget.
+    bool defaultSplashPage(const ThemeProject& p, const WidgetLibrary& lib, ThemePage& out);
+
     // Is `rel` a position a page is saved to: layout.xml, splash.xml or
     // collections/<one folder>/layout/layout.xml? (layout1.xml too: One
     // Saucier's second screens, so stale ones are cleaned up.)

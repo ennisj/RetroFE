@@ -112,6 +112,21 @@ namespace ThemeEditor
     bool importAsset(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
                      std::string& relOut, std::string& error);
 
+    // importAsset into another folder of the theme (e.g. "fonts"). A file
+    // that's already inside the theme folder isn't copied: relOut is its
+    // path in the theme as it is.
+    bool importFile(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
+                    const std::string& subfolder, std::string& relOut, std::string& error);
+
+    // The files in a folder of the theme whose extension (lower case, with
+    // the dot) is listed, as theme paths ("fonts/x.ttf"), sorted
+    std::vector<std::string> themeFiles(const std::string& layoutsRoot, const std::string& folder,
+                                        const std::string& subfolder, const std::vector<std::string>& extensions);
+
+    // Is there a page somebody wrote by hand (no marker) at
+    // collections/<collection>/layout/layout.xml? Saving never overwrites one.
+    bool handMadeCollectionPage(const std::string& layoutsRoot, const std::string& folder, const std::string& collection);
+
     // The *.widget files in a folder (for overlayWidgetFiles), sorted
     WidgetFiles readWidgetFolder(const std::string& dir);
 

@@ -27,7 +27,8 @@
 //   - an attribute PageBuilder doesn't read on that element
 //   - a required attribute PageBuilder logs an error for (image src, text
 //     value, reloadable type, type="file" location, sound src/type, ...)
-//   - a <menu> without <itemDefaults> (PageBuilder dereferences it)
+//   - a <menu> without <itemDefaults> (PageBuilder gives it empty ones, so
+//     its items have no size)
 //   - a mode value PageBuilder doesn't recognise for that element
 //   - an animation set without duration, an animate without type, with an
 //     unknown tween type, or without "to"
@@ -54,8 +55,9 @@ namespace ThemeEditor
     std::string layoutParseError(const std::string& xml);
 
     // Why this page mustn't be handed to PageBuilder at all: it doesn't
-    // parse, or something in it makes PageBuilder crash (a <menu> without
-    // <itemDefaults>). "" when it's safe to build.
+    // parse (layoutParseError). A <menu> without <itemDefaults> used to
+    // crash PageBuilder and was refused here; PageBuilder now gives it empty
+    // defaults. "" when it's safe to build.
     std::string layoutBuildBlocker(const std::string& xml);
 
     // The names the check accepts, for the drift test

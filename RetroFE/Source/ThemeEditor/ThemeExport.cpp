@@ -65,6 +65,27 @@ namespace ThemeEditor
         }
     }
 
+    bool defaultSplashPage(const ThemeProject& p, const WidgetLibrary& lib, ThemePage& out)
+    {
+        const WidgetDef* text = lib.find("static_text");
+        if (!text) return false;
+        out = ThemePage();
+        out.collection = ThemeProject::splashPage();
+        WidgetInstance name;
+        name.def = text->id;
+        name.id = "theme_name";
+        name.name = "Theme Name";
+        name.w = p.canvasW() * 3 / 4;
+        name.h = std::max(40, p.canvasH() / 12);
+        name.x = (p.canvasW() - name.w) / 2;
+        name.y = (p.canvasH() - name.h) / 2;
+        name.layer = 1;
+        name.setVar("VALUE", p.name);
+        name.setVar("CENTER", "true");
+        out.widgets.push_back(name);
+        return true;
+    }
+
     SavePlan buildSavePlan(const ThemeProject& p, const WidgetLibrary& lib, const SaveInputs& inputs)
     {
         SavePlan plan;
@@ -123,25 +144,11 @@ namespace ThemeEditor
 
         // RetroFE won't start on a layout without splash.xml: one with the theme's name
         if (inputs.splashFallback && !p.page(ThemeProject::splashPage()) && plan.errors.empty()) {
-            const WidgetDef* text = lib.find("static_text");
-            if (!text) {
+            ThemePage splash;
+            if (!defaultSplashPage(p, lib, splash)) {
                 plan.warnings.push_back("the theme has no splash page, and RetroFE won't start on it without one");
             }
             else {
-                ThemePage splash;
-                splash.collection = ThemeProject::splashPage();
-                WidgetInstance name;
-                name.def = text->id;
-                name.id = "theme_name";
-                name.name = "Theme Name";
-                name.w = p.canvasW() * 3 / 4;
-                name.h = std::max(40, p.canvasH() / 12);
-                name.x = (p.canvasW() - name.w) / 2;
-                name.y = (p.canvasH() - name.h) / 2;
-                name.layer = 1;
-                name.setVar("VALUE", p.name);
-                name.setVar("CENTER", "true");
-                splash.widgets.push_back(name);
                 GenResult r = generateLayoutXml(p, splash, lib, opt);
                 if (r.ok()) {
                     addPage("splash.xml", "Splash", r.xml);

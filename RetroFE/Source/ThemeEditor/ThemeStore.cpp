@@ -426,7 +426,39 @@ namespace ThemeEditor
     bool importAsset(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
                      std::string& relOut, std::string& error)
     {
+        return importFile(layoutsRoot, folder, sourcePath, ASSETS_FOLDER, relOut, error);
+    }
+
+    std::vector<std::string> themeFiles(const std::string& layoutsRoot, const std::string& folder,
+                                        const std::string& subfolder, const std::vector<std::string>& extensions)
+    {
+        std::vector<std::string> out;
+        if (!themeFolderValid(folder)) return out;
+        std::error_code ec;
+        for (fs::directory_iterator it(fs::path(layoutsRoot) / folder / subfolder, ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code fec;
+            if (!it->is_regular_file(fec)) continue;
+            const std::string ext = lower(it->path().extension().string());
+            if (std::find(extensions.begin(), extensions.end(), ext) == extensions.end()) continue;
+            out.push_back(subfolder + "/" + it->path().filename().string());
+        }
+        std::sort(out.begin(), out.end());
+        return out;
+    }
+
+    bool handMadeCollectionPage(const std::string& layoutsRoot, const std::string& folder, const std::string& collection)
+    {
+        if (!themeFolderValid(folder) || !themeFolderValid(collection)) return false;
+        const fs::path page = fs::path(layoutsRoot) / folder / "collections" / collection / "layout" / "layout.xml";
+        std::error_code ec;
+        return fs::exists(page, ec) && !isEditorMarker(firstLine(page));
+    }
+
+    bool importFile(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
+                    const std::string& subfolder, std::string& relOut, std::string& error)
+    {
         relOut.clear();
+        if (!themeFolderValid(subfolder)) { error = "invalid folder '" + subfolder + "'"; return false; }
         if (!themeFolderValid(folder)) { error = "invalid theme folder '" + folder + "'"; return false; }
         const ThemeFolderKind kind = probeTheme(layoutsRoot, folder);
         if (kind == TF_FOREIGN) {
@@ -440,7 +472,18 @@ namespace ThemeEditor
         std::error_code ec;
         const fs::path src(sourcePath);
         if (!fs::is_regular_file(src, ec)) { error = "not a readable file: " + sourcePath; return false; }
-        const fs::path dir = fs::path(layoutsRoot) / folder / ASSETS_FOLDER;
+        {
+            // Already part of the theme: pages refer to it where it is
+            std::error_code cec;
+            const fs::path theme = fs::weakly_canonical(fs::path(layoutsRoot) / folder, cec);
+            const fs::path file = fs::weakly_canonical(src, cec);
+            const fs::path rel = cec ? fs::path() : file.lexically_relative(theme);
+            if (!rel.empty() && rel.begin()->string() != ".." && rel.begin()->string() != "." && !rel.is_absolute()) {
+                relOut = rel.generic_string();
+                return true;
+            }
+        }
+        const fs::path dir = fs::path(layoutsRoot) / folder / subfolder;
         fs::create_directories(dir, ec);
         const std::string base = safeFileName(src.filename().string());
         const size_t dot = base.find_last_of('.');
@@ -465,7 +508,7 @@ namespace ThemeEditor
             if (sameContent(src, dst)) break;   // the same file: reuse it
             name = stem + "-" + std::to_string(n) + ext;
         }
-        relOut = std::string(ASSETS_FOLDER) + "/" + name;
+        relOut = subfolder + "/" + name;
         return true;
     }
 

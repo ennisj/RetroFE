@@ -19,6 +19,7 @@
 #include "../../../ThemeEditor/EditorScript.h"
 #include "../../../ThemeEditor/EditorSession.h"
 #include <SDL2/SDL.h>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -28,6 +29,7 @@ class CollectionInfo;
 class Configuration;
 class FontCache;
 class Page;
+namespace Library { class Indexer; }
 
 // The theme editor: an ImGui screen inside the manager, opened by the Edit
 // action on a theme made with the editor (form "theme-editor", param id =
@@ -63,6 +65,9 @@ public:
         std::function<CollectionInfo*(const std::string&)> loadCollection;
         std::function<std::string()> currentCollection;
         std::function<void()> requestReload;
+        // The shared library index (Services::library): the menu tree the
+        // template coverage is shown on. May be null.
+        Library::Indexer* library = nullptr;
     };
 
     ThemeEditorScreen(const Context& context, const std::string& folder);
@@ -81,7 +86,39 @@ public:
     void shutdown() override;
 
 private:
-    enum class Job { None, Save, SaveAndClose, Use, PickFile };
+    enum class Job { None, Save, SaveAndClose, Use, NativePick, Import };
+
+    // What a chosen file is for
+    enum class FileFor { WidgetVar, Font, Sound, SplashBackground };
+    struct FileRequest
+    {
+        FileFor what = FileFor::WidgetVar;
+        std::string key;        // the var's token, or the sound's kind
+        int page = -1;          // the widget's page and id (the selection may change)
+        std::string widgetId;
+        std::string filter;     // image, video, text, font, sound, "" = any
+        std::string title;
+        std::string note;       // what happens without a file
+    };
+    // The file browser (ImGui, inside the RetroFE folder)
+    struct Browser
+    {
+        bool show = false, open = false;
+        FileRequest request;
+        std::filesystem::path dir;
+        bool listed = false;
+        std::vector<std::pair<std::string, bool>> entries;   // name, is a folder
+        std::string selected;
+    };
+    // A collection in the menu tree, as the Collections list shows it
+    struct TreeRow
+    {
+        std::string name;
+        int depth = 0;
+        bool menu = false;
+        bool children = false;
+        std::string otherLayout;   // collections.<c>.layout names another theme
+    };
 
     void rebuildPreview();
     void destroyPreview();
@@ -90,12 +127,30 @@ private:
     void runJob();
     bool save();
     void use();
-    void pickFile();
+    void pickNative();
+    bool importChosen(const std::string& path, const FileRequest& request);
+    void openBrowser(const FileRequest& request);
+    FileRequest varRequest(const std::string& token) const;
+    void askForFiles();
+    void refreshTree();
+    void refreshFonts();
+    std::vector<std::string> descendants(const std::string& collection) const;
+    std::string pageNameFor(const std::string& collection, bool menu) const;
+    void openTemplateDialog(const std::string& collection, bool create, const std::string& basedOn);
     void runScript();
     bool runCommand(const ThemeEditor::EditorCommand& command, std::string& note);
 
     void drawToolbar();
     void drawThemePanel();
+    void drawThemeProperties();
+    void drawSplash();
+    void drawPages();
+    void drawCollections();
+    void drawFileRow(const char* label, const std::string& value, const FileRequest& request,
+                     const std::function<void()>& clear);
+    void drawBrowser();
+    void drawTemplateDialog();
+    void drawDeleteTemplate();
     void drawCanvas();
     void drawProperties();
     void drawVar(const ThemeEditor::WidgetVar& var);
@@ -136,7 +191,32 @@ private:
 
     // Work queued from draw() for update()
     Job job_ = Job::None;
-    std::string jobToken_;
+    FileRequest jobRequest_;
+    std::string jobPath_;
+
+    // Files
+    Browser browser_;
+    std::filesystem::path lastBrowseDir_;
+    std::vector<std::string> fonts_;   // the theme's fonts/*.ttf|otf
+    bool fontsListed_ = false;
+
+    // Collections and templates
+    std::vector<TreeRow> tree_;
+    unsigned treeGeneration_ = 0;
+    bool treeFromIndex_ = false;
+    std::string treeFilter_;
+    std::string chosenCollection_;          // picked in the Collections list
+    bool showTemplate_ = false, templateOpen_ = false;
+    std::string tplCollection_;             // "" = choose one in the dialog
+    bool tplFixedCollection_ = false;
+    int tplChoice_ = 0;                     // 0 = a new template, 1 = Default, 2.. = templates()[n - 2]
+    std::string tplName_;
+    std::string tplBasedOn_;                // "" = Default, EditorSession::BLANK, or a template
+    bool tplCascade_ = false;
+    std::string tplFilter_;
+    bool showDeleteTpl_ = false, deleteTplOpen_ = false;
+    std::string delPrimary_;
+    std::string delReplacement_;
 
     std::string status_;
     bool statusIsError_ = false;

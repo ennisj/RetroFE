@@ -116,6 +116,61 @@ namespace ThemeEditor
         // Theme properties
         bool setThemeName(const std::string& name);
         bool setVertical(bool vertical);   // reflows every page
+        // A font in the theme ("fonts/x.ttf"); "" = the bundled Roboto
+        bool setThemeFont(const std::string& rel);
+        // kind: load, unload, highlight or select; rel "" = none
+        bool setSound(const std::string& kind, const std::string& rel);
+        std::string sound(const std::string& kind) const;
+
+        // The splash page (RetroFE shows it while it starts). Without one,
+        // saving writes a page with the theme's name. Setting its text or
+        // background makes one (the name, centred) if there's none yet.
+        bool hasSplashPage() const;
+        bool makeSplashPage();
+        std::string splashText() const;        // its first Static Text; the theme's name without a page
+        std::string splashBackground() const;  // its background file, "" = none
+        bool setSplashText(const std::string& text);
+        // An image or a video (by extension) filling the page, under the
+        // text; "" removes it
+        bool setSplashBackground(const std::string& rel);
+
+        // Collection templates. A template is a page for named collections
+        // (ThemePage: its primary collection plus members); every collection
+        // not named uses the Default page (or, for menus of collections, the
+        // "_menu" template when there is one: pageShownFor).
+        static const char* const BLANK;   // basedOn: an empty page
+        // Why a template can't be made for a collection with this name; ""
+        // when it can. The collection must be a safe folder name and mustn't
+        // have a page written by hand in the theme.
+        std::string templateProblem(const std::string& collection, const std::string& name) const;
+        // A new template for `collection`, a copy of basedOn ("" = the
+        // Default page, BLANK, or a template's primary), which becomes the
+        // page being edited. The collection leaves the template it used.
+        // alsoFor: more collections that join it (e.g. the ones under a
+        // menu), in the same undo step; ones that can't are skipped.
+        bool newTemplate(const std::string& collection, const std::string& name, const std::string& basedOn,
+                         const std::vector<std::string>& alsoFor = {});
+        // Puts a collection on a template (by primary; "" = the Default page)
+        bool assignTemplate(const std::string& collection, const std::string& primary);
+        // Several at once, one undo step. `skipped` counts the ones that
+        // can't join (a page written by hand, a name that can't be a folder).
+        bool assignTemplate(const std::vector<std::string>& collections, const std::string& primary, int* skipped = nullptr);
+        // The template that moving `collection` off its page would delete
+        // (it's that template's only collection), else ""
+        std::string removesTemplate(const std::string& collection) const;
+        // Deletes a template; its collections move to replacement ("" = Default)
+        bool deleteTemplate(const std::string& primary, const std::string& replacement);
+        bool renameTemplate(const std::string& primary, const std::string& name);
+        // The templates' primaries, in page order
+        std::vector<std::string> templates() const;
+        // Is collections/<c>/layout/layout.xml in the theme a page written by hand?
+        bool handMadePage(const std::string& collection) const;
+
+        // The selected widget's file settings (images, videos, text files)
+        // whose file isn't in the theme folder: what to ask for after placing it
+        std::vector<std::string> missingFiles() const;
+        // Is there a file at this path in the theme folder?
+        bool themeHasFile(const std::string& rel) const;
 
         // Consecutive edits with the same key (typing in a field, dragging a
         // slider) are one undo step; any other change starts a new one
@@ -169,6 +224,11 @@ namespace ThemeEditor
         Snapshot snapshot() const;
         void restore(const Snapshot& s);
         void clampSelection();
+        // After pages were added or removed: the splash page goes last, and
+        // the page being edited is found again (by a collection it covered)
+        void pagesChanged(const std::vector<std::string>& covered, const std::string& goTo);
+        std::vector<std::string> coveredByCurrent() const;
+        WidgetInstance* splashWidget(const std::string& def);
 
         const WidgetLibrary* lib_ = nullptr;
         std::string layoutsRoot_;

@@ -16,6 +16,7 @@
 
 #include "PageBuilder.h"
 #include "LayoutPages.h"
+#include "MenuXml.h"
 #include "Page.h"
 #include "ViewInfo.h"
 #include "Component/Container.h"
@@ -1267,7 +1268,9 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 	std::string imageType = "null";
 	std::string videoType = "null";
 	std::map<int, xml_node<>*> overrideItems;
-	xml_node<>* itemDefaults = menuXml->first_node("itemDefaults");
+	// A menu without <itemDefaults> gets an empty one: everything below reads it
+	bool noItemDefaults = false;
+	xml_node<>* itemDefaults = MenuXml::itemDefaults(menuXml, &noItemDefaults);
 	xml_attribute<> const* modeXml = menuXml->first_attribute("mode");
 	xml_attribute<> const* imageTypeXml = menuXml->first_attribute("imageType");
 	xml_attribute<> const* videoTypeXml = menuXml->first_attribute("videoType");
@@ -1290,9 +1293,8 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 		menuType = menuTypeXml->value();
 	}
 
-	// ensure <menu> has an <itemDefaults> tag
-	if (!itemDefaults) {
-		LOG_WARNING("Layout", "Menu tag is missing <itemDefaults> tag.");
+	if (noItemDefaults) {
+		LOG_WARNING("Layout", "Menu tag is missing <itemDefaults> tag; using empty defaults.");
 	}
 
 	bool playlistType = false;
@@ -1512,7 +1514,11 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		int itemSpacing = itemSpacingXml ? Utils::convertInt(itemSpacingXml->value()) : 0;
 		float nextHeight = height + viewInfo->Height + itemSpacing;
 
-		if (nextHeight >= menu->baseViewInfo.Height) {
+		// Also ends a menu whose items have no height (it would never fill)
+		if (MenuXml::verticalMenuFull(height, nextHeight, menu->baseViewInfo.Height)) {
+			if (nextHeight <= height && nextHeight < menu->baseViewInfo.Height) {
+				LOG_WARNING("Layout", "Menu items have no height, so the vertical menu gets one item; give <itemDefaults> a height.");
+			}
 			end = true;
 		}
 
