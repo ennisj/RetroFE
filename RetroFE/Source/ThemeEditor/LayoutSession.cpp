@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <set>
@@ -51,6 +52,19 @@ namespace ThemeEditor
             return true;
         }
 
+        // A position as written: "960", "-20", "1012.5"
+        std::string numberText(float v)
+        {
+            const float whole = std::round(v);
+            if (std::fabs(v - whole) < 0.005f) return std::to_string(static_cast<long>(whole));
+            char buffer[32];
+            std::snprintf(buffer, sizeof(buffer), "%.2f", v);
+            std::string s = buffer;
+            while (!s.empty() && s.back() == '0') s.pop_back();
+            if (!s.empty() && s.back() == '.') s.pop_back();
+            return s;
+        }
+
         std::string firstLine(const std::string& text)
         {
             size_t nl = text.find('\n');
@@ -72,6 +86,112 @@ namespace ThemeEditor
         {
             return name.size() > 2 && name[0] == 'o' && name[1] == 'n' && std::isupper(static_cast<unsigned char>(name[2]));
         }
+    }
+
+    // ---- boxes from the engine -----------------------------------------------
+
+    ElementGeom geometryOf(const LayoutDoc& doc, const TracedView& v, int order)
+    {
+        ElementGeom g;
+        g.x = v.x;
+        g.y = v.y;
+        g.xOffset = v.xOffset;
+        g.yOffset = v.yOffset;
+        g.xOrigin = v.xOrigin;
+        g.yOrigin = v.yOrigin;
+        g.layer = v.layer;
+        g.order = order;
+        float w = v.scaledW;
+        float h = v.scaledH;
+        if (!(std::isfinite(w) && std::isfinite(h) && w > 0.0f && h > 0.0f)) {
+            // Not known until it draws (text without a width, art not loaded yet): what the layout says, else a guess
+            g.approximate = true;
+            float fh = v.height > 0 ? v.height : (v.maxHeight > 0 ? v.maxHeight : (v.fontSize > 0 ? v.fontSize : 0.0f));
+            float fw = v.width > 0 ? v.width : (v.maxWidth > 0 ? v.maxWidth : 0.0f);
+            if (fw <= 0) {
+                int el = doc.find(v.path);
+                size_t chars = el >= 0 ? doc.elements[el].value("value").size() : 0;
+                fw = chars > 0 && fh > 0 ? static_cast<float>(chars) * fh * 0.5f : (fh > 0 ? fh * 6.0f : 64.0f);
+            }
+            if (fh <= 0) fh = std::min(fw, 64.0f);
+            w = fw;
+            h = fh;
+        }
+        g.w = w;
+        g.h = h;
+        return g;
+    }
+
+    namespace
+    {
+        DragRect rectOf(const ElementGeom& g)
+        {
+            DragRect r;
+            r.x = g.left();
+            r.y = g.top();
+            r.w = std::max(1, roundDelta(g.w));
+            r.h = std::max(1, roundDelta(g.h));
+            return r;
+        }
+    }
+
+    PageBoxes pageBoxes(const LayoutDoc& doc, const std::vector<TracedView>& views)
+    {
+        PageBoxes out;
+        // Menus whose slots are generated from their settings (vertical menus)
+        std::set<const void*> generated;
+        for (const TracedView& v : views) {
+            if (v.slot) continue;
+            int el = doc.find(v.path);
+            if (el >= 0 && doc.elements[el].name == "menu" && doc.elements[el].value("type") != "custom") generated.insert(v.component);
+        }
+        for (size_t i = 0; i < views.size(); ++i) {
+            const TracedView& v = views[i];
+            std::string path = v.path;
+            int el = doc.find(path);
+            if (el < 0 && v.slot) {
+                // Built from a node that isn't in the text (the empty <itemDefaults> a menu without one gets): its menu's
+                size_t slash = path.rfind('/');
+                path = slash == std::string::npos ? std::string() : path.substr(0, slash);
+                el = path.empty() ? -1 : doc.find(path);
+            }
+            if (el <= 0) continue;
+            ElementGeom g = geometryOf(doc, v, static_cast<int>(i));
+            g.readOnly = v.slot && generated.count(v.component) > 0;
+            if (out.geometry.count(path)) {
+                out.extra.emplace_back(path, rectOf(g));
+                continue;
+            }
+            out.geometry[path] = g;
+        }
+        // A menu without a size of its own: the box around its slots, to select it by (not to drag)
+        for (const TracedView& v : views) {
+            if (v.slot) continue;
+            auto it = out.geometry.find(v.path);
+            if (it == out.geometry.end() || !it->second.approximate || doc.find(v.path) < 0 ||
+                doc.elements[doc.find(v.path)].name != "menu") {
+                continue;
+            }
+            bool any = false;
+            DragRect around;
+            for (size_t i = 0; i < views.size(); ++i) {
+                if (!views[i].slot || views[i].component != v.component) continue;
+                DragRect r = rectOf(geometryOf(doc, views[i], static_cast<int>(i)));
+                if (!any) { around = r; any = true; continue; }
+                const int x2 = std::max(around.x + around.w, r.x + r.w);
+                const int y2 = std::max(around.y + around.h, r.y + r.h);
+                around.x = std::min(around.x, r.x);
+                around.y = std::min(around.y, r.y);
+                around.w = x2 - around.x;
+                around.h = y2 - around.y;
+            }
+            if (!any) continue;
+            it->second.around = true;
+            it->second.aroundBox = around;
+            it->second.readOnly = true;
+            it->second.order = -1;   // under its slots
+        }
+        return out;
     }
 
     // ---- pages ---------------------------------------------------------------
@@ -201,8 +321,10 @@ namespace ThemeEditor
         }
         doc_ = std::move(next);
         if (!samePaths) {
-            // Elements came or went: the boxes are found again by the next build
+            // Elements came or went: the boxes are found again by the next build,
+            // and what was hidden by path may be another element now
             geom_.clear();
+            hidden_.clear();
             structure_++;
         }
         return true;
@@ -307,6 +429,7 @@ namespace ThemeEditor
         DragRect r;
         const ElementGeom* g = geometry(i);
         if (!g) return r;
+        if (g->around) return g->aroundBox;
         r.x = g->left();
         r.y = g->top();
         r.w = std::max(1, roundDelta(g->w));
@@ -535,24 +658,36 @@ namespace ThemeEditor
         // Which attribute positions it on each axis: its own x, else its own xOffset, else a new x
         const bool byXOffset = !el.has("x") && el.has("xOffset");
         const bool byYOffset = !el.has("y") && el.has("yOffset");
+        // The exact edges before the change (a centred box of odd width sits on a half unit)
+        const float leftBefore = g.exactLeft();
+        const float topBefore = g.exactTop();
         auto place = [&](bool horizontal) {
             const bool byOffset = horizontal ? byXOffset : byYOffset;
-            const float base = horizontal ? (byOffset ? g.x : g.xOffset) : (byOffset ? g.y : g.yOffset);
-            const float origin = horizontal ? g.xOrigin : g.yOrigin;
-            const float size = static_cast<float>(horizontal ? (resize ? to.w : g.w) : (resize ? to.h : g.h));
-            const float edge = static_cast<float>(horizontal ? to.x : to.y);
-            // left = x + xOffset - xOrigin * w, solved for the attribute that moves
-            const float wanted = edge - base + origin * size;
             float& current = horizontal ? (byOffset ? g.xOffset : g.x) : (byOffset ? g.yOffset : g.y);
-            const int rounded = roundDelta(wanted);
-            if (rounded == roundDelta(current)) return;
+            const float moved = static_cast<float>(horizontal ? to.x - from.x : to.y - from.y);
+            float wanted = current + moved;
+            if (resize) {
+                // The moved edge, exactly: left = x + xOffset - xOrigin * w, solved for the attribute that moves
+                const float base = horizontal ? (byOffset ? g.x : g.xOffset) : (byOffset ? g.y : g.yOffset);
+                const float origin = horizontal ? g.xOrigin : g.yOrigin;
+                const float size = horizontal ? g.w : g.h;
+                // A dragged edge goes where it was dropped (on the grid); one that wasn't stays exactly put
+                const float edge = moved != 0.0f ? static_cast<float>(horizontal ? to.x : to.y) : (horizontal ? leftBefore : topBefore);
+                wanted = edge - base + origin * size;
+            }
+            wanted = std::round(wanted * 100.0f) / 100.0f;
+            if (std::fabs(wanted - current) < 0.005f) return;
             const std::string name = horizontal ? (byOffset ? "xOffset" : "x") : (byOffset ? "yOffset" : "y");
-            writes.emplace_back(name, std::to_string(rounded));
-            current = static_cast<float>(rounded);
+            writes.emplace_back(name, numberText(wanted));
+            current = wanted;
         };
         if (resize) {
-            if (to.w != from.w) { writes.emplace_back("width", std::to_string(to.w)); g.w = static_cast<float>(to.w); }
-            if (to.h != from.h) { writes.emplace_back("height", std::to_string(to.h)); g.h = static_cast<float>(to.h); }
+            const float oldW = g.w, oldH = g.h;
+            if (to.w != from.w) { writes.emplace_back("width", std::to_string(to.w)); }
+            if (to.h != from.h) { writes.emplace_back("height", std::to_string(to.h)); }
+            // An untouched size keeps its exact value for the edge maths
+            g.w = to.w != from.w ? static_cast<float>(to.w) : oldW;
+            g.h = to.h != from.h ? static_cast<float>(to.h) : oldH;
             place(true);
             place(false);
         }
@@ -664,6 +799,12 @@ namespace ThemeEditor
             return false;
         }
         if (!dirty()) return true;
+        // Never write a page RetroFE couldn't read (an edit can't make one, but this is the last gate)
+        const std::string unreadable = layoutParseError(doc_.text);
+        if (!unreadable.empty()) {
+            error = "The page as edited isn't one RetroFE can read (" + unreadable + "), so it isn't written.";
+            return false;
+        }
         Library::Backups backups(root_);
         if (!backups.beforeChange(file(), error)) return false;
         if (!Library::writeFileAtomic(file(), doc_.text, error)) return false;
@@ -690,18 +831,31 @@ namespace ThemeEditor
             error = "No original of this page was kept: it hasn't been changed here.";
             return false;
         }
+        // As save(): what another program wrote since the page was read isn't replaced unseen
+        std::string onDisk;
+        if (Library::readFile(file(), onDisk) && onDisk != saved_) {
+            error = "layouts/" + folder_ + "/" + page_ + " was changed by something else since it was opened. "
+                    "Close the editor and open it again before putting the original back.";
+            return false;
+        }
+        const Snapshot before{ doc_.text, selectedPath() };
         if (!backups.restore(file(), error)) return false;
         std::string text;
         if (!Library::readFile(file(), text) || !load(text, error)) {
             if (error.empty()) error = "Can't read the page back.";
             return false;
         }
+        // Undoable: Undo brings back what was being edited (unsaved, until saved again)
+        if (before.text != text) {
+            undo_.push_back(before);
+            if (undo_.size() > UNDO_LIMIT) undo_.erase(undo_.begin());
+        }
         saved_ = text;
-        undo_.clear();
         redo_.clear();
         lastKey_.clear();
         select(-1);
         geom_.clear();
+        hidden_.clear();
         structure_++;
         revision_++;
         return true;

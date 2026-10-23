@@ -64,8 +64,8 @@ private:
     {
         std::string path;
         Component* component = nullptr;
-        ViewInfo* slot = nullptr;
         ViewInfo base;            // as built, before any animation
+        int order = 0;            // its place in the trace
         bool pending = false;     // its art wasn't loaded yet: its size follows when it is
     };
     // A box that's drawn but isn't its element's own (a vertical menu's other slots)
@@ -80,7 +80,9 @@ private:
     void destroyPreview();
     bool ensureTarget();
     CollectionInfo* previewCollection();
-    ThemeEditor::ElementGeom geomFrom(const ViewInfo& v, const std::string& path, int order) const;
+    static ThemeEditor::TracedView viewOf(const ViewInfo& v, const std::string& path, const void* component, bool slot);
+    // Opens another page from update() only (the old page's preview is freed first)
+    void switchPage(const std::string& page);
     void captureGeometry();
     void refreshPending();
     void runJob();
@@ -132,6 +134,7 @@ private:
 
     Job job_ = Job::None;
     std::string pendingPage_;     // a page to open once the unsaved changes are answered
+    std::string openNext_;        // a page to open on the next update()
     std::string status_;
     bool statusIsError_ = false;
     std::string newName_, newValue_;

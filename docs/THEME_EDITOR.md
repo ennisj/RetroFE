@@ -181,10 +181,11 @@ of art that hasn't loaded are a guess until it draws (the panel says so).
 first save changes a page, its original is kept in
 `manage/backups/layouts/<Theme>/<page>` (where every Manage screen keeps
 originals), and **Put back the original...** restores it (what's there then is
-kept beside it as `<page> (2).xml`). A page changed by another program since
-it was opened isn't overwritten. If the theme is the one in use, RetroFE
+kept beside it as `<page> (2).xml`; Undo brings back what you were editing).
+A page changed by another program since it was opened isn't overwritten or
+put back. If the theme is the one in use, RetroFE
 reloads when you close the manager. Undo and Redo cover every change until
-you leave or put back the original.
+you leave.
 
 A page the widget editor wrote (it has the marker) isn't opened here: edit
 the theme in the widget editor instead.

@@ -65,9 +65,48 @@ namespace ThemeEditor
         int order = 0;                    // the order the engine built it in (later on top within a layer)
         bool approximate = false;         // the size was guessed (text without a width, art not loaded yet)
         bool readOnly = false;            // shown, not editable (a vertical menu's generated slots)
-        int left() const { return roundDelta(x + xOffset - xOrigin * w); }
-        int top() const { return roundDelta(y + yOffset - yOrigin * h); }
+        // A box that isn't the element's own (a menu without a size: the
+        // box around its slots). x, y... stay what the engine resolved.
+        bool around = false;
+        DragRect aroundBox;
+        float exactLeft() const { return x + xOffset - xOrigin * w; }
+        float exactTop() const { return y + yOffset - yOrigin * h; }
+        int left() const { return around ? aroundBox.x : roundDelta(exactLeft()); }
+        int top() const { return around ? aroundBox.y : roundDelta(exactTop()); }
     };
+
+    // What the screen reads from a traced component (PageBuilder::setTrace)
+    // to make its box: its ViewInfo as built, before anything animates.
+    struct TracedView
+    {
+        std::string path;
+        const void* component = nullptr;   // identifies the component (a menu and its slots share it)
+        bool slot = false;                 // a menu slot, not the component itself
+        float x = 0, y = 0, xOffset = 0, yOffset = 0, xOrigin = 0, yOrigin = 0;
+        float scaledW = 0, scaledH = 0;    // ViewInfo::ScaledWidth/Height (0 or less: not known yet)
+        float width = -1, height = -1;     // what the layout set (-1 = not set)
+        float maxWidth = -1, maxHeight = -1;   // -1 = no maximum
+        float fontSize = -1;
+        int layer = 0;
+    };
+
+    // The boxes for a page, from what was traced, in build order: one per
+    // element (the first component built from it) plus the extra boxes
+    // drawn but not the element's own (a vertical menu's other slots).
+    struct PageBoxes
+    {
+        std::map<std::string, ElementGeom> geometry;
+        std::vector<std::pair<std::string, DragRect>> extra;
+    };
+    // Unknown sizes are guessed (and marked approximate): what the layout
+    // set, else for text its font size and value's length, else 64. A slot
+    // whose element isn't in the text (the empty <itemDefaults> PageBuilder
+    // gives a menu without one) counts as its menu's. A vertical menu's
+    // slots are read-only; a menu without a size gets the box around its
+    // slots (around, read-only).
+    PageBoxes pageBoxes(const LayoutDoc& doc, const std::vector<TracedView>& views);
+    // One view's geometry (the guess included)
+    ElementGeom geometryOf(const LayoutDoc& doc, const TracedView& v, int order);
 
     class LayoutSession
     {
@@ -178,7 +217,9 @@ namespace ThemeEditor
         bool hasOriginal() const;
         std::string originalPath() const;
         // Puts the kept original back and reloads it (the current file is
-        // kept beside it as a numbered copy). Clears the undo history.
+        // kept beside it as a numbered copy). Refused, as save() is, when the
+        // file changed on disk since it was read. Undoable: Undo brings back
+        // the text that was being edited, as unsaved changes.
         bool restoreOriginal(std::string& error);
 
         static const size_t UNDO_LIMIT = 100;

@@ -606,6 +606,7 @@ in place. User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#hand-made-themes-the
 | `Graphics/LayoutNodePath.h` | The same path from a rapidxml node, header-only and SDL-free. |
 | `Graphics/PageBuilder.{h,cpp}` | The hook: `setTrace(std::vector<TraceEntry>*)`. When set, every component built records `{component, slot, path}` in build order; a menu's slots follow it with `slot` = the slot's `ViewInfo` (custom menus: each `<item>`; vertical menus: the node each slot was built from). One inline null check per component when unused. |
 | `ThemeEditor/LayoutSession.{h,cpp}` | The controller, SDL- and ImGui-free: the theme's pages (`themePages`), opening one (refusing paths outside the theme, editor-marked pages and pages rapidxml can't read), the element list, geometry by path (fed by the screen), picking and click-through by layer then build order, the pointer protocol (`EditorCanvas.h`'s moves and resizes), turning a box back into attribute values, attribute edits, duplicate/delete, undo/redo (text snapshots, 100 deep, coalesced typing), dirty = text differs from what's on disk, save and put back the original. |
+| `ThemeEditor/LayoutSession` `pageBoxes` | The pure part of finding the boxes: traced views (path, component, slot, the ViewInfo's numbers) to one box per element plus extra boxes, the guesses, read-only vertical-menu slots, the box around a size-less menu (kept apart from its resolved x / y), and slots built from the empty `<itemDefaults>` a menu without one gets, which count as the menu's. Tested. |
 | `ThemeEditor/EditorScript.{h,cpp}` | `runLayoutCommand`: the session's script commands. |
 | `Manager/Themes/app/LayoutEditorScreen.{h,cpp}` | The ImGui screen (form `theme-layout-editor`): pages and elements, the canvas (preview + boxes + handles), the attribute panel, Save / Put back the original / Unsaved changes / Delete dialogs, the screen's script commands. |
 | `Manager/Themes/ThemeProvider`, `ThemesForms.cpp` | `theme:canOpen`; Edit opens the layout editor for a hand-made theme; the new note. |
@@ -672,8 +673,18 @@ slots are drawn but not dragged (they're generated from its settings).
 - **Editor-made pages aren't opened here.** The widget editor regenerates
   them from its project; edits here would be lost on its next save.
 - **Undo is text snapshots.** Pages are tens of KB; a snapshot per step (100
-  deep) is simpler and exact. Putting back the original clears the history
-  (it's a file operation, confirmed first).
+  deep) is simpler and exact. Putting back the original (confirmed first) is a
+  step too: Undo brings back the text being edited, as unsaved changes. Like
+  save, it's refused when the file changed on disk since it was read.
+- **Moves are exact deltas; resizes solve for the dragged edge.** A move adds
+  the box's movement to the attribute (so a nudge is exactly 1 unit even for a
+  centred box of odd width, whose left edge sits on a half unit); a resize puts
+  a dragged edge where it was dropped and keeps an undragged one exactly where
+  it was. Positions are written with up to two decimals when they aren't whole
+  (`x="1012.5"`), so nothing drifts by rounding.
+- **Pages switch in `update()`.** Choosing another page frees the preview (and
+  the components the boxes were traced from) before the new page is read; the
+  trace itself is dropped as soon as the boxes are made.
 - **Delete asks** (the canvas's Delete key too), though Undo brings it back:
   it removes the element's whole lines, animations and all.
 - **Duplicate and delete were in scope** (whole-line copies and removals keep
@@ -700,8 +711,13 @@ sideways drag, a resize with a centred origin, an item moving by its
 undo step, undo back to the exact original, redo, duplicate/delete and
 their undo; saving keeps the original first and only once, refuses a file
 changed or removed elsewhere, and putting back the original restores the
-bytes; script commands. The Themes provider tests cover `canOpen` and Edit
-opening the layout editor.
+bytes; script commands. After review: encoded values read back by rapidxml in
+both quotes, exact nudges and on-grid drags for a half-unit box, W and N
+resizes, an element with both `x` and `xOffset`, put back refused after an
+external change and undoable, hidden boxes cleared when paths shift, no write
+when the backup can't be kept (`manage` is a file), a page reached through a
+junction out of the theme refused, and `pageBoxes` on traced views. The Themes
+provider tests cover `canOpen` and Edit opening the layout editor.
 
 GUI check (2026-10-23, private root `E:\Storage\Agents\native`, scripted):
 Aeon Nox's details with the note and Edit, the layout editor on `layout.xml`
@@ -721,8 +737,7 @@ restored the file byte for byte.
 - Showing animated positions (the box where an animation ends).
 - Editing several pages at once (`layout.xml` and `layout 4x3.xml` usually
   move together).
-- Positions that keep a centred element on a half unit (an odd width with
-  `xOrigin="center"` is rounded to whole units).
+- Snapping a centred box of odd width puts its edge, not its centre, on the grid.
 
 ## Other open items
 

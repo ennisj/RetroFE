@@ -113,6 +113,16 @@ LayoutEditorScreen::~LayoutEditorScreen()
     shutdown();
 }
 
+void LayoutEditorScreen::switchPage(const std::string& page)
+{
+    // The old page's components (and the boxes traced from them) go before the new page is read
+    destroyPreview();
+    extra_.clear();
+    previewDirty_ = true;
+    builtText_.clear();
+    openPage(page);
+}
+
 bool LayoutEditorScreen::openPage(const std::string& page)
 {
     LayoutSession next;
@@ -178,6 +188,11 @@ void LayoutEditorScreen::update(float dt)
     if (retired_ || !session_.isOpen()) return;
     runScript();
     runJob();
+    if (!openNext_.empty()) {
+        const std::string next = openNext_;
+        openNext_.clear();
+        switchPage(next);
+    }
 
     if (nudging_) {
         sinceNudge_ += dt;
@@ -250,36 +265,27 @@ void LayoutEditorScreen::rebuildPreview()
     page_ = page;
 }
 
-ElementGeom LayoutEditorScreen::geomFrom(const ViewInfo& v, const std::string& path, int order) const
+TracedView LayoutEditorScreen::viewOf(const ViewInfo& v, const std::string& path, const void* component, bool slot)
 {
-    ElementGeom g;
-    g.x = v.X;
-    g.y = v.Y;
-    g.xOffset = v.XOffset;
-    g.yOffset = v.YOffset;
-    g.xOrigin = v.XOrigin;
-    g.yOrigin = v.YOrigin;
-    g.layer = static_cast<int>(v.Layer);
-    g.order = order;
-    float w = v.ScaledWidth();
-    float h = v.ScaledHeight();
-    if (!(std::isfinite(w) && std::isfinite(h) && w > 0.0f && h > 0.0f)) {
-        // Not known until it draws (text without a width, art not loaded yet): what the layout says, else a guess
-        g.approximate = true;
-        float fh = v.Height > 0 ? v.Height : (v.MaxHeight < FLT_MAX ? v.MaxHeight : (v.FontSize > 0 ? v.FontSize : 0.0f));
-        float fw = v.Width > 0 ? v.Width : (v.MaxWidth < FLT_MAX ? v.MaxWidth : 0.0f);
-        if (fw <= 0) {
-            int el = session_.doc().find(path);
-            size_t chars = el >= 0 ? session_.element(el).value("value").size() : 0;
-            fw = chars > 0 && fh > 0 ? static_cast<float>(chars) * fh * 0.5f : (fh > 0 ? fh * 6.0f : 64.0f);
-        }
-        if (fh <= 0) fh = std::min(fw, 64.0f);
-        w = fw;
-        h = fh;
-    }
-    g.w = w;
-    g.h = h;
-    return g;
+    TracedView t;
+    t.path = path;
+    t.component = component;
+    t.slot = slot;
+    t.x = v.X;
+    t.y = v.Y;
+    t.xOffset = v.XOffset;
+    t.yOffset = v.YOffset;
+    t.xOrigin = v.XOrigin;
+    t.yOrigin = v.YOrigin;
+    t.scaledW = v.ScaledWidth();
+    t.scaledH = v.ScaledHeight();
+    t.width = v.Width;
+    t.height = v.Height;
+    t.maxWidth = v.MaxWidth < FLT_MAX ? v.MaxWidth : -1.0f;
+    t.maxHeight = v.MaxHeight < FLT_MAX ? v.MaxHeight : -1.0f;
+    t.fontSize = v.FontSize;
+    t.layer = static_cast<int>(v.Layer);
+    return t;
 }
 
 void LayoutEditorScreen::captureGeometry()
@@ -287,64 +293,30 @@ void LayoutEditorScreen::captureGeometry()
     session_.clearGeometry();
     traced_.clear();
     extra_.clear();
-    std::set<std::string> seen;
-    // Menus whose slots are generated (vertical menus): the slots can't be moved one by one
-    std::set<const Component*> generated;
+    std::vector<TracedView> views;
     for (const PageBuilder::TraceEntry& t : trace_) {
-        if (t.slot) continue;
-        int el = session_.doc().find(t.path);
-        if (el >= 0 && session_.element(el).name == "menu" && session_.element(el).value("type") != "custom") generated.insert(t.component);
-    }
-    for (size_t i = 0; i < trace_.size(); ++i) {
-        const PageBuilder::TraceEntry& t = trace_[i];
-        if (!t.component || session_.doc().find(t.path) < 0) continue;
+        if (!t.component) continue;
         const ViewInfo& v = t.slot ? *t.slot : t.component->baseViewInfo;
-        ElementGeom g = geomFrom(v, t.path, static_cast<int>(i));
-        g.readOnly = t.slot && generated.count(t.component);
-        if (!seen.insert(t.path).second) {
-            ExtraBox box;
-            box.rect = DragRect{ g.left(), g.top(), std::max(1, roundDelta(g.w)), std::max(1, roundDelta(g.h)) };
-            box.path = t.path;
-            extra_.push_back(box);
-            continue;
+        views.push_back(viewOf(v, t.path, t.component, t.slot != nullptr));
+        // Art that isn't loaded yet gets its size once it is (refreshPending)
+        if (!t.slot) {
+            Traced tr;
+            tr.path = t.path;
+            tr.component = t.component;
+            tr.base = v;
+            tr.order = static_cast<int>(views.size()) - 1;
+            traced_.push_back(tr);
         }
-        session_.setGeometry(t.path, g);
-        Traced tr;
-        tr.path = t.path;
-        tr.component = t.component;
-        tr.slot = t.slot;
-        tr.base = v;
-        tr.pending = !t.slot && g.approximate;
-        traced_.push_back(tr);
     }
-    // A menu without a size of its own: the box around its slots, to select it by (not to drag)
-    for (const PageBuilder::TraceEntry& t : trace_) {
-        if (t.slot) continue;
-        int el = session_.doc().find(t.path);
-        const ElementGeom* own = session_.geometry(el);
-        if (el < 0 || session_.element(el).name != "menu" || !own || !own->approximate) continue;
-        bool any = false;
-        float x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-        for (const PageBuilder::TraceEntry& s : trace_) {
-            if (s.component != t.component || !s.slot) continue;
-            int sel = session_.doc().find(s.path);
-            if (sel < 0 || !session_.geometry(sel)) continue;
-            DragRect r = session_.box(sel);
-            if (!any) { x1 = static_cast<float>(r.x); y1 = static_cast<float>(r.y); x2 = static_cast<float>(r.x + r.w); y2 = static_cast<float>(r.y + r.h); }
-            x1 = std::min(x1, static_cast<float>(r.x));
-            y1 = std::min(y1, static_cast<float>(r.y));
-            x2 = std::max(x2, static_cast<float>(r.x + r.w));
-            y2 = std::max(y2, static_cast<float>(r.y + r.h));
-            any = true;
-        }
-        if (!any) continue;
-        ElementGeom g = *own;
-        g.x = x1; g.y = y1; g.xOffset = g.yOffset = g.xOrigin = g.yOrigin = 0;
-        g.w = x2 - x1; g.h = y2 - y1;
-        g.readOnly = true;
-        g.order = -1;   // under its slots
-        session_.setGeometry(t.path, g);
+    PageBoxes boxes = pageBoxes(session_.doc(), views);
+    for (const auto& entry : boxes.geometry) session_.setGeometry(entry.first, entry.second);
+    for (const auto& entry : boxes.extra) extra_.push_back(ExtraBox{ entry.second, entry.first });
+    for (Traced& t : traced_) {
+        auto it = boxes.geometry.find(t.path);
+        t.pending = it != boxes.geometry.end() && it->second.approximate && !it->second.around && it->second.order == t.order;
     }
+    // The slots' ViewInfos belong to the page: nothing keeps pointers to them past this
+    trace_.clear();
 }
 
 void LayoutEditorScreen::refreshPending()
@@ -358,11 +330,11 @@ void LayoutEditorScreen::refreshPending()
         ViewInfo v = t.base;
         v.ImageWidth = live.ImageWidth;
         v.ImageHeight = live.ImageHeight;
-        int el = session_.doc().find(t.path);
-        const ElementGeom* old = session_.geometry(el);
-        ElementGeom g = geomFrom(v, t.path, old ? old->order : 0);
+        const ElementGeom* old = session_.geometry(session_.doc().find(t.path));
+        if (!old || old->around) { t.pending = false; continue; }
+        ElementGeom g = geometryOf(session_.doc(), viewOf(v, t.path, t.component, false), old->order);
         if (g.approximate) continue;
-        if (old) g.readOnly = old->readOnly;
+        g.readOnly = old->readOnly;
         session_.setGeometry(t.path, g);
         t.pending = false;
     }
@@ -428,7 +400,7 @@ void LayoutEditorScreen::runJob()
     case Job::SaveAndLeave:
         if (save()) {
             if (pendingPage_.empty()) back_ = true;
-            else openPage(pendingPage_);
+            else switchPage(pendingPage_);
         }
         pendingPage_.clear();
         break;
@@ -482,7 +454,8 @@ void LayoutEditorScreen::restoreOriginal()
     hasOriginal_ = session_.hasOriginal();
     openIssues_ = checkLayoutXml(session_.text());
     LOG_NOTICE("ThemeEditor", "Put back the original layouts/" + folder_ + "/" + session_.page());
-    setStatus("Put back the original page. What was there is kept beside the original in manage/backups.", false);
+    setStatus("Put back the original page. What was there is kept beside the original in manage/backups; "
+              "Undo brings back what you were editing.", false);
     std::string configured = Themes::configuredLayout(ctx_.root);
     if (Utils::toLower(configured.empty() ? originalLayout_ : configured) == Utils::toLower(folder_) && ctx_.requestReload) {
         ctx_.requestReload();
@@ -497,7 +470,7 @@ void LayoutEditorScreen::requestLeave(const std::string& toPage)
         return;
     }
     if (toPage.empty()) back_ = true;
-    else openPage(toPage);
+    else openNext_ = toPage;   // built and freed in update(), not while drawing
 }
 
 // ---- scripts --------------------------------------------------------------------
@@ -526,7 +499,8 @@ bool LayoutEditorScreen::runCommand(const EditorCommand& command, std::string& n
     if (n == "log") { note = command.rest; return true; }
     if (n == "page") {
         if (session_.dirty()) { note = "unsaved changes: save or undo first"; return false; }
-        bool ok = openPage(command.rest);
+        switchPage(command.rest);
+        bool ok = session_.page() == command.rest;
         note = session_.page();
         return ok;
     }
@@ -965,8 +939,9 @@ void LayoutEditorScreen::drawProperties()
         if (!cur) return "";
         if (name == "x") return number(cur->x);
         if (name == "y") return number(cur->y);
-        if (name == "width") return number(cur->w);
-        if (name == "height") return number(cur->h);
+        // A guessed size (or a box drawn around a menu's slots) isn't what RetroFE resolved: not shown
+        if (name == "width") return cur->approximate ? std::string() : number(cur->w);
+        if (name == "height") return cur->approximate ? std::string() : number(cur->h);
         if (name == "xOffset") return number(cur->xOffset);
         if (name == "yOffset") return number(cur->yOffset);
         return "";
@@ -1069,7 +1044,7 @@ void LayoutEditorScreen::drawPopups()
                 back_ = true;
             }
             else {
-                openPage(pendingPage_);
+                openNext_ = pendingPage_;
                 pendingPage_.clear();
             }
         }
@@ -1088,8 +1063,8 @@ void LayoutEditorScreen::drawPopups()
     if (ImGui::BeginPopupModal(RESTORE, &showRestore_, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!showRestore_) ImGui::CloseCurrentPopup();
         ImGui::TextWrapped("Put back layouts/%s/%s as it was before the editor first saved it?", folder_.c_str(), session_.page().c_str());
-        ImGui::TextWrapped("The page as it is now is kept in manage/backups as a numbered copy. Unsaved changes are lost, "
-                           "and so is the undo history.");
+        ImGui::TextWrapped("The page as it is now is kept in manage/backups as a numbered copy. Undo brings back what "
+                           "you were editing, as unsaved changes.");
         if (ImGui::Button("Put it back (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
             job_ = Job::Restore;
             showRestore_ = false;

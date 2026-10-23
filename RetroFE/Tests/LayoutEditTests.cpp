@@ -25,6 +25,7 @@
 #include "../Source/ThemeEditor/LayoutSession.h"
 #include "../Source/ThemeEditor/LayoutText.h"
 #include "../Source/ThemeEditor/ThemeGenerate.h"
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -416,15 +417,16 @@ static Test::Suite layoutEdit("layout-native editing", [] {
 
         s.setAttribute("alpha", "0.25");
         check(s.save(error) && readFile(backup) == HAND, "a second save leaves the original alone");
+        const std::string second = readFile(file);
 
         // Something else changes the file: saving over it is refused
         writeFile(file, saved + "<!-- edited elsewhere -->");
         s.setAttribute("alpha", "1");
         check(!s.save(error) && error.find("changed by something else") != std::string::npos, "refused: " + error);
-        writeFile(file, readFile(file).substr(0, saved.size()));
+        writeFile(file, second);   // the other program's change undone
 
         check(s.hasOriginal() && s.restoreOriginal(error), "put back the original: " + error);
-        check(readFile(file) == HAND && s.text() == HAND && !s.dirty() && !s.canUndo(), "the file and the session are the original");
+        check(readFile(file) == HAND && s.text() == HAND && !s.dirty() && s.canUndo(), "the file and the session are the original (undoable)");
         check(fs::exists(root + "/manage/backups/layouts/Hand/layout (2).xml"), "what was there is kept as a numbered copy");
 
         // A page that went away isn't written again
@@ -435,6 +437,208 @@ static Test::Suite layoutEdit("layout-native editing", [] {
         std::error_code ec;
         fs::remove_all(root + "/layouts/Hand", ec);
         check(!other.save(error) && !fs::exists(root + "/layouts/Hand/splash.xml"), "a page that's gone isn't written: " + error);
+    });
+
+    Test::run("layout text: encoded values read back the same in rapidxml", [] {
+        const std::string values[] = { "plain", "A & B", "<tag>", "say \"hi\"", "it's", "both ' and \"", "&amp; already",
+                                       "x > y", "%I:%M:%S %p", "" };
+        for (const std::string& value : values) {
+            for (char quote : { '"', '\'' }) {
+                std::string xml = std::string("<layout a=") + quote + xmlEncodeAttr(value, quote) + quote + "/>";
+                std::vector<char> buffer(xml.begin(), xml.end());
+                buffer.push_back('\0');
+                rapidxml::xml_document<> doc;
+                bool parsed = true;
+                try { doc.parse<0>(buffer.data()); } catch (...) { parsed = false; }
+                rapidxml::xml_node<>* root = parsed ? doc.first_node("layout") : nullptr;
+                rapidxml::xml_attribute<>* a = root ? root->first_attribute("a") : nullptr;
+                check(a && std::string(a->value()) == value, "rapidxml reads back [" + value + "] in " + quote + " quotes");
+                LayoutDoc ours;
+                std::string error;
+                check(parseLayoutText(xml, ours, error) && ours.elements[0].value("a") == value, "and so does the scanner");
+            }
+        }
+    });
+
+    Test::run("layout session: exact moves for half-unit boxes, W/N resizes, x with xOffset", [] {
+        std::string root = makeHandRoot("layout_exact");
+        LayoutSession s;
+        std::string error;
+        s.open(root, "Hand", "layout.xml", error);
+        feedGeometry(s);
+        const int logo = s.doc().find("image[1]");
+        // An odd width with a centred origin: the left edge is on a half unit
+        ElementGeom odd = *s.geometry(logo);
+        odd.w = 403;
+        s.setGeometry("image[1]", odd);
+        s.select(logo);
+        const int startX = s.box(logo).x;
+        for (int i = 1; i <= 3; ++i) {
+            s.endCoalesce();
+            check(s.moveBy(1, 0), "nudge " + std::to_string(i));
+            checkEqual(s.selectedElement()->value("x"), std::to_string(960 + i), "each nudge moves by exactly 1");
+            check(s.box(logo).x == startX + i, "and so does the box");
+        }
+        // A snapped drag lands on the grid
+        DragRect r = s.box(logo);
+        drag(s, static_cast<float>(r.x + 100), 200, static_cast<float>(r.x + 140), 200);
+        check(s.box(logo).x % 5 == 0, "a snapped drag lands on the grid: " + std::to_string(s.box(logo).x));
+
+        // W and N handles on a 400 x 200 box, centred across, top origin
+        odd.w = 400;
+        odd.x = 1000;
+        odd.y = 130;
+        s.setGeometry("image[1]", odd);
+        s.setAttribute("x", "1000");
+        s.setAttribute("y", "130");
+        r = s.box(logo);   // 800,130 400x200
+        check(r.x == 800 && r.y == 130, "the box to resize");
+        drag(s, static_cast<float>(r.x), static_cast<float>(r.y + r.h / 2), static_cast<float>(r.x - 100), static_cast<float>(r.y + r.h / 2));
+        const LayoutElement* e = s.selectedElement();
+        check(e->value("width") == "500" && e->value("x") == "950" && e->value("height") == "200",
+              "west handle: width 500, x 950 keeps the east edge (x=" + e->value("x") + ")");
+        check(s.box(logo).x == 700 && s.box(logo).x + s.box(logo).w == 1200, "the east edge stayed at 1200");
+        r = s.box(logo);
+        drag(s, static_cast<float>(r.x + r.w / 2), static_cast<float>(r.y), static_cast<float>(r.x + r.w / 2), static_cast<float>(r.y - 30));
+        e = s.selectedElement();
+        check(e->value("height") == "230" && e->value("y") == "100" && e->value("width") == "500",
+              "north handle: height 230, y 100 (y=" + e->value("y") + ")");
+
+        // An element with both x and xOffset moves by x
+        writeFile(root + "/layouts/Hand/both.xml",
+                  "<layout width=\"1920\" height=\"1080\">\n  <image src=\"a.png\" x=\"100\" xOffset=\"20\" y=\"50\" width=\"10\" height=\"10\"/>\n</layout>\n");
+        LayoutSession b;
+        check(b.open(root, "Hand", "both.xml", error), "open: " + error);
+        ElementGeom g;
+        g.x = 100; g.xOffset = 20; g.y = 50; g.w = 10; g.h = 10;
+        b.setGeometry("image[0]", g);
+        b.selectPath("image[0]");
+        check(b.box(b.selected()).x == 120, "the box includes the offset");
+        check(b.moveBy(10, 0), "moved");
+        check(b.selectedElement()->value("x") == "110" && b.selectedElement()->value("xOffset") == "20", "x moves, xOffset stays");
+    });
+
+    Test::run("layout session: put back the original is undoable and checks the disk; hidden boxes", [] {
+        std::string root = makeHandRoot("layout_restore");
+        const std::string file = root + "/layouts/Hand/layout.xml";
+        LayoutSession s;
+        std::string error;
+        s.open(root, "Hand", "layout.xml", error);
+        s.selectPath("image[0]");
+        s.setAttribute("alpha", "0.5");
+        check(s.save(error), "saved");
+        const std::string saved = readFile(file);
+        s.setAttribute("alpha", "0.25");   // unsaved
+
+        writeFile(file, saved + "<!-- elsewhere -->");
+        check(!s.restoreOriginal(error) && error.find("changed by something else") != std::string::npos,
+              "refused after another program changed the file: " + error);
+        check(readFile(file) == saved + "<!-- elsewhere -->", "and nothing was written");
+        writeFile(file, saved);
+
+        check(s.restoreOriginal(error), "put back: " + error);
+        check(readFile(file) == HAND && s.text() == HAND && !s.dirty(), "the original, on disk and here");
+        check(s.canUndo() && s.undo(), "undoable");
+        s.selectPath("image[0]");
+        check(s.dirty() && s.selectedElement()->value("alpha") == "0.25", "Undo brings back the unsaved edit");
+
+        // Hidden boxes are by path: they don't move to another element when paths shift
+        s.setHidden(s.doc().find("image[1]"), true);
+        check(s.hidden(s.doc().find("image[1]")), "hidden");
+        s.selectPath("image[0]");
+        s.duplicateSelected();
+        check(!s.hidden(s.doc().find("image[1]")) && !s.hidden(s.doc().find("image[2]")), "cleared when paths change");
+    });
+
+    Test::run("layout session: nothing is written when the backup can't be kept, or outside the theme", [] {
+        std::string root = makeHandRoot("layout_unwritable");
+        const std::string file = root + "/layouts/Hand/layout.xml";
+        writeFile(root + "/manage", "a file where the backups folder would go");
+        LayoutSession s;
+        std::string error;
+        s.open(root, "Hand", "layout.xml", error);
+        s.selectPath("image[0]");
+        s.setAttribute("alpha", "0.5");
+        check(!s.save(error) && !error.empty(), "the save is refused when the original can't be kept: " + error);
+        check(readFile(file) == HAND && s.dirty(), "the page is untouched and the edit still there");
+
+        // A folder inside the theme that leads outside it (a junction or link)
+        const std::string outside = root + "/elsewhere/layout";
+        writeFile(outside + "/layout.xml", "<layout width=\"10\" height=\"10\"></layout>");
+        fs::create_directories(root + "/layouts/Hand/collections/Linked");
+        const std::string link = root + "/layouts/Hand/collections/Linked/layout";
+        bool linked = false;
+#ifdef _WIN32
+        std::string command = "mklink /J \"" + fs::path(link).make_preferred().string() + "\" \"" +
+                              fs::path(outside).make_preferred().string() + "\" >nul 2>&1";
+        linked = std::system(command.c_str()) == 0 && fs::exists(link + "/layout.xml");
+#else
+        std::error_code ec;
+        fs::create_directory_symlink(outside, link, ec);
+        linked = !ec && fs::exists(link + "/layout.xml");
+#endif
+        if (!linked) {
+            std::cout << "  (skipped: couldn't make a junction or link)" << std::endl;
+            return;
+        }
+        LayoutSession t;
+        check(!t.open(root, "Hand", "collections/Linked/layout/layout.xml", error) && error.find("isn't inside") != std::string::npos,
+              "a page reached through a junction out of the theme isn't opened: " + error);
+        std::error_code ec;
+        fs::remove(link, ec);   // the junction, not what it points at
+        check(fs::exists(outside + "/layout.xml"), "the outside folder is untouched");
+    });
+
+    Test::run("layout boxes: from traced views to boxes", [] {
+        const std::string xml =
+            "<layout width=\"1920\" height=\"1080\">\n"
+            "  <image src=\"a.png\" x=\"10\" y=\"20\"/>\n"
+            "  <text value=\"Hello\" x=\"100\" y=\"100\" fontSize=\"20\"/>\n"
+            "  <menu type=\"custom\">\n"
+            "    <itemDefaults width=\"100\" height=\"50\"/>\n"
+            "    <item x=\"200\" y=\"500\"/>\n"
+            "    <item x=\"400\" y=\"520\"/>\n"
+            "  </menu>\n"
+            "  <menu y=\"600\" height=\"200\" width=\"300\"/>\n"
+            "</layout>\n";
+        LayoutDoc doc;
+        std::string error;
+        check(parseLayoutText(xml, doc, error), "scans");
+        int image = 1, menuA = 2, menuB = 3;
+        std::vector<TracedView> views;
+        TracedView v;
+        v.path = "image[0]"; v.component = &image; v.x = 10; v.y = 20; v.scaledW = 64; v.scaledH = 32; v.layer = 2;
+        views.push_back(v);
+        v = TracedView(); v.path = "text[0]"; v.component = &image + 1; v.x = 100; v.y = 100; v.fontSize = 20;
+        views.push_back(v);
+        v = TracedView(); v.path = "menu[0]"; v.component = &menuA;
+        views.push_back(v);
+        v = TracedView(); v.path = "menu[0]/item[0]"; v.component = &menuA; v.slot = true; v.x = 200; v.y = 500; v.scaledW = 100; v.scaledH = 50;
+        views.push_back(v);
+        v.path = "menu[0]/item[1]"; v.x = 400; v.y = 520;
+        views.push_back(v);
+        v = TracedView(); v.path = "menu[1]"; v.component = &menuB; v.y = 600; v.scaledW = 300; v.scaledH = 200;
+        views.push_back(v);
+        for (int i = 0; i < 3; ++i) {
+            // A vertical menu without <itemDefaults>: its slots come from the empty one PageBuilder adds
+            v = TracedView(); v.path = "menu[1]/itemDefaults[0]"; v.component = &menuB; v.slot = true;
+            v.y = 600.0f + 60.0f * i; v.scaledW = 300; v.scaledH = 60;
+            views.push_back(v);
+        }
+        PageBoxes boxes = pageBoxes(doc, views);
+        const ElementGeom& img = boxes.geometry["image[0]"];
+        check(!img.approximate && img.left() == 10 && img.top() == 20 && img.w == 64 && img.layer == 2, "an image's own box");
+        const ElementGeom& text = boxes.geometry["text[0]"];
+        check(text.approximate && text.h == 20 && text.w == 50, "text without a width: font size by value length, a guess");
+        const ElementGeom& menu = boxes.geometry["menu[0]"];
+        check(menu.around && menu.readOnly && menu.aroundBox.x == 200 && menu.aroundBox.y == 500 &&
+              menu.aroundBox.w == 300 && menu.aroundBox.h == 70, "a size-less menu: the box around its items");
+        check(menu.x == 0 && menu.y == 0, "its resolved position stays the engine's");
+        check(!boxes.geometry["menu[0]/item[1]"].readOnly, "custom menu items can be dragged");
+        const ElementGeom& vertical = boxes.geometry["menu[1]"];
+        check(!vertical.around && vertical.h == 200, "a vertical menu with a size keeps its own box");
+        check(boxes.geometry.count("menu[1]/itemDefaults[0]") == 0, "the synthetic item defaults have no box of their own");
+        check(boxes.extra.size() == 3 && boxes.extra[0].first == "menu[1]", "its slots are drawn as its menu's extra boxes");
     });
 
     Test::run("layout session: script commands", [] {
