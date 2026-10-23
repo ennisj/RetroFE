@@ -40,11 +40,45 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   manufacturer logos have unclear redistribution terms, so if the fork ever
   publishes its own packages it may be worth dropping it from them (see L4).
 
-### L4. Fonts and artwork with unclear licences — Open
-- Aeon Nox's `MC360.ttf` (an Xbox 360-style font) and Arcades' Scout fonts and
-  manufacturer logos have no clear licence. They're fine for local use.
-- Recommendation: before publishing release packages, replace MC360 with an
-  OFL font and leave Arcades out of the packages. Your call on timing.
+### L4. Fonts and artwork with unclear licences — Partly resolved, partly Open
+- **Fixed in round 1:** Aeon Nox's `MC360.ttf` turned out to be Ubuntu
+  Condensed shipped without its licence (removed; Roboto Condensed used
+  instead). Its `BebasNeue.ttf` 1.002 had a no-redistribution EULA (replaced
+  with the OFL release), and its `OpenSans.ttf` had no licence data (replaced
+  with Open Sans Condensed built from the OFL font; Open Sans has no Reserved
+  Font Name). Every font now has its licence beside it, copied verbatim from
+  google/fonts. The Home icons and logos were drawn for the fork by a script
+  (`Scripts/aeon-nox/`).
+- **Open:** (a) Aeon Nox's panel images (wall, floor, info bars) are credited
+  to Kodi's Aeon Nox skin, which is CC BY-SA 3.0 (to Jan 2014) and
+  CC BY-NC-SA 4.0 since — if upstream copied them from a newer skin, they're
+  NonCommercial. (b) `video/intro.mp4` (a Street Fighter II-style "RETRO FE"
+  logo, Earth footage and music) and the theme's sounds have no recorded
+  origin; upstream RetroFE ships them. Both are fine for personal use;
+  before publishing release packages, consider redrawing the panels and
+  replacing the intro with a static splash. NOTICE.txt in the layout records
+  all of this.
+- Arcades (upstream's default) still has Scout fonts and manufacturer logos
+  of unclear terms; recommendation unchanged: leave it out of release packages.
+
+### L5. Menu pages: a theme-wide `_menu` page — Decided
+- Stock RetroFE picks a page per collection by name, so a theme could only
+  style the top menu as "Main"; other menus got the games page.
+- Chosen: a small engine rule. A collection whose items are all collections
+  and has no page of its own uses `layouts/<L>/collections/_menu/layout/`.
+  Collection-specific pages and `layoutFromAnotherCollection` still win.
+  Aeon Nox's systems strip lives there.
+
+### L6. Form pages follow the layout variant — Decided
+- Management screens now use the same page variant as collections
+  (`randomLayout`, e.g. `layout 4x3`), so a 4:3 setup gets 4:3 forms instead
+  of squashed 16:9 ones. Aeon Nox ships 4:3 versions of all its pages.
+
+### L7. The packaged `settings.conf` still says Arcades — Open
+- `Package/Environment/Common/settings.conf` (the upstream-style package)
+  keeps `layout=Arcades`, because its bundled collections were made for it.
+  New installs created by RetroFE itself get Aeon Nox. Say if the package
+  should switch too.
 
 ---
 
