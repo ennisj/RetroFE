@@ -483,6 +483,7 @@ bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
     context.loadCollection = loadCollection_;
     context.currentCollection = currentCollection_;
     context.requestReload = [this] { reloadWhenClosed_ = true; };
+    context.library = library_.get();
     auto id = frame.params.find("id");
     screen_ = std::make_unique<ThemeEditorScreen>(context, id != frame.params.end() ? id->second : "");
     SDL_ShowCursor(SDL_ENABLE);

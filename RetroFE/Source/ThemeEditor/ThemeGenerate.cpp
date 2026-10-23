@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 namespace ThemeEditor
 {
@@ -229,6 +230,9 @@ namespace ThemeEditor
         // A wheel with a text size is a text wheel: its selected slot doesn't swell
         const bool textWheel = !ghostStyle && !fontSizePx.empty();
         std::string styleDefaults;
+        // The selected name is drawn larger (ScrollingList tweens fontSize
+        // between slots, so it grows as it arrives); "" = no size to scale
+        std::string selTextSize;
         if (!ghostStyle) {
             // This engine draws a text fallback (an item without art) only
             // with a fontSize (Text scales by it; unset is -1, so nothing
@@ -242,6 +246,9 @@ namespace ThemeEditor
             // Escaped: these come from free text vars, spliced in before expandText runs
             styleDefaults += " fontSize=\"" + xmlEscape(textSize) + "\"";
             if (!fontColor.empty()) styleDefaults += " fontColor=\"" + xmlEscape(fontColor) + "\"";
+            char* end = nullptr;
+            const double size = std::strtod(textSize.c_str(), &end);
+            if (end != textSize.c_str() && *end == '\0' && size > 0) selTextSize = std::to_string(std::lround(size * 1.3));
         }
         // Idle dim: one second into menu idle each unselected item dims; the
         // next scroll's own animation brings it back
@@ -356,10 +363,14 @@ namespace ThemeEditor
                     else {
                         out += " width=\"" + std::to_string(selW) + "\" maxHeight=\"" + std::to_string(selH) + "\" selected=\"true\"";
                     }
+                    if (!selTextSize.empty()) out += " fontSize=\"" + selTextSize + "\"";
                     if (ghostStyle) out += " alpha=\"1\" layer=\"" + std::to_string(clampLayer(layer + 6)) + "\"";
                 }
                 else {
-                    out += slotAlpha(k);
+                    // A text wheel's other names rest dimmer, so the selected one stands out
+                    std::string alpha = slotAlpha(k);
+                    if (alpha.empty() && textWheel) alpha = " alpha=\"0.60\"";
+                    out += alpha;
                 }
                 // No idle dim on hidden end slots: it would fade them in
                 const bool edgeHidden = fadePct > 0 && (k == 0 || k == slots - 1);

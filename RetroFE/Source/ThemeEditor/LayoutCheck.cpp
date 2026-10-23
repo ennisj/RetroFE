@@ -297,7 +297,8 @@ namespace ThemeEditor
                     value(n, "location").empty()) {
                     issue(n, "type=\"file\" needs a location");
                 }
-                if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults>");
+                if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults> (RetroFE uses empty defaults: each item has only what it sets itself)");
+                if (menu && value(n, "type") == "custom" && !n->first_node("item")) issue(n, "custom menu has no <item> slots, so it shows nothing");
             }
         };
     }
@@ -318,22 +319,10 @@ namespace ThemeEditor
 
     std::string layoutBuildBlocker(const std::string& xml)
     {
-        std::vector<char> buffer(xml.begin(), xml.end());
-        buffer.push_back('\0');
-        rapidxml::xml_document<> doc;
-        try {
-            doc.parse<0>(buffer.data());
-        }
-        catch (const rapidxml::parse_error& e) {
-            return std::string("not valid XML: ") + e.what();
-        }
-        const Node* layout = doc.first_node("layout");
-        if (!layout) return "no <layout> root";
-        for (const Node* menu = layout->first_node("menu"); menu; menu = menu->next_sibling("menu")) {
-            // PageBuilder::buildMenu reads through it unchecked: building would crash RetroFE
-            if (!menu->first_node("itemDefaults")) return "a <menu> without <itemDefaults> would crash the page builder";
-        }
-        return "";
+        // A <menu> without <itemDefaults> used to crash PageBuilder; it now
+        // gets empty defaults (Graphics/MenuXml.h), so only XML it can't
+        // read at all is kept from it
+        return layoutParseError(xml);
     }
 
     std::vector<std::string> checkLayoutXml(const std::string& xml)

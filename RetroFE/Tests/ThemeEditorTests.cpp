@@ -597,9 +597,16 @@ void runThemeEditorTests()
             checkEqual(menuItemsXml(0, 0, 300, 900, 5, true, 0, 1920, 3),
                        "<itemDefaults x=\"150\" xOrigin=\"center\" yOrigin=\"center\" width=\"195\" maxHeight=\"300\" fontSize=\"120\" layer=\"5\"/>\n"
                        "<item y=\"150\"/>\n"
-                       "<item y=\"450\" width=\"300\" maxHeight=\"500\" selected=\"true\"/>\n"
+                       "<item y=\"450\" width=\"300\" maxHeight=\"500\" selected=\"true\" fontSize=\"156\"/>\n"
                        "<item y=\"750\"/>\n",
                        "golden wheel slots");
+            // A text wheel: the selected name larger and in its colour, the others dimmer
+            checkEqual(menuItemsXml(0, 0, 300, 900, 5, true, 0, 1920, 3, 0, 0, 0, 0, 0, nullptr, false, -1, "20", "", "FFCC00"),
+                       "<itemDefaults x=\"150\" xOrigin=\"center\" yOrigin=\"center\" width=\"195\" maxHeight=\"300\" fontSize=\"20\" layer=\"5\"/>\n"
+                       "<item y=\"150\" alpha=\"0.60\"/>\n"
+                       "<item y=\"450\" selected=\"true\" fontColor=\"FFCC00\" fontSize=\"26\"/>\n"
+                       "<item y=\"750\" alpha=\"0.60\"/>\n",
+                       "text wheel slots highlight the selected name");
         }
 
         ThemeProject p = referenceProject();
@@ -874,6 +881,8 @@ void runThemeEditorTests()
         check(issuesFor("<reloadableImage type=\"logo\" mode=\"layout_preferred\"/>").size() == 1, "layout_preferred isn't a mode");
         check(issuesFor("<menu mode=\"system\"><itemDefaults/></menu>").size() == 1, "menus don't read system mode");
         check(issuesFor("<menu/>").size() == 1, "a menu without itemDefaults");
+        check(issuesFor("<menu type=\"custom\"><itemDefaults/></menu>").size() == 1, "a custom menu without items shows nothing");
+        check(issuesFor("<menu type=\"custom\"><itemDefaults/><item/></menu>").empty(), "one with an item is fine");
         check(issuesFor("<image/>").size() == 1 && issuesFor("<text/>").size() == 1 && issuesFor("<reloadableText/>").size() == 1,
               "missing src, value, type");
         check(issuesFor("<reloadableScrollingText type=\"file\"/>").size() == 1, "type=file without a location");
@@ -897,7 +906,8 @@ void runThemeEditorTests()
     // source tree, so a binary run elsewhere skips it.
     run("theme editor: the layout check's vocabulary is still PageBuilder's", [] {
         const std::string source = RETROFE_SOURCE_DIR;
-        const std::string pageBuilder = readFile(source + "/Graphics/PageBuilder.cpp");
+        // MenuXml.h is the part of buildMenu that's kept SDL-free (<itemDefaults>)
+        const std::string pageBuilder = readFile(source + "/Graphics/PageBuilder.cpp") + readFile(source + "/Graphics/MenuXml.h");
         const std::string tween = readFile(source + "/Graphics/Animate/Tween.cpp");
         const std::string pageH = readFile(source + "/Graphics/Page.h");
         if (pageBuilder.empty() || tween.empty() || pageH.empty()) {

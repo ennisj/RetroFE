@@ -1413,13 +1413,14 @@ void Page::cleanup()
 
 
 void Page::draw() {
- 
+    // The layer lists are made when the first component is added, so a page
+    // whose only components are menus has none: its menus were never drawn
+    // (and every frame logged an error)
+    if (LayerComponents_.size() < NUM_LAYERS) {
+        LayerComponents_.resize(NUM_LAYERS);
+    }
+
     for (unsigned int i = 0; i < NUM_LAYERS; ++i) {
-        // Check for out-of-bounds access
-        if (i >= LayerComponents_.size()) {
-            LOG_ERROR("Page::draw", "Layer index out of bounds: " + std::to_string(i));
-            break; // Exit loop
-        }
 
         // Skip layers with no components or menus
         if (LayerComponents_[i].empty() && menus_.empty()) {

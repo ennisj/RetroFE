@@ -48,7 +48,11 @@ namespace ThemeEditor
 
     // Runs a command that only needs the session: page, select, selectid,
     // add, click X Y, move DX DY, resize HANDLE DX DY, nudge DX DY, name,
-    // layer, alpha, colour, var, delete, undo, redo. Coordinates and
+    // layer, alpha, colour, var, delete, undo, redo; templates:
+    // tplnew COLLECTION blank|default|PRIMARY NAME..., tplassign COLLECTION
+    // PRIMARY|default, tpldelete PRIMARY [REPLACEMENT|default], tplrename
+    // PRIMARY NAME...; theme properties: font PATH|default, sound KIND
+    // PATH|none, splashtext TEXT, splashbg PATH|none. Coordinates and
     // distances are theme units. NotSession for anything else. `note` says
     // what happened (the selection, the widget's new rect).
     CommandResult runSessionCommand(EditorSession& session, const EditorCommand& command, std::string& note);
