@@ -1,7 +1,7 @@
 # Catalog: content sources, download and install
 
 **Status:** draft, 2026-10-22. Reviewed; see [Decisions](#decisions).
-Nothing here is built yet.
+What's built so far is marked in [Phases](#phases).
 
 The Catalog is the Home menu's place for getting content: browse what's
 available, install it, and keep it up to date. This document proposes how
@@ -72,6 +72,10 @@ sources.nas.path = \\nas\retro\packages
 sources.onesauce.type = archiveorg
 sources.onesauce.items = onesaucev2system-game-packs, OnesaUCEv2BaseBuild
 sources.onesauce.naming = onesauce     # "<stem> v<maj>.<min>b<beta>.zip"
+
+sources.retrofe.type = github
+sources.retrofe.repo = ennisj/RetroFE
+sources.retrofe.prerelease = no        # yes also offers pre-releases
 ```
 
 Manage gets a **Sources** screen (a form) to add, enable/disable and remove
@@ -84,12 +88,13 @@ sources, so nobody has to edit this file by hand.
 | `index` | A catalog index file (below) over HTTP(S) or from disk | The native format. Everything else maps to it. |
 | `folder` | A folder of package archives, each with a sidecar `<file>.package.json`, or just archives | With no sidecars, packages are guessed from file names (as `archiveorg` does). Good for LAN or USB. |
 | `archiveorg` | `https://archive.org/metadata/<item>` file lists | The One Saucier logic as an adapter: file name → stem/version via a `naming` rule, size and MD5 from the metadata, downloads from `/download/<item>/<file>`. With `naming = onesauce` it also writes the OnesaUCE `version.txt` markers on install, so One Saucier recognises the content on the same drive. |
-| `github` (later) | Release assets of a repository | Same idea; release notes become descriptions. |
+| `github` | `https://api.github.com/repos/<owner>/<repo>/releases` | Offers RetroFE itself, as a package of kind `app` (see [GitHub sources and updating RetroFE](#github-sources-and-updating-retrofe)). Release notes become the description. |
 
 Each adapter caches what it read in `catalog/cache/<source>/`, keeping
 `ETag`/`Last-Modified` so refreshing is cheap and the Catalog works offline
 with the last known list. One Saucier fetches live and depends on a mirror
-when offline; caching every source fixes that.
+when offline; caching every source fixes that. (Built so far: index sources
+keep the last copy; GitHub sources also keep the `ETag`.)
 
 ## Catalog index format
 
@@ -126,7 +131,7 @@ A JSON document (the format web hosting and archive.org already speak):
 |-------|---------|
 | `id` | Stable identifier, unique within the source. The install key (One Saucier's `stem`). |
 | `name`, `description` | Shown in the Catalog. |
-| `kind` | `collection`, `layout`, `media`, `bundle`, `other`; `emulator` is reserved for later. Groups the Catalog and picks sensible targets. |
+| `kind` | `collection`, `layout`, `media`, `bundle`, `other`; `emulator` is reserved for later. Groups the Catalog and picks sensible targets. `app` (RetroFE itself) only comes from `github` sources: an index or folder offering it, or the id `retrofe`, is skipped with a warning. |
 | `version` | Compared to the installed one to offer updates. Semantic versions, plus the OnesaUCE `v2.0b13` style via the adapter. |
 | `artwork` | Image URLs, relative to the index. Shown like collection artwork. |
 | `requires` | Other packages, by `id` and optional version range. Offered together when installing. |
@@ -208,6 +213,131 @@ Updates, uninstall and repair all come from the manifest: replace the files
 it lists, delete them, or re-check their hashes. Files a user changed after
 installing are kept, not overwritten silently.
 
+## GitHub sources and updating RetroFE
+
+*Built.* A `github` source turns a repository's releases into one package:
+RetroFE itself.
+
+```ini
+sources.retrofe.type = github
+sources.retrofe.repo = ennisj/RetroFE    # owner/name
+sources.retrofe.prerelease = yes         # optional: offer pre-releases too
+sources.retrofe.url = https://...        # optional: another releases API address (GitHub Enterprise, tests)
+```
+
+**Adding it.** Manage → Sources has **Add RetroFE from GitHub**: one button,
+after the same "I trust this source" confirmation as any source, adding a
+source `retrofe` for `ennisj/RetroFE` (the constant `Catalog::retrofeRepository`
+in `Catalog/GitHub.h`). The ordinary form adds any repository with the type
+"GitHub releases", taking `owner/name` or the repository's github.com address.
+
+**Reading releases.** The adapter fetches
+`https://api.github.com/repos/<repo>/releases?per_page=30` with
+`Accept: application/vnd.github+json` (WinHTTP sends `User-Agent: RetroFE`).
+Of the releases that aren't drafts, and aren't pre-releases unless the source
+allows them, it takes the **highest version that has an asset for this
+system**. That becomes the package:
+
+| Field | From |
+|-------|------|
+| `id`, `name`, `kind` | `retrofe`, `RetroFE`, `app` |
+| `version` | The tag without a leading `v` (`v2504.3` → `2504.3`); tags that aren't versions are skipped with a warning |
+| `description` | The release notes, trimmed (at most 1500 characters) |
+| `files[0]` | The asset's `browser_download_url` and `size`, and `sha256` from its `digest` (`sha256:…`), which GitHub records for uploads |
+
+**Asset naming.** `RetroFE-<version>-<os>-<arch>.zip`, e.g.
+`RetroFE-2504.3-windows-x64.zip`. An asset is this system's if it's a `.zip`
+whose name (split at `-`, `_`, `.` and spaces) includes the system
+(`windows`/`win`/`win64`, `linux`, `macos`/`osx`/`mac`/`darwin`) and either
+this architecture (`x64`/`x86_64`/`amd64`, `arm64`/`aarch64`, `x86`) or none;
+naming the architecture wins. Assets still uploading are ignored.
+
+**Archive layout.** `retrofe/` holds the program (what goes in the program
+folder: `retrofe.exe`, its DLLs, `OpenSans.ttf`…), and `layouts/<name>/`
+optionally holds layouts shipped with it. Anything else at the top, such as
+`RetroFE.lnk` for new installs, is left out when updating.
+`.github/workflows/release-windows.yml` builds exactly this when a `v*` tag is
+pushed.
+
+**Rate limits.** GitHub allows 60 unauthenticated requests an hour per
+address. The list is cached in `catalog/cache/<source>/releases.json` with its
+`ETag` (`state.json`), and:
+- it isn't fetched again within a minute (RetroFE reloads re-read sources);
+- later fetches send `If-None-Match`, and a `304` costs nothing against the limit;
+- on `403` with `X-RateLimit-Remaining: 0`, or `429`, it waits until
+  `X-RateLimit-Reset` (or `Retry-After`; 15 minutes if neither, at most 2
+  hours) without asking again, showing the last copy and the warning
+  "GitHub's limit of 60 checks an hour has been reached; RetroFE checks again
+  after HH:MM";
+- offline, it shows the last copy, as index sources do.
+
+**What "installed" means for RetroFE.** The installed version is the running
+build's (`RETROFE_VERSION_DESCRIBE`, which a release build sets to its tag with
+`-DRETROFE_RELEASE_VERSION`), so a fresh install shows **Update** when a newer
+release exists. Any GitHub source may update it (it can't be removed to
+switch sources, unlike other packages), and it can't be removed.
+
+### Updating RetroFE in place
+
+Windows can't overwrite a running exe or a loaded DLL, but it can rename them
+within their folder. `Catalog/SelfUpdate.cpp` uses that:
+
+1. **Download and verify** as for any package (size, and SHA-256 from the
+   asset's digest).
+2. **Stage and check** into `catalog/update/staged/`. `retrofe/<path>` maps to
+   the program folder, `layouts/<name>/<path>` to `<root>/layouts/<name>/`,
+   nothing else is installed. Refused outright: any path that could escape
+   (the usual checks), programs or scripts in a layout, and an archive without
+   `retrofe/<the running exe's name>` (so a package for another system, or not
+   RetroFE at all, is never applied). Files identical to what's there are
+   left alone.
+3. **Back up** every file about to be replaced or removed into
+   `catalog/backups/retrofe/<running version>/`, at the same paths under the
+   root. With the unchanged files still in place, that's the whole previous
+   version. Only the last update's backup is kept.
+4. **Journal, then swap.** `catalog/update/journal.json` lists every step
+   before the first rename. For each file: rename the old one to
+   `<name>.old` (or `.old2`… if that's taken and in use), then move the new
+   one in (a rename, or a copy to `<name>.new` and a rename when the catalog
+   is on another drive). Files the previous version installed that this one
+   doesn't have are set aside too, unless they've been changed. The program
+   file goes last. If any step fails, every step so far is undone and the
+   message says nothing was changed.
+5. **Record.** The journal is marked done, `catalog/installed/retrofe.json`
+   lists the version's files, and the `.old` files go into
+   `catalog/update/leftovers.json`. The ones not in use are deleted at once.
+6. **Restart.** The Service asks for a restart; RetroFE leaves its main loop
+   (without running `exit.bat`, since it isn't really exiting), shuts
+   everything down, and `main()` starts the program again with the same
+   command line before returning.
+7. **Next start.** The Catalog's start-up job deletes the leftovers, retrying
+   for about five seconds while the old process lets go of them; any still
+   held wait for the start after.
+
+If RetroFE stops during step 4 (a crash or power cut), the next start finds an
+unfinished journal and puts every file back, then restarts so the old version
+runs; a journal marked done is finished instead. The journal only ever names
+files in the program folder, under `layouts/`, and in the staging folder;
+anything else makes it ignored. User content (`collections/`, `settings*.conf`,
+`controls.conf`, `launchers*`, `meta/`, the catalog's own records) is never
+touched. Self-update is refused unless the program is in a folder of its own
+under the root (`<root>/retrofe/` on Windows), so on an install where the exe
+sits in the root it can't reach anything else.
+
+**Why swap in-process and restart, rather than at the next start?** At any
+start the exe and its DLLs are already loaded, so applying "at the next
+start" would still need the rename trick, plus a way to stop RetroFE from
+running a half-updated program in between. Swapping right after the download,
+then restarting at once, keeps the window where old code runs beside new
+files to the restart itself. The alternative, a separate updater program that
+waits for RetroFE to exit and then copies, avoids in-use files entirely but
+is one more program to ship and to update.
+
+**Restoring the previous version by hand:** copy
+`catalog/backups/retrofe/<version>/` over the root. A crash can only leave a
+mixed set of files if it happens during the swap itself (milliseconds), and
+the next start then undoes it.
+
 ## Screens
 
 Lists are layout pages and actions are forms, as for the rest of the Home menu:
@@ -235,6 +365,10 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
 - Packages can only write under their targets (see Install), never into
   the catalog folder or RetroFE's program folder, and phase 1 refuses
   programs and scripts outright (no emulator packages yet).
+- The one exception is RetroFE itself (kind `app`), which only a `github`
+  source the user added can offer, which may only write into the program
+  folder and the layouts it ships, and which must contain the running
+  program's file (see [Updating RetroFE in place](#updating-retrofe-in-place)).
 - Paths are checked for every system: no `..`, absolute paths, drives or
   streams (`:`), Windows device names, forbidden characters, or segments
   ending in a dot or space. Ids and source names get the same device-name check.
@@ -281,7 +415,10 @@ Copied deliberately, with One Saucier itself unchanged:
 2. **The `archiveorg` adapter,** so OnesaUCE content can come through the same
    Catalog.
 3. **Updates, uninstall, repair, and requires** in Manage.
-4. Later: GitHub releases, more archive formats, multiple downloads at once.
+4. **GitHub releases and updating RetroFE itself.** *Built* (the `github`
+   adapter, `app` packages, the self-update and the release workflow).
+5. Later: more archive formats, multiple downloads at once, GitHub releases
+   carrying content packages (not just RetroFE).
 
 ## Decisions
 
@@ -295,6 +432,13 @@ Copied deliberately, with One Saucier itself unchanged:
    media; emulators come later.
 6. **OnesaUCE content keeps its `version.txt` markers** when installed
    through the `archiveorg` adapter.
+7. **RetroFE updates itself only from `github` sources** (kind `app`, id
+   `retrofe`). Index and folder sources can't offer it.
+8. **Self-update swaps files in-process by renaming them aside, then
+   restarts** (see [Updating RetroFE in place](#updating-retrofe-in-place)),
+   rather than at the next start or through a separate updater program.
+9. **Release assets are named `RetroFE-<version>-<os>-<arch>.zip`** and hold
+   `retrofe/` plus optional `layouts/<name>/`.
 
 ## Background: could a source suggest other sources?
 

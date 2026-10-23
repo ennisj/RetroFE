@@ -16,6 +16,7 @@
 
 #include "RetroFE.h"
 #include "Builtin/Builtin.h"
+#include "Catalog/SelfUpdate.h"
 #include "Manager/Home.h"
 #include "Manager/Setup.h"
 #include "Collection/CollectionInfo.h"
@@ -2305,7 +2306,9 @@ bool RetroFE::run()
 			if (currentPage_->isGraphicsIdle())
 			{
 				l.LEDBlinky(2);
-				l.exitScript();
+				// Restarting into an update isn't leaving RetroFE (exit.bat may shut the machine down)
+				if (!Catalog::relaunchPending())
+					l.exitScript();
 				running = false;
 			}
 			break;
@@ -2427,7 +2430,13 @@ bool RetroFE::run()
 			// Catalog installs show up once the user is back on Home and nothing's left to do
 			bool backHome = homeMenu_ && state == RETROFE_IDLE && !manager_.isOpen() &&
 				currentPage_ && currentPage_->getCollectionName() == Home::collectionName;
-			if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
+			if (manager_.takeRestartRequest())
+			{
+				// RetroFE updated itself: exit, and main() starts the new version
+				reboot_ = false;
+				state = RETROFE_QUIT_REQUEST;
+			}
+			else if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
 			{
 				// Reload everything so the changes show up
 				reboot_ = true;

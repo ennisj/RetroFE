@@ -1,0 +1,101 @@
+name: Windows Release
+
+# Pushing a version tag (v2504.3, or v2504.3-beta.1 for a pre-release) builds
+# RetroFE for Windows and attaches RetroFE-<version>-windows-x64.zip to that
+# tag's GitHub release, creating the release if there isn't one yet.
+#
+# The archive holds retrofe/ (retrofe.exe and its DLLs), RetroFE.lnk, and the
+# layouts listed in RELEASE_LAYOUTS under layouts/. The Catalog's GitHub
+# sources offer it as an update of RetroFE itself (docs/design/catalog-sources.md),
+# so the asset name and that layout matter: <name>-<version>-windows-x64.zip,
+# with the program under retrofe/.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  # Layouts from Package/Environment/Common/layouts to ship, separated by ";"
+  # (e.g. "Aeon Nox"). Empty ships the program alone; see docs/DECISIONS.md L4
+  # about layout fonts before adding any.
+  RELEASE_LAYOUTS: ""
+
+jobs:
+  release:
+    runs-on: windows-2022
+    name: Build and release for Windows
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Read the version from the tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^[vV]', ''
+          if ($version -notmatch '^[0-9][0-9A-Za-z.+_-]*$') {
+            throw "The tag $tag isn't a version such as v2504.3"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$(if ($version.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+      - name: Install GStreamer
+        run: |
+          choco install -y gstreamer --version 1.24.11
+          choco install -y gstreamer-devel --version 1.24.11
+
+      - name: Configure
+        # RETROFE_RELEASE_VERSION makes the build report the tag's version, which
+        # is what the Catalog compares with releases when offering updates
+        run: |
+          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=D:\gstreamer\1.0\msvc_x86_64 -D RETROFE_RELEASE_VERSION=${{ steps.version.outputs.version }} -S .\RetroFE\Source
+
+      - name: Build RetroFE
+        run: |
+          cmake --build RetroFE/Build --config Release --target retrofe
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $out = "dist\RetroFE"
+          New-Item -ItemType Directory -Force "$out\retrofe" | Out-Null
+          Copy-Item -Recurse -Path "Package\Environment\Windows\retrofe\*" -Destination "$out\retrofe" -Exclude ".gitignore"
+          Copy-Item "RetroFE\Build\Release\retrofe.exe" "$out\retrofe\retrofe.exe"
+          Copy-Item "Package\Environment\Windows\RetroFE.lnk" $out
+          foreach ($layout in ($env:RELEASE_LAYOUTS -split ';' | Where-Object { $_.Trim() })) {
+            $name = $layout.Trim()
+            $from = "Package\Environment\Common\layouts\$name"
+            if (-not (Test-Path $from)) { throw "No layout $from" }
+            New-Item -ItemType Directory -Force "$out\layouts" | Out-Null
+            Copy-Item -Recurse $from "$out\layouts\$name"
+          }
+          $zip = "dist\RetroFE-$version-windows-x64.zip"
+          Compress-Archive -Path "$out\*" -DestinationPath $zip
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          Get-FileHash $zip -Algorithm SHA256 | Format-List
+
+      - name: Create or update the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            $options = @('--title', "RetroFE ${{ steps.version.outputs.version }}", '--generate-notes', '--verify-tag')
+            if ("${{ steps.version.outputs.prerelease }}" -eq 'true') { $options += '--prerelease' }
+            gh release create $tag @options
+            if ($LASTEXITCODE -ne 0) { throw "Could not create the release" }
+          }
+          # GitHub records the asset's SHA-256 digest, which the Catalog checks
+          gh release upload $tag "${{ steps.package.outputs.zip }}" --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Could not upload the archive" }

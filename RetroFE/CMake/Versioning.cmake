@@ -49,6 +49,12 @@ endif()
 
 set(RETROFE_VERSION_DESCRIBE "${RETROFE_VERSION_MAJOR}.${RETROFE_VERSION_MINOR}")
 
+# A release build says the version of its tag (-DRETROFE_RELEASE_VERSION=2504.3 for v2504.3),
+# which is what the Catalog compares with GitHub releases when offering updates
+if(DEFINED RETROFE_RELEASE_VERSION AND NOT "${RETROFE_RELEASE_VERSION}" STREQUAL "")
+    set(RETROFE_VERSION_DESCRIBE "${RETROFE_RELEASE_VERSION}")
+endif()
+
 # Generate versioning.h
 set(VERSION_HEADER "${CMAKE_BINARY_DIR}/autogen/versioning.h")
 file(WRITE ${VERSION_HEADER} "// Auto-generated versioning header\n")

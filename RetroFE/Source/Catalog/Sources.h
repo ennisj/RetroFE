@@ -28,9 +28,11 @@ namespace Catalog
     struct SourceConfig
     {
         std::string name;
-        std::string type;      // "index" or "folder"
-        std::string url;       // index: http(s) URL or file path
+        std::string type;      // "index", "folder" or "github"
+        std::string url;       // index: http(s) URL or file path; github: the releases API address, if not GitHub's
         std::string path;      // folder: the folder to scan
+        std::string repo;      // github: owner/name
+        bool prerelease = false;   // github: offer pre-releases too
         bool enabled = true;
     };
 
@@ -51,8 +53,8 @@ namespace Catalog
         bool fromCache = false;    // the source couldn't be reached; this is the last copy
     };
 
-    // Reads a source's packages. Index sources are cached in cacheFolder, and
-    // the cache is used when the index can't be fetched. http may be null,
-    // in which case only local sources can be read.
+    // Reads a source's packages. Index and GitHub sources are cached in
+    // cacheFolder, and the cache is used when they can't be fetched. http may
+    // be null, in which case only local sources can be read.
     SourceContents readSource(const SourceConfig& source, const std::string& cacheFolder, Http* http);
 }

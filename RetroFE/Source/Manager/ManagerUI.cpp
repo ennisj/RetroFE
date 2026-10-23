@@ -26,6 +26,7 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
+#include "versioning.h" // Created at build time
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -168,6 +169,7 @@ void ManagerUI::startCatalog()
         targets.media = targets.collections;
     }
     // RetroFE's own program folder, when it's a folder of its own (retrofe/ under the root)
+    Catalog::AppInstall app;
     if (char* base = SDL_GetBasePath()) {
         std::filesystem::path program = std::filesystem::path(base).lexically_normal();
         SDL_free(base);
@@ -176,9 +178,15 @@ void ManagerUI::startCatalog()
         if (program != root && program.parent_path() == root) {
             targets.protectedFolders.push_back(program.string());
         }
+        app.program = program.string();
     }
 
     catalog_ = std::make_unique<Catalog::Service>(folder, targets, Catalog::createHttp());
+    // GitHub sources can update RetroFE itself (SelfUpdater checks it's in a folder of its own)
+    app.root = Configuration::absolutePath;
+    app.executable = Catalog::currentExecutable();
+    app.version = RETROFE_VERSION_DESCRIBE;
+    catalog_->setApp(app);
     catalog_->start();
     model_.setCatalog(catalog_.get());
 }
@@ -204,6 +212,17 @@ bool ManagerUI::takeCatalogChanges()
             LOG_ERROR("Manager", error);
         }
     }
+    return true;
+}
+
+bool ManagerUI::takeRestartRequest()
+{
+    // The path found at start: the running file may have been renamed since
+    std::string executable = catalog_ ? catalog_->app().executable : "";
+    if (!catalog_ || !catalog_->takeRestartRequest() || executable.empty()) {
+        return false;
+    }
+    Catalog::requestRelaunch(executable);
     return true;
 }
 

@@ -16,6 +16,7 @@
 
 #include "Video/GStreamerVideo.h"
 #include "Builtin/Builtin.h"
+#include "Catalog/SelfUpdate.h"
 #include "Database/Configuration.h"
 #include "Database/DB.h"
 #include "Database/GlobalOpts.h"
@@ -349,6 +350,20 @@ int main(int argc, char** argv)
     }
     catch (std::exception& e) {
         LOG_ERROR("EXCEPTION", e.what());
+    }
+
+    // RetroFE updated itself: everything is shut down, so start the new version
+    std::string relaunchExecutable;
+    if (Catalog::takeRelaunch(relaunchExecutable)) {
+        std::string error;
+        if (Catalog::relaunch(relaunchExecutable, argv, error)) {
+            LOG_NOTICE("RetroFE", "Starting the updated RetroFE");
+        }
+        else {
+            LOG_ERROR("RetroFE", error);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "RetroFE was updated",
+                                     ("RetroFE was updated, but couldn't start again by itself. Please start it again.\n" + error).c_str(), NULL);
+        }
     }
 
     Logger::deInitialize();
