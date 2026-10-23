@@ -68,9 +68,10 @@ void AttractMode::reset(bool set) {
     // Reset state
     setState(State::IDLE, 0);
 
-    // Only update launch target on a full reset
+    // Only update launch target on a full reset. RetroFE resets every frame
+    // on Home, in menus and while Manage is open, so this one isn't logged.
     if (!set) {
-        updateLaunchTarget();
+        updateLaunchTarget(false);
         idleCycleCount_ = 0;  // Only reset counter on full reset
         elapsedPlaylistTime_ = 0;
         elapsedCollectionTime_ = 0;
@@ -355,11 +356,12 @@ void AttractMode::setLaunchFrequencyRange(int minCycles, int maxCycles) {
     updateLaunchTarget();
 }
 
-void AttractMode::updateLaunchTarget() {
+void AttractMode::updateLaunchTarget(bool log) {
     // Generate random value between min and max (inclusive)
     int range = maxLaunchCycles_ - minLaunchCycles_ + 1;
     targetLaunchCycles_ = minLaunchCycles_ + (rand() % range);
 
-    // Optional debug logging
-    LOG_DEBUG("AttractMode", "New launch target set: " + std::to_string(targetLaunchCycles_) + " cycles");
+    if (log) {
+        LOG_DEBUG("AttractMode", "New launch target set: " + std::to_string(targetLaunchCycles_) + " cycles");
+    }
 }

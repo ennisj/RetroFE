@@ -588,7 +588,13 @@ static bool ImportConfiguration(Configuration* c) {
             }
 
             if (!settingsImported) {
-                LOG_ERROR("RetroFE", "Could not import any collection settings for " + collection);
+                // Menus and merged collections (OneSauce has dozens) need no settings of their own
+                if (CollectionInfoBuilder::isMenuOrMergedFolder(Utils::combinePath(collectionsPath, collection))) {
+                    LOG_INFO("RetroFE", "No settings for " + collection + " (a menu or merged collection); using the defaults");
+                }
+                else {
+                    LOG_ERROR("RetroFE", "Could not import any collection settings for " + collection);
+                }
             }
             else {
                 LOG_INFO("RetroFE", "Imported settings for collection: " + collection);

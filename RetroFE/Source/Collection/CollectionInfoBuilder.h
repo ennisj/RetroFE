@@ -40,6 +40,11 @@ public:
     static bool createCollectionDirectory(const std::string& collectionName, const std::string& collectionType = NULL, const std::string& osType = NULL);
     bool ImportBasicList(CollectionInfo *info, const std::string& file, std::vector<Item *> &list);
 
+    // A collection folder that lists other collections or their games: menu.txt,
+    // a menu/ folder, menu.xml, or <source>.sub files. Such a folder needs no
+    // settings.conf (or launcher) of its own, so their absence isn't a problem.
+    static bool isMenuOrMergedFolder(const std::string& folder);
+
 private:
     Configuration &conf_;
     MetadataDatabase &metaDB_;

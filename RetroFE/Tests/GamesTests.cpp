@@ -674,6 +674,29 @@ static void runGamesTests()
         checkEqual(Test::readFile(exclude), "", "exclude.txt untouched");
     });
 
+    run("games: a hidden game keeps its title and metadata", [] {
+        std::string root = makeInstall("games-hide-title");
+        Fixture f(root);
+        f.open("game", gameParams("Arcade", "b"));
+        check(f.model.runAction("game.hide").ok, "hidden");
+        f.settle();
+        checkEqual(f.model.get("game:isHidden"), "yes", "hidden");
+        checkEqual(f.model.get("game:title"), "Beta", "the screen is titled by its metadata, not its file");
+        checkEqual(f.model.get("game:year"), "1981", "its year");
+        checkEqual(f.model.get("game:file"), "b.zip", "its file");
+
+        f.open("games", {});
+        f.model.set("game:query", "beta");
+        check(f.model.rows("game:search", 100).items.empty(), "not in the normal search");
+        f.model.set("game:onlyHidden", "yes");
+        Forms::Rows hidden = f.model.rows("game:search", 100);
+        check(rowIds(hidden) == std::vector<std::string>{ "b" }, "found by its title among the hidden games");
+        if (hidden.items.size() == 1) {
+            checkEqual(hidden.items[0].label, "Beta", "listed by its title");
+            check(hidden.items[0].detail.find("b.zip") != std::string::npos, "the file in the detail: " + hidden.items[0].detail);
+        }
+    });
+
     run("games: hiding a folder game (emuarc) and a listed game with no file", [] {
         std::string root = makeInstall("games-hide-more");
         // Saturn: list.emuarc names each game after its folder; every file of it is a line
@@ -742,6 +765,12 @@ static void runGamesTests()
         check(q.take(false, true, false, request) == Take::None && q.hasPending(), "a reload first");
         check(q.take(false, false, false, request) == Take::Start && request.game == "a" && !q.hasPending(), "then it starts");
         check(q.take(false, false, false, request) == Take::None, "once");
+
+        // The title rides along for "Back from <title>", and isn't part of what the request is
+        q.want({ "Arcade", "a", "Alpha" });
+        check(q.handle(true, closes(true)) && q.take(false, false, false, request) == Take::Start
+              && request.title == "Alpha", "the title comes back with the request");
+        check(LaunchQueue::Request{ "Arcade", "a", "Alpha" } == LaunchQueue::Request{ "Arcade", "a", "" }, "same game, same request");
 
         // A failed action asks nothing
         q.want({ "Arcade", "a" });

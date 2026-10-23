@@ -44,6 +44,7 @@ namespace Manager
         {
             std::string collection;   // the game's own system
             std::string game;
+            std::string title;        // for messages ("Back from <title>"); not part of the identity
             bool operator==(const Request& o) const { return collection == o.collection && game == o.game; }
         };
 

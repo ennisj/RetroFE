@@ -150,6 +150,7 @@ private:
     void drawWindow();
     void startCatalog();
     void startLibrary();
+    std::string gameTitle(const std::string& collection, const std::string& game) const;   // its title, else game
     const Forms::Form* form(const std::string& id);
     void show();   // shows the navigator's current screen
 

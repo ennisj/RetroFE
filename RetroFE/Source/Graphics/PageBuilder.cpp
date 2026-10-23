@@ -181,6 +181,14 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			}
 		}
 
+		// "layout - N.xml" pages (one per extra monitor) are optional: most themes have none
+		auto missing = [layoutIndex](const std::string& message) {
+			if (layoutIndex == 0)
+				LOG_WARNING("Layout", message);
+			else
+				LOG_INFO("Layout", message);
+		};
+
 		// Check if the layout file exists
 		if (builtinXml || fs::exists(layoutFile)) {
 			LOG_INFO("Layout", "Attempting to initialize layout: " + layoutFile);
@@ -198,7 +206,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 						LOG_INFO("Layout", "Attempting to initialize default layout: " + layoutFile);
 					}
 					else {
-						LOG_WARNING("Layout", "Layout not found: " + layoutFile);
+						missing("Layout not found: " + layoutFile);
 						continue; // Skip to next layout
 					}
 				}
@@ -208,12 +216,12 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 					splashInitialized = true;
 				}
 				else {
-					LOG_WARNING("Layout", "Layout file does not exist: " + layoutFile);
+					missing("Layout file does not exist: " + layoutFile);
 					continue; // Skip to next layout
 				}
 			}
 			else {
-				LOG_WARNING("Layout", "Layout file does not exist: " + layoutFile);
+				missing("Layout file does not exist: " + layoutFile);
 				continue; // Skip to next layout
 			}
 		}

@@ -267,28 +267,34 @@ namespace
 
         // Each collection's games sorted by title, then indexed
         progress(0.93f, "Sorting");
-        std::vector<GameRecord> sorted;
-        sorted.reserve(index.games.size());
-        std::vector<std::vector<GameRecord>> byCollection(index.collections.size());
-        for (GameRecord& game : index.games) {
-            byCollection[static_cast<size_t>(game.collection)].push_back(std::move(game));
-        }
-        for (size_t c = 0; c < byCollection.size(); c++) {
-            auto& games = byCollection[c];
-            std::vector<std::pair<std::string, size_t>> order;
-            for (size_t i = 0; i < games.size(); i++) {
-                games[i].searchText = toLower(games[i].name) + "\n" + toLower(games[i].title);
-                order.emplace_back(toLower(games[i].title) + '\x01' + games[i].name, i);
+        auto sortGames = [&index](std::vector<GameRecord>& list, std::map<std::pair<int, std::string>, int>& byName, bool own) {
+            std::vector<GameRecord> sorted;
+            sorted.reserve(list.size());
+            std::vector<std::vector<GameRecord>> byCollection(index.collections.size());
+            for (GameRecord& game : list) {
+                byCollection[static_cast<size_t>(game.collection)].push_back(std::move(game));
             }
-            std::sort(order.begin(), order.end());
-            index.collections[c].gameBegin = sorted.size();
-            index.collections[c].gameCount = games.size();
-            for (const auto& [key, i] : order) {
-                index.gameByName[{ static_cast<int>(c), games[i].name }] = static_cast<int>(sorted.size());
-                sorted.push_back(std::move(games[i]));
+            for (size_t c = 0; c < byCollection.size(); c++) {
+                auto& games = byCollection[c];
+                std::vector<std::pair<std::string, size_t>> order;
+                for (size_t i = 0; i < games.size(); i++) {
+                    games[i].searchText = toLower(games[i].name) + "\n" + toLower(games[i].title);
+                    order.emplace_back(toLower(games[i].title) + '\x01' + games[i].name, i);
+                }
+                std::sort(order.begin(), order.end());
+                if (own) {
+                    index.collections[c].gameBegin = sorted.size();
+                    index.collections[c].gameCount = games.size();
+                }
+                for (const auto& [key, i] : order) {
+                    byName[{ static_cast<int>(c), games[i].name }] = static_cast<int>(sorted.size());
+                    sorted.push_back(std::move(games[i]));
+                }
             }
-        }
-        index.games = std::move(sorted);
+            list = std::move(sorted);
+        };
+        sortGames(index.games, index.gameByName, true);
+        sortGames(index.hiddenGames, index.hiddenByName, false);
 
         progress(0.94f, "Linking collections");
         index.precompute();
@@ -724,7 +730,7 @@ namespace
             for (const Index::Candidate& candidate : index.candidates[c]) {
                 byName.emplace(candidate.name, &candidate);
             }
-            auto addGame = [&](const std::string& name, const Index::Candidate* candidate) {
+            auto makeGame = [&](const std::string& name, const Index::Candidate* candidate) {
                 GameRecord game;
                 game.collection = static_cast<int>(c);
                 game.name = name;
@@ -734,23 +740,43 @@ namespace
                     game.directory = candidate->directory;
                 }
                 game.missing = candidate == nullptr;
-                index.games.push_back(std::move(game));
+                return game;
+            };
+            auto addGame = [&](const std::string& name, const Index::Candidate* candidate) {
+                index.games.push_back(makeGame(name, candidate));
                 listed.insert(name);
             };
+            // What the exclude list hides, for Manage (Index::hiddenGames)
+            std::vector<std::pair<std::string, const Index::Candidate*>> hidden;
             if (showMissing) {
                 for (const std::string& name : record.includeList) {
-                    if (!exclude.count(name) && !listed.count(name)) {
-                        auto it = byName.find(name);
+                    auto it = byName.find(name);
+                    if (exclude.count(name)) {
+                        hidden.emplace_back(name, it == byName.end() ? nullptr : it->second);
+                    }
+                    else if (!listed.count(name)) {
                         addGame(name, it == byName.end() ? nullptr : it->second);
                     }
                 }
             }
             if (!showMissing || include.empty()) {
                 for (const Index::Candidate& candidate : index.candidates[c]) {
-                    if ((include.empty() || include.count(candidate.basename)) && !exclude.count(candidate.basename)
-                        && !listed.count(candidate.name)) {
+                    if (!include.empty() && !include.count(candidate.basename)) {
+                        continue;
+                    }
+                    if (exclude.count(candidate.basename)) {
+                        hidden.emplace_back(candidate.name, &candidate);
+                    }
+                    else if (!listed.count(candidate.name)) {
                         addGame(candidate.name, &candidate);
                     }
+                }
+            }
+            // Once per name, and not when another file of it is listed (a folder game)
+            std::set<std::string> hiddenSeen;
+            for (const auto& [name, candidate] : hidden) {
+                if (!listed.count(name) && hiddenSeen.insert(name).second) {
+                    index.hiddenGames.push_back(makeGame(name, candidate));
                 }
             }
         }
@@ -782,8 +808,10 @@ namespace
 
         // Games by metadata type, so each type is read once
         std::map<std::string, std::vector<GameRecord*>> byType;
-        for (GameRecord& game : index.games) {
-            byType[index.collections[static_cast<size_t>(game.collection)].metadataType].push_back(&game);
+        for (std::vector<GameRecord>* list : { &index.games, &index.hiddenGames }) {
+            for (GameRecord& game : *list) {
+                byType[index.collections[static_cast<size_t>(game.collection)].metadataType].push_back(&game);
+            }
         }
         size_t done = 0;
         for (auto& [type, games] : byType) {
@@ -964,6 +992,16 @@ int Index::findGame(const std::string& collection, const std::string& name) cons
     }
     auto it = gameByName.find({ c, name });
     return it == gameByName.end() ? -1 : it->second;
+}
+
+int Index::findHiddenGame(const std::string& collection, const std::string& name) const
+{
+    int c = findCollection(collection);
+    if (c < 0) {
+        return -1;
+    }
+    auto it = hiddenByName.find({ c, name });
+    return it == hiddenByName.end() ? -1 : it->second;
 }
 
 int Index::findLauncher(LauncherScope scope, const std::string& id) const

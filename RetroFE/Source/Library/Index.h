@@ -243,6 +243,10 @@ namespace Library
         std::string activeLayout;
         std::vector<CollectionRecord> collections; // sorted by name, ignoring case
         std::vector<GameRecord> games;             // grouped by collection, each group sorted by title
+        // Games a system's exclude list hides: what its own page would list without
+        // that list, with their metadata, grouped and sorted like games. Kept apart:
+        // they're in no search, itemsOf, gameByName or findGame.
+        std::vector<GameRecord> hiddenGames;
         std::vector<LauncherDef> launchers;        // global, then collection and local ones
         std::vector<LauncherUse> launcherUses;
         std::vector<std::string> unresolvedLaunchers;  // names a collection or game asks for that don't exist
@@ -253,6 +257,7 @@ namespace Library
         // Exact spelling first, then ignoring case; -1 if none
         int findCollection(const std::string& name) const;
         int findGame(const std::string& collection, const std::string& name) const;
+        int findHiddenGame(const std::string& collection, const std::string& name) const;   // into hiddenGames
         int findLauncher(const std::string& id) const;
         int findLayout(const std::string& name) const;
 
@@ -300,6 +305,7 @@ namespace Library
         std::map<std::string, int> collectionByName;     // exact folder name -> index
         std::map<std::string, int> collectionByLower;    // lower-case name -> index
         std::map<std::pair<int, std::string>, int> gameByName;  // (collection, name) -> game
+        std::map<std::pair<int, std::string>, int> hiddenByName;  // (collection, name) -> hiddenGames
         std::map<std::string, int> launcherById;          // "<scope>:<id>" -> index
 
         int findLauncher(LauncherScope scope, const std::string& id) const;

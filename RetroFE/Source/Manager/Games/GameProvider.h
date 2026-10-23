@@ -106,16 +106,10 @@ namespace Manager
         // The game a screen is about (its own collection + name), or nullptr
         const Library::GameRecord* findGame(const Library::Index& index, const Screen& screen, int* position = nullptr) const;
 
-        // --- hidden games: files of a system its exclude list keeps RetroFE from listing
-        struct HiddenGame
-        {
-            int collection = -1;
-            std::string name;
-            std::string file;
-            std::string directory;
-        };
-        const std::vector<HiddenGame>& hiddenGames(const IndexPtr& index);   // once per index
-        const HiddenGame* findHidden(const IndexPtr& index, const Screen& screen);
+        // --- hidden games: files of a system its exclude list keeps RetroFE from
+        // listing (Library::Index::hiddenGames, with their metadata)
+        using HiddenGame = Library::GameRecord;
+        const HiddenGame* findHidden(const IndexPtr& index, const Screen& screen) const;
         std::vector<char> systemsUnder(const Library::Index& index, const std::string& filter) const;
         Forms::Rows hiddenRows(size_t limit);
         std::string hiddenValue(const std::string& key, const Screen& screen);
@@ -206,8 +200,7 @@ namespace Manager
         std::string filterParam_ = "\x01";   // the param:collection the filter was last set from
         bool onlyNoMetadata_ = false;
         bool onlyHidden_ = false;
-        IndexPtr hiddenIndex_;
-        std::vector<HiddenGame> hidden_;
+        IndexPtr hiddenIndex_;                             // keeps hiddenMatches_'s games alive
         std::string hiddenSearchKey_ = "\x01";             // query + filter the rows below are for
         std::vector<const HiddenGame*> hiddenMatches_;
         Library::Search search_;

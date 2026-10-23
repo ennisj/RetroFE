@@ -47,6 +47,25 @@ namespace ThemeEditor
             return static_cast<float>(out) == f;
         }
 
+        // Opacity as the Opacity slider has it (0-100): "0.8" (0-1, with a
+        // decimal point), "80" or "80%" (a percent)
+        bool alphaPercent(const std::vector<std::string>& words, int& pct)
+        {
+            if (words.size() != 1) return false;
+            std::string text = words[0];
+            bool percent = !text.empty() && text.back() == '%';
+            if (percent) text.pop_back();
+            float value = 0;
+            if (!number({ text }, 0, value) || !(value >= 0)) return false;
+            if (!percent && text.find('.') != std::string::npos) {
+                if (value > 1) return false;
+                value *= 100;
+            }
+            if (value > 100) return false;
+            pct = static_cast<int>(value + 0.5f);
+            return true;
+        }
+
         int handleFromName(const std::string& name)
         {
             static const char* names[] = { "nw", "n", "ne", "w", "e", "sw", "s", "se" };
@@ -163,7 +182,19 @@ namespace ThemeEditor
         }
         if (n == "name") return result(s.setName(c.rest));
         if (n == "layer") { int i = 0; return result(integer(c.words, 0, i) && s.setLayer(i)); }
-        if (n == "alpha") { int i = 0; return result(integer(c.words, 0, i) && s.setAlpha(i)); }
+        if (n == "alpha") {
+            int pct = 0;
+            if (!alphaPercent(c.words, pct)) {
+                note = "alpha takes 0-1 (e.g. 0.8) or a percent (80 or 80%), not \"" + c.rest + "\"";
+                return CommandResult::Failed;
+            }
+            const WidgetInstance* w = s.selectedWidget();
+            if (!w) { note = "nothing selected"; return CommandResult::Failed; }
+            if (w->alphaPct == pct) { note = "already " + std::to_string(pct) + "%"; return CommandResult::Ok; }
+            bool ok = s.setAlpha(pct);
+            note = std::to_string(pct) + "%";
+            return result(ok);
+        }
         if (n == "colour" || n == "color") return result(s.setFontColor(c.rest));
         if (n == "var") return result(!c.words.empty() && s.setVar(c.words[0], c.tail(1)));
         if (n == "delete") return result(s.removeSelected());

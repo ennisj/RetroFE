@@ -233,7 +233,6 @@ void GameProvider::refresh()
     onlyNoMetadata_ = false;
     onlyHidden_ = false;
     hiddenIndex_.reset();
-    hidden_.clear();
     hiddenSearchKey_ = "\x01";
     hiddenMatches_.clear();
     launchCheckKey_.clear();   // programs may have been installed meanwhile
@@ -638,79 +637,10 @@ Forms::Rows GameProvider::searchRows(size_t limit)
 
 // --- Hidden games -------------------------------------------------------------------------
 
-const std::vector<GameProvider::HiddenGame>& GameProvider::hiddenGames(const IndexPtr& idx)
+const GameProvider::HiddenGame* GameProvider::findHidden(const IndexPtr& idx, const Screen& screen) const
 {
-    if (idx == hiddenIndex_) {
-        return hidden_;
-    }
-    // Files with the system's extensions that its exclude list names (as
-    // ImportDirectory matches them: the file's name without its extension)
-    hiddenIndex_ = idx;
-    hidden_.clear();
-    hiddenSearchKey_ = "\x01";
-    if (!idx) {
-        return hidden_;
-    }
-    for (size_t c = 0; c < idx->collections.size() && c < idx->candidates.size(); c++) {
-        const Library::CollectionRecord& record = idx->collections[c];
-        if (!record.is(Library::KindSystem) || record.excludeList.empty()) {
-            continue;
-        }
-        // What the library's ImportDirectory would list if the exclude list
-        // didn't name it: include.txt's names with includeMissingItems (file
-        // or not), otherwise files matching include.txt (or every file)
-        std::set<std::string> excluded(record.excludeList.begin(), record.excludeList.end());
-        std::set<std::string> include(record.includeList.begin(), record.includeList.end());
-        bool showMissing = record.includeMissingItems.value_or(false);
-        std::set<std::string> seen;
-        size_t first = hidden_.size();
-        auto add = [&](const std::string& name, const Index::Candidate* candidate) {
-            if (!idx->gameByName.count({ static_cast<int>(c), name }) && seen.insert(name).second) {
-                hidden_.push_back(HiddenGame{ static_cast<int>(c), name, candidate ? candidate->file : "",
-                                              candidate ? candidate->directory : "" });
-            }
-        };
-        if (showMissing) {
-            for (const std::string& name : record.includeList) {
-                if (excluded.count(name)) {
-                    const Index::Candidate* found = nullptr;
-                    for (const Index::Candidate& candidate : idx->candidates[c]) {
-                        if (candidate.name == name) {
-                            found = &candidate;
-                            break;
-                        }
-                    }
-                    add(name, found);
-                }
-            }
-        }
-        if (!showMissing || include.empty()) {
-            for (const Index::Candidate& candidate : idx->candidates[c]) {
-                if ((include.empty() || include.count(candidate.basename)) && excluded.count(candidate.basename)) {
-                    add(candidate.name, &candidate);
-                }
-            }
-        }
-        std::sort(hidden_.begin() + static_cast<std::ptrdiff_t>(first), hidden_.end(), [](const HiddenGame& a, const HiddenGame& b) {
-            return Library::toLower(a.name) < Library::toLower(b.name);
-        });
-    }
-    return hidden_;
-}
-
-const GameProvider::HiddenGame* GameProvider::findHidden(const IndexPtr& idx, const Screen& screen)
-{
-    if (!idx) {
-        return nullptr;
-    }
-    int c = idx->findCollection(screen.param("collection"));
-    std::string id = screen.param("id");
-    for (const HiddenGame& game : hiddenGames(idx)) {
-        if (game.collection == c && game.name == id) {
-            return &game;
-        }
-    }
-    return nullptr;
+    int h = idx ? idx->findHiddenGame(screen.param("collection"), screen.param("id")) : -1;
+    return h < 0 ? nullptr : &idx->hiddenGames[static_cast<size_t>(h)];
 }
 
 std::vector<char> GameProvider::systemsUnder(const Index& idx, const std::string& filter) const
@@ -747,16 +677,19 @@ Forms::Rows GameProvider::hiddenRows(size_t limit)
     if (!idx) {
         return rows;
     }
-    const std::vector<HiddenGame>& all = hiddenGames(idx);
+    if (idx != hiddenIndex_) {
+        hiddenIndex_ = idx;
+        hiddenSearchKey_ = "\x01";
+    }
     std::string text = Library::toLower(Utils::trimEnds(query_));
     std::string key = text + '\n' + filter_;
     if (key != hiddenSearchKey_) {
-        // Once per query and filter (hiddenGames clears the key for a new index)
+        // Once per query, filter and index; by name or title, as the search does
         hiddenSearchKey_ = key;
         hiddenMatches_.clear();
         std::vector<char> under = systemsUnder(*idx, filter_);
-        for (const HiddenGame& game : all) {
-            if (under[static_cast<size_t>(game.collection)] && Library::icontains(Library::toLower(game.name), text)) {
+        for (const HiddenGame& game : idx->hiddenGames) {
+            if (under[static_cast<size_t>(game.collection)] && Library::icontains(game.searchText, text)) {
                 hiddenMatches_.push_back(&game);
             }
         }
@@ -770,8 +703,8 @@ Forms::Rows GameProvider::hiddenRows(size_t limit)
         const std::string& system = idx->collections[static_cast<size_t>(game->collection)].name;
         Forms::Row row;
         row.id = game->name;
-        row.label = game->name;
-        row.detail = system + "  -  hidden";
+        row.label = game->title.empty() ? game->name : game->title;
+        row.detail = system + "  -  hidden" + (game->file.empty() ? "" : ": " + fileName(game->file));
         row.params["collection"] = system;
         std::string thumbKey = system + "/" + game->name;
         auto thumb = thumbnails_.find(thumbKey);
@@ -794,7 +727,7 @@ std::string GameProvider::hiddenValue(const std::string& key, const Screen& scre
     if (!hidden) return "";
     // The list's path from the root when it's inside it (list.excludeFile may point anywhere)
     const Library::CollectionRecord& record = idx->collections[static_cast<size_t>(hidden->collection)];
-    std::string list = record.excludeFile;
+    std::string list = Library::narrow(fs::path(record.excludeFile).lexically_normal());   // one kind of slash
     fs::path relative = fs::path(record.excludeFile).lexically_relative(fs::path(idx->options.root));
     if (!relative.empty() && *relative.begin() != "..") {
         list = Library::narrow(relative);
@@ -1108,7 +1041,9 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
         return "This game isn't in the library any more: it may have been removed or renamed. Go back and search again.";
     }
     if (key == "title" || key == "screenTitle") {
-        std::string title = game ? (game->title.empty() ? game->name : game->title) : screen.param("id");
+        // A hidden game has its title too (the library reads their metadata)
+        const GameRecord* named = game ? game : idx && screen.form == "game" ? findHidden(idx, screen) : nullptr;
+        std::string title = named ? (named->title.empty() ? named->name : named->title) : screen.param("id");
         if (key == "title" || screen.form == "game") return title;
         static const std::map<std::string, std::string> sections = {
             { "game-metadata", "Metadata" }, { "game-launcher", "Launcher" }, { "game-media", "Media" },
@@ -1125,6 +1060,10 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
         if (key == "system") return idx->collections[static_cast<size_t>(hidden->collection)].name;
         if (key == "file") return fileName(hidden->file);
         if (key == "folder") return hidden->directory;
+        if (key == "year") return hidden->meta.year;
+        if (key == "manufacturer") return hidden->meta.manufacturer;
+        if (key == "genre") return hidden->meta.genre;
+        if (key == "players") return hidden->meta.players;
         return "";
     }
     const Library::CollectionRecord& own = idx->collections[static_cast<size_t>(game->collection)];

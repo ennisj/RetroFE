@@ -74,6 +74,6 @@ private:
     int targetLaunchCycles_;  // Current target (random between min and max)
 
     // New helper method to update launch target
-    void updateLaunchTarget();
+    void updateLaunchTarget(bool log = true);
 
 };

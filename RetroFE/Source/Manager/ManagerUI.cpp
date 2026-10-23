@@ -137,8 +137,8 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.library = library_.get();
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
-        services.requestLaunch = [](const std::string& collection, const std::string& game) {
-            launches_.want({ collection, game });   // handleResult closes the manager for it
+        services.requestLaunch = [this](const std::string& collection, const std::string& game) {
+            launches_.want({ collection, game, gameTitle(collection, game) });   // handleResult closes the manager for it
         };
         services.launchProblem = [this] {
             bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
@@ -925,7 +925,18 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
     }
-    setStatus(problem.empty() ? "Back from " + request.game + "." : problem, !problem.empty());
+    setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem, !problem.empty());
+}
+
+std::string ManagerUI::gameTitle(const std::string& collection, const std::string& game) const
+{
+    // The library's title (metadata), as the Games screens show it
+    std::shared_ptr<const Library::Index> idx = library_ ? library_->index() : nullptr;
+    int g = idx ? idx->findGame(collection, game) : -1;
+    if (g >= 0 && !idx->games[static_cast<size_t>(g)].title.empty()) {
+        return idx->games[static_cast<size_t>(g)].title;
+    }
+    return game;
 }
 
 void ManagerUI::setLocked(bool locked)

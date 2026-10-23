@@ -80,7 +80,8 @@ bool MenuParser::buildTextMenu(CollectionInfo* collection, bool sort)
         std::string path = Utils::combinePath(Configuration::absolutePath, "collections", collection->name, "menu");
 
         if (!fs::exists(path) || !fs::is_directory(path)) {
-            LOG_WARNING("Menu", "Menu directory does not exist: \"" + path + "\"");
+            // Normal for a collection of games: it has no menu
+            LOG_INFO("Menu", "Menu directory does not exist: \"" + path + "\"");
             return false;
         }
 
