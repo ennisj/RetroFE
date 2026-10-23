@@ -100,7 +100,9 @@ Installing it updates RetroFE and restarts it:
 
 - The download must have a SHA-256 (GitHub's digest for the release file, or a
   `.sha256` file beside it) and match it; a release without one isn't
-  installed. Only versions newer than the running one are installed.
+  installed. The checksum only guards against a damaged download; what you're
+  trusting is the repository you added. Only versions newer than the running
+  one are installed.
 - Only the program folder (`retrofe\`) and the layouts the release ships are
   touched; collections, settings, controls, launchers and the catalog never
   are.
@@ -114,13 +116,21 @@ Installing it updates RetroFE and restarts it:
   fails, everything is put back and nothing changes.
 - RetroFE then restarts itself (without running `exit.bat`) and deletes what
   it set aside once the old process has closed.
+- Files and folders of yours named `.old` (e.g. `retrofe.old`, `a.dll.old`)
+  are never deleted; the update uses `.old2` and so on instead.
+- If a folder rename is held up (a virus scanner looking at the new files, for
+  example), RetroFE keeps trying. If no program folder can be put back, it
+  keeps trying while it runs and as it exits, then shows a message pointing
+  at the instructions below.
 - If RetroFE is stopped part way through (a crash or power cut), the next
   start finishes or undoes the update before anything else, and restarts if
-  it put files back. It gives up after three tries and shows a message saying
-  where the backup is. The file `retrofe-UPDATE-INTERRUPTED.txt` in the
-  RetroFE folder exists only while an update is under way. If it's still
-  there and RetroFE won't start, follow it: rename `retrofe.old` back to
-  `retrofe`, or copy the backup folder over the RetroFE folder.
+  it put files back. If it can't finish after three starts, it stops trying
+  and lists where the backup is under **Problems** on the Sources screen
+  (there's no message box at start, so a cabinet isn't held up). The file
+  `retrofe-UPDATE-INTERRUPTED.txt` in the RetroFE folder exists only while an
+  update is under way. If it's still there and RetroFE won't start, follow
+  it: rename `retrofe.old` (or `retrofe.new`) to `retrofe`, or copy the backup
+  folder over the RetroFE folder.
 - RetroFE can't be removed from Manage. GitHub sources only offer RetroFE
   itself; index and folder sources can't.
 - GitHub allows 60 checks an hour without an account. RetroFE checks at most

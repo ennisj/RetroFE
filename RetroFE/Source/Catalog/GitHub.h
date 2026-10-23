@@ -61,8 +61,11 @@ namespace Catalog
     // without the source saying app = yes
     bool isOfficialRepository(const std::string& repo);
 
-    // The SHA-256 in a <asset>.sha256 file ("<hex>" or "<hex>  <name>"), or ""
-    std::string parseSha256File(const std::string& text);
+    // What a .sha256 file (or a "sha256:<hex>" digest) says the SHA-256 of
+    // fileName is: "<hex>", sha256sum's "<hex>  <name>" or "<hex> *<name>",
+    // "<name> <hex>", or BSD's "SHA256 (<name>) = <hex>". With several files
+    // listed, the line naming fileName. "" if it doesn't say.
+    std::string parseSha256File(const std::string& text, const std::string& fileName = "");
 
     // Turns GitHub's list of releases into the RetroFE package: the highest
     // version that isn't a draft (nor a pre-release, unless the source allows

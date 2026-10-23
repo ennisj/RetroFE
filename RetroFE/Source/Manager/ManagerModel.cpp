@@ -331,7 +331,8 @@ std::string ManagerModel::packageValue(const std::string& key)
     if (key == "canRemove") return installed && !busy && !isApp ? "yes" : "no";
     if (key == "notice") {
         return isApp ? "Installing this updates RetroFE itself: it replaces RetroFE's program files, then RetroFE restarts. "
-                       "The files it replaces are kept in the catalog's backups folder."
+                       "The files it replaces are kept in the catalog's backups folder. The checksum only guards against a damaged "
+                       "download; what you're trusting is the repository you added."
                      : "";
     }
     if (key == "isBusy") return busy ? "yes" : "no";

@@ -483,7 +483,7 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
             plannedFile.file.target = source.target;
             plannedFile.file.path = joinPath(source.path, name);
             plannedFile.file.size = fs::file_size(into / name, ec);
-            plannedFile.file.sha256 = sha256File((into / name).string());
+            plannedFile.file.sha256 = sha256File((into / name));
             planned.push_back(plannedFile);
         }
     }
@@ -614,7 +614,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
             if (journal.existing.count(fileKey(step.file))) {
                 copyOver(backups / step.file.target / fromUtf8(step.file.path), step.destination);
             }
-            else if (fs::exists(step.destination, rec) && sha256File(step.destination.string()) == step.file.sha256) {
+            else if (fs::exists(step.destination, rec) && sha256File(step.destination) == step.file.sha256) {
                 fs::remove(step.destination, rec);
                 removeEmptyFolders(step.destination.parent_path(), targets_.resolve(step.file.target));
             }
@@ -664,7 +664,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
         if (newFiles.count(fileKey(old)) || !refusal(old).empty()) continue;
         fs::path root = targets_.resolve(old.target);
         fs::path path = root / fromUtf8(old.path);
-        if (!fs::exists(path, ec) || sha256File(path.string()) != old.sha256) continue;
+        if (!fs::exists(path, ec) || sha256File(path) != old.sha256) continue;
         fs::path original = packageBackups / old.backup / old.target / fromUtf8(old.path);
         if (!old.backup.empty() && fs::exists(original, ec)) {
             copyOver(original, path);
@@ -711,7 +711,7 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
             continue;
         }
         // Leave anything that's been changed since it was installed
-        if (sha256File(path.string()) != file.sha256) {
+        if (sha256File(path) != file.sha256) {
             removal.kept++;
             continue;
         }

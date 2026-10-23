@@ -284,14 +284,39 @@ bool isOfficialRepository(const std::string& repo)
     return lower(repo) == lower(retrofeRepository);
 }
 
-std::string parseSha256File(const std::string& text)
+std::string parseSha256File(const std::string& text, const std::string& fileName)
 {
-    // "<hex>" or sha256sum's "<hex>  <file name>"
-    size_t start = text.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    std::string hex = lower(text.substr(start, text.find_first_of(" \t\r\n*", start) - start));
-    if (hex.rfind("sha256:", 0) == 0) hex = hex.substr(7);
-    return hex.size() == 64 && hex.find_first_not_of("0123456789abcdef") == std::string::npos ? hex : "";
+    // Each line: the 64-hex-digit word in it, wherever it is
+    std::string first;
+    int lines = 0;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
+        std::string hex;
+        std::string word;
+        for (char c : line + " ") {
+            if (std::isspace(static_cast<unsigned char>(c)) || c == '(' || c == ')' || c == '=' || c == '*') {
+                std::string candidate = lower(word);
+                if (candidate.rfind("sha256:", 0) == 0) candidate = candidate.substr(7);
+                if (hex.empty() && candidate.size() == 64 && candidate.find_first_not_of("0123456789abcdef") == std::string::npos) {
+                    hex = candidate;
+                }
+                word.clear();
+            }
+            else {
+                word += c;
+            }
+        }
+        if (hex.empty()) continue;
+        lines++;
+        if (first.empty()) first = hex;
+        if (!fileName.empty() && lower(line).find(lower(fileName)) != std::string::npos) return hex;
+    }
+    // One hash is the file's; of several, only the one naming it
+    return lines == 1 ? first : "";
 }
 
 bool parseReleases(const std::string& text, const SourceConfig& source, const Platform& platform,

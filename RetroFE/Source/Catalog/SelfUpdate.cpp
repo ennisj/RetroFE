@@ -40,6 +40,8 @@
 #endif
 #include <Windows.h>
 #else
+#include <cstdio>
+#include <fcntl.h>
 #include <spawn.h>
 #include <unistd.h>
 #if defined(__APPLE__)
@@ -111,23 +113,49 @@ namespace
         return true;
     }
 
+    // Writes next to the file, makes sure it's on the disk, then swaps it in,
+    // so a power cut leaves the old file or the new one, never an empty one
     bool writeText(const fs::path& path, const std::string& text)
     {
         std::error_code ec;
         fs::create_directories(path.parent_path(), ec);
         fs::path temp = withSuffix(path, ".tmp");
-        {
-            std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-            file << text;
-            file.flush();
-            if (!file) return false;
-        }
-        fs::rename(temp, path, ec);
-        if (ec) {
+#ifdef _WIN32
+        HANDLE file = CreateFileW(temp.wstring().c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return false;
+        DWORD written = 0;
+        bool ok = WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &written, nullptr) && written == text.size()
+               && FlushFileBuffers(file);
+        CloseHandle(file);
+        if (!ok || !MoveFileExW(temp.wstring().c_str(), path.wstring().c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
             fs::remove(temp, ec);
             return false;
         }
         return true;
+#else
+        int file = open(temp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (file < 0) return false;
+        bool ok = write(file, text.data(), text.size()) == static_cast<ssize_t>(text.size()) && fsync(file) == 0;
+        close(file);
+        if (!ok || std::rename(temp.c_str(), path.c_str()) != 0) {
+            fs::remove(temp, ec);
+            return false;
+        }
+        int folder = open(path.parent_path().c_str(), O_RDONLY);
+        if (folder >= 0) {
+            fsync(folder);
+            close(folder);
+        }
+        return true;
+#endif
+    }
+
+    // A folder that's really there: not a link or junction to somewhere else
+    bool isRealFolder(const fs::path& path)
+    {
+        std::error_code ec;
+        fs::file_status status = fs::symlink_status(path, ec);
+        return !ec && status.type() == fs::file_type::directory;
     }
 
     std::string folderName(const std::string& text)
@@ -181,7 +209,7 @@ namespace
     bool hashIs(const fs::path& path, const std::string& sha256)
     {
         std::error_code ec;
-        return !sha256.empty() && fs::is_regular_file(path, ec) && Catalog::sha256File(path.string()) == sha256;
+        return !sha256.empty() && fs::is_regular_file(path, ec) && Catalog::sha256File(path) == sha256;
     }
 
     // Moves a file, or copies it when it has to cross drives; the copy is
@@ -230,7 +258,8 @@ namespace
         std::string version;    // being installed
         std::string from;       // being replaced
         std::string backup;     // where the replaced files were copied
-        std::string state = "swapping";   // swapping, swapped (to be recorded), cleanup (only leftovers)
+        // preparing (files being put beside where they go), swapping, swapped (to be recorded), cleanup (only leftovers)
+        std::string state = "swapping";
         int64_t attempts = 0;   // starts that tried to finish or undo it
         bool folder = false;    // the program folder is swapped whole
         fs::path newFolder;
@@ -270,7 +299,7 @@ namespace
         journal.folder = J::flag(document, "folder");
         journal.newFolder = fs::u8path(J::text(document, "newFolder"));
         journal.oldFolder = fs::u8path(J::text(document, "oldFolder"));
-        if (journal.state != "swapping" && journal.state != "swapped" && journal.state != "cleanup") return false;
+        if (journal.state != "preparing" && journal.state != "swapping" && journal.state != "swapped" && journal.state != "cleanup") return false;
         for (const json& entry : J::list(document, "steps")) {
             Step step;
             std::string kind = J::text(entry, "kind");
@@ -362,7 +391,7 @@ std::string SelfUpdater::problem() const
     if (root_.empty() || program_.empty() || executable_.empty()) {
         return "RetroFE can't tell where its program files are, so it can't update itself.";
     }
-    if (!samePath(program_.parent_path(), root_)) {
+    if (!isProgramLayout() || !isRealFolder(program_)) {
         return "RetroFE can only update itself when its program files are in a folder of their own in the RetroFE folder (retrofe\\).";
     }
     if (!isInside(executable_, program_)) {
@@ -393,6 +422,59 @@ bool SelfUpdater::isOldFolder(const fs::path& path) const
     return name.rfind(base, 0) == 0 && name.find_first_not_of("0123456789", base.size()) == std::string::npos;
 }
 
+bool SelfUpdater::isProgramLayout() const
+{
+    // Only <root>\retrofe\ is ever updated (or recovered): never a flat install with the exe in the root
+    return !program_.empty() && lower(program_.filename().u8string()) == "retrofe" && samePath(program_.parent_path(), root_);
+}
+
+bool SelfUpdater::persist(const std::function<bool()>& attempt)
+{
+    for (int i = 0; i < std::max(1, renameTries); i++) {
+        if (i > 0) sleep(200);
+        if (attempt()) return true;
+    }
+    return false;
+}
+
+bool SelfUpdater::removeTree(const fs::path& folder)
+{
+    // Never through a link or junction: only what's really inside
+    std::error_code ec;
+    if (!fs::exists(fs::symlink_status(folder, ec))) return true;
+    if (!isRealFolder(folder)) return false;
+    bool all = true;
+    std::vector<fs::path> entries;
+    for (auto it = fs::directory_iterator(folder, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        entries.push_back(it->path());
+    }
+    if (ec) return false;
+    for (const fs::path& entry : entries) {
+        fs::file_status status = fs::symlink_status(entry, ec);
+        if (status.type() == fs::file_type::directory) all = removeTree(entry) && all;
+        else if (status.type() == fs::file_type::regular) all = removeFile(entry) && all;
+        else all = false;   // a link, junction or anything else stays, and so does the folder
+    }
+    if (all) fs::remove(folder, ec);
+    return !fs::exists(fs::symlink_status(folder, ec));
+}
+
+bool SelfUpdater::programFolderMissing() const
+{
+    std::error_code ec;
+    return !program_.empty() && !fs::exists(program_, ec);
+}
+
+bool SelfUpdater::repairProgramFolder()
+{
+    bool putBack = false;
+    finishOrUndo(putBack, false);
+    if (finishedForward_) {
+        recordInstalled();
+    }
+    return !programFolderMissing();
+}
+
 bool SelfUpdater::apply(const Package& package, const std::string& archive, std::string& error)
 {
     error = problem();
@@ -408,7 +490,7 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
     std::vector<fs::path> pendingLeftovers;
     if (fs::exists(journalFile, ec)) {
         bool putBack = false;
-        finishOrUndo(putBack);
+        finishOrUndo(putBack, false);   // not a start: doesn't count towards giving up
         if (!message_.empty()) {
             error = message_;   // it gave up: the user has to know where the backup is first
             return false;
@@ -417,15 +499,18 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
         deleteLeftovers(1);
         Journal earlier;
         if (readJournal(journalFile, earlier)) {
-            if (earlier.state == "swapping") {
+            if (earlier.state == "swapping" || earlier.state == "preparing") {
                 error = "An earlier update of RetroFE couldn't be finished or undone yet (" + std::to_string(earlier.attempts) + " of "
-                      + std::to_string(maxRecoveryAttempts) + " tries). RetroFE tries again when it starts. The files it replaced are in "
+                      + std::to_string(maxRecoveryAttempts) + " starts tried). Restart RetroFE so it can try again. The files it replaced are in "
                       + earlier.backup + ".";
                 return false;
             }
             pendingLeftovers = earlier.leftovers;
         }
     }
+    auto isLeftover = [&](const fs::path& path) {
+        return std::any_of(pendingLeftovers.begin(), pendingLeftovers.end(), [&](const fs::path& p) { return samePath(p, path); });
+    };
 
     // 1. Extract and check, before anything is touched
     fs::path staging = folder / "staged";
@@ -564,7 +649,7 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
             return false;
         }
         if (fs::exists(plan.destination, ec)) {
-            step.oldSha = sha256File(plan.destination.string());
+            step.oldSha = sha256File(plan.destination);
             if (step.oldSha == step.newSha && !plan.inProgram) continue;   // the same already
             step.kind = Step::Kind::Replace;
         }
@@ -583,7 +668,7 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
         for (const InstalledFile& old : previous.files) {
             fs::path path = root_ / fs::u8path(old.path);
             if (old.target != "root" || newFiles.count(pathKey(path)) || !isOurs(path)) continue;
-            if (!fs::is_regular_file(path, ec) || sha256File(path.string()) != old.sha256) continue;
+            if (!fs::is_regular_file(path, ec) || sha256File(path) != old.sha256) continue;
             Step step;
             step.kind = Step::Kind::Remove;
             step.destination = path;
@@ -620,171 +705,182 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
         }
     }
 
-    // 3. Prepare everything beside where it goes, so swapping is renames only
+    // 3. Every name the update will create, recorded before any is: an
+    //    interruption from here on is cleaned up from the journal, and only
+    //    names it recorded are ever deleted (anyone's own .old file is kept)
     auto chooseAside = [&](Step& step) {
         for (int n = 1; n <= 9; n++) {
             fs::path aside = withSuffix(step.destination, n == 1 ? ".old" : ".old" + std::to_string(n));
-            if (fs::exists(aside, ec)) removeFile(aside);   // left from an earlier update
-            if (!fs::exists(aside, ec)) {
+            if (fs::exists(fs::symlink_status(aside, ec)) && isLeftover(aside)) removeFile(aside);   // an earlier update's
+            if (!fs::exists(fs::symlink_status(aside, ec))) {
                 step.aside = aside;
                 return true;
             }
         }
         return false;
     };
-    auto prepare = [&](Step& step) {
+    auto planNames = [&](Step& step) {
         if (step.kind != Step::Kind::Remove) {
             step.prepared = withSuffix(step.destination, ".new");
-            if (!moveOrCopy(fs::u8path(step.staged), step.prepared, step.newSha)) return false;
-        }
-        return step.kind == Step::Kind::Add || chooseAside(step);
-    };
-    auto cleanPrepared = [&](std::vector<Step>& steps) {
-        for (const Step& step : steps) {
-            if (!step.prepared.empty() && hashIs(step.prepared, step.newSha)) fs::remove(step.prepared, ec);
-        }
-    };
-    auto abandon = [&](const std::string& message) {
-        cleanPrepared(layoutSteps);
-        cleanPrepared(programSteps);
-        fs::remove_all(staging, ec);
-        error = message;
-        return false;
-    };
-    for (Step& step : layoutSteps) {
-        if (stopped()) return abandon("Stopped");
-        if (!prepare(step)) return abandon("Could not prepare " + step.destination.filename().u8string() + ", so nothing was changed.");
-    }
-
-    // The whole new program folder, unchanged files linked in from the current one
-    bool folder_ = folderSwap;
-    if (fs::exists(newFolder, ec)) {
-        // Left over from an earlier attempt; set aside what can't be deleted (it may hold running files)
-        fs::remove_all(newFolder, ec);
-        for (int n = 2; fs::exists(newFolder, ec) && n < 10; n++) {
-            fs::path aside = withSuffix(program_, ".old" + std::to_string(n));
-            if (!fs::exists(aside, ec) && renameFile(newFolder, aside)) pendingLeftovers.push_back(aside);
-        }
-        if (fs::exists(newFolder, ec)) folder_ = false;
-    }
-    if (folder_) {
-        std::set<std::string> replaced;
-        for (const Step& step : programSteps) replaced.insert(pathKey(step.destination));
-        for (auto it = fs::recursive_directory_iterator(program_, fs::directory_options::skip_permission_denied, ec);
-             folder_ && !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            fs::path relative = it->path().lexically_relative(program_);
-            fs::path target = newFolder / relative;
-            if (it->is_directory(ec)) {
-                fs::create_directories(target, ec);
-                continue;
-            }
-            if (!it->is_regular_file(ec) || replaced.count(pathKey(it->path())) || newFiles.count(pathKey(it->path()))
-                || isUpdateName(it->path().filename().u8string())) {
-                continue;
-            }
-            std::error_code linkError;
-            fs::create_directories(target.parent_path(), linkError);
-            fs::create_hard_link(it->path(), target, linkError);
-            if (linkError) {
-                fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing, linkError);
-            }
-            if (linkError || stopped()) folder_ = false;
-        }
-        if (ec) folder_ = false;
-        for (const Planned& plan : planned) {
-            if (!folder_) break;
-            if (!plan.inProgram) continue;
-            fs::path target = newFolder / plan.destination.lexically_relative(program_);
-            if (!moveOrCopy(plan.staged, target, plan.file.sha256)) folder_ = false;
-        }
-        if (!folder_) {
-            // Give the new files back to the staging folder, for swapping file by file
-            for (const Planned& plan : planned) {
-                fs::path target = newFolder / plan.destination.lexically_relative(program_);
-                if (plan.inProgram && !fs::exists(plan.staged, ec) && fs::exists(target, ec)
-                    && !moveOrCopy(target, plan.staged, plan.file.sha256)) {
-                    fs::remove_all(newFolder, ec);
-                    return abandon("Could not prepare RetroFE's new files, so nothing was changed.");
-                }
-            }
-            fs::remove_all(newFolder, ec);
-            if (stopped()) return abandon("Stopped");
-        }
-    }
-    // Swapping file by file instead: the program's changed files beside where they go
-    auto prepareProgramFiles = [&]() {
-        for (Step& step : programSteps) {
-            fs::path inNewFolder = newFolder / step.destination.lexically_relative(program_);
-            if (step.kind != Step::Kind::Remove && fs::exists(inNewFolder, ec)) {
-                step.prepared = withSuffix(step.destination, ".new");
-                fs::create_directories(step.prepared.parent_path(), ec);
-                fs::rename(inNewFolder, step.prepared, ec);
-                if (ec) return false;
-                if (step.kind == Step::Kind::Replace && !chooseAside(step)) return false;
-            }
-            else if (!prepare(step)) {
+            if (fs::exists(fs::symlink_status(step.prepared, ec))) {
+                error = "Can't update: " + step.prepared.u8string() + " is in the way, so nothing was changed.";
                 return false;
             }
         }
+        if (step.kind != Step::Kind::Add && !chooseAside(step)) {
+            error = "Too many old copies of " + step.destination.filename().u8string() + " are in the way, so nothing was changed.";
+            return false;
+        }
         return true;
     };
-    if (!folder_ && !prepareProgramFiles()) {
-        return abandon("Could not prepare RetroFE's new files, so nothing was changed.");
+    for (std::vector<Step>* list : { &layoutSteps, &programSteps }) {
+        for (Step& step : *list) {
+            if (!planNames(step)) {
+                fs::remove_all(staging, ec);
+                return false;
+            }
+        }
     }
+    bool wholeFolder = folderSwap;
+    if (fs::exists(fs::symlink_status(newFolder, ec))) {
+        // Not one an update recorded (those are cleaned up before): leave it alone
+        log("warning", "RetroFE update: " + newFolder.u8string() + " is in the way; replacing the program's files one by one");
+        wholeFolder = false;
+    }
+    fs::path oldFolder;
+    for (int n = 1; wholeFolder && n <= 9 && oldFolder.empty(); n++) {
+        fs::path old = withSuffix(program_, n == 1 ? ".old" : ".old" + std::to_string(n));
+        if (fs::exists(fs::symlink_status(old, ec)) && isLeftover(old) && isRealFolder(old)) removeTree(old);
+        if (!fs::exists(fs::symlink_status(old, ec))) oldFolder = old;
+    }
+    if (oldFolder.empty()) wholeFolder = false;
 
-    // 4. The record and the journal, before the first rename
     std::string message;
     if (!writeManifest((folder / "manifest.json").string(), manifest, message)) {
-        return abandon(message);
+        fs::remove_all(staging, ec);
+        error = message;
+        return false;
     }
     Journal journal;
     journal.version = package.version;
     journal.from = version_;
     journal.backup = backup.u8string();
-    journal.folder = folder_;
-    journal.newFolder = newFolder;
+    journal.state = "preparing";
+    journal.folder = wholeFolder;
+    journal.newFolder = wholeFolder ? newFolder : fs::path();
+    journal.oldFolder = oldFolder;
+    journal.steps = layoutSteps;
+    journal.steps.insert(journal.steps.end(), programSteps.begin(), programSteps.end());
     journal.leftovers = pendingLeftovers;
-    if (folder_) {
-        for (int n = 1; n <= 9 && journal.oldFolder.empty(); n++) {
-            fs::path old = withSuffix(program_, n == 1 ? ".old" : ".old" + std::to_string(n));
-            if (fs::exists(old, ec) && std::none_of(journal.leftovers.begin(), journal.leftovers.end(), [&](const fs::path& p) { return samePath(p, old); })) {
-                fs::remove_all(old, ec);
+    if (!writeText(journalFile, toJson(journal).dump(2))) {
+        fs::remove_all(staging, ec);
+        error = "Could not write " + journalFile.u8string() + ", so nothing was changed.";
+        return false;
+    }
+    // Gives up before anything is swapped: removes what was prepared, going by the journal
+    auto abandon = [&](const std::string& problem) {
+        bool putBack = false;
+        finishOrUndo(putBack, false);
+        fs::remove_all(staging, ec);
+        error = problem;
+        return false;
+    };
+
+    // 4. Prepare everything beside where it goes, so the swap is renames only
+    auto prepare = [&](const Step& step) {
+        return step.kind == Step::Kind::Remove || moveOrCopy(fs::u8path(step.staged), step.prepared, step.newSha);
+    };
+    for (const Step& step : layoutSteps) {
+        if (stopped()) return abandon("Stopped");
+        if (!prepare(step)) return abandon("Could not prepare " + step.destination.filename().u8string() + ", so nothing was changed.");
+    }
+    if (wholeFolder) {
+        // The whole new program folder: unchanged files linked in from the current one
+        std::set<std::string> replaced;
+        for (const Step& step : programSteps) replaced.insert(pathKey(step.destination));
+        std::vector<std::pair<fs::path, fs::path>> folders = { { program_, newFolder } };
+        while (wholeFolder && !folders.empty()) {
+            auto [from, to] = folders.back();
+            folders.pop_back();
+            fs::create_directories(to, ec);
+            for (auto it = fs::directory_iterator(from, ec); wholeFolder && !ec && it != fs::directory_iterator(); it.increment(ec)) {
+                fs::path target = to / it->path().filename();
+                fs::file_type type = it->symlink_status(ec).type();
+                if (type == fs::file_type::directory) {
+                    folders.emplace_back(it->path(), target);
+                    continue;
+                }
+                if (type != fs::file_type::regular) {
+                    wholeFolder = false;   // a link or junction can't be carried over safely
+                    break;
+                }
+                // Everything else is carried over, anyone's own .old files included; only an earlier update's leftovers stay behind
+                if (replaced.count(pathKey(it->path())) || newFiles.count(pathKey(it->path())) || isLeftover(it->path())) {
+                    continue;
+                }
+                std::error_code linkError;
+                fs::create_hard_link(it->path(), target, linkError);
+                if (linkError) fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing, linkError);
+                if (linkError || stopped()) wholeFolder = false;
             }
-            if (!fs::exists(old, ec)) journal.oldFolder = old;
+            if (ec) wholeFolder = false;
         }
-        if (journal.oldFolder.empty()) {
-            journal.folder = folder_ = false;
-            if (!prepareProgramFiles()) return abandon("Could not prepare RetroFE's new files, so nothing was changed.");
+        for (const Planned& plan : planned) {
+            if (!wholeFolder) break;
+            if (plan.inProgram && !moveOrCopy(plan.staged, newFolder / plan.destination.lexically_relative(program_), plan.file.sha256)) {
+                wholeFolder = false;
+            }
+        }
+        if (!wholeFolder) {
+            // Give the new files back to the staging folder, for swapping file by file
+            for (const Planned& plan : planned) {
+                fs::path target = newFolder / plan.destination.lexically_relative(program_);
+                if (plan.inProgram && !fs::exists(plan.staged, ec) && fs::exists(target, ec) && !moveOrCopy(target, plan.staged, plan.file.sha256)) {
+                    return abandon("Could not prepare RetroFE's new files, so nothing was changed.");
+                }
+            }
+            removeTree(newFolder);
+            if (stopped()) return abandon("Stopped");
         }
     }
-    journal.steps = layoutSteps;
-    if (!folder_) journal.steps.insert(journal.steps.end(), programSteps.begin(), programSteps.end());
+    if (!wholeFolder) {
+        for (const Step& step : programSteps) {
+            if (stopped()) return abandon("Stopped");
+            if (!prepare(step)) return abandon("Could not prepare RetroFE's new files, so nothing was changed.");
+        }
+    }
+
+    // 5. The journal says what's about to happen, before the first rename
+    journal.state = "swapping";
+    journal.folder = wholeFolder;
     if (!writeText(journalFile, toJson(journal).dump(2))) {
         return abandon("Could not write " + journalFile.u8string() + ", so nothing was changed.");
     }
     fs::path note = withSuffix(program_, "-UPDATE-INTERRUPTED.txt");
     std::string programName = program_.filename().u8string();
     writeText(note, "RetroFE was updating itself from " + version_ + " to " + package.version + ".\r\n\r\n"
-              "If this file is still here and RetroFE won't start, the update was interrupted. To get the previous version back:\r\n"
+              "If this file is still here and RetroFE won't start, the update was interrupted. To get RetroFE back:\r\n"
+              "- If there's no folder " + programName + " but there's " + programName + ".old: rename " + programName + ".old to "
+              + programName + ". (Or, if there's " + programName + ".new, rename that to " + programName + " for the new version.)\r\n"
               "- If there's a folder " + programName + ".old next to " + programName + ": delete " + programName
-              + " (if it's there), then rename " + programName + ".old to " + programName + ".\r\n"
+              + ", then rename " + programName + ".old to " + programName + ".\r\n"
               "- Otherwise copy everything in " + backup.u8string() + " over " + root_.u8string() + ".\r\n\r\n"
               "RetroFE deletes this file once the update is finished or undone.\r\n");
 
     // The program folder can't be renamed while it's the working folder; the
     // restarted RetroFE gets the original one back
     fs::path workingFolder = fs::current_path(ec);
-    if (folder_ && !ec && (samePath(workingFolder, program_) || isInside(workingFolder, program_))) {
+    if (wholeFolder && !ec && (samePath(workingFolder, program_) || isInside(workingFolder, program_))) {
         std::lock_guard<std::mutex> lock(relaunchMutex);
         if (relaunchDirectory.empty()) relaunchDirectory = workingFolder;
         fs::current_path(root_, ec);
     }
 
-    // 5. Swap: renames only, layouts first, the program folder last
+    // 6. Swap: renames only, layouts first, the program folder last
     auto undo = [&](const std::string& problem) {
         log("error", "RetroFE update: " + problem + "; putting everything back");
         bool putBack = false;
-        bool ok = finishOrUndo(putBack);
+        bool ok = finishOrUndo(putBack, false);
         deleteLeftovers(1);
         fs::remove_all(staging, ec);
         error = ok ? problem + ". Nothing was changed."
@@ -806,23 +902,35 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
         if (!problem.empty()) return undo(problem);
     }
     bool committed = false;
-    if (folder_) {
-        if (renameFile(program_, journal.oldFolder)) {
-            if (renameFile(newFolder, program_)) {
-                committed = true;
-            }
-            else if (!renameFile(journal.oldFolder, program_)) {
-                return undo("Could not put the new program folder in place");
+    if (wholeFolder) {
+        if (persist([&] { return renameFile(program_, oldFolder); })) {
+            // A virus scanner looking at the new files can hold up the next rename for a while: keep trying,
+            // then put the old folder back, and failing that, the complete new one after all
+            committed = persist([&] { return renameFile(newFolder, program_); });
+            bool restored = !committed && persist([&] { return renameFile(oldFolder, program_); });
+            if (!committed && !restored) committed = persist([&] { return renameFile(newFolder, program_); });
+            if (!committed && !restored) {
+                // No program folder at all: the Catalog keeps trying, and so does RetroFE as it exits and starts
+                fs::remove_all(staging, ec);
+                error = "RetroFE's program folder couldn't be put back after the update failed (another program may be using its files). "
+                        "RetroFE keeps trying. If RetroFE won't start afterwards, follow " + note.u8string() + ".";
+                log("error", "RetroFE update: " + error);
+                return false;
             }
         }
         if (!committed) {
-            // Something has a file in the program folder open: swap file by file instead
+            // Something has a file in the program folder open: swap file by file instead.
+            // The names are in the journal already, so an interruption is cleaned up.
             log("warning", "RetroFE update: the program folder couldn't be renamed; replacing its files one by one");
-            if (!prepareProgramFiles()) return undo("Could not prepare RetroFE's new files");
-            fs::remove_all(newFolder, ec);
-            journal.folder = folder_ = false;
-            journal.steps.insert(journal.steps.end(), programSteps.begin(), programSteps.end());
+            for (const Step& step : programSteps) {
+                if (step.kind == Step::Kind::Remove) continue;
+                fs::create_directories(step.prepared.parent_path(), ec);
+                fs::rename(newFolder / step.destination.lexically_relative(program_), step.prepared, ec);
+                if (ec) return undo("Could not prepare RetroFE's new files");
+            }
+            journal.folder = wholeFolder = false;
             if (!writeText(journalFile, toJson(journal).dump(2))) return undo("Could not write " + journalFile.u8string());
+            removeTree(newFolder);   // what's left is linked to the running files; anything still held goes later
         }
     }
     if (!committed) {
@@ -832,25 +940,28 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
         }
     }
 
-    // 6. Done: record it, and clear away what was set aside
+    // 7. Done: record it, and clear away what was set aside
     journal.state = "swapped";
-    if (folder_) journal.leftovers.push_back(journal.oldFolder);
+    if (wholeFolder) journal.leftovers.push_back(oldFolder);
+    else if (fs::exists(fs::symlink_status(newFolder, ec)) && !journal.newFolder.empty()) journal.leftovers.push_back(newFolder);
     for (const Step& step : journal.steps) {
-        if (step.kind != Step::Kind::Add) journal.leftovers.push_back(step.aside);
+        // Only what this update really set aside
+        if (step.kind != Step::Kind::Add && hashIs(step.aside, step.oldSha)) journal.leftovers.push_back(step.aside);
     }
     if (!writeText(journalFile, toJson(journal).dump(2))) {
-        if (!folder_) return undo("Could not record that the update finished");
+        if (!wholeFolder) return undo("Could not record that the update finished");
         // The folder swap is the commit point: the next start finishes it
         log("warning", "RetroFE update: could not mark the update finished; RetroFE finishes it when it starts");
     }
     fs::remove(note, ec);
+    fs::remove(withSuffix(program_, ".update.damaged.txt"), ec);
     recordInstalled();
     deleteLeftovers(1);   // what isn't in use goes now, the rest at the next start
     fs::remove_all(staging, ec);
     for (const auto& entry : fs::directory_iterator(backups, ec)) {
         if (entry.path().filename() != backupName) fs::remove_all(entry.path(), ec);
     }
-    log("notice", "Updated RetroFE " + version_ + " to " + package.version + (folder_ ? " (program folder swapped)" : " (files swapped)")
+    log("notice", "Updated RetroFE " + version_ + " to " + package.version + (wholeFolder ? " (program folder swapped)" : " (files swapped)")
                   + "; the files it replaced are in " + backup.u8string());
     return true;
 }
@@ -858,7 +969,7 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
 bool SelfUpdater::recover()
 {
     bool putBack = false;
-    finishOrUndo(putBack);
+    finishOrUndo(putBack, false);   // main() has had its try at this start already
     recordInstalled();
     deleteLeftovers(removeTries);
     return putBack;
@@ -867,38 +978,48 @@ bool SelfUpdater::recover()
 bool SelfUpdater::recoverAtStartup()
 {
     bool putBack = false;
-    finishOrUndo(putBack);
+    finishOrUndo(putBack, true);
     deleteLeftovers(1);   // no waiting: the Catalog tries again in the background
     return putBack;
 }
 
-bool SelfUpdater::finishOrUndo(bool& putBack)
+bool SelfUpdater::finishOrUndo(bool& putBack, bool countAttempt)
 {
     putBack = false;
+    finishedForward_ = false;
     message_.clear();
     std::error_code ec;
     fs::path file = journalPath();
-    if (program_.empty() || !fs::exists(file, ec)) {
+    if (!isProgramLayout() || !fs::exists(file, ec)) {
         return true;
     }
     Journal journal;
     bool readable = readJournal(file, journal);
-    auto giveUp = [&](const std::string& reason) {
+    fs::path backupFolder = !journal.backup.empty() ? fs::u8path(journal.backup)
+                          : catalog_.empty() ? fs::path("catalog/backups/retrofe") : catalog_ / "backups" / appPackageId;
+    // Sets the journal aside; only when RetroFE may really be broken is the user told to restore the backup
+    auto giveUp = [&](const std::string& reason, bool adviseRestore) {
         fs::path damaged = withSuffix(program_, ".update.damaged.json");
         fs::remove(damaged, ec);
         fs::rename(file, damaged, ec);
-        std::string backup = journal.backup.empty() ? (catalog_.empty() ? std::string("catalog/backups/retrofe") : (catalog_ / "backups" / appPackageId).u8string())
-                                                    : journal.backup;
-        message_ = reason + " The files the update replaced are in " + backup + "; copy them over " + root_.u8string()
-                 + " to get the previous version back. (The update's record is now " + damaged.u8string() + ".)";
-        log("error", message_);
+        if (adviseRestore) {
+            message_ = reason + " The files the update replaced are in " + backupFolder.u8string() + "; if RetroFE doesn't work properly, "
+                     "copy them over " + root_.u8string() + " to get the previous version back. (The update's record is now "
+                     + damaged.u8string() + ".)";
+            writeText(withSuffix(program_, ".update.damaged.txt"), message_);
+            log("error", message_);
+        }
+        else {
+            log("warning", reason + " RetroFE started, so nothing needs doing. (It's now " + damaged.u8string() + ".)");
+        }
         return false;
     };
     if (!readable) {
-        return giveUp("RetroFE's update record " + file.u8string() + " is damaged, so RetroFE can't tell what the last update changed.");
+        // A record cut short by a power cut, say. The program folder is there and running, so it's no reason to restore anything.
+        return giveUp("RetroFE's update record " + file.u8string() + " couldn't be read and was set aside.", !fs::exists(program_, ec));
     }
 
-    // Only ever RetroFE's own files, under the names updates give them
+    // Only ever RetroFE's own files, under the names updates give them, and never through a link
     fs::path newFolder = withSuffix(program_, ".new");
     bool valid = std::all_of(journal.steps.begin(), journal.steps.end(), [&](const Step& step) {
         bool placed = step.kind != Step::Kind::Remove;
@@ -908,46 +1029,87 @@ bool SelfUpdater::finishOrUndo(bool& putBack)
             && (!replaces || (isOurs(step.aside) && samePath(step.aside.parent_path(), step.destination.parent_path())
                               && hasSetAsideSuffix(step.aside.filename().u8string()) && !step.oldSha.empty()));
     });
-    if (journal.folder) {
-        valid = valid && samePath(journal.newFolder, newFolder) && isOldFolder(journal.oldFolder);
-    }
+    auto folderOk = [&](const fs::path& path) { return !fs::exists(fs::symlink_status(path, ec)) || isRealFolder(path); };
+    if (!journal.newFolder.empty()) valid = valid && samePath(journal.newFolder, newFolder) && folderOk(newFolder);
+    if (journal.folder) valid = valid && !journal.newFolder.empty() && isOldFolder(journal.oldFolder) && folderOk(journal.oldFolder);
     if (!valid) {
-        return giveUp("RetroFE's update record " + file.u8string() + " names files outside RetroFE's folders, so it was ignored.");
+        return giveUp("RetroFE's update record " + file.u8string() + " names files outside RetroFE's folders, so it was ignored.", false);
     }
-    if (journal.state != "swapping") {
+    if (journal.state == "swapped" || journal.state == "cleanup") {
         return true;   // finished: recordInstalled() and deleteLeftovers() do the rest
     }
-
-    journal.attempts++;
-    if (journal.attempts > maxRecoveryAttempts) {
-        return giveUp("RetroFE tried " + std::to_string(maxRecoveryAttempts) + " times to finish or undo an interrupted update and couldn't.");
-    }
-    writeText(file, toJson(journal).dump(2));
 
     // Deletes a file the update placed, or sets it aside if it's running
     auto discard = [&](const fs::path& path) {
         if (removeFile(path)) return true;
         fs::path junk = withSuffix(path, ".failed");
-        removeFile(junk);
+        if (fs::exists(fs::symlink_status(junk, ec))) return false;
         if (!renameFile(path, junk)) return false;
         journal.leftovers.push_back(junk);
         return true;
     };
+    // The new folder, only ever as recorded: deleted, or set aside for later if it's linked to running files
+    auto discardNewFolder = [&] {
+        if (journal.newFolder.empty() || !isRealFolder(newFolder) || removeTree(newFolder)) return;
+        for (int n = 2; n < 10; n++) {
+            fs::path aside = withSuffix(program_, ".old" + std::to_string(n));
+            if (!fs::exists(fs::symlink_status(aside, ec)) && renameFile(newFolder, aside)) {
+                journal.leftovers.push_back(aside);
+                return;
+            }
+        }
+    };
+    auto finishUndone = [&](const std::string& logLine) {
+        journal.state = "cleanup";
+        journal.steps.clear();
+        if (journal.leftovers.empty()) fs::remove(file, ec);
+        else writeText(file, toJson(journal).dump(2));
+        fs::remove(withSuffix(program_, "-UPDATE-INTERRUPTED.txt"), ec);
+        if (!catalog_.empty()) fs::remove(catalog_ / "update" / "manifest.json", ec);
+        if (!logLine.empty()) log("warning", logLine);
+        return true;
+    };
+
+    if (journal.state == "preparing") {
+        // Stopped before anything was swapped: only what was being prepared goes
+        for (const Step& step : journal.steps) {
+            if (step.kind == Step::Kind::Remove) continue;
+            if (hashIs(step.prepared, step.newSha)) removeFile(step.prepared);
+            fs::path part = withSuffix(step.prepared, ".part");
+            if (fs::is_regular_file(fs::symlink_status(part, ec))) removeFile(part);
+        }
+        discardNewFolder();
+        return finishUndone("");
+    }
+
+    // Swapping. Only starts count towards giving up: Install doesn't use the tries up.
+    if (countAttempt) {
+        journal.attempts++;
+        if (journal.attempts > maxRecoveryAttempts) {
+            return giveUp("RetroFE tried " + std::to_string(maxRecoveryAttempts) + " times to finish or undo an interrupted update and couldn't.", true);
+        }
+        writeText(file, toJson(journal).dump(2));
+    }
 
     bool programSwapped = false;
     if (journal.folder) {
-        bool oldExists = fs::is_directory(journal.oldFolder, ec);
-        bool programExists = fs::is_directory(program_, ec);
+        bool oldExists = isRealFolder(journal.oldFolder);
+        bool programExists = fs::exists(program_, ec);
         if (oldExists && programExists) {
             programSwapped = true;
         }
         else if (oldExists) {
-            // Stopped between the two renames
-            if (!renameFile(journal.oldFolder, program_)) {
-                log("error", "Could not rename " + journal.oldFolder.u8string() + " back to " + program_.u8string());
+            // Stopped between the two folder renames: the old folder back, or else the complete new one forward
+            if (persist([&] { return renameFile(journal.oldFolder, program_); })) {
+                putBack = true;
+            }
+            else if (isRealFolder(newFolder) && persist([&] { return renameFile(newFolder, program_); })) {
+                programSwapped = true;
+            }
+            else {
+                log("error", "Could not put a program folder back in place; see " + withSuffix(program_, "-UPDATE-INTERRUPTED.txt").u8string());
                 return false;
             }
-            putBack = true;
         }
     }
 
@@ -955,20 +1117,22 @@ bool SelfUpdater::finishOrUndo(bool& putBack)
         // The new program folder is in place, which is the commit point: finish
         bool ok = true;
         for (const Step& step : journal.steps) {
-            if (step.kind != Step::Kind::Add && fs::exists(step.destination, ec) && hashIs(step.destination, step.oldSha)
+            if (isInside(step.destination, program_)) continue;   // the folder swap took care of those
+            if (step.kind != Step::Kind::Add && hashIs(step.destination, step.oldSha)
                 && (step.kind == Step::Kind::Remove || hashIs(step.prepared, step.newSha))) {
                 ok = renameFile(step.destination, step.aside) && ok;
             }
             if (step.kind != Step::Kind::Remove && !fs::exists(step.destination, ec) && hashIs(step.prepared, step.newSha)) {
                 ok = renameFile(step.prepared, step.destination) && ok;
             }
-            if (step.kind != Step::Kind::Add) journal.leftovers.push_back(step.aside);
+            if (step.kind != Step::Kind::Add && hashIs(step.aside, step.oldSha)) journal.leftovers.push_back(step.aside);
         }
         if (!ok) return false;
         journal.state = "swapped";
         journal.leftovers.push_back(journal.oldFolder);
         writeText(file, toJson(journal).dump(2));
         fs::remove(withSuffix(program_, "-UPDATE-INTERRUPTED.txt"), ec);
+        finishedForward_ = true;
         log("notice", "Finished the interrupted update of RetroFE to " + journal.version);
         return true;
     }
@@ -1001,28 +1165,14 @@ bool SelfUpdater::finishOrUndo(bool& putBack)
             if (!fs::exists(step.destination, ec)) ok = false;
         }
     }
-    if (journal.folder && fs::exists(newFolder, ec)) {
-        fs::remove_all(newFolder, ec);
-        // Linked to running files, it may not go yet: set it aside for later
-        for (int n = 2; fs::exists(newFolder, ec) && n < 10; n++) {
-            fs::path aside = withSuffix(program_, ".old" + std::to_string(n));
-            if (!fs::exists(aside, ec) && renameFile(newFolder, aside)) journal.leftovers.push_back(aside);
-        }
-    }
+    discardNewFolder();
     if (!ok) {
         writeText(file, toJson(journal).dump(2));
-        log("error", "Could not put back all of RetroFE's files after an unfinished update (try " + std::to_string(journal.attempts)
-                     + " of " + std::to_string(maxRecoveryAttempts) + "). The previous files are in " + journal.backup);
+        log("error", "Could not put back all of RetroFE's files after an unfinished update (" + std::to_string(journal.attempts)
+                     + " of " + std::to_string(maxRecoveryAttempts) + " starts tried). The previous files are in " + journal.backup);
         return false;
     }
-    journal.state = "cleanup";
-    journal.steps.clear();
-    if (journal.leftovers.empty()) fs::remove(file, ec);
-    else writeText(file, toJson(journal).dump(2));
-    fs::remove(withSuffix(program_, "-UPDATE-INTERRUPTED.txt"), ec);
-    if (!catalog_.empty()) fs::remove(catalog_ / "update" / "manifest.json", ec);
-    log("warning", "Put back RetroFE's files after an unfinished update to " + journal.version);
-    return true;
+    return finishUndone("Put back RetroFE's files after an unfinished update to " + journal.version);
 }
 
 void SelfUpdater::recordInstalled()
@@ -1049,41 +1199,33 @@ void SelfUpdater::deleteLeftovers(int tries)
 {
     std::error_code ec;
     Journal journal;
-    if (!readJournal(journalPath(), journal) || journal.state == "swapping") return;
+    if (!isProgramLayout() || !readJournal(journalPath(), journal) || journal.state == "swapping" || journal.state == "preparing") return;
 
-    // Only what updates set aside: the replaced program folder, and files named <name>.old or .failed
+    // Only what updates set aside, as the journal lists it: the replaced
+    // program folder (or an unused new one), and files named <name>.old, .oldN or .failed
+    fs::path newFolder = withSuffix(program_, ".new");
     std::vector<fs::path> remaining;
     for (const fs::path& path : journal.leftovers) {
-        if (isOldFolder(path) || (isOurs(path) && hasSetAsideSuffix(path.filename().u8string()))) {
+        if (isOldFolder(path) || samePath(path, newFolder) || (isOurs(path) && hasSetAsideSuffix(path.filename().u8string()))) {
             remaining.push_back(path);
         }
         else {
             log("warning", "Not deleting " + path.u8string() + ": updates don't set aside files there");
         }
     }
-    auto removeAll = [&](const fs::path& path) {
-        if (!fs::is_directory(path, ec)) {
-            return !fs::exists(path, ec) || removeFile(path);
-        }
-        // A folder: each file, so one that's running stays and the rest go
-        std::vector<fs::path> files;
-        std::vector<fs::path> folders;
-        for (auto it = fs::recursive_directory_iterator(path, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            (it->is_directory(ec) ? folders : files).push_back(it->path());
-        }
-        bool all = true;
-        for (const fs::path& file : files) all = removeFile(file) && all;
-        std::sort(folders.begin(), folders.end(), [](const fs::path& a, const fs::path& b) { return a.native().size() > b.native().size(); });
-        for (const fs::path& folder : folders) fs::remove(folder, ec);
-        if (all) fs::remove(path, ec);
-        return !fs::exists(path, ec);
+    auto removeOne = [&](const fs::path& path) {
+        fs::file_type type = fs::symlink_status(path, ec).type();
+        if (type == fs::file_type::not_found) return true;
+        if (type == fs::file_type::directory) return removeTree(path);
+        if (type == fs::file_type::regular) return removeFile(path);
+        return true;   // a link or junction: never followed or deleted; forgotten
     };
     // The old RetroFE may still be closing, holding its files
     for (int round = 0; round < tries && !remaining.empty(); round++) {
         if (round > 0) sleep(250);
         std::vector<fs::path> still;
         for (const fs::path& path : remaining) {
-            if (!removeAll(path)) still.push_back(path);
+            if (!removeOne(path)) still.push_back(path);
         }
         remaining = still;
     }
@@ -1092,19 +1234,28 @@ void SelfUpdater::deleteLeftovers(int tries)
     else writeText(journalPath(), toJson(journal).dump(2));
 }
 
-StartupRecovery recoverAtStart(const std::string& executable)
+namespace
 {
-    StartupRecovery result;
-    try {
-        if (executable.empty()) return result;
+    AppInstall appAt(const std::string& executable)
+    {
         fs::path program = fs::u8path(executable).lexically_normal().parent_path();
         AppInstall app;
         app.program = program.u8string();
         app.root = program.parent_path().u8string();
         app.executable = executable;
-        SelfUpdater updater("", app);
+        return app;
+    }
+}
+
+StartupRecovery recoverAtStart(const std::string& executable)
+{
+    StartupRecovery result;
+    try {
+        if (executable.empty()) return result;
+        AppInstall app = appAt(executable);
         std::error_code ec;
-        if (!fs::exists(withSuffix(folderPath(program), ".update.json"), ec)) return result;
+        if (!fs::exists(withSuffix(folderPath(fs::u8path(app.program)), ".update.json"), ec)) return result;
+        SelfUpdater updater("", app);
         updater.log = [&](const std::string& level, const std::string& text) { result.log.emplace_back(level, text); };
         result.restart = updater.recoverAtStartup();
         result.message = updater.message();
@@ -1113,6 +1264,51 @@ StartupRecovery recoverAtStart(const std::string& executable)
         result.log.emplace_back("error", std::string("Checking for an interrupted update failed: ") + e.what());
     }
     return result;
+}
+
+std::string checkProgramFolderAtExit(const std::string& executable)
+{
+    try {
+        if (executable.empty()) return "";
+        AppInstall app = appAt(executable);
+        SelfUpdater updater("", app);
+        if (!updater.programFolderMissing() || updater.repairProgramFolder()) return "";
+        fs::path program = fs::u8path(app.program);
+        return "An update of RetroFE couldn't finish, and its program folder " + program.u8string() + " is missing. "
+               "RetroFE tries to fix this when it can start again; until then, follow the instructions in "
+               + withSuffix(program, "-UPDATE-INTERRUPTED.txt").u8string() + ": rename " + program.filename().u8string()
+               + ".old (the previous version) or " + program.filename().u8string() + ".new (the new one) to "
+               + program.filename().u8string() + ".";
+    }
+    catch (const std::exception&) {
+        return "";
+    }
+}
+
+void showMessage(const std::string& title, const std::string& text, int timeoutSeconds)
+{
+#ifdef _WIN32
+    std::wstring wideTitle = fs::u8path(title).wstring();
+    std::wstring wideText = fs::u8path(text).wstring();
+    UINT style = MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND;
+    HMODULE user32 = LoadLibraryW(L"user32.dll");
+    if (!user32) return;
+    // MessageBoxTimeoutW has been in user32 since Windows XP, though it isn't documented
+    using Timeout = int(WINAPI*)(HWND, LPCWSTR, LPCWSTR, UINT, WORD, DWORD);
+    using Plain = int(WINAPI*)(HWND, LPCWSTR, LPCWSTR, UINT);
+    auto timed = reinterpret_cast<Timeout>(reinterpret_cast<void*>(GetProcAddress(user32, "MessageBoxTimeoutW")));
+    auto plain = reinterpret_cast<Plain>(reinterpret_cast<void*>(GetProcAddress(user32, "MessageBoxW")));
+    if (timeoutSeconds > 0 && timed) {
+        timed(nullptr, wideText.c_str(), wideTitle.c_str(), style, 0, static_cast<DWORD>(timeoutSeconds) * 1000);
+    }
+    else if (plain) {
+        plain(nullptr, wideText.c_str(), wideTitle.c_str(), style);
+    }
+    FreeLibrary(user32);
+#else
+    (void)timeoutSeconds;
+    fprintf(stderr, "%s: %s\n", title.c_str(), text.c_str());
+#endif
 }
 
 void requestRelaunch(const std::string& executable)

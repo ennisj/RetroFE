@@ -125,11 +125,13 @@ int main(int argc, char** argv)
         if (Catalog::relaunch(executable, argv, error)) {
             return 0;
         }
-        recovery.log.emplace_back("error", error);
+        // This process loaded the files that were just put back: don't carry on half old, half new
+        Catalog::showMessage("RetroFE update", "RetroFE put its previous version back after an interrupted update, "
+                             "but couldn't start it again (" + error + "). Please start RetroFE again.", 60);
+        return 1;
     }
-    if (!recovery.message.empty()) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "RetroFE update", recovery.message.c_str(), NULL);
-    }
+    // Anything recovery has to say goes to the log, and to the Catalog's problems
+    // (a message box here would hold up a cabinet without a keyboard)
 
     Configuration::initialize();
     Configuration config;
@@ -384,9 +386,16 @@ int main(int argc, char** argv)
         }
         else {
             LOG_ERROR("RetroFE", error);
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "RetroFE was updated",
-                                     ("RetroFE was updated, but couldn't start again by itself. Please start it again.\n" + error).c_str(), NULL);
+            Catalog::showMessage("RetroFE was updated", "RetroFE was updated, but couldn't start again by itself. Please start it again.\n" + error, 60);
         }
+    }
+
+    // An update that left no program folder (both folder renames kept failing):
+    // one more try, and if that fails too, the user has to know before RetroFE is gone
+    std::string missing = Catalog::checkProgramFolderAtExit(executable);
+    if (!missing.empty()) {
+        LOG_ERROR("RetroFE", missing);
+        Catalog::showMessage("RetroFE update", missing, 0);
     }
 
     Logger::deInitialize();

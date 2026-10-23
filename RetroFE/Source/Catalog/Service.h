@@ -162,6 +162,7 @@ namespace Catalog
         std::vector<Entry> entries_;               // packages_ and installed_ combined, sorted
         std::map<std::string, size_t> entryIndex_; // id -> position in entries_
         std::vector<std::string> warnings_;
+        std::vector<std::string> appWarnings_;     // about RetroFE's own last update, shown first
         std::map<std::string, std::pair<bool, std::string>> outcomes_;
         Activity activity_;
         bool active_ = false;
