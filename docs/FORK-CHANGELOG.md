@@ -4,6 +4,36 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 3 — editing extras, theme templates, QA, Linux (2026-10-23)
+
+Unit tests: 3,879 → 4,189 checks; also built and run on Linux (WSL,
+g++ 13).
+
+- **Multi-line text fields** (`multiline="yes"`): a game's description is
+  edited as real lines (Enter for a new line, Ctrl+Enter to keep; the
+  on-screen keyboard gains New line and cursor keys).
+- **Start this game** from its Manage screen: Manage closes (reloading first
+  if changes are waiting), the game runs as from its page, and Manage
+  reopens on it afterwards. Refused while a Catalog install runs.
+- **Hide / show a game** (its system's exclude list), with an "Only hidden
+  games" search; **play count and time played** on the game screen.
+- **Theme editor:** collection templates (create, copy, rename, assign,
+  apply to a whole menu branch), a file chooser for images, videos and fonts,
+  the theme's font and sounds, splash text, and highlighted text wheels.
+- **Engine fixes:** a layout `<menu>` without `<itemDefaults>` no longer
+  crashes RetroFE; a vertical menu of zero-height items no longer hangs it; a
+  page made only of a menu now draws.
+- **QA on a copy of the OnesaUCE data** (146 collections, 6,467 games):
+  report in [QA-ROUND3.md](QA-ROUND3.md). Fixed: a bare install's first
+  system now writes settings.conf (Manage stopped reopening at every start);
+  Settings warns before discarding changes; Back after adding a system or
+  menu returns to the list; duplicated launchers keep "restarts RetroFE";
+  bare program names such as `cmd.exe` are found on the system path, and
+  `cmd /c` commands keep their quotes; a settings.conf written meanwhile by
+  another screen is never overwritten.
+- **Linux:** fixed a use-after-free in the Catalog's GitHub check and a log
+  message that printed 1/0; tests made platform-aware.
+
 ## Round 2 — the Manage screens (2026-10-23)
 
 Six agents in parallel, each followed by a Fable adversarial review and

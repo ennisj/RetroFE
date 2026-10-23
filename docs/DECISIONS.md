@@ -224,6 +224,37 @@ Each section's agent chose these; the alternatives are in brackets.
 - **Pages the engine would crash on are reported, never built** — see R3 for
   the engine fix.
 
+### M14. Round 3 choices — Decided
+- **Multi-line fields are `multiline="yes"` on `<text>`** [a new element],
+  so they keep every text attribute; Enter adds a line, Ctrl+Enter keeps,
+  Escape cancels, and the on-screen keyboard's Done keeps.
+- **Start this game reloads first when changes are waiting** [refuse; launch
+  on the old settings], is refused while a Catalog install runs, launches
+  from the game's own system page, and reopens Manage on the game afterwards
+  [return to the page].
+- **Hidden games are found with a search toggle** [a list per system].
+- **A bare install gets settings.conf when Manage closes with changes**
+  [in each section; changing the start-up check], as the Catalog already did.
+- **Back after creating something goes to the list** (the new screen replaces
+  the add form) [back to the filled-in form].
+- **Program lookup on Windows:** RetroFE's folder first, then the system path
+  (as Windows' SearchPath does), shared by launching and Manage's checks.
+- **Theme templates show the page this engine actually uses**, not One
+  Saucier's inheritance down the menu tree [inheritance, which RetroFE never
+  shows]; a whole menu branch can be put on a template in one step.
+- **The theme editor's file chooser stays inside RetroFE's folder**, with the
+  system dialog as a second option; fonts go to `fonts/`, the rest to
+  `assets/`.
+- **A `<menu>` without `<itemDefaults>` gets empty defaults with a warning**
+  [skip the menu; null checks everywhere].
+
+### M15. Linux build packages were installed in WSL — Decided
+- To compile and test on Linux locally, the packages the Linux CI workflow
+  uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
+  sudo): SDL2 and its image/mixer/ttf libraries, GStreamer and plugins,
+  minizip, webp, libusb, libevdev. Nothing else was changed there. Remove them
+  with `apt-get remove` if you don't want them.
+
 ## Catalog
 
 ### C1. This fork from GitHub — Decided (publishing is Open)
