@@ -15,6 +15,7 @@
  */
 #include "LayoutEditorScreen.h"
 #include "../ThemeProvider.h"
+#include "../../FileDialog.h"
 #include "../../Home.h"
 #include "../../Setup.h"
 #include "../../../Collection/CollectionInfo.h"
@@ -24,6 +25,8 @@
 #include "../../../Graphics/Component/Component.h"
 #include "../../../Graphics/Page.h"
 #include "../../../ThemeEditor/LayoutCheck.h"
+#include "../../../ThemeEditor/LayoutPalette.h"
+#include "../../../ThemeEditor/ThemeStore.h"
 #include "../../../SDL.h"
 #include "../../../Utility/Log.h"
 #include "../../../Utility/Utils.h"
@@ -82,6 +85,17 @@ namespace
     const char* const UNSAVED = "Unsaved changes##layout";
     const char* const RESTORE = "Put back the original##layout";
     const char* const DELETE_ELEMENT = "Delete element##layout";
+    const char* const PALETTE = "Add element##layout";
+    // Files bigger than this are announced before they're copied (the copy blocks a frame)
+    const uintmax_t LARGE_COPY = 16u * 1024u * 1024u;
+
+    // The file kind an element's src is
+    std::string srcKind(const std::string& element)
+    {
+        if (element == "video") return "video";
+        if (element == "sound") return "sound";
+        return "image";
+    }
 }
 
 LayoutEditorScreen::LayoutEditorScreen(const ThemeEditorScreen::Context& context, const std::string& folder, const std::string& page)
@@ -99,8 +113,9 @@ LayoutEditorScreen::LayoutEditorScreen(const ThemeEditorScreen::Context& context
         if (ctx_.config) ctx_.config->getProperty(OPTION_FIRSTCOLLECTION, previewName_);
     }
     if (ctx_.config) ctx_.config->getProperty(OPTION_LAYOUT, originalLayout_);
+    lastBrowseDir_ = fs::path(Utils::combinePath(ctx_.root, "layouts", folder_));
 
-    pages_ = LayoutSession::themePages(Utils::combinePath(ctx_.root, "layouts", folder_));
+    pages_ =LayoutSession::themePages(Utils::combinePath(ctx_.root, "layouts", folder_));
     std::string first = page;
     if (first.empty()) first = pages_.empty() ? std::string("layout.xml") : pages_.front();
     openPage(first);
@@ -209,7 +224,17 @@ void LayoutEditorScreen::update(float dt)
     else {
         sinceChange_ += dt;
     }
-    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_)) rebuildPreview();
+    // Playing an event shows the page as edited: a rebuild that's due happens first
+    const bool replay = !replay_.empty() && !session_.dragging();
+    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || replay)) rebuildPreview();
+    if (replay && page_) {
+        // As RetroFE does: the menus' events go through every menu and component
+        page_->setSelectedItem();
+        if (page_->getSelectedItem()) page_->triggerEventOnAllMenus(replay_);
+        else page_->triggerEvent(replay_);
+        LOG_INFO("ThemeEditor", "Playing " + replay_ + " on the preview");
+    }
+    if (replay) replay_.clear();
     if (page_) page_->update(dt);
     refreshPending();
 }
@@ -407,9 +432,110 @@ void LayoutEditorScreen::runJob()
     case Job::Restore:
         restoreOriginal();
         break;
+    case Job::NativePick:
+        pickNative();
+        break;
+    case Job::Import: {
+        // The copy blocks: a big file is announced first and copied on the next frame
+        std::error_code ec;
+        const uintmax_t size = fs::file_size(fs::path(jobPath_), ec);
+        if (!ec && size > LARGE_COPY && status_.rfind("Copying ", 0) != 0) {
+            setStatus("Copying " + fs::path(jobPath_).filename().string() + " (" + std::to_string(size / (1024 * 1024)) +
+                      " MB) into the theme...", false);
+            job_ = Job::Import;
+            break;
+        }
+        importChosen(jobPath_, jobFor_);
+        break;
+    }
     case Job::None:
         break;
     }
+}
+
+// ---- files -----------------------------------------------------------------------
+
+void LayoutEditorScreen::chooseFile(const FileFor& what)
+{
+    chooserFor_ = what;
+    Themes::FileChooser::Request request;
+    request.filter = what.kind;
+    const std::string folder = session_.importFolder(what.kind);
+    request.destination = "the theme's " + folder + " folder";
+    if (what.addElement) {
+        request.title = "Choose the " + what.kind + " to add to the page";
+        request.note = "Not now adds it with the placeholder name " +
+                       std::string(what.kind == "video" ? "videos/new.mp4" : "images/new.png") +
+                       ", which isn't in the theme: RetroFE skips it until it names a file.";
+    }
+    else {
+        request.title = "Choose the " + what.kind + " for " + session_.label(session_.doc().find(what.path));
+    }
+    std::error_code ec;
+    const fs::path root = fs::path(ctx_.root);
+    chooser_.open(request, fs::is_directory(lastBrowseDir_, ec) && Themes::insideFolder(lastBrowseDir_, root)
+                               ? lastBrowseDir_ : fs::path(session_.themeDir()));
+}
+
+// The system's own file dialog: it blocks, so it runs here in update(), never while drawing
+void LayoutEditorScreen::pickNative()
+{
+    if (!FileDialog::isSupported()) return;
+    std::string path;
+    const std::string filter = jobFor_.kind;
+    if (!FileDialog::pickFile(ctx_.window, chooser_.request().title, Themes::chooserFilterLabel(filter), Themes::chooserPattern(filter), path)) {
+        return;
+    }
+    job_ = Job::Import;
+    jobPath_ = path;
+}
+
+// Copies a chosen file into the theme (a file already in it stays where it
+// is) and uses it: for a new element, or as an element's src
+bool LayoutEditorScreen::importChosen(const std::string& path, const FileFor& what)
+{
+    std::string rel, error;
+    const std::string folder = session_.importFolder(what.kind);
+    // The src as this page writes it: relative to the page's own folder, which PageBuilder looks in first
+    if (!importIntoTheme(Utils::combinePath(ctx_.root, "layouts"), folder_, path, folder, session_.pageFolder(), rel, error)) {
+        setStatus("Not added: " + error, true);
+        return false;
+    }
+    lastBrowseDir_ = fs::path(path).parent_path();
+    LOG_NOTICE("ThemeEditor", "Added " + path + " to layouts/" + folder_ + " as " + rel);
+    if (what.addElement) {
+        if (!session_.addElement(what.entry, what.type, rel)) {
+            setStatus("Added " + rel + " to the theme, but the element couldn't be added to the page.", true);
+            return false;
+        }
+        setStatus("Added " + session_.label(session_.selected()) + " to the page, showing " + rel + ".", false);
+        return true;
+    }
+    if (!session_.selectPath(what.path) || session_.selectedElement()->value("src") == rel) {
+        setStatus(session_.selectedElement() ? "It already shows " + rel + "." : "Added " + rel + " to the theme, but the element it was for has gone.",
+                  !session_.selectedElement());
+        return session_.selectedElement() != nullptr;
+    }
+    session_.endCoalesce();
+    session_.setAttribute("src", rel);
+    setStatus("Now showing " + rel + ".", false);
+    return true;
+}
+
+void LayoutEditorScreen::addFromPalette(const std::string& entry, const std::string& type)
+{
+    const PaletteEntry* e = paletteEntry(entry);
+    if (!e) return;
+    if (!e->file.empty()) {
+        FileFor what;
+        what.addElement = true;
+        what.entry = entry;
+        what.type = type;
+        what.kind = e->file;
+        chooseFile(what);
+        return;
+    }
+    if (session_.addElement(entry, type)) setStatus("Added " + session_.label(session_.selected()) + " to the page.", false);
 }
 
 bool LayoutEditorScreen::save()
@@ -508,7 +634,67 @@ bool LayoutEditorScreen::runCommand(const EditorCommand& command, std::string& n
     if (n == "restore") { restoreOriginal(); note = status_; return !statusIsError_; }
     if (n == "restoredialog") { showRestore_ = true; return true; }
     if (n == "deletedialog") { showDelete_ = session_.selected() > 0; return showDelete_; }
-    if (n == "closedialogs") { showClose_ = showRestore_ = showDelete_ = false; return true; }
+    if (n == "closedialogs") { showClose_ = showRestore_ = showDelete_ = showPalette_ = false; chooser_.close(); return true; }
+    if (n == "palette") { showPalette_ = true; return true; }
+    // A file copied in as a chosen one is: for a new element, or the selected element's src
+    if (n == "addfile") {
+        const PaletteEntry* entry = words.empty() ? nullptr : paletteEntry(words[0]);
+        if (!entry || entry->file.empty()) return false;
+        FileFor what;
+        what.addElement = true;
+        what.entry = entry->id;
+        what.kind = entry->file;
+        chooser_.close();
+        bool ok = importChosen(command.tail(1), what);
+        note = status_;
+        return ok;
+    }
+    if (n == "srcfile") {
+        const LayoutElement* e = session_.selectedElement();
+        if (!e || session_.selected() == 0) return false;
+        FileFor what;
+        what.path = e->path;
+        what.kind = srcKind(e->name);
+        chooser_.close();
+        bool ok = importChosen(command.rest, what);
+        note = status_;
+        return ok;
+    }
+    if (n == "browse") {
+        // The editor's own chooser (never the system's dialog): for the selected
+        // element's src, or (browse PALETTEID) for a new image or video
+        if (!words.empty() && words[0] != "src") {
+            const PaletteEntry* entry = paletteEntry(words[0]);
+            if (!entry || entry->file.empty()) return false;
+            addFromPalette(entry->id, "");
+            return chooser_.isOpen();
+        }
+        const LayoutElement* e = session_.selectedElement();
+        if (!e || session_.selected() == 0) return false;
+        FileFor what;
+        what.path = e->path;
+        what.kind = srcKind(e->name);
+        chooseFile(what);
+        return true;
+    }
+    if (n == "browsedir") {
+        chooser_.showFolder(fs::path(ctx_.root) / command.rest);
+        return chooser_.isOpen();
+    }
+    if (n == "replay") {
+        if (command.rest.empty()) return false;
+        replay_ = command.rest.rfind("on", 0) == 0 ? engineEventName(command.rest) : command.rest;
+        note = replay_;
+        return true;
+    }
+    if (n == "endboxes") { showEnd_ = command.rest != "off"; return true; }
+    if (n == "showanims") { scrollToAnimations_ = session_.selected() > 0; return scrollToAnimations_; }
+    if (n == "openevent") {
+        const int ev = session_.findInSelected(command.rest);
+        if (ev < 0) return false;
+        openEvent_ = session_.element(ev).path;
+        return true;
+    }
     if (n == "boxes") { showBoxes_ = command.rest != "off"; return true; }
     if (n == "preview") { previewName_ = command.rest; previewDirty_ = true; return true; }
     if (n == "rebuild") { builtText_.clear(); previewDirty_ = true; return true; }
@@ -533,8 +719,9 @@ void LayoutEditorScreen::drawTargets()
 
 bool LayoutEditorScreen::escape()
 {
-    if (showClose_ || showRestore_ || showDelete_) {
-        showClose_ = showRestore_ = showDelete_ = false;
+    if (showClose_ || showRestore_ || showDelete_ || showPalette_ || chooser_.isOpen()) {
+        showClose_ = showRestore_ = showDelete_ = showPalette_ = false;
+        chooser_.close();
         pendingPage_.clear();
         return true;
     }
@@ -707,6 +894,15 @@ void LayoutEditorScreen::drawToolbar()
     ImGui::Checkbox("All boxes", &showBoxes_);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Outline every element, not only the selected and the one under the mouse");
     ImGui::SameLine();
+    ImGui::Checkbox("Where animations end", &showEnd_);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("A dashed box where an element's onEnter leaves it, when that isn't where it's placed "
+                          "(Aeon Nox's top bar slides in from above the page)");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Play the start")) { builtText_.clear(); previewDirty_ = true; }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Builds the preview again, so every onEnter plays");
+    ImGui::SameLine();
     ImGui::TextDisabled("Preview with:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f * ctx_.scale);
@@ -731,9 +927,11 @@ void LayoutEditorScreen::drawLeft()
     ImGui::EndChild();
 
     ImGui::SeparatorText("Elements");
+    if (ImGui::Button("Add element...")) showPalette_ = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("A new image, video, text, game art, menu... after the selected element");
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-    ImGui::TextWrapped("This page's own elements, moved and changed in place. Adding new ones isn't possible here "
-                       "yet; Duplicate copies one.");
+    ImGui::TextWrapped("This page's own elements, in file order, changed in place. New ones go after the selected "
+                       "element, or at the end.");
     ImGui::PopStyleColor();
     ImGui::BeginChild("##elementList", ImVec2(0, 0), ImGuiChildFlags_Borders);
     for (int el : session_.listed()) {
@@ -827,6 +1025,25 @@ void LayoutEditorScreen::drawCanvas()
                     colourFor(session_.element(el).name, isHot ? 230 : 110), 0.0f, 0, isHot ? 2.0f : 1.0f);
     }
     const int sel = session_.selected();
+    // Where onEnter leaves an element: the selected one, and every other one with All boxes
+    if (showEnd_ && !session_.dragging()) {
+        for (int el : session_.listed()) {
+            if (session_.hidden(el) || (el != sel && !showBoxes_)) continue;
+            DragRect end;
+            if (!session_.enterEndBox(el, end)) continue;
+            const bool selected = el == sel;
+            ImVec2 p1 = toStage(static_cast<float>(end.x), static_cast<float>(end.y));
+            ImVec2 p2 = toStage(static_cast<float>(end.x + end.w), static_cast<float>(end.y + end.h));
+            drawDashedRect(dl, p1, p2, colourFor(session_.element(el).name, selected ? 230 : 120), 6.0f * ctx_.scale);
+            if (selected) {
+                const char* text = "after onEnter";
+                ImVec2 ts = ImGui::CalcTextSize(text);
+                ImVec2 at(std::max(origin.x, p1.x), std::min(p2.y + 2.0f, origin.y + size.y - ts.y - 2.0f));
+                dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 150));
+                dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(230, 230, 230, 255), text);
+            }
+        }
+    }
     if (sel > 0 && session_.hasBox(sel) && !session_.hidden(sel)) {
         const std::string& name = session_.element(sel).name;
         const bool editable = session_.editableBox(sel);
@@ -866,6 +1083,24 @@ void LayoutEditorScreen::drawCanvas()
     dl->PopClipRect();
 }
 
+void LayoutEditorScreen::drawDashedRect(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 colour, float dash)
+{
+    auto line = [&](ImVec2 p, ImVec2 q) {
+        const float dx = q.x - p.x, dy = q.y - p.y;
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if (length < 1.0f || dash < 1.0f) return;
+        for (float t = 0.0f; t < length; t += dash * 2.0f) {
+            const float e = std::min(length, t + dash);
+            dl->AddLine(ImVec2(p.x + dx * t / length, p.y + dy * t / length), ImVec2(p.x + dx * e / length, p.y + dy * e / length),
+                        colour, 1.5f);
+        }
+    };
+    line(a, ImVec2(b.x, a.y));
+    line(ImVec2(b.x, a.y), b);
+    line(b, ImVec2(a.x, b.y));
+    line(ImVec2(a.x, b.y), a);
+}
+
 void LayoutEditorScreen::drawAttribute(const LayoutElement& e, const std::string& name, const std::string& resolved)
 {
     ImGui::PushID(name.c_str());
@@ -892,6 +1127,16 @@ void LayoutEditorScreen::drawAttribute(const LayoutElement& e, const std::string
     if (!resolved.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("= %s", resolved.c_str());
+    }
+    if (name == "src" && (e.name == "image" || e.name == "video" || e.name == "sound")) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Choose...")) {
+            FileFor what;
+            what.path = e.path;
+            what.kind = srcKind(e.name);
+            chooseFile(what);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Choose the file; one from outside the theme is copied into it");
     }
     if (has) {
         ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonW));
@@ -956,6 +1201,7 @@ void LayoutEditorScreen::drawProperties()
         }
         ImGui::PopID();
         ImGui::TextDisabled("Layers: 0 is drawn first, 19 on top.");
+        drawShows(sel);
     }
 
     ImGui::SeparatorText("All attributes");
@@ -987,11 +1233,8 @@ void LayoutEditorScreen::drawProperties()
     e = session_.selectedElement();
     if (!e) return;
 
-    std::vector<std::string> anims = session_.animations(sel);
-    if (!anims.empty()) {
-        ImGui::SeparatorText("Animations (not changed here)");
-        for (const std::string& a : anims) ImGui::BulletText("%s", a.c_str());
-    }
+    if (sel > 0) drawAnimations(sel);
+    if (!session_.selectedElement()) return;
 
     if (sel > 0) {
         ImGui::Spacing();
@@ -1006,6 +1249,267 @@ void LayoutEditorScreen::drawProperties()
         ImGui::SameLine();
         if (ImGui::Button("Delete...")) showDelete_ = true;
     }
+}
+
+// What a reloadable element shows (its type, or a video's imageType): the palette's choices
+void LayoutEditorScreen::drawShows(int element)
+{
+    const LayoutElement& e = session_.element(element);
+    const PaletteEntry* entry = paletteEntry(e.name);
+    if (!entry || entry->typeAttr.empty() || entry->types.empty()) return;
+    const std::string attr = entry->typeAttr;
+    const std::string current = e.value(attr);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(attr == "imageType" ? "Art when there's no video:" : "Shows:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x));
+    if (ImGui::BeginCombo("##shows", current.empty() ? "(not set)" : current.c_str())) {
+        for (const std::string& t : entry->types) {
+            if (ImGui::Selectable(t.c_str(), t == current) && t != current) {
+                session_.endCoalesce();
+                session_.setAttribute(attr, t);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Its %s; any other value can be typed in All attributes", attr.c_str());
+}
+
+bool LayoutEditorScreen::drawAnimField(int element, const char* name, const char* hint, float width)
+{
+    const LayoutElement& e = session_.element(element);
+    std::string value = e.value(name);
+    const std::string key = "anim:" + e.path + ":" + name;
+    ImGui::PushID(name);
+    ImGui::SetNextItemWidth(width);
+    bool changed = false;
+    if (ImGui::InputTextWithHint("##v", hint, &value)) {
+        session_.setCoalesceKey(key);
+        changed = session_.setAttributeOf(element, name, value);
+    }
+    if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+    if (ImGui::IsItemHovered() && !ImGui::IsItemActive()) ImGui::SetTooltip("%s", name);
+    ImGui::PopID();
+    return changed;
+}
+
+bool LayoutEditorScreen::drawAnimChoice(int element, const char* name, const std::vector<std::string>& choices, const char* none, float width)
+{
+    const std::string current = session_.element(element).value(name);
+    bool changed = false;
+    ImGui::PushID(name);
+    ImGui::SetNextItemWidth(width);
+    if (ImGui::BeginCombo("##c", current.empty() ? none : current.c_str())) {
+        bool known = false;
+        for (const std::string& c : choices) known = known || Utils::toLower(c) == Utils::toLower(current);
+        if (!current.empty() && !known) ImGui::Selectable(current.c_str(), true);   // as the file has it
+        for (const std::string& c : choices) {
+            const bool same = Utils::toLower(c) == Utils::toLower(current);
+            if (ImGui::Selectable(c.c_str(), same) && !same) {
+                session_.endCoalesce();
+                changed = session_.setAttributeOf(element, name, c);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", name);
+    ImGui::PopID();
+    return changed;
+}
+
+void LayoutEditorScreen::drawAnimations(int element)
+{
+    ImGui::SeparatorText("Animations");
+    if (scrollToAnimations_) {
+        ImGui::SetScrollHereY(0.0f);
+        scrollToAnimations_ = false;
+    }
+    const float s = ctx_.scale;
+    const float buttonW = ImGui::CalcTextSize("x").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
+    // An edit that adds or removes elements ends this frame's list (the indices after it moved)
+    bool structural = false;
+    std::vector<int> evs = session_.events(element);
+    if (evs.empty()) ImGui::TextDisabled("None: it stays as it's placed.");
+    for (size_t k = 0; k < evs.size() && !structural; ++k) {
+        const int ev = evs[k];
+        const LayoutElement& event = session_.element(ev);
+        ImGui::PushID(event.path.c_str());
+        std::string label = event.name;
+        if (event.has("menuIndex")) label += " (menuIndex " + event.value("menuIndex") + ")";
+        // Unfolded at first when there are only a couple
+        ImGui::SetNextItemOpen(evs.size() <= 2, ImGuiCond_Once);
+        if (event.path == openEvent_) {
+            ImGui::SetNextItemOpen(true);
+            openEvent_.clear();
+        }
+        const bool open = ImGui::TreeNodeEx("##event", ImGuiTreeNodeFlags_SpanAvailWidth, "%s", label.c_str());
+        const std::string engineName = engineEventName(event.name);
+        const float playW = ImGui::CalcTextSize("Play").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
+        ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - playW - buttonW));
+        if (ImGui::SmallButton("Play")) replay_ = engineName;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Plays %s on the preview (as RetroFE triggers \"%s\")", event.name.c_str(), engineName.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x")) structural = session_.removeAnimation(ev);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove %s and its steps", event.name.c_str());
+        if (open && !structural) {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("menuIndex");
+            ImGui::SameLine();
+            drawAnimField(ev, "menuIndex", "any menu", 110.0f * s);
+            std::vector<int> sets = session_.childrenNamed(ev, "set");
+            for (size_t si = 0; si < sets.size() && !structural; ++si) {
+                const int set = sets[si];
+                ImGui::PushID(static_cast<int>(si));
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("Step %d", static_cast<int>(si) + 1);
+                ImGui::SameLine();
+                drawAnimField(set, "duration", "seconds", 70.0f * s);
+                ImGui::SameLine();
+                ImGui::TextDisabled("s");
+                ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonW));
+                if (ImGui::SmallButton("x")) structural = session_.removeAnimation(set);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this step");
+                std::vector<int> animates = session_.childrenNamed(set, "animate");
+                ImGui::Indent(12.0f * s);
+                for (size_t ai = 0; ai < animates.size() && !structural; ++ai) {
+                    const int a = animates[ai];
+                    ImGui::PushID(static_cast<int>(ai));
+                    const float half = (ImGui::GetContentRegionAvail().x - buttonW - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+                    drawAnimChoice(a, "type", tweenTypeNames(), "(type)", half);
+                    ImGui::SameLine();
+                    drawAnimChoice(a, "algorithm", tweenAlgorithmNames(), "linear", half);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("x")) structural = session_.removeAnimation(a);
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this change");
+                    if (!structural) {
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::TextDisabled("from");
+                        ImGui::SameLine();
+                        const float field = (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("fromto").x -
+                                             ImGui::GetStyle().ItemSpacing.x * 3.0f) * 0.5f;
+                        drawAnimField(a, "from", "where it is", field);
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("to");
+                        ImGui::SameLine();
+                        drawAnimField(a, "to", "value", field);
+                    }
+                    ImGui::PopID();
+                }
+                if (!structural && ImGui::SmallButton("+ change")) structural = session_.addAnimate(set);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Another change that plays with this step's");
+                ImGui::Unindent(12.0f * s);
+                ImGui::PopID();
+            }
+            if (!structural && ImGui::SmallButton("+ step")) structural = session_.addSet(ev);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("A step that plays after the last one");
+        }
+        if (open) ImGui::TreePop();
+        ImGui::PopID();
+    }
+    if (structural) return;
+
+    // A new event
+    ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x * 0.6f));
+    if (ImGui::BeginCombo("##newEvent", newEvent_.c_str())) {
+        for (const std::string& name : LayoutSession::eventNames()) {
+            if (ImGui::Selectable(name.c_str(), name == newEvent_)) newEvent_ = name;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Add event")) {
+        if (session_.addEvent(newEvent_)) setStatus("Added " + newEvent_ + ": alpha from 0 to 1 in 0.2 seconds. Change it above.", false);
+        return;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("When it plays: onEnter as the page shows, onMenuEnter... (RetroFE's events)");
+
+    // Copy another element's
+    std::string sourceLabel = "(copy animations from)";
+    const int source = session_.doc().find(copySource_);
+    if (!copySource_.empty() && source > 0) sourceLabel = session_.label(source);
+    ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x * 0.6f));
+    if (ImGui::BeginCombo("##copyFrom", sourceLabel.c_str())) {
+        for (int other : session_.listed()) {
+            if (other <= 0 || other == element || session_.events(other).empty()) continue;
+            ImGui::PushID(other);
+            const LayoutElement& o = session_.element(other);
+            if (ImGui::Selectable(session_.label(other).c_str(), o.path == copySource_)) copySource_ = o.path;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s: %d events", o.path.c_str(), static_cast<int>(session_.events(other).size()));
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(source <= 0 || source == element);
+    if (ImGui::Button("Copy")) {
+        const std::string from = sourceLabel;
+        if (session_.copyAnimationsFrom(source)) setStatus("Its animations are now a copy of " + from + "'s (Undo brings back its own).", false);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Replaces this element's events with copies of the chosen element's");
+}
+
+void LayoutEditorScreen::drawPalette()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    syncPopup(PALETTE, showPalette_, paletteOpen_);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(560.0f * ctx_.scale, 0), ImVec2(io.DisplaySize.x - 40.0f, io.DisplaySize.y - 40.0f));
+    if (!ImGui::BeginPopupModal(PALETTE, &showPalette_, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    if (!showPalette_) {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+    const int sel = session_.selected();
+    ImGui::TextWrapped("%s", sel > 0 ? ("Adds it after " + session_.label(sel) + ", in the middle of the page, on top.").c_str()
+                                     : "Adds it at the end of the page, in the middle of it, on top.");
+    ImGui::TextDisabled("It's written as RetroFE's own element; move it, size it and change it as any other.");
+    ImGui::Separator();
+    std::string add;
+    if (ImGui::BeginTable("##palette", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("type", ImGuiTableColumnFlags_WidthFixed, 170.0f * ctx_.scale);
+        ImGui::TableSetupColumn("add", ImGuiTableColumnFlags_WidthFixed);
+        for (const PaletteEntry& entry : layoutPalette()) {
+            ImGui::PushID(entry.id.c_str());
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", entry.label.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("<%s>", entry.element.c_str());
+            ImGui::TextDisabled("%s", entry.summary.c_str());
+            ImGui::TableNextColumn();
+            if (!entry.types.empty()) {
+                std::string& chosen = paletteTypes_[entry.id];
+                if (chosen.empty()) chosen = entry.types[0];
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::BeginCombo("##type", chosen.c_str())) {
+                    for (const std::string& t : entry.types) {
+                        if (ImGui::Selectable(t.c_str(), t == chosen)) chosen = t;
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            else if (!entry.file.empty()) {
+                ImGui::TextDisabled("asks for the %s", entry.file.c_str());
+            }
+            ImGui::TableNextColumn();
+            if (ImGui::Button("Add")) add = entry.id;
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (ImGui::Button("Cancel (Esc)")) {
+        showPalette_ = false;
+        ImGui::CloseCurrentPopup();
+    }
+    if (!add.empty()) {
+        showPalette_ = false;
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+    if (!add.empty()) addFromPalette(add, paletteTypes_[add]);
 }
 
 void LayoutEditorScreen::syncPopup(const char* name, bool& show, bool& opened)
@@ -1024,6 +1528,29 @@ void LayoutEditorScreen::drawPopups()
 {
     ImGuiIO& io = ImGui::GetIO();
     const ImVec2 centre(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+
+    drawPalette();
+    std::string chosen;
+    switch (chooser_.draw(ctx_.scale, fs::path(ctx_.root), fs::path(session_.themeDir()), chosen)) {
+    case Themes::FileChooser::Result::Chosen:
+        job_ = Job::Import;
+        jobFor_ = chooserFor_;
+        jobPath_ = chosen;
+        break;
+    case Themes::FileChooser::Result::SomewhereElse:
+        // The system's dialog blocks: it opens from update(), after this frame
+        job_ = Job::NativePick;
+        jobFor_ = chooserFor_;
+        break;
+    case Themes::FileChooser::Result::Cancelled:
+        // Not now: a new image or video goes in with its placeholder name
+        if (chooserFor_.addElement && session_.addElement(chooserFor_.entry, chooserFor_.type)) {
+            setStatus("Added " + session_.label(session_.selected()) + " with a placeholder file: choose one next to src.", true);
+        }
+        break;
+    case Themes::FileChooser::Result::None:
+        break;
+    }
 
     syncPopup(UNSAVED, showClose_, closeOpen_);
     ImGui::SetNextWindowPos(centre, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));

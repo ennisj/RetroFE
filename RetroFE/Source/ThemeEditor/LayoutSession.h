@@ -17,8 +17,9 @@
 
 // The theme editor's layout-native mode, without SDL or ImGui: one page file
 // of a hand-made theme (Aeon Nox, say), edited in place. It moves, resizes
-// and changes the attributes of the elements the page already has, and can
-// duplicate or delete one; it never adds a widget or rewrites the file.
+// and changes the attributes of the page's elements, duplicates or deletes
+// one, adds new ones from a palette of raw elements, and edits their
+// animations; it never adds a widget or rewrites the file.
 // Every edit changes the file's text at exactly the bytes concerned
 // (LayoutText.h), so comments, spacing, attribute order, quotes and line
 // endings survive a save untouched.
@@ -195,6 +196,57 @@ namespace ThemeEditor
         bool setBox(const DragRect& r, bool resize);
         bool duplicateSelected();
         bool deleteSelected();
+
+        // Adding an element from the palette (LayoutPalette.h), as text:
+        // after the selected element (the page element it's part of: a
+        // menu's, for one of its items), else at the end of the page, with
+        // its top-left corner placed so it sits in the middle of the page and
+        // on the layer newElementLayer(). It's selected. `type` replaces the
+        // entry's default type ("" keeps it), `src` is the file of an image
+        // or video, as the page refers to it ("" leaves a placeholder name).
+        bool addElement(const std::string& paletteId, const std::string& type = "", const std::string& src = "");
+        // One above the highest layer an element of the page sets, at most MAX_LAYER
+        int newElementLayer() const;
+        // The folder (in the theme, '/' separated) a chosen file of this kind
+        // ("image", "video", anything else) is copied into: the page's own
+        // images/ (video/ or videos/ for videos) when its folder has one,
+        // else the theme's, else assets/
+        std::string importFolder(const std::string& kind) const;
+        // The page's folder in the theme: "" for layout.xml, "collections/NES/layout"
+        std::string pageFolder() const;
+
+        // Animations. An element's events are its children named on...
+        // (<onEnter>, <onMenuEnter>...), each holding <set duration=> steps
+        // that play one after another, each holding <animate> changes that
+        // play together. The edits change the text as the others do, and
+        // take an event, set or step of the selected element (or the
+        // element itself, for setAttributeOf); they keep the selection.
+        std::vector<int> events(int element) const;
+        std::vector<int> childrenNamed(int element, const std::string& name) const;
+        // The events PageBuilder reads (LayoutCheck's list)
+        static std::vector<std::string> eventNames();
+        bool addEvent(const std::string& event);   // with one set and one step: alpha from 0 to 1 in 0.2 s
+        bool addSet(int event);                    // a step after the last: alpha to 1 in 0.2 s
+        bool addAnimate(int set);                  // another change in that step: alpha to 1
+        bool removeAnimation(int element);         // an event, set or animate
+        // An empty value inside an animation removes the attribute (PageBuilder
+        // reads from="" / to="" as 0, not "where it is", and menuIndex="" as menu 0)
+        bool setAttributeOf(int element, const std::string& name, const std::string& value);
+        bool removeAttributeOf(int element, const std::string& name);
+        // The selected element's events become copies of `source`'s (its own
+        // go first); false when they'd be the same or source has none to give
+        bool copyAnimationsFrom(int source);
+        // Is `element` the selected element or inside it?
+        bool insideSelected(int element) const;
+        // A path relative to the selected element ("onEnter[0]/set[1]") to an element, else -1
+        int findInSelected(const std::string& relativePath) const;
+
+        // Where the element's box is once its onEnter has played (the last
+        // value each animate of it gives x, y, xOffset, yOffset, width,
+        // height, resolved as PageBuilder does), when that differs from the
+        // box as placed: Aeon Nox's top bar sits above the page until its
+        // onEnter brings y to 50. False when it has no box or doesn't move.
+        bool enterEndBox(int element, DragRect& out) const;
 
         // Typing in one field is one undo step (EditorSession's coalescing)
         void setCoalesceKey(const std::string& key) { coalesce_ = key; }

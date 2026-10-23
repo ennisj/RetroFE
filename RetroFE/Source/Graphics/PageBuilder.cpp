@@ -1827,7 +1827,7 @@ void PageBuilder::getAnimationEvents(const xml_node<>* node, TweenSet& tweens)
 					else if (fromStr == "bottom") {
 						fromValue = static_cast<float>(layoutHeight_);
 					}
-					else if (fromStr.back() == '%') {
+					else if (!fromStr.empty() && fromStr.back() == '%') {
 						float percent = Utils::convertFloat(fromStr.substr(0, fromStr.size() - 1));
 						if (animateType == "width") {
 							fromValue = layoutWidth_ * (percent / 100.0f);
@@ -1865,7 +1865,7 @@ void PageBuilder::getAnimationEvents(const xml_node<>* node, TweenSet& tweens)
 					else if (toStr == "bottom") {
 						toValue = static_cast<float>(layoutHeight_);
 					}
-					else if (toStr.back() == '%') {
+					else if (!toStr.empty() && toStr.back() == '%') {
 						float percent = Utils::convertFloat(toStr.substr(0, toStr.size() - 1));
 						if (animateType == "width") {
 							toValue = static_cast<float>(layoutWidth_) * (percent / 100.0f);

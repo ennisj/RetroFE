@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "LayoutText.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -51,12 +52,23 @@ namespace ThemeEditor
             return "line " + std::to_string(lineOf(text, offset));
         }
 
-        // The start of offset's line, and whether only whitespace comes before it there
+        // A UTF-8 byte order mark's length at the start of the text (0 or 3)
+        size_t bomLength(const std::string& text)
+        {
+            return text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+                           static_cast<unsigned char>(text[2]) == 0xBF
+                       ? 3
+                       : 0;
+        }
+
+        // The start of offset's line, and whether only whitespace comes before
+        // it there. A byte order mark isn't part of the first line.
         size_t lineStart(const std::string& text, size_t offset, bool& onlySpace)
         {
             size_t s = offset;
             onlySpace = true;
-            while (s > 0 && text[s - 1] != '\n') {
+            const size_t first = std::min(bomLength(text), offset);
+            while (s > first && text[s - 1] != '\n') {
                 if (!isSpace(text[s - 1])) onlySpace = false;
                 --s;
             }
@@ -83,6 +95,15 @@ namespace ThemeEditor
             size_t nl = text.find('\n');
             if (nl != std::string::npos && nl > 0 && text[nl - 1] == '\r') return "\r\n";
             return "\n";
+        }
+
+        // The line ending of offset's line (a file can mix them); the file's
+        // when that line has none
+        std::string newlineAt(const std::string& text, size_t offset)
+        {
+            size_t nl = text.find('\n', offset);
+            if (nl == std::string::npos) return newlineOf(text);
+            return nl > 0 && text[nl - 1] == '\r' ? "\r\n" : "\n";
         }
     }
 
@@ -382,5 +403,277 @@ namespace ThemeEditor
         if (open == std::string::npos || close == std::string::npos || close < open) return path;
         int n = std::atoi(path.substr(open + 1, close - open - 1).c_str());
         return path.substr(0, open + 1) + std::to_string(n + 1) + path.substr(close);
+    }
+
+    // ---- inserting -------------------------------------------------------------
+
+    namespace
+    {
+        bool startsLine(const std::string& text, size_t offset)
+        {
+            bool onlySpace = false;
+            lineStart(text, offset, onlySpace);
+            return onlySpace;
+        }
+
+        // Only whitespace and whole comments from offset to the end of its line
+        bool restQuiet(const std::string& text, size_t offset)
+        {
+            size_t i = offset;
+            while (i < text.size() && text[i] != '\n') {
+                if (isSpace(text[i])) { ++i; continue; }
+                if (text.compare(i, 4, "<!--") != 0) return false;
+                size_t e = text.find("-->", i + 4);
+                if (e == std::string::npos) return false;
+                for (size_t k = i; k < e; ++k) {
+                    if (text[k] == '\n') return false;   // a comment that runs on: not this line's
+                }
+                i = e + 3;
+            }
+            return true;
+        }
+
+        bool isEvent(const std::string& name)
+        {
+            return name.size() > 2 && name[0] == 'o' && name[1] == 'n' && name[2] >= 'A' && name[2] <= 'Z';
+        }
+
+        // The root, a component, a menu item: not an animation event or inside one
+        bool pageElement(const LayoutDoc& doc, int i)
+        {
+            for (int e = i; e >= 0; e = doc.elements[e].parent) {
+                if (isEvent(doc.elements[e].name)) return false;
+            }
+            return true;
+        }
+
+        std::vector<std::string> splitLines(const std::string& s)
+        {
+            std::vector<std::string> lines;
+            size_t from = 0;
+            while (true) {
+                size_t nl = s.find('\n', from);
+                std::string line = s.substr(from, nl == std::string::npos ? std::string::npos : nl - from);
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                lines.push_back(line);
+                if (nl == std::string::npos) break;
+                from = nl + 1;
+            }
+            return lines;
+        }
+
+        // A fragment's lines in the file's style: the first as it is, the
+        // rest indented by `indent` plus a unit per 4 spaces they had
+        std::string placeFragment(const std::string& fragment, const std::string& indent, const std::string& unit, const std::string& nl)
+        {
+            std::vector<std::string> lines = splitLines(fragment);
+            std::string out = lines[0];
+            for (size_t i = 1; i < lines.size(); ++i) {
+                const std::string& line = lines[i];
+                size_t n = 0, spaces = 0;
+                while (n < line.size() && (line[n] == ' ' || line[n] == '\t')) {
+                    spaces += line[n] == '\t' ? 4 : 1;
+                    ++n;
+                }
+                out += nl;
+                if (n == line.size()) continue;   // a blank line stays blank
+                out += indent;
+                for (size_t l = 0; l < spaces / 4; ++l) out += unit;
+                out += std::string(spaces % 4, ' ');
+                out += line.substr(n);
+            }
+            return out;
+        }
+
+        // A fragment on one line: its lines without their indentation, joined
+        std::string joinFragment(const std::string& fragment)
+        {
+            std::string out;
+            for (const std::string& line : splitLines(fragment)) {
+                size_t n = 0;
+                while (n < line.size() && isSpace(line[n])) ++n;
+                out += line.substr(n);
+            }
+            return out;
+        }
+
+        // Space made only of blanks and tabs, on one line
+        bool inlineSpace(const std::string& s)
+        {
+            for (char c : s) {
+                if (c != ' ' && c != '\t') return false;
+            }
+            return true;
+        }
+    }
+
+    std::string lineEnding(const std::string& text)
+    {
+        return newlineOf(text);
+    }
+
+    std::string indentationOf(const LayoutDoc& doc, int element)
+    {
+        if (element < 0 || element >= static_cast<int>(doc.elements.size())) return "";
+        bool onlySpace = false;
+        const size_t begin = doc.elements[element].begin;
+        size_t s = lineStart(doc.text, begin, onlySpace);
+        return onlySpace ? doc.text.substr(s, begin - s) : std::string();
+    }
+
+    std::string indentUnit(const LayoutDoc& doc)
+    {
+        std::map<std::string, int> counts;
+        for (size_t i = 1; i < doc.elements.size(); ++i) {
+            const LayoutElement& e = doc.elements[i];
+            if (e.parent < 0) continue;
+            const LayoutElement& p = doc.elements[e.parent];
+            if (!startsLine(doc.text, e.begin) || !startsLine(doc.text, p.begin)) continue;
+            if (lineOf(doc.text, e.begin) == lineOf(doc.text, p.begin)) continue;
+            const std::string ci = indentationOf(doc, static_cast<int>(i));
+            const std::string pi = indentationOf(doc, e.parent);
+            if (ci.size() > pi.size() && ci.compare(0, pi.size(), pi) == 0) counts[ci.substr(pi.size())]++;
+        }
+        std::string best = "    ";
+        int most = 0;
+        for (const auto& entry : counts) {
+            if (entry.second > most) { most = entry.second; best = entry.first; }
+        }
+        return best;
+    }
+
+    std::string fragmentOf(const LayoutDoc& doc, int element)
+    {
+        if (element < 0 || element >= static_cast<int>(doc.elements.size())) return "";
+        const LayoutElement& e = doc.elements[element];
+        const std::string own = indentationOf(doc, element);
+        const std::string unit = indentUnit(doc);
+        std::vector<std::string> lines = splitLines(doc.text.substr(e.begin, e.end - e.begin));
+        std::string out = lines[0];
+        for (size_t i = 1; i < lines.size(); ++i) {
+            std::string line = lines[i];
+            if (!own.empty() && line.compare(0, own.size(), own) == 0) line = line.substr(own.size());
+            std::string lead;
+            while (!unit.empty() && line.compare(0, unit.size(), unit) == 0) {
+                lead += "    ";
+                line = line.substr(unit.size());
+            }
+            out += "\n" + lead + line;
+        }
+        return out;
+    }
+
+    std::string withChild(const LayoutDoc& doc, int parent, const std::string& fragment, int after, size_t* at)
+    {
+        const int count = static_cast<int>(doc.elements.size());
+        if (parent < 0 || parent >= count || fragment.empty()) return doc.text;
+        if (after >= 0 && (after >= count || doc.elements[after].parent != parent)) return doc.text;
+        const std::string& text = doc.text;
+        const std::string unit = indentUnit(doc);
+        const LayoutElement& p = doc.elements[parent];
+        const int ref = after >= 0 ? after : (p.children.empty() ? -1 : p.children.back());
+
+        size_t pos = 0, eraseTo = 0, offset = 0;
+        std::string insert;
+        if (ref >= 0) {
+            const LayoutElement& r = doc.elements[ref];
+            // The line ending of the sibling's own line
+            const std::string nl = newlineAt(text, r.end);
+            const std::string indent = indentationOf(doc, ref);
+            const bool starts = startsLine(text, r.begin);
+            // The sibling after it, when it's on the same line
+            int next = -1;
+            for (size_t k = 0; k + 1 < p.children.size(); ++k) {
+                if (p.children[k] == ref) next = p.children[k + 1];
+            }
+            if (next >= 0 && text.find('\n', r.end) < doc.elements[next].begin) next = -1;
+            if (next >= 0) {
+                // Between two on one line: inline, spaced as they are
+                const std::string between = text.substr(r.end, doc.elements[next].begin - r.end);
+                const std::string sep = inlineSpace(between) ? between : " ";
+                pos = r.end;
+                insert = sep + joinFragment(fragment);
+                offset = sep.size();
+            }
+            else if (starts && restQuiet(text, r.end)) {
+                // A line of its own, after the sibling's line
+                bool quiet = false;
+                pos = lineEnd(text, r.end, quiet);
+                std::string lead;
+                if (pos == text.size() && (pos == 0 || text[pos - 1] != '\n')) lead = nl;
+                insert = lead + indent + placeFragment(fragment, indent, unit, nl) + nl;
+                offset = lead.size() + indent.size();
+            }
+            else if (starts) {
+                // Something follows on its line (the parent's end tag): a new line right after it
+                pos = r.end;
+                insert = nl + indent + placeFragment(fragment, indent, unit, nl);
+                offset = nl.size() + indent.size();
+            }
+            else {
+                // On the sibling's line, spaced as the siblings are
+                int prev = -1;
+                for (size_t k = 0; k < p.children.size(); ++k) {
+                    if (p.children[k] == ref) prev = k > 0 ? p.children[k - 1] : -1;
+                }
+                const size_t prevEnd = prev >= 0 ? doc.elements[prev].end : p.startEnd;
+                const std::string between = text.substr(prevEnd, r.begin - prevEnd);
+                std::string sep;
+                if (prev >= 0) sep = inlineSpace(between) ? between : " ";
+                else sep = between.empty() ? "" : " ";
+                pos = r.end;
+                insert = sep + joinFragment(fragment);
+                offset = sep.size();
+            }
+            eraseTo = pos;
+        }
+        else {
+            // The line ending of the parent's start tag's line
+            const std::string nl = newlineAt(text, p.startEnd);
+            const std::string indent = indentationOf(doc, parent);
+            const std::string inner = indent + unit;
+            const bool lines = startsLine(text, p.begin) && pageElement(doc, parent);
+            if (p.selfClosing) {
+                // <x a="1" /> becomes <x a="1">...</x>
+                size_t from = p.startEnd - 2;
+                while (from > p.nameEnd && isSpace(text[from - 1])) --from;
+                const std::string close = "</" + p.name + ">";
+                if (lines) {
+                    insert = ">" + nl + inner + placeFragment(fragment, inner, unit, nl) + nl + indent + close;
+                    offset = 1 + nl.size() + inner.size();
+                }
+                else {
+                    insert = ">" + joinFragment(fragment) + close;
+                    offset = 1;
+                }
+                pos = from;
+                eraseTo = p.startEnd;
+            }
+            else {
+                const size_t endTag = text.rfind("</", p.end - 1);
+                if (endTag == std::string::npos || endTag < p.startEnd) return text;
+                bool endStarts = false;
+                const size_t endLine = lineStart(text, endTag, endStarts);
+                if (lines && endStarts) {
+                    pos = endLine;
+                    insert = inner + placeFragment(fragment, inner, unit, nl) + nl;
+                    offset = inner.size();
+                }
+                else if (lines) {
+                    pos = endTag;
+                    insert = nl + inner + placeFragment(fragment, inner, unit, nl) + nl + indent;
+                    offset = nl.size() + inner.size();
+                }
+                else {
+                    pos = endTag;
+                    insert = joinFragment(fragment);
+                    offset = 0;
+                }
+                eraseTo = pos;
+            }
+        }
+        if (at) *at = pos + offset;
+        std::string out = text;
+        return out.replace(pos, eraseTo - pos, insert);
     }
 }
