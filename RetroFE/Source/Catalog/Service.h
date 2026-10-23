@@ -45,7 +45,8 @@ namespace Catalog
     {
         Package package;
         std::string installedVersion;   // "" if not installed
-        bool updateAvailable = false;
+        std::string installedSource;    // the source it was installed from
+        bool updateAvailable = false;   // a newer version, from the same source
     };
 
     class Service
@@ -55,12 +56,16 @@ namespace Catalog
         Service(const std::string& catalogFolder, const Targets& targets, std::unique_ptr<Http> http);
         ~Service();
 
-        // Finishes interrupted installs and starts reading the sources
+        // Starts the worker, which first finishes interrupted installs, then reads the sources
         void start();
 
         // Packages from every enabled source, by kind then name
         std::vector<Entry> entries() const;
         bool entry(const std::string& id, Entry& entry) const;
+        size_t packageCount() const;
+        // Whether an install or removal is queued or running (reading sources
+        // and fetching artwork don't count: they can be picked up again later)
+        bool isBusy() const;
         std::vector<Manifest> installed() const;          // by name
         std::vector<SourceConfig> sources() const;
         std::vector<std::string> warnings() const;        // from reading the sources
@@ -109,17 +114,21 @@ namespace Catalog
     private:
         struct Job
         {
-            enum class Kind { Refresh, Install, Remove } kind;
+            enum class Kind { Recover, Refresh, Install, Remove, Artwork } kind;
             std::string id;
+            bool isPackageJob() const { return kind == Kind::Install || kind == Kind::Remove; }
         };
 
         void run();
+        void doRecover();
         void doRefresh();
         void doInstall(const std::string& id);
         void doRemove(const std::string& id);
-        void fetchArtwork(const std::vector<Package>& packages);
+        void doArtwork();
         void finish(const std::string& id, bool ok, const std::string& message);
         void enqueue(const Job& job);
+        void rebuildEntries();   // call with mutex_ held, after packages_ or installed_ change
+        std::string cacheFolder() const;
 
         std::string folder_;
         Targets targets_;
@@ -138,6 +147,8 @@ namespace Catalog
         std::vector<SourceConfig> sources_;
         std::vector<Package> packages_;
         std::map<std::string, Manifest> installed_;
+        std::vector<Entry> entries_;               // packages_ and installed_ combined, sorted
+        std::map<std::string, size_t> entryIndex_; // id -> position in entries_
         std::vector<std::string> warnings_;
         std::map<std::string, std::pair<bool, std::string>> outcomes_;
         Activity activity_;

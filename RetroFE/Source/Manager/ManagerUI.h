@@ -89,7 +89,10 @@ public:
     void render();
 
     // True once after changes were saved that RetroFE has to reload to show
-    bool takeReloadRequest();
+    bool takeReloadRequest();   // waits while a Catalog install is running
+
+    // Kiosk mode: the Settings key does nothing, and an open screen closes
+    void setLocked(bool locked);
 
 private:
     void drawWindow();
@@ -125,6 +128,7 @@ private:
     SDL_Scancode toggleKey_ = SDL_SCANCODE_F10;
     float scale_ = 1.0f;
     bool open_ = false;
+    bool locked_ = false;
     bool focusNext_ = false;   // give the panel keyboard/gamepad focus on the next frame
     Screen screen_ = Screen::Settings;
     bool reloadRequested_ = false;

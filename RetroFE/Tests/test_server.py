@@ -16,13 +16,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DATA = bytes((i * 7 + (i >> 8)) & 0xFF for i in range(4 * 1024 * 1024))
 SHA = hashlib.sha256(DATA).hexdigest()
+ETAG = '"' + SHA[:16] + '"'
 state = {"dropped": False, "flaky": 0}
 log = []
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        sys.stderr.write("%s %s\n" % (self.path, self.headers.get("Range")))
+        sys.stderr.write("%s %s %s\n" % (self.path, self.headers.get("Range"), self.headers.get("If-Range")))
 
     def do_GET(self):
         path = self.path
@@ -48,6 +49,10 @@ class Handler(BaseHTTPRequestHandler):
 
         start = 0
         rng = self.headers.get("Range")
+        # If-Range: only resume the same version (this one never changes)
+        if_range = self.headers.get("If-Range")
+        if if_range is not None and if_range != ETAG:
+            rng = None
         if rng and path != "/norange/file.bin" and rng.startswith("bytes="):
             start = int(rng[6:].split("-")[0])
             if start >= len(DATA):
@@ -61,6 +66,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_response(200)
         body = DATA[start:]
+        self.send_header("ETag", ETAG)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if path == "/drop/file.bin" and not state["dropped"]:

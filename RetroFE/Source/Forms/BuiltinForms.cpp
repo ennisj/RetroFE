@@ -67,6 +67,12 @@ const char* const manageForm = R"(
   <section label="Catalog">
     <list label="Installed" bind="info:installed" empty="Nothing has been installed from the Catalog yet."/>
     <button label="Sources" action="open.sources"/>
+    <note bind="info:removalStatus"/>
+  </section>
+  <section label="Remove a package" visibleWhen="info:hasInstalled">
+    <choice label="Package" bind="draft:removePackage" options="installed"/>
+    <note value="Puts back files it replaced, and keeps files you've changed since."/>
+    <button label="Remove package" action="package.removeInstalled"/>
   </section>
 </form>
 )";

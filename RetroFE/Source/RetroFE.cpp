@@ -2422,6 +2422,7 @@ bool RetroFE::run()
 			}
 
 			// File dialogs block, so they run here rather than while rendering
+			manager_.setLocked(kioskLock_);
 			manager_.update(deltaTime);
 			// Catalog installs show up once the user is back on Home and nothing's left to do
 			bool backHome = homeMenu_ && state == RETROFE_IDLE && !manager_.isOpen() &&

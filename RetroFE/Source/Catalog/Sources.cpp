@@ -50,7 +50,7 @@ namespace
 
     bool isValidName(const std::string& name)
     {
-        return !name.empty() && std::all_of(name.begin(), name.end(), [](unsigned char c) {
+        return !name.empty() && !Catalog::isReservedName(name) && std::all_of(name.begin(), name.end(), [](unsigned char c) {
             return std::isalnum(c) != 0 || c == '_' || c == '-';
         });
     }
@@ -72,25 +72,6 @@ namespace
         std::ofstream file(path, std::ios::binary | std::ios::trunc);
         file << content;
         return static_cast<bool>(file);
-    }
-
-    // Plain HTTP is only accepted for this machine and private networks
-    bool isLocalNetwork(const std::string& url)
-    {
-        size_t start = url.find("//");
-        if (start == std::string::npos) {
-            return false;
-        }
-        std::string host = lower(url.substr(start + 2, url.find_first_of(":/", start + 2) - start - 2));
-        if (host == "localhost" || host.rfind("127.", 0) == 0 || host.rfind("10.", 0) == 0 || host.rfind("192.168.", 0) == 0) {
-            return true;
-        }
-        // 172.16.0.0 - 172.31.255.255
-        if (host.rfind("172.", 0) == 0) {
-            int second = std::atoi(host.c_str() + 4);
-            return second >= 16 && second <= 31;
-        }
-        return false;
     }
 
     // "Some Pack v1.2" -> name "Some Pack", version "1.2"
@@ -371,7 +352,7 @@ std::string validateSource(const SourceConfig& source, const std::vector<SourceC
                 return "That index file doesn't exist.";
             }
         }
-        else if (lower(source.url).rfind("http://", 0) == 0 && !isLocalNetwork(source.url)) {
+        else if (!isAllowedLocation(source.url)) {
             return "Use an https:// address. Plain http:// only works on your own network.";
         }
         return "";

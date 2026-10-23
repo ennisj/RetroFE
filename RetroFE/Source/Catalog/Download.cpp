@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <set>
 #include <thread>
 
@@ -137,6 +138,10 @@ namespace Catalog
             total += file.size;
             sizesKnown = sizesKnown && file.size > 0;
             if (!isUrl(file.url)) continue;
+            if (!isAllowedLocation(file.url)) {
+                result.error = displayName(file.url) + " would be downloaded without https://, which is only allowed on your own network";
+                return false;
+            }
             anyRemote = true;
             Sha256 key;
             std::string identity = file.url + "|" + std::to_string(file.size) + "|" + file.sha256 + "|" + file.md5;
@@ -144,8 +149,11 @@ namespace Catalog
             finals[i] = folder / (std::to_string(i) + "-" + key.hex().substr(0, 12));
             fs::path part = finals[i];
             part += ".part";
+            fs::path validator = part;
+            validator += ".validator";
             keep.insert(finals[i]);
             keep.insert(part);
+            keep.insert(validator);
             remoteTotal += file.size;
             already += fs::exists(finals[i]) ? sizeOf(finals[i]) : sizeOf(part);
         }
@@ -239,6 +247,8 @@ namespace Catalog
     bool Downloader::fetchFile(const PackageFile& file, const std::string& part, uint64_t done, uint64_t total,
                                const Progress& progress, Result& result)
     {
+        // What the server said identifies the version the partial file is of
+        std::string validatorFile = part + ".validator";
         int attempt = 0;
         while (true) {
             std::error_code ec;
@@ -256,10 +266,22 @@ namespace Catalog
             bool continued = false;
             if (plan != Resume::Complete) {
                 Http::Transfer transfer;
+                if (partSize > 0) {
+                    std::ifstream in(validatorFile, std::ios::binary);
+                    std::getline(in, transfer.validator);
+                }
                 auto report = [&](uint64_t received, uint64_t) {
                     return !progress || progress(done + received, total);
                 };
-                if (!http_->download(file.url, part, partSize, report, transfer)) {
+                bool ok = http_->download(file.url, part, partSize, report, transfer);
+                if (!transfer.validator.empty()) {
+                    std::ofstream out(validatorFile, std::ios::binary | std::ios::trunc);
+                    out << transfer.validator;
+                }
+                else {
+                    fs::remove(validatorFile, ec);
+                }
+                if (!ok) {
                     if (transfer.cancelled) {
                         result.cancelled = true;
                         result.error = "Cancelled";
@@ -281,9 +303,11 @@ namespace Catalog
 
             std::string problem;
             if (verifyFile(part, file, problem)) {
+                fs::remove(validatorFile, ec);
                 return true;
             }
             fs::remove(part, ec);
+            fs::remove(validatorFile, ec);
             // A continued download may have joined two different files;
             // only a download from the start proves the file itself is wrong
             if ((continued || plan == Resume::Complete) && ++attempt < tries) {

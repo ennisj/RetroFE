@@ -33,13 +33,15 @@ namespace Catalog { class Service; }
 //   info:source:<binding>  the file a settings: value comes from, when it isn't settings.conf
 //   info:sources, info:installed, info:catalogWarnings   Catalog lists
 //   info:catalogStatus     what the Catalog is doing, or how many packages it has
-//   info:hasSources, info:sourceIsFolder                 for visibleWhen
+//   info:hasSources, info:hasInstalled, info:sourceIsFolder   for visibleWhen
+//   info:removalStatus     how the last package.removeInstalled went
 //   package:<key>          the package chosen in the Catalog list: name, summary,
 //                          description, installedStatus, requires, checksum, progress,
 //                          and canInstall, canUpdate, canRemove, isBusy for visibleWhen
 //   draft:source*          the Sources form's input
 // Actions: settings.save, collection.create, package.install, package.remove,
-// package.cancel, source.add, source.remove, catalog.refresh, open.sources
+// package.cancel, package.removeInstalled (draft:removePackage), source.add,
+// source.remove, catalog.refresh, open.sources
 class ManagerModel : public Forms::Model
 {
 public:
@@ -82,6 +84,7 @@ private:
     Configuration& config_;
     Catalog::Service* catalog_ = nullptr;
     std::string package_;
+    std::string removedPackage_;   // the last package.removeInstalled, for info:removalStatus
     std::string openRequest_;
     SettingsFile settings_;
     std::map<std::string, std::string> pendingSettings_;

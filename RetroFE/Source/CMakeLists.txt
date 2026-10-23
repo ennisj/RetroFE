@@ -403,7 +403,7 @@ if(RETROFE_BUILD_TESTS)
 		add_custom_command(TARGET retrofe_tests POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZLIB_ROOT}/lib/zlib.dll" "$<TARGET_FILE_DIR:retrofe_tests>")
 	else()
-		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES})
+		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)

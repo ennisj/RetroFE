@@ -16,6 +16,7 @@
 #pragma once
 
 #include "Package.h"
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -25,11 +26,17 @@
 //
 // A package is first extracted into catalog/staging/<id>/ with a plan of
 // where each file goes. Only once that's complete is it marked ready and
-// moved into place, so an interruption never leaves half a package: on the
-// next start recover() finishes a ready install or discards an unfinished one.
-// Files that get replaced are backed up to catalog/backups/<id>/<version>/.
+// moved into place. Before the first move, every file about to be replaced
+// is backed up to catalog/backups/<id>/<name>/ and listed in a journal, so
+// a failed move puts everything back, and an interruption is finished by
+// recover() on the next start (or put back, if it can't be finished).
 // catalog/installed/<id>.json lists every file installed, which is what
-// updates and removal go by.
+// updates and removal go by. Removing a package puts back the files it
+// replaced, and keeps files changed since they were installed.
+//
+// Packages hold content, not programs: executables and scripts are refused,
+// as is anything under a protected folder (the catalog itself, RetroFE's
+// program folder), whatever the target.
 namespace Catalog
 {
     // Where each install target is on this install
@@ -41,6 +48,7 @@ namespace Catalog
         std::string media;      // artwork: baseMediaPath, or collections
         std::string layouts;
         std::string meta;
+        std::vector<std::string> protectedFolders;   // never written, even inside a target
 
         // "" for an unknown target
         std::string resolve(const std::string& target) const;
@@ -52,7 +60,11 @@ namespace Catalog
         std::string path;       // under the target, '/' separated, UTF-8
         uint64_t size = 0;
         std::string sha256;
+        std::string backup;     // the backups/<id>/ folder holding the file this replaced, if any
     };
+
+    // Whether a file name is a program or script, which packages may not install
+    bool isExecutableName(const std::string& name);
 
     struct Manifest
     {
@@ -73,23 +85,34 @@ namespace Catalog
         // in the same order. Zip archives are extracted; other files are copied.
         bool install(const Package& package, const std::vector<std::string>& downloads, std::string& error);
 
-        // Removes a package's files, except ones changed since they were
-        // installed, which are kept; kept says how many
-        bool remove(const std::string& id, int& kept, std::string& error);
+        struct Removal
+        {
+            int kept = 0;       // changed since they were installed, so left alone
+            int restored = 0;   // files the package had replaced, put back
+        };
 
-        // Finishes or discards installs that were interrupted
+        // Removes a package's files
+        bool remove(const std::string& id, Removal& removal, std::string& error);
+
+        // Finishes interrupted installs, or puts back what they changed
         void recover();
 
         // Every installed package, by id
         std::map<std::string, Manifest> installed() const;
 
+        // While *stop is set, extracting gives up (safe until an install is marked ready)
+        void setStopFlag(const std::atomic<bool>* stop) { stop_ = stop; }
+
     private:
         bool stage(const Package& package, const std::vector<std::string>& downloads, const std::string& staging, std::string& error);
         bool commit(const std::string& staging, std::string& error);
         std::string manifestPath(const std::string& id) const;
+        // "" if a file may be written there, otherwise why not
+        std::string refusal(const InstalledFile& file) const;
 
         std::string catalog_;
         Targets targets_;
+        const std::atomic<bool>* stop_ = nullptr;
     };
 
     bool readManifest(const std::string& file, Manifest& manifest, std::string& error);

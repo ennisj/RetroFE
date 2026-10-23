@@ -36,6 +36,10 @@ namespace Catalog
         // How a download went
         struct Transfer
         {
+            // In: what the server said identifies the partial file's version (an
+            // ETag or Last-Modified date), so it only continues the same file.
+            // Out: what it says now, to keep with the partial file.
+            std::string validator;
             bool resumed = false;       // the file was continued, not started again
             bool retry = false;         // the failure may go away if tried again
             bool cancelled = false;

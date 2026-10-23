@@ -41,16 +41,37 @@ index format, is in [design/catalog-sources.md](design/catalog-sources.md).
   so you can go back to the list and pick another; they run one at a time.
 - Once you're back on Home with nothing left to do, RetroFE reloads so new
   content shows up. Installed collections are added to the Main menu, so they
-  appear under Browse; removed ones are taken off it.
+  appear under Browse; removed ones are taken off it. Saving Settings while an
+  install is running also waits for it before reloading.
 - **Sources** (from the Catalog or Manage) adds and removes sources. Adding
   one asks you to confirm that you trust it: RetroFE doesn't check what sources
-  offer. Plain `http://` is only allowed on your own network.
+  offer. Plain `http://` is only allowed on your own network (localhost, a
+  machine name like `nas`, or a private address), for indexes and downloads alike.
+- **Manage** lists what's installed and can remove any of it, including
+  packages no source offers any more.
+- A package can only be updated from the source it was installed from. If
+  another source offers the same package, remove it first to switch.
+
+What a package may install: content, such as collection settings, launchers,
+artwork, layouts and ROMs, under its targets. Programs and scripts (`.exe`,
+`.dll`, `.bat`, `.ps1`, `.sh` and the like) are refused, as is anything in the
+catalog folder or RetroFE's program folder. File names Windows treats as
+devices (`CON`, `NUL`, `COM1`…) or that end in a dot or space are refused too.
 
 Everything the Catalog keeps is in one folder, `catalogPath` in
 `settings.conf` (default `catalog` under the RetroFE root): `sources.conf`,
-cached indexes, downloads, artwork, backups of files it replaced, and a record
-of every installed file in `installed/<id>.json`. Removing a package deletes
-only the files it installed, and keeps any you've changed since.
+cached indexes, downloads, artwork, backups, and a record of every installed
+file in `installed/<id>.json`.
+
+- **Installing** backs up every file it's about to replace first. If any part
+  of the install fails, or RetroFE stops and can't finish it on the next start,
+  everything is put back as it was.
+- **Removing** a package deletes the files it installed, puts back files of
+  yours it had replaced, and keeps any file you've changed since.
+- **Backups** kept per package: your original files, and the previous version
+  from the last update.
+
+In kiosk mode the Settings key does nothing.
 
 The Catalog list is a collection built into RetroFE like Home, so layouts
 style it as `layouts/<layout>/collections/Catalog/layout/layout.xml`. Each
@@ -175,7 +196,7 @@ The fields themselves are also XML. RetroFE's built-in screens are in
 | `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`) |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
-| `choice` | One of a list (`options` is `layouts`, `collections`, `sources` or `sourceTypes`) |
+| `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |
 | `list` | A read-only list (`empty` is shown when there's nothing in it) |
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
 | `button` | Runs an `action` |
@@ -194,8 +215,8 @@ a value to use as the title when it has one, e.g. `bind="package:name"`.
   `default` is its starting value.
 - `info:<key>`: read-only: `info:collections`, `info:sources`,
   `info:installed` and `info:catalogWarnings` (lists), `info:romCount`,
-  `info:catalogStatus`, and `info:hasSources` and `info:sourceIsFolder` for
-  `visibleWhen`.
+  `info:catalogStatus`, `info:removalStatus`, and `info:hasSources`,
+  `info:hasInstalled` and `info:sourceIsFolder` for `visibleWhen`.
 - `package:<key>`: the package chosen in the Catalog: `name`, `summary`,
   `description`, `installedStatus`, `requires`, `checksum` (a warning when the
   source gives none), `progress`, and `canInstall`, `canUpdate`, `canRemove`
@@ -208,7 +229,8 @@ Actions:
 | `settings.save` | Writes the changed settings |
 | `collection.create` | Creates a collection from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
 | `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the chosen package |
-| `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on |
+| `package.removeInstalled` | Removes the installed package `draft:removePackage` |
+| `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on. A layout's form can't give these a `default`. |
 | `source.remove` | Removes `draft:removeSource` |
 | `catalog.refresh` | Reads the sources again |
 | `open.sources` | Opens the Sources screen |

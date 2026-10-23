@@ -25,6 +25,9 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    // Artwork is small; anything bigger isn't kept
+    const uint64_t maxArtworkSize = 5ull * 1024 * 1024;
+
     std::string lower(std::string s)
     {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -62,6 +65,8 @@ namespace Catalog
         , http_(std::move(http))
         , installer_(catalogFolder, targets)
     {
+        // Leaving RetroFE stops an install that hasn't started moving files
+        installer_.setStopFlag(&stopping_);
     }
 
     Service::~Service()
@@ -82,7 +87,6 @@ namespace Catalog
         if (worker_.joinable()) {
             return;
         }
-        installer_.recover();
         std::vector<SourceConfig> sources;
         std::string error;
         if (!loadSources((fs::path(folder_) / "sources.conf").string(), sources, error)) {
@@ -92,43 +96,66 @@ namespace Catalog
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
             sources_ = sources;
+            rebuildEntries();
         }
         worker_ = std::thread(&Service::run, this);
+        enqueue({ Job::Kind::Recover, "" });
         if (!sources.empty()) {
             refresh();
         }
     }
 
-    std::vector<Entry> Service::entries() const
+    void Service::rebuildEntries()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::vector<Entry> result;
+        entries_.clear();
         for (const Package& package : packages_) {
             Entry entry;
             entry.package = package;
             auto installed = installed_.find(package.id);
             if (installed != installed_.end()) {
                 entry.installedVersion = installed->second.version;
-                entry.updateAvailable = compareVersions(package.version, entry.installedVersion) > 0;
+                entry.installedSource = installed->second.source;
+                // Only the source it came from can update it
+                bool sameSource = entry.installedSource.empty() || entry.installedSource == package.source;
+                entry.updateAvailable = sameSource && compareVersions(package.version, entry.installedVersion) > 0;
             }
-            result.push_back(entry);
+            entries_.push_back(std::move(entry));
         }
-        std::stable_sort(result.begin(), result.end(), [](const Entry& a, const Entry& b) {
+        std::stable_sort(entries_.begin(), entries_.end(), [](const Entry& a, const Entry& b) {
             if (a.package.kind != b.package.kind) return a.package.kind < b.package.kind;
             return lower(a.package.name) < lower(b.package.name);
         });
-        return result;
+        entryIndex_.clear();
+        for (size_t i = 0; i < entries_.size(); ++i) {
+            entryIndex_[entries_[i].package.id] = i;
+        }
+    }
+
+    std::vector<Entry> Service::entries() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return entries_;
     }
 
     bool Service::entry(const std::string& id, Entry& entry) const
     {
-        for (const Entry& candidate : entries()) {
-            if (candidate.package.id == id) {
-                entry = candidate;
-                return true;
-            }
-        }
-        return false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = entryIndex_.find(id);
+        if (it == entryIndex_.end()) return false;
+        entry = entries_[it->second];
+        return true;
+    }
+
+    size_t Service::packageCount() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return entries_.size();
+    }
+
+    bool Service::isBusy() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return active_ || std::any_of(jobs_.begin(), jobs_.end(), [](const Job& job) { return job.isPackageJob(); });
     }
 
     std::vector<Manifest> Service::installed() const
@@ -166,6 +193,11 @@ namespace Catalog
         return (fs::path(folder_) / "artwork").string();
     }
 
+    std::string Service::cacheFolder() const
+    {
+        return (fs::path(folder_) / "cache").string();
+    }
+
     std::vector<std::string> Service::artworkTypes() const
     {
         std::vector<std::string> types;
@@ -190,7 +222,7 @@ namespace Catalog
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (active_ && activity_.id == id) return true;
-        return std::any_of(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.kind != Job::Kind::Refresh && job.id == id; });
+        return std::any_of(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.isPackageJob() && job.id == id; });
     }
 
     bool Service::outcome(const std::string& id, bool& ok, std::string& message) const
@@ -207,18 +239,21 @@ namespace Catalog
     {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (job.kind == Job::Kind::Refresh) {
-                // One waiting refresh is enough
-                if (std::any_of(jobs_.begin(), jobs_.end(), [](const Job& j) { return j.kind == Job::Kind::Refresh; })) return;
-            }
-            else {
+            if (job.isPackageJob()) {
                 if ((active_ && activity_.id == job.id)
-                    || std::any_of(jobs_.begin(), jobs_.end(), [&](const Job& j) { return j.kind != Job::Kind::Refresh && j.id == job.id; })) {
+                    || std::any_of(jobs_.begin(), jobs_.end(), [&](const Job& j) { return j.isPackageJob() && j.id == job.id; })) {
                     return;
                 }
                 outcomes_.erase(job.id);
+                // Installs go ahead of artwork, which can wait
+                auto artwork = std::find_if(jobs_.begin(), jobs_.end(), [](const Job& j) { return j.kind == Job::Kind::Artwork; });
+                jobs_.insert(artwork, job);
             }
-            jobs_.push_back(job);
+            else {
+                // One waiting refresh or artwork job is enough
+                if (std::any_of(jobs_.begin(), jobs_.end(), [&](const Job& j) { return j.kind == job.kind; })) return;
+                jobs_.push_back(job);
+            }
         }
         wake_.notify_all();
     }
@@ -234,7 +269,7 @@ namespace Catalog
             cancelRequested_ = true;
             return;
         }
-        jobs_.erase(std::remove_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.kind != Job::Kind::Refresh && job.id == id; }),
+        jobs_.erase(std::remove_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.isPackageJob() && job.id == id; }),
                     jobs_.end());
     }
 
@@ -249,6 +284,9 @@ namespace Catalog
             if (!saveSources((fs::path(folder_) / "sources.conf").string(), sources, error)) return false;
             sources_ = sources;
         }
+        // A cached index from an earlier source of the same name isn't this one's
+        std::error_code ec;
+        fs::remove_all(fs::path(cacheFolder()) / source.name, ec);
         LOG_NOTICE("Catalog", "Added source " + source.name);
         refresh();
         return true;
@@ -268,6 +306,8 @@ namespace Catalog
             if (!saveSources((fs::path(folder_) / "sources.conf").string(), sources, error)) return false;
             sources_ = sources;
         }
+        std::error_code ec;
+        fs::remove_all(fs::path(cacheFolder()) / name, ec);
         LOG_NOTICE("Catalog", "Removed source " + name);
         refresh();
         return true;
@@ -276,7 +316,9 @@ namespace Catalog
     bool Service::takeChanges(Changes& changes)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!changed_ || working_ || !jobs_.empty()) return false;
+        if (!changed_ || active_ || std::any_of(jobs_.begin(), jobs_.end(), [](const Job& job) { return job.isPackageJob(); })) {
+            return false;
+        }
         changes = changes_;
         changes_ = Changes();
         changed_ = false;
@@ -299,12 +341,25 @@ namespace Catalog
             jobs_.pop_front();
             working_ = true;
             refreshingNow_ = job.kind == Job::Kind::Refresh;
+            // Shown as active from the moment it's taken, so a Stop can't fall between
+            if (job.isPackageJob()) {
+                activity_ = Activity();
+                activity_.id = job.id;
+                activity_.name = job.id;
+                auto known = entryIndex_.find(job.id);
+                if (known != entryIndex_.end()) activity_.name = entries_[known->second].package.name;
+                activity_.removing = job.kind == Job::Kind::Remove;
+                active_ = true;
+                cancelRequested_ = false;
+            }
             lock.unlock();
 
             switch (job.kind) {
+            case Job::Kind::Recover: doRecover(); break;
             case Job::Kind::Refresh: doRefresh(); break;
             case Job::Kind::Install: doInstall(job.id); break;
             case Job::Kind::Remove:  doRemove(job.id); break;
+            case Job::Kind::Artwork: doArtwork(); break;
             }
 
             lock.lock();
@@ -318,17 +373,24 @@ namespace Catalog
         idle_.notify_all();
     }
 
+    void Service::doRecover()
+    {
+        installer_.recover();
+        std::lock_guard<std::mutex> lock(mutex_);
+        installed_ = installer_.installed();
+        rebuildEntries();
+    }
+
     void Service::doRefresh()
     {
         std::vector<SourceConfig> sources = this->sources();
         std::vector<Package> packages;
         std::vector<std::string> warnings;
         std::set<std::string> ids;
-        std::string cache = (fs::path(folder_) / "cache").string();
 
         for (const SourceConfig& source : sources) {
             if (!source.enabled) continue;
-            SourceContents contents = readSource(source, cache, http_.get());
+            SourceContents contents = readSource(source, cacheFolder(), http_.get());
             if (!contents.error.empty()) {
                 warnings.push_back(source.name + ": " + contents.error);
                 LOG_WARNING("Catalog", source.name + ": " + contents.error);
@@ -350,17 +412,31 @@ namespace Catalog
             std::lock_guard<std::mutex> lock(mutex_);
             packages_ = packages;
             warnings_ = warnings;
+            rebuildEntries();
         }
-        fetchArtwork(packages);
+        enqueue({ Job::Kind::Artwork, "" });
     }
 
-    void Service::fetchArtwork(const std::vector<Package>& packages)
+    void Service::doArtwork()
     {
+        std::vector<Package> packages;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            packages = packages_;
+        }
         for (const Package& package : packages) {
-            for (const auto& [type, location] : package.artwork) {
+            // Give way to installs; carry on afterwards
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
                 if (stopping_) return;
+                if (std::any_of(jobs_.begin(), jobs_.end(), [](const Job& job) { return job.isPackageJob(); })) {
+                    jobs_.push_back({ Job::Kind::Artwork, "" });
+                    return;
+                }
+            }
+            for (const auto& [type, location] : package.artwork) {
                 std::string extension = imageExtension(location);
-                if (!isValidId(type) || extension.empty()) continue;
+                if (!isValidId(type) || extension.empty() || !isAllowedLocation(location)) continue;
                 fs::path folder = fs::path(artworkFolder()) / type;
                 fs::path file = folder / (package.id + extension);
                 std::error_code ec;
@@ -372,9 +448,11 @@ namespace Catalog
                 bool ok = false;
                 if (isUrl(location)) {
                     Http::Transfer transfer;
-                    ok = http_ && http_->download(location, part.string(), 0, [&](uint64_t, uint64_t) { return !stopping_; }, transfer);
+                    ok = http_ && http_->download(location, part.string(), 0, [&](uint64_t received, uint64_t total) {
+                        return !stopping_ && received <= maxArtworkSize && total <= maxArtworkSize;
+                    }, transfer);
                 }
-                else {
+                else if (fs::file_size(location, ec) <= maxArtworkSize && !ec) {
                     ok = fs::copy_file(location, part, fs::copy_options::overwrite_existing, ec);
                 }
                 if (ok) {
@@ -397,6 +475,23 @@ namespace Catalog
         }
         const Package& package = entry.package;
 
+        Manifest previous;
+        bool updating = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto installed = installed_.find(id);
+            if (installed != installed_.end()) {
+                previous = installed->second;
+                updating = true;
+            }
+        }
+        // Another source offering the same id doesn't get to replace it
+        if (updating && !previous.source.empty() && previous.source != package.source) {
+            finish(id, false, "This was installed from " + previous.source + ", and " + package.source
+                              + " offers it too. Remove it first to install it from " + package.source + ".");
+            return;
+        }
+
         // Requirements aren't installed automatically yet
         for (const Requirement& requirement : package.requirements) {
             bool have = false;
@@ -415,12 +510,8 @@ namespace Catalog
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            activity_ = Activity();
-            activity_.id = id;
             activity_.name = package.name;
             activity_.total = package.totalSize();
-            active_ = true;
-            cancelRequested_ = false;
         }
         LOG_NOTICE("Catalog", "Installing " + package.id + " " + package.version);
 
@@ -449,17 +540,28 @@ namespace Catalog
         {
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
+            rebuildEntries();
             changed_ = true;
+            std::set<std::string> now;
             auto manifest = installed_.find(package.id);
             if (manifest != installed_.end()) {
-                for (const std::string& name : collectionsOf(manifest->second)) {
-                    changes_.addedCollections.insert(name);
-                    changes_.removedCollections.erase(name);
+                now = collectionsOf(manifest->second);
+            }
+            for (const std::string& name : now) {
+                changes_.addedCollections.insert(name);
+                changes_.removedCollections.erase(name);
+            }
+            // An update that moved to another collection folder leaves the old one
+            for (const std::string& name : collectionsOf(previous)) {
+                std::error_code ec;
+                if (!now.count(name) && !fs::exists(fs::path(targets_.collections) / fs::u8path(name), ec)) {
+                    changes_.removedCollections.insert(name);
+                    changes_.addedCollections.erase(name);
                 }
             }
         }
         LOG_NOTICE("Catalog", "Installed " + package.id + " " + package.version);
-        finish(id, true, (entry.installedVersion.empty() ? "Installed " : "Updated to ") + package.name + " " + package.version + ".");
+        finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + ".");
     }
 
     void Service::doRemove(const std::string& id)
@@ -469,23 +571,22 @@ namespace Catalog
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto installed = installed_.find(id);
-            if (installed != installed_.end() && !installed->second.name.empty()) name = installed->second.name;
-            if (installed != installed_.end()) collections = collectionsOf(installed->second);
-            activity_ = Activity();
-            activity_.id = id;
+            if (installed != installed_.end()) {
+                if (!installed->second.name.empty()) name = installed->second.name;
+                collections = collectionsOf(installed->second);
+            }
             activity_.name = name;
-            activity_.removing = true;
-            active_ = true;
         }
-        int kept = 0;
+        Installer::Removal removal;
         std::string error;
-        if (!installer_.remove(id, kept, error)) {
+        if (!installer_.remove(id, removal, error)) {
             finish(id, false, error);
             return;
         }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
+            rebuildEntries();
             changed_ = true;
             // Only collections that are gone; kept files keep the collection
             for (const std::string& collection : collections) {
@@ -498,8 +599,11 @@ namespace Catalog
         }
         LOG_NOTICE("Catalog", "Removed " + id);
         std::string message = "Removed " + name + ".";
-        if (kept > 0) {
-            message += " Kept " + std::to_string(kept) + (kept == 1 ? " file" : " files") + " you changed.";
+        if (removal.restored > 0) {
+            message += " Put back " + std::to_string(removal.restored) + (removal.restored == 1 ? " file" : " files") + " it had replaced.";
+        }
+        if (removal.kept > 0) {
+            message += " Kept " + std::to_string(removal.kept) + (removal.kept == 1 ? " file" : " files") + " you changed.";
         }
         finish(id, true, message);
     }

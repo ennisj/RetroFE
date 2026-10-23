@@ -94,6 +94,7 @@ namespace
         std::map<std::string, std::string> files;
         std::vector<size_t> dropAfter;      // for each next request: lose the connection after this many bytes
         bool ranges = true;                 // whether resuming is supported
+        std::map<std::string, std::string> etags;   // with one, a resume only continues the same version
         std::vector<uint64_t> offsets;      // the offset each request asked for
 
         bool get(const std::string&, std::string&, std::string& error) override
@@ -105,6 +106,7 @@ namespace
         bool download(const std::string& url, const std::string& file, uint64_t offset,
                       const Progress& progress, Transfer& transfer) override
         {
+            std::string validator = transfer.validator;
             transfer = Transfer();
             offsets.push_back(offset);
             auto it = files.find(url);
@@ -114,6 +116,11 @@ namespace
             }
             const std::string& body = it->second;
             uint64_t start = ranges ? std::min<uint64_t>(offset, body.size()) : 0;
+            auto etag = etags.find(url);
+            if (etag != etags.end()) {
+                if (validator != etag->second) start = 0;   // If-Range didn't match: the whole new file
+                transfer.validator = etag->second;
+            }
             transfer.resumed = start > 0;
             std::string rest = body.substr(start);
             bool drop = !dropAfter.empty();
@@ -444,12 +451,109 @@ void runCatalogTests()
         makeZip(root + "/dl/p.zip", { { "x/a.txt", "a" }, { "x/b.txt", "b" } });
         check(installer.install(zipPackage("p", "1", "p.zip", "media", "Pack"), { root + "/dl/p.zip" }, error), "installed: " + error);
         writeFile(root + "/media/Pack/x/b.txt", "edited");
-        int kept = 0;
-        check(installer.remove("p", kept, error), "removed: " + error);
+        Installer::Removal removal;
+        check(installer.remove("p", removal, error), "removed: " + error);
         check(!fs::exists(root + "/media/Pack/x/a.txt"), "file removed");
-        check(fs::exists(root + "/media/Pack/x/b.txt") && kept == 1, "changed file kept");
+        check(fs::exists(root + "/media/Pack/x/b.txt") && removal.kept == 1, "changed file kept");
         check(installer.installed().empty(), "manifest removed");
-        check(!installer.remove("p", kept, error), "removing again fails");
+        check(!installer.remove("p", removal, error), "removing again fails");
+    });
+
+    run("removing puts back the user's files it replaced, even after updates", [&] {
+        std::string root = makeRoot("remove-restores");
+        writeFile(root + "/collections/Genesis/settings.conf", "my settings");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        makeZip(root + "/dl/v1.zip", { { "settings.conf", "theirs v1" }, { "menu.txt", "v1" } });
+        check(installer.install(zipPackage("g", "1", "v1.zip", "collections", "Genesis"), { root + "/dl/v1.zip" }, error), "v1: " + error);
+        makeZip(root + "/dl/v2.zip", { { "settings.conf", "theirs v2" }, { "menu.txt", "v2" } });
+        check(installer.install(zipPackage("g", "2", "v2.zip", "collections", "Genesis"), { root + "/dl/v2.zip" }, error), "v2: " + error);
+        checkEqual(readFile(root + "/collections/Genesis/settings.conf"), "theirs v2", "updated");
+        check(fs::exists(root + "/catalog/backups/g/before-1") && fs::exists(root + "/catalog/backups/g/1"), "original and undo backups kept");
+
+        Installer::Removal removal;
+        check(installer.remove("g", removal, error), "removed: " + error);
+        checkEqual(readFile(root + "/collections/Genesis/settings.conf"), "my settings", "the user's file is back");
+        check(!fs::exists(root + "/collections/Genesis/menu.txt") && removal.restored == 1, "the package's own file is gone");
+        check(!fs::exists(root + "/catalog/backups/g"), "backups cleared");
+    });
+
+    run("updates prune old backups", [&] {
+        std::string root = makeRoot("backup-prune");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        for (const char* version : { "1", "2", "3", "4" }) {
+            makeZip(root + "/dl/p.zip", { { "a.txt", std::string("v") + version } });
+            check(installer.install(zipPackage("p", version, "p.zip", "root", ""), { root + "/dl/p.zip" }, error), std::string("v") + version + ": " + error);
+        }
+        int folders = 0;
+        for (const auto& entry : fs::directory_iterator(root + "/catalog/backups/p")) {
+            (void)entry;
+            folders++;
+        }
+        check(folders == 1 && fs::exists(root + "/catalog/backups/p/3"), "only the last update's backup");
+    });
+
+    run("packages can't write programs or into protected folders", [&] {
+        std::string root = makeRoot("refused");
+        Targets targets = targetsUnder(root);
+        targets.protectedFolders.push_back(root + "/retrofe");
+        Installer installer(root + "/catalog", targets);
+        makeZip(root + "/dl/exe.zip", { { "readme.txt", "hi" }, { "tools/run.BAT", "format c:" } });
+        check(!installer.install(zipPackage("exe", "1", "exe.zip", "root", ""), { root + "/dl/exe.zip" }, error)
+              && error.find("program or script") != std::string::npos, "scripts refused: " + error);
+        makeZip(root + "/dl/catalog.zip", { { "catalog/sources.conf", "sources.evil.type = index" } });
+        check(!installer.install(zipPackage("cat", "1", "catalog.zip", "root", ""), { root + "/dl/catalog.zip" }, error), "catalog folder refused");
+        check(!fs::exists(root + "/catalog/sources.conf"), "sources untouched");
+        makeZip(root + "/dl/prog.zip", { { "retrofe/SDL2.txt", "x" } });
+        check(!installer.install(zipPackage("prog", "1", "prog.zip", "root", ""), { root + "/dl/prog.zip" }, error), "program folder refused");
+        check(!fs::exists(root + "/readme.txt") && installer.installed().empty(), "nothing installed");
+    });
+
+    run("a recovery can't move files from outside its staging folder", [&] {
+        std::string root = makeRoot("recover-staged");
+        writeFile(root + "/settings.conf", "the user's settings");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        std::string sha = sha256File(root + "/settings.conf");
+        writeFile(root + "/catalog/staging/p/plan.json",
+                  R"({"id":"p","name":"p","version":"1","files":[{"target":"root","path":"stolen.txt","size":1,"sha256":")" + sha
+                  + R"(","staged":"../../../settings.conf"}]})");
+        writeFile(root + "/catalog/staging/p/.ready", "");
+        installer.recover();
+        checkEqual(readFile(root + "/settings.conf"), "the user's settings", "not moved");
+        check(!fs::exists(root + "/stolen.txt") && !fs::exists(root + "/catalog/staging/p"), "refused and not retried");
+    });
+
+    run("an install that can't be completed changes nothing", [&] {
+        std::string root = makeRoot("rollback");
+        writeFile(root + "/a.txt", "the user's a");
+        fs::create_directories(root + "/b.txt");   // a folder where a file should go
+        Installer installer(root + "/catalog", targetsUnder(root));
+        makeZip(root + "/dl/p.zip", { { "a.txt", "theirs" }, { "b.txt", "theirs" } });
+        check(!installer.install(zipPackage("p", "1", "p.zip", "root", ""), { root + "/dl/p.zip" }, error), "failed: " + error);
+        checkEqual(readFile(root + "/a.txt"), "the user's a", "untouched");
+        check(installer.installed().empty() && !fs::exists(root + "/catalog/staging/p"), "no manifest, nothing left staged");
+    });
+
+    run("names Windows treats specially are refused", [&] {
+        for (const char* path : { "CON", "nul.txt", "a/Aux", "COM1.dat", "lpt9", "name.", "dir /x", "a|b", "x\ty" }) {
+            check(!isSafeRelativePath(path), std::string("refused: ") + path);
+        }
+        for (const char* path : { "console.txt", "com10", "a/./b.txt", "Sega Genesis/roms/a.zip" }) {
+            check(isSafeRelativePath(path), std::string("allowed: ") + path);
+        }
+        check(!isValidId("con") && !isValidId("pack.") && isValidId("pack.v2"), "ids");
+    });
+
+    run("plain http only on the local network", [&] {
+        for (const char* url : { "http://localhost:8080/i.json", "http://127.0.0.1/", "http://192.168.1.20/x", "http://10.0.0.5",
+                                 "http://172.20.1.1/", "http://nas/packs/", "http://retro-pc.local/i.json", "http://[::1]:80/" }) {
+            check(isLocalAddress(url), std::string("local: ") + url);
+        }
+        for (const char* url : { "http://10.evil.com/", "http://192.168.evil.com/", "http://172.40.0.1/", "http://example.org/",
+                                 "http://user@evil.com/", "http://1.2.3.4/" }) {
+            check(!isLocalAddress(url), std::string("not local: ") + url);
+        }
+        check(isAllowedLocation("https://example.org/a.zip") && !isAllowedLocation("http://example.org/a.zip")
+              && isAllowedLocation("E:/packs/a.zip"), "downloads");
     });
 
     run("archives that reach outside their folder are refused", [&] {
@@ -632,6 +736,29 @@ void runCatalogTests()
         check(result.files.size() == 1 && readFile(result.files[0]) == newContent, "the new file");
     });
 
+    run("a file changed on the server isn't joined to the old partial", [&] {
+        std::string root = makeRoot("download-if-range");
+        std::string oldContent = "OLDOLDOLDO";
+        std::string newContent = "new bytes!";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = oldContent;
+        http.etags["https://h.org/p.zip"] = "\"v1\"";
+        http.dropAfter = { 5 };
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        downloader.tries = 1;
+        Package package = remotePackage("p", "https://h.org/p.zip", newContent);
+        package.files[0].sha256.clear();   // no hash to catch it: only the size, which is the same
+        Downloader::Result first;
+        check(!downloader.fetch(package, nullptr, first), "first try dropped");
+
+        http.files["https://h.org/p.zip"] = newContent;
+        http.etags["https://h.org/p.zip"] = "\"v2\"";
+        Downloader::Result result;
+        check(downloader.fetch(package, nullptr, result), "fetched: " + result.error);
+        check(result.files.size() == 1 && readFile(result.files[0]) == newContent, "the whole new file");
+    });
+
     run("downloads check for space and can be stopped", [&] {
         std::string root = makeRoot("download-space");
         std::string content = "0123456789";
@@ -796,6 +923,36 @@ void runCatalogTests()
         checkEqual(readFile(root + "/collections/Main/menu.txt"), "Arcade\r\n# mine\r\nDemo\r\n", "listed once, with the file's line endings");
         check(Setup::removeFromMainMenu("Demo", error), "removed: " + error);
         checkEqual(readFile(root + "/collections/Main/menu.txt"), "Arcade\r\n# mine\r\n", "other lines kept");
+    });
+
+    run("another source offering the same package can't replace it", [&] {
+        std::string root = makeCatalog("service-other-source");
+        Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        bool added = service.addSource(localSource(root), error);
+        check(added, "source: " + error);
+        service.waitUntilIdle();
+        service.install("base");
+        service.waitUntilIdle();
+
+        // The first source goes away; another offers a newer "base"
+        makeZip(root + "/other/base.zip", { { "base.txt", "someone else's" } });
+        writeFile(root + "/other/index.json", R"({"packages": [{"id": "base", "name": "Base", "version": "9", "files": [{"url": "base.zip", "target": "root"}]}]})");
+        check(service.removeSource("local", error), "removed: " + error);
+        SourceConfig other = localSource(root);
+        other.name = "other";
+        other.url = root + "/other/index.json";
+        added = service.addSource(other, error);
+        check(added, "other: " + error);
+        service.waitUntilIdle();
+        Entry entry;
+        check(service.entry("base", entry) && !entry.updateAvailable && entry.installedSource == "local", "no update offered");
+        service.install("base");
+        service.waitUntilIdle();
+        bool ok = true;
+        std::string message;
+        check(service.outcome("base", ok, message) && !ok && message.find("Remove it first") != std::string::npos, "refused: " + message);
+        checkEqual(readFile(root + "/base.txt"), "base", "files untouched");
     });
 
     run("the service reports unreachable sources and keeps sources across restarts", [&] {

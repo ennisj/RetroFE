@@ -29,11 +29,26 @@ namespace Catalog
     // absolute against the location the index was read from
     std::string resolveLocation(const std::string& base, const std::string& reference);
 
-    // Whether an id is safe to use as a file name: letters, digits, . _ -
+    // Whether an id is safe to use as a file name: letters, digits, . _ -,
+    // not a Windows device name such as CON or COM1, and no trailing dot
     bool isValidId(const std::string& id);
 
-    // Whether a relative folder stays inside its target: no "..", no absolute paths
+    // Whether a relative path stays inside its target and names an ordinary
+    // file on every system: no "..", no absolute paths, no drive or stream
+    // (":"), no device names, no characters Windows forbids, no segment
+    // ending in a dot or space
     bool isSafeRelativePath(const std::string& path);
+
+    // Whether a file name is a Windows device name (CON, NUL, COM1, "aux.txt"...)
+    bool isReservedName(const std::string& name);
+
+    // Whether a URL is on this machine or a private network: localhost, a
+    // single-label or .local name, or a private IPv4 address
+    bool isLocalAddress(const std::string& url);
+
+    // Where a package or its artwork may be fetched from: a file, an https://
+    // URL, or plain http:// on the local network
+    bool isAllowedLocation(const std::string& location);
 
     // Parses an index read from location. Packages that are invalid are left
     // out with a warning; false and error only when the index itself is unusable.

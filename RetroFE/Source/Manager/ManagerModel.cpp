@@ -121,6 +121,10 @@ void ManagerModel::setDefault(const std::string& key, const std::string& value)
         settingDefaults_[name] = value;
     }
     else if (stripPrefix(key, "draft:", name) && drafts_[name].empty()) {
+        // A layout's form can't pre-fill a source or vouch for one: the user adds sources
+        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath") {
+            return;
+        }
         drafts_[name] = value;
     }
 }
@@ -133,10 +137,14 @@ std::string ManagerModel::get(const std::string& key)
         return pending != pendingSettings_.end() ? pending->second : settingValue(name);
     }
     if (stripPrefix(key, "draft:", name)) {
-        // Removing starts on the first source
+        // Removing starts on the first source or package
         if (name == "removeSource" && drafts_[name].empty() && catalog_) {
             std::vector<Catalog::SourceConfig> sources = catalog_->sources();
             return sources.empty() ? "" : sources.front().name;
+        }
+        if (name == "removePackage" && drafts_[name].empty() && catalog_) {
+            std::vector<Catalog::Manifest> installed = catalog_->installed();
+            return installed.empty() ? "" : installed.front().id;
         }
         return drafts_[name];
     }
@@ -155,6 +163,16 @@ std::string ManagerModel::get(const std::string& key)
     }
     if (key == "info:hasSources") {
         return catalog_ && !catalog_->sources().empty() ? "yes" : "no";
+    }
+    if (key == "info:hasInstalled") {
+        return catalog_ && !catalog_->installed().empty() ? "yes" : "no";
+    }
+    if (key == "info:removalStatus") {
+        bool ok = false;
+        std::string message;
+        if (!catalog_ || removedPackage_.empty()) return "";
+        if (catalog_->isQueued(removedPackage_)) return "Removing...";
+        return catalog_->outcome(removedPackage_, ok, message) ? message : "";
     }
     if (key == "info:sourceIsFolder") {
         return drafts_["sourceType"] == "folder" ? "yes" : "no";
@@ -191,6 +209,9 @@ std::string ManagerModel::packageValue(const std::string& key)
     }
     if (key == "installedStatus") {
         if (!installed) return "";
+        if (!entry.installedSource.empty() && entry.installedSource != package.source) {
+            return "Version " + entry.installedVersion + " is installed from " + entry.installedSource + ".";
+        }
         if (entry.updateAvailable) return "Version " + entry.installedVersion + " is installed. " + package.version + " is available.";
         return entry.installedVersion == package.version ? "Installed." : "Version " + entry.installedVersion + " is installed.";
     }
@@ -249,7 +270,7 @@ std::string ManagerModel::catalogStatus()
     if (sources == 0) {
         return "";
     }
-    size_t packages = catalog_->entries().size();
+    size_t packages = catalog_->packageCount();
     return std::to_string(packages) + (packages == 1 ? " package from " : " packages from ")
          + std::to_string(sources) + (sources == 1 ? " source." : " sources.");
 }
@@ -345,6 +366,11 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
             result.emplace_back(config.name, config.name);
         }
     }
+    else if (source == "installed" && catalog_) {
+        for (const Catalog::Manifest& manifest : catalog_->installed()) {
+            result.emplace_back(manifest.id, manifest.name + " " + manifest.version);
+        }
+    }
     return result;
 }
 
@@ -366,6 +392,7 @@ std::string ManagerModel::actionProblem(const std::string& action)
 std::string ManagerModel::catalogProblem(const std::string& action)
 {
     bool known = action == "package.install" || action == "package.remove" || action == "package.cancel"
+              || action == "package.removeInstalled"
               || action == "source.add" || action == "source.remove" || action == "catalog.refresh";
     if (!known) {
         return "Unknown action " + action;
@@ -397,6 +424,11 @@ std::string ManagerModel::catalogProblem(const std::string& action)
     if (action == "source.remove") {
         return get("draft:removeSource").empty() ? "Choose a source to remove." : "";
     }
+    if (action == "package.removeInstalled") {
+        std::string id = get("draft:removePackage");
+        if (id.empty()) return "Choose a package to remove.";
+        return catalog_->isQueued(id) ? "Already working on it." : "";
+    }
     return catalog_->refreshing() ? "Already reading the sources." : "";
 }
 
@@ -416,6 +448,11 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
     }
     else if (action == "package.cancel") {
         catalog_->cancel(package_);
+    }
+    else if (action == "package.removeInstalled") {
+        removedPackage_ = get("draft:removePackage");
+        drafts_["removePackage"].clear();
+        catalog_->remove(removedPackage_);
     }
     else if (action == "catalog.refresh") {
         catalog_->refresh();

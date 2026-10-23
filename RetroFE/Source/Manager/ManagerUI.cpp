@@ -167,6 +167,16 @@ void ManagerUI::startCatalog()
     if (!config_.getPropertyAbsolutePath(OPTION_BASEMEDIAPATH, targets.media)) {
         targets.media = targets.collections;
     }
+    // RetroFE's own program folder, when it's a folder of its own (retrofe/ under the root)
+    if (char* base = SDL_GetBasePath()) {
+        std::filesystem::path program = std::filesystem::path(base).lexically_normal();
+        SDL_free(base);
+        std::filesystem::path root = std::filesystem::path(Configuration::absolutePath).lexically_normal();
+        while (!program.empty() && !program.has_filename()) program = program.parent_path();   // drop the trailing separator
+        if (program != root && program.parent_path() == root) {
+            targets.protectedFolders.push_back(program.string());
+        }
+    }
 
     catalog_ = std::make_unique<Catalog::Service>(folder, targets, Catalog::createHttp());
     catalog_->start();
@@ -394,7 +404,8 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     if (!context_) {
         return false;
     }
-    if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_) {
+    // Kiosk mode keeps people out of Settings, where they could turn it off
+    if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_ && !locked_) {
         // Opens Settings, or closes it; from another screen it switches to Settings
         if (!e.key.repeat) {
             open_ && screen_ == Screen::Settings ? close() : open(Screen::Settings);
@@ -565,9 +576,20 @@ void ManagerUI::render()
 
 bool ManagerUI::takeReloadRequest()
 {
-    bool requested = reloadRequested_;
+    // Reloading destroys the Catalog, so it waits for installs to finish
+    if (!reloadRequested_ || (catalog_ && catalog_->isBusy())) {
+        return false;
+    }
     reloadRequested_ = false;
-    return requested;
+    return true;
+}
+
+void ManagerUI::setLocked(bool locked)
+{
+    if (locked && !locked_ && open_) {
+        close();
+    }
+    locked_ = locked;
 }
 
 void ManagerUI::drawWindow()

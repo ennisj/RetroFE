@@ -183,8 +183,14 @@ own progress and a Stop button, which keeps the partial download.
   never leaves half a package.
 - **Stay inside the target.** Every archive entry is checked to resolve under
   its target folder; `..`, absolute paths and links are rejected (zip-slip).
-- **Back up what's overwritten** into `catalog/backups/<id>/<old version>/`,
-  so an update can be undone.
+- **Back up what's overwritten** into `catalog/backups/<id>/<name>/` before
+  the first file moves, and record which destinations already held a file in
+  a journal (`staging/<id>/commit.json`). A failed move, or a recovery that
+  can't finish, puts every destination back from the journal and drops the
+  staged install instead of retrying it on every start. Each manifest entry
+  remembers the backup of the user's own file it replaced (carried through
+  updates), so removal can put it back. Kept per package: those originals and
+  the last update's backup.
 - **Write the manifest** `catalog/installed/<id>.json`: source, version, and
   every file written with its size and hash. One Saucier's docs list as limits
   that old installs have no file list and that user content is detected by
@@ -226,7 +232,21 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
   marked as such in its details.
 - Packages never run code on install. Emulators are installed as files;
   their launchers are plain `.conf` files the user can read.
-- Packages can only write under their targets (see Install).
+- Packages can only write under their targets (see Install), never into
+  the catalog folder or RetroFE's program folder, and phase 1 refuses
+  programs and scripts outright (no emulator packages yet).
+- Paths are checked for every system: no `..`, absolute paths, drives or
+  streams (`:`), Windows device names, forbidden characters, or segments
+  ending in a dot or space. Ids and source names get the same device-name check.
+- Plain `http://` is allowed only for local addresses (localhost, single-label
+  and `.local` names, private IPv4), and that applies to file and artwork URLs
+  inside an index, not just the index itself.
+- A package installed from one source is only updated by that source.
+- Resumed downloads send `If-Range` with the server's ETag or Last-Modified,
+  so a file that changed on the server starts again rather than being joined
+  to the old partial (which matters when an index gives no hash).
+- Artwork is fetched in its own job after installs, at most 5 MB per image.
+- Layout forms can't pre-fill a source's address or the trust confirmation.
 
 ## Libraries
 

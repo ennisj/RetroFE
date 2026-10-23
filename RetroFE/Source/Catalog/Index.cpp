@@ -17,6 +17,8 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <set>
 
@@ -196,9 +198,22 @@ std::string resolveLocation(const std::string& base, const std::string& referenc
     return (fs::path(base).parent_path() / referencePath).lexically_normal().string();
 }
 
+bool isReservedName(const std::string& name)
+{
+    // Windows opens these as devices whatever the extension, and ignores trailing spaces before it
+    std::string stem = name.substr(0, name.find('.'));
+    while (!stem.empty() && stem.back() == ' ') stem.pop_back();
+    stem = lower(stem);
+    static const std::set<std::string> devices = { "con", "prn", "aux", "nul", "conin$", "conout$" };
+    if (devices.count(stem)) {
+        return true;
+    }
+    return stem.size() == 4 && (stem.rfind("com", 0) == 0 || stem.rfind("lpt", 0) == 0) && std::isdigit(static_cast<unsigned char>(stem[3]));
+}
+
 bool isValidId(const std::string& id)
 {
-    if (id.empty() || id.size() > 100 || id[0] == '.') {
+    if (id.empty() || id.size() > 100 || id[0] == '.' || id.back() == '.' || isReservedName(id)) {
         return false;
     }
     return std::all_of(id.begin(), id.end(), [](unsigned char c) {
@@ -220,13 +235,65 @@ bool isSafeRelativePath(const std::string& path)
             if (part == "..") {
                 return false;
             }
+            // Windows drops trailing dots and spaces, so "a." would be another name for "a"
+            if (part != "." && !part.empty() && (part.back() == '.' || part.back() == ' ' || isReservedName(part))) {
+                return false;
+            }
             part.clear();
         }
         else {
+            unsigned char c = static_cast<unsigned char>(path[i]);
+            if (c < 0x20 || std::strchr("<>\"|?*", c)) {
+                return false;
+            }
             part += path[i];
         }
     }
     return true;
+}
+
+bool isLocalAddress(const std::string& url)
+{
+    size_t start = url.find("//");
+    if (start == std::string::npos) {
+        return false;
+    }
+    std::string authority = url.substr(start + 2, url.find_first_of("/?#", start + 2) - start - 2);
+    std::string host = lower(authority.substr(authority.find('@') == std::string::npos ? 0 : authority.find('@') + 1));
+    if (!host.empty() && host[0] == '[') {
+        return host.rfind("[::1]", 0) == 0;
+    }
+    host = host.substr(0, host.find(':'));
+    if (host.empty()) {
+        return false;
+    }
+    // A machine name on the local network: "nas", "retro-pc.local"
+    if (host == "localhost" || host.find('.') == std::string::npos
+        || (host.size() > 6 && host.compare(host.size() - 6, 6, ".local") == 0)) {
+        return host.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-.") == std::string::npos;
+    }
+    // Otherwise only a numeric address in a private range
+    int octets[4];
+    char extra = 0;
+    if (std::sscanf(host.c_str(), "%d.%d.%d.%d%c", &octets[0], &octets[1], &octets[2], &octets[3], &extra) != 4
+        || host.find_first_not_of("0123456789.") != std::string::npos) {
+        return false;
+    }
+    for (int octet : octets) {
+        if (octet < 0 || octet > 255) return false;
+    }
+    return octets[0] == 127 || octets[0] == 10
+        || (octets[0] == 192 && octets[1] == 168)
+        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+        || (octets[0] == 169 && octets[1] == 254);
+}
+
+bool isAllowedLocation(const std::string& location)
+{
+    if (!isUrl(location)) {
+        return true;   // a file, e.g. on a USB stick
+    }
+    return lower(location.substr(0, 8)) == "https://" || isLocalAddress(location);
 }
 
 bool parseIndex(const std::string& text, const std::string& location, const std::string& sourceName,

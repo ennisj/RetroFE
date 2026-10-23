@@ -102,16 +102,25 @@ namespace
         bool download(const std::string& url, const std::string& file, uint64_t offset,
                       const Progress& progress, Transfer& transfer) override
         {
+            std::string validator = transfer.validator;
             transfer = Transfer();
             DWORD status = 0;
             uint64_t length = 0;
             Handle connection;
             Handle request;
-            std::string range = offset > 0 ? "Range: bytes=" + std::to_string(offset) + "-" : "";
-            if (!open(url, range, connection, request, status, length, transfer.error)) {
+            // If-Range: the rest of the same file, or else the whole of the new one
+            std::string headers;
+            if (offset > 0) {
+                headers = "Range: bytes=" + std::to_string(offset) + "-";
+                if (!validator.empty()) {
+                    headers += "\r\nIf-Range: " + validator;
+                }
+            }
+            if (!open(url, headers, connection, request, status, length, transfer.error)) {
                 transfer.retry = retryable(failure_);
                 return false;
             }
+            transfer.validator = this->validator(request);
 
             uint64_t start = 0;
             if (offset > 0 && status == 206) {
@@ -233,6 +242,26 @@ namespace
                 length = _wcstoui64(text, nullptr, 10);
             }
             return true;
+        }
+
+        // A strong ETag, or else Last-Modified: what If-Range accepts
+        static std::string validator(HINTERNET request)
+        {
+            for (DWORD query : { static_cast<DWORD>(WINHTTP_QUERY_ETAG), static_cast<DWORD>(WINHTTP_QUERY_LAST_MODIFIED) }) {
+                wchar_t text[256] = {};
+                DWORD size = sizeof(text);
+                if (WinHttpQueryHeaders(request, query, WINHTTP_HEADER_NAME_BY_INDEX, text, &size, WINHTTP_NO_HEADER_INDEX)) {
+                    std::wstring value(text, size / sizeof(wchar_t));
+                    if (query == WINHTTP_QUERY_ETAG && value.rfind(L"W/", 0) == 0) continue;
+                    std::string narrow;
+                    for (wchar_t c : value) {
+                        if (c < 0x20 || c > 0x7e) return "";   // headers are ASCII; anything else isn't worth sending back
+                        narrow += static_cast<char>(c);
+                    }
+                    return narrow;
+                }
+            }
+            return "";
         }
 
         // Network failures other than a bad address or certificate may clear up
