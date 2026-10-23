@@ -20,11 +20,13 @@
 #include "../../Library/Index.h"
 #include "../../Library/Media.h"
 #include "../../Library/Search.h"
+#include <functional>
+#include <future>
 #include <map>
 #include <memory>
-#include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The Games screens (GamesForms.cpp): find any installed game, and look at or
@@ -39,13 +41,17 @@
 //
 // Bindings (game:<key>), actions (game.<name>) and option sources are listed
 // in GameProvider.cpp. Everything reads the shared library index and writes
-// through the shared Library::Editor.
+// through the shared Library::Editor. Media file checks (slots, search
+// thumbnails) run on a worker and arrive through update().
 namespace Manager
 {
     class GameProvider : public Provider
     {
     public:
+        using IndexPtr = std::shared_ptr<const Library::Index>;
+
         explicit GameProvider(const Services& services);
+        ~GameProvider() override;
 
         std::string prefix() const override { return "game"; }
 
@@ -69,16 +75,19 @@ namespace Manager
         // "Front art" for artwork_front, ...
         static std::string mediaLabel(const std::string& type);
 
-        // The story text as a one-line field shows it (lines joined with " | ") and back
+        // The story text as a one-line field shows it (lines joined with " | ")
+        // and back. Paragraphs that weren't changed keep their exact bytes and
+        // line endings. A text that has '|' of its own can't be edited this way.
         static std::string storyToLine(const std::string& text);
         static std::string lineToStory(const std::string& line, const std::string& original);
+        static bool storyIsEditable(const std::string& text);
 
-        // Does the media work update() would do, all at once (tests)
+        // Tests: waits for the media worker and does whatever it still has to do
         void finishPendingWork();
+        // Tests: where the index comes from (default: the shared library's)
+        void setIndexSource(std::function<IndexPtr()> source) { indexSource_ = std::move(source); }
 
     private:
-        using IndexPtr = std::shared_ptr<const Library::Index>;
-
         IndexPtr index() const;
         static std::string gameKey(const Screen& screen);
         // The game a screen is about (its own collection + name), or nullptr
@@ -92,20 +101,40 @@ namespace Manager
         // --- details
         std::string detail(const std::string& key, const Screen& screen);
         std::string mediaSummary(const Screen& screen);
-        std::string playlistsSummary(const Library::Index& index, int game) const;
-        std::string favouritesProblem(const Library::Index& index, const Library::GameRecord& game) const;
-        bool isFavourite(const Library::Index& index, int game) const;
+        std::string playlistsSummary(const Library::Index& index, int game);
 
-        // --- media: slots are looked up once per game (file checks), a few per frame
+        // --- favourites: RetroFE keeps them per page (the collection a game is shown in)
+        bool globalFavourites(const Library::Index& index) const;
+        std::vector<int> pages(const Library::Index& index, int game) const;      // own system, then merged collections showing it
+        bool isFavourite(const Library::Index& index, int game, int page) const;
+        bool inGlobalFavourites(const Library::Index& index, const Library::GameRecord& game);
+        std::vector<std::string> favouritePages(const Library::Index& index, int game);
+        int chosenPage(const Library::Index& index, int game) const;
+
+        // --- media: slots are looked up on a worker, once per game
         struct MediaCache
         {
             std::string key;                                   // collection/id
             std::vector<std::string> types;
             std::map<std::string, Library::MediaSlot> slots;   // by type, once looked up
         };
+        struct MediaJob
+        {
+            std::string key;
+            unsigned epoch = 0;
+            std::future<std::map<std::string, Library::MediaSlot>> result;
+        };
+        struct ThumbnailJob
+        {
+            std::future<std::vector<std::pair<std::string, std::string>>> result;   // key -> file
+        };
         void prepareMedia(const Library::Index& index, const Screen& screen);
+        // The slot when it has been looked up, else nullptr (the worker is asked for it)
         const Library::MediaSlot* slot(const Screen& screen, const std::string& type);
         void forgetSlot(const std::string& type);
+        void startMediaJob();
+        void startThumbnailJob();
+        bool collectJobs(bool wait);
         std::string slotStatus(const Library::MediaSlot& slot) const;
         std::string slotValue(const std::string& key, const Screen& screen);
         std::vector<std::string> originals(const Library::MediaSlot& slot) const;
@@ -113,6 +142,7 @@ namespace Manager
 
         // --- metadata
         void loadMetadata(const Library::Index& index, const Screen& screen);
+        const std::map<std::string, std::string>& shipped(const Library::Index& index, const Screen& screen, bool& known);
         std::string metadataValue(const std::string& key, const Screen& screen);
         Forms::Model::Result metadataAction(const std::string& action, const Screen& screen);
 
@@ -126,7 +156,7 @@ namespace Manager
         Forms::Model::Result playlistAction(const std::string& action, const Screen& screen);
 
         // --- story text
-        void loadStory(const Screen& screen);
+        bool loadStory(const Screen& screen);
         std::string storyValue(const std::string& key, const Screen& screen);
         Forms::Model::Result storyAction(const std::string& action, const Screen& screen);
 
@@ -134,6 +164,10 @@ namespace Manager
         std::string problem(const std::string& action, const Screen& screen);
 
         Services services_;
+        std::function<IndexPtr()> indexSource_;
+        // While an action is checked and run, every lookup uses this one
+        // snapshot, so a new index published meanwhile can't pull the game away
+        IndexPtr pinned_;
         Screen current_;
         unsigned generation_ = 0;
         unsigned indexGeneration_ = 0;
@@ -148,20 +182,36 @@ namespace Manager
         std::vector<std::pair<std::string, std::string>> filters_;
         std::map<std::string, std::string> thumbnails_;    // collection/name -> file ("" = none)
         std::vector<std::pair<std::string, std::string>> wantedThumbnails_;   // (collection, name) still to look up
+        std::set<std::string> thumbnailsAsked_;            // being looked up now
 
         // Details
         std::string detailsKey_;
         std::string size_;
         std::map<std::string, std::string> overrides_;     // this game's metadata changes (element -> value)
+        std::string globalFavouritesKey_;
+        bool inGlobalFavourites_ = false;
         MediaCache media_;
+        std::string priorityType_;                         // looked up first (the slot screen's)
         std::string newFile_;                              // the slot screen's "Replace from a file"
+
+        // Workers (at most one of each at a time)
+        MediaJob mediaJob_;
+        ThumbnailJob thumbnailJob_;
+        unsigned mediaEpoch_ = 0;                          // bumped when slots are forgotten: older lookups are dropped
 
         // Metadata
         EditBuffer metadata_;
         std::map<std::string, std::string> metadataSaved_;
-        std::map<std::string, std::string> shipped_;       // element -> shipped value
-        bool shippedKnown_ = false;
+        std::map<std::string, std::string> pendingMetadata_;   // typed before the library was read
         std::string metadataType_;
+        // Shipped values, read from the hyperlist files only when a field has
+        // been changed here, and kept per metadata type and game
+        struct Shipped
+        {
+            bool known = false;
+            std::map<std::string, std::string> values;
+        };
+        std::map<std::string, Shipped> shippedCache_;      // "<type>\n<name>"
 
         // Launcher
         EditBuffer launcher_;
@@ -169,9 +219,10 @@ namespace Manager
         // Playlists
         std::string playlist_;                             // "<collection>/<playlist>"
         std::string merged_;                               // a merged collection
+        std::string favouritePage_;                        // the page whose favourites are shown
 
         // Story
         EditBuffer story_;
-        std::string storyOriginal_;                        // the text loaded, for its line endings
+        std::string storyOriginal_;                        // the text loaded, for its bytes and line endings
     };
 }

@@ -115,6 +115,7 @@ namespace
         {
             model.setScreen(form, params);
             games->update(0);
+            games->finishPendingWork();   // the media worker's lookups
         }
 
         // An edit asks for a new index; wait for it like the screens do
@@ -122,6 +123,12 @@ namespace
         {
             indexer.wait(10000);
             games->update(0);
+            games->finishPendingWork();
+        }
+
+        std::shared_ptr<const Library::Index> scan()
+        {
+            return std::shared_ptr<const Library::Index>(Library::buildIndex(indexer.options()).release());
         }
 
         Configuration config;
@@ -317,6 +324,24 @@ static void runGamesTests()
         check(hasOption(f.model.options("game:launchers"), "ghost"), "listed so the choice shows it");
         check(f.model.get("game:unresolvedNote").find("ghost") != std::string::npos, "unresolved name warned about");
         check(!f.model.get("game:launcherProblem").empty(), "won't start");
+
+        // A local launcher of the system hides the global one of the same name: offered once
+        Test::writeFile(root + "/collections/Arcade/launchers.local/fbneo.conf", "executable = fbneo-arcade.exe\n");
+        f.indexer.changed();
+        f.settle();
+        f.model.refresh();
+        f.open("game-launcher", gameParams("Arcade", "c"));
+        auto deduped = f.model.options("game:launchers");
+        size_t fbneo = std::count_if(deduped.begin(), deduped.end(), [](const auto& o) { return o.first == "fbneo"; });
+        check(fbneo == 1, "fbneo offered once: " + std::to_string(fbneo));
+        for (const auto& option : deduped) {
+            if (option.first == "fbneo") {
+                check(option.second.find("hides the global fbneo") != std::string::npos, "says it hides the global: " + option.second);
+            }
+            if (option.first == "mame") {
+                check(option.second.find("same as using the system's") != std::string::npos, "the system's own is marked: " + option.second);
+            }
+        }
     });
 
     run("games: media slots, replace, clear and put back", [] {
@@ -352,10 +377,13 @@ static void runGamesTests()
         check(replaced.ok, "replaced: " + replaced.message);
         check(replaced.back, "back to the media list, which shows the new picture");
         checkEqual(Test::readFile(root + "/collections/Arcade/medium_artwork/logo/a.png"), "new logo", "new file in place");
+        checkEqual(f.model.get("game:slot:status"), "Still looking for its files...", "the slot is looked up again, on the worker");
+        f.games->finishPendingWork();
         checkEqual(f.model.get("game:slot:hasOriginal"), "yes", "original kept");
         checkEqual(f.model.get("game:slot:newFile"), "", "file field cleared");
         check(f.model.runAction("game.restoreMedia").ok, "put back");
         checkEqual(Test::readFile(root + "/collections/Arcade/medium_artwork/logo/a.png"), "logo", "original back");
+        f.games->finishPendingWork();
 
         // A file of the wrong kind is refused
         f.model.set("game:slot:newFile", root + "/import/new.txt");
@@ -363,6 +391,7 @@ static void runGamesTests()
 
         check(f.model.runAction("game.clearMedia").ok, "own file cleared");
         check(!fs::exists(root + "/collections/Arcade/medium_artwork/logo/a.png"), "gone (kept in backups)");
+        f.games->finishPendingWork();
         checkEqual(f.model.get("game:slot:status"), "Missing", "slot looked up again");
     });
 
@@ -393,7 +422,29 @@ static void runGamesTests()
         f.model.set("game:merged", "All");
         checkEqual(f.model.get("game:isInMerged"), "yes", "All shows it");
         check(f.model.get("game:mergedStatus").find("every other game") != std::string::npos, "says why");
+        check(f.model.actionProblem("game.removeFromMerged").find("can't be taken out") != std::string::npos,
+              "the button is greyed out with the reason: " + f.model.actionProblem("game.removeFromMerged"));
         check(!f.model.runAction("game.removeFromMerged").ok, "refused for an empty .sub");
+
+        // Favourites are kept per page: on All's page RetroFE writes All's favorites.txt
+        auto pages = f.model.options("game:favouritePages");
+        check(hasOption(pages, "Arcade") && hasOption(pages, "All"), "its own system and the merged collection showing it");
+        checkEqual(f.model.get("game:hasSeveralPages"), "yes", "the page choice shows");
+        f.model.set("game:favouritePage", "All");
+        checkEqual(f.model.get("game:isFavourite"), "no", "not a favourite on All");
+        check(f.model.runAction("game.addFavourite").ok, "favourite on All");
+        check(Test::readFile(root + "/collections/All/playlists/favorites.txt").find("_Arcade:b") != std::string::npos,
+              "All's favorites.txt, qualified as RetroFE writes it");
+        check(!fs::exists(root + "/collections/Arcade/playlists/favorites.txt")
+              || Test::readFile(root + "/collections/Arcade/playlists/favorites.txt").find("b") == std::string::npos,
+              "not in Arcade's");
+        f.settle();
+        checkEqual(f.model.get("game:isFavourite"), "yes", "a favourite on All");
+        f.model.set("game:favouritePage", "Arcade");
+        checkEqual(f.model.get("game:isFavourite"), "no", "but not on Arcade");
+        f.open("game", gameParams("Arcade", "b"));
+        checkEqual(f.model.get("game:favourite"), "In All", "details say where");
+        f.open("game-playlists", gameParams("Arcade", "b"));
 
         // A NES game can be added to All, which then lists it in NES.sub
         f.open("game-playlists", gameParams("NES", "zelda"));
@@ -408,12 +459,73 @@ static void runGamesTests()
         check(!fs::exists(root + "/collections/All/NES.sub"), "the last entry removes the .sub");
     });
 
+    run("games: favourites with globalFavLast", [] {
+        std::string root = makeInstall("games-globalfav");
+        Test::writeFile(root + "/settings.conf", "firstCollection = Main\nglobalFavLast = yes\n");
+        Test::writeFile(root + "/collections/Favorites/playlists/favorites.txt", "_Arcade:a\n");
+        Fixture f(root);
+        f.open("game-playlists", gameParams("Arcade", "a"));
+        checkEqual(f.model.get("game:favouriteText"), "Yes, in the Favorites collection", "read from the Favorites collection");
+        checkEqual(f.model.get("game:isFavourite"), "yes", "a favourite");
+        checkEqual(f.model.get("game:canFavourite"), "no", "not changed here");
+        checkEqual(f.model.get("game:hasSeveralPages"), "no", "no page choice");
+        check(!f.model.actionProblem("game.removeFavourite").empty(), "removing refused");
+        f.open("game", gameParams("Arcade", "a"));
+        checkEqual(f.model.get("game:favourite"), "Yes (in the Favorites collection)", "details");
+        f.open("game-playlists", gameParams("Arcade", "b"));
+        checkEqual(f.model.get("game:favouriteText"), "No", "b isn't");
+        check(!f.model.actionProblem("game.addFavourite").empty(), "adding refused");
+    });
+
+    run("games: a game that vanishes while an action runs", [] {
+        std::string root = makeInstall("games-vanish");
+        Fixture f(root);
+        auto before = f.scan();
+        fs::remove(root + "/collections/Arcade/roms/c.zip");
+        auto after = f.scan();
+        check(before && after && before->findGame("Arcade", "c") >= 0 && after->findGame("Arcade", "c") < 0, "two snapshots");
+
+        f.games->setIndexSource([&] { return before; });
+        f.open("game-launcher", gameParams("Arcade", "c"));
+        f.model.set("game:launcher", "fbneo");
+        checkEqual(f.model.actionProblem("game.saveLauncher"), "", "can be saved");
+
+        // A new snapshot is published after the first look: the action keeps the one it checked
+        int calls = 0;
+        f.games->setIndexSource([&] { return calls++ == 0 ? before : after; });
+        Forms::Model::Result kept = f.model.runAction("game.saveLauncher");
+        check(kept.ok, "checked and written against one snapshot: " + kept.message);
+
+        // Once it's gone, every action says so instead of failing
+        f.games->setIndexSource([&] { return after; });
+        for (const char* action : { "game.saveLauncher", "game.useSystemLauncher", "game.saveMetadata", "game.addFavourite",
+                                    "game.saveStory", "game.clearMedia" }) {
+            Forms::Model::Result gone = f.model.runAction(action);
+            check(!gone.ok && gone.message == "This game isn't in the library any more.", std::string(action) + ": " + gone.message);
+        }
+        checkEqual(f.model.get("game:isFound"), "no", "the screen says it's gone");
+
+        // Typed before the library is read: kept until it is
+        f.games->setIndexSource([] { return std::shared_ptr<const Library::Index>(); });
+        f.open("game-metadata", gameParams("Arcade", "b"));
+        f.model.set("game:meta:year", "1999");
+        f.games->setIndexSource(nullptr);
+        checkEqual(f.model.get("game:meta:year"), "1999", "kept");
+        checkEqual(f.model.get("game:isMetadataDirty"), "yes", "and unsaved");
+    });
+
     run("games: story text", [] {
         checkEqual(Manager::GameProvider::storyToLine("Line one\r\nLine two\r\n"), "Line one | Line two", "lines joined");
-        checkEqual(Manager::GameProvider::lineToStory("One|Two  |  Three", "a\r\nb\r\n"), "One\r\nTwo\r\nThree\r\n", "file's CRLF kept");
+        checkEqual(Manager::GameProvider::lineToStory("One|Two | Three", "a\r\nb\r\n"), "One\r\nTwo\r\nThree\r\n", "file's CRLF kept");
         checkEqual(Manager::GameProvider::lineToStory("One | Two", "a\nb"), "One\nTwo", "no final break kept");
-        checkEqual(Manager::GameProvider::lineToStory(Manager::GameProvider::storyToLine("a\n\nb\n"), "a\n\nb\n"), "a\n\nb\n",
-                   "blank paragraphs survive a round trip");
+        for (const std::string& text : { std::string("a\n\nb\n"), std::string("a\r\n  indented\r\n\r\nlast"),
+                                         std::string("trailing space \nmixed\r\nends\n\n") }) {
+            checkEqual(Manager::GameProvider::lineToStory(Manager::GameProvider::storyToLine(text), text), text,
+                       "unchanged text survives a round trip byte for byte");
+        }
+        checkEqual(Manager::GameProvider::lineToStory("a |   indented |  | changed", "a\r\n  indented\r\n\r\nlast"),
+                   "a\r\n  indented\r\n\r\nchanged", "one paragraph changed, the others as they were");
+        check(!Manager::GameProvider::storyIsEditable("Pac-Man | Namco\n"), "a text with | of its own isn't editable");
 
         std::string root = makeInstall("games-story");
         Fixture f(root);
@@ -439,6 +551,18 @@ static void runGamesTests()
         Forms::Model::Result open = f.model.runAction("game.replaceStory");
         check(open.ok && open.open == "game-media-slot" && open.params["type"] == "story" && open.keepParams, "replace opens the slot");
 
+        // A story with a | of its own can't be edited on one line: Save is refused, the file is untouched
+        std::string piped = root + "/collections/Arcade/medium_artwork/story/c.txt";
+        Test::writeFile(piped, "Pac-Man | Namco\n  1980\n");
+        f.open("game-description", gameParams("Arcade", "c"));
+        checkEqual(f.model.get("game:story:canEdit"), "no", "not editable here");
+        check(!f.model.get("game:story:note").empty(), "says why");
+        f.model.set("game:story:text", "Pac-Man | Namco |   1980 | more");
+        check(!f.model.actionProblem("game.saveStory").empty(), "save refused");
+        check(!f.model.runAction("game.saveStory").ok, "not saved");
+        checkEqual(Test::readFile(piped), "Pac-Man | Namco\n  1980\n", "the file is as it was");
+        f.model.runAction("game.resetStory");
+
         // The library refuses text in an image slot, and empty text
         Library::MediaSlot logo;
         logo.type = "logo";
@@ -450,9 +574,9 @@ static void runGamesTests()
         story.type = "story";
         story.kind = Library::MediaKind::Text;
         story.directory = root + "/collections/Arcade/medium_artwork/story";
-        story.basename = "c";
+        story.basename = "d";
         check(!f.editor.writeMediaText(story, "  ").ok, "empty text refused");
-        check(f.editor.writeMediaText(story, "C\n").ok && Test::readFile(story.directory + "/c.txt") == "C\n", "written as given");
-        check(f.editor.backups().hasOriginal(story.directory + "/c.txt"), "a new file is recorded, so a reset removes it");
+        check(f.editor.writeMediaText(story, "C\n").ok && Test::readFile(story.directory + "/d.txt") == "C\n", "written as given");
+        check(f.editor.backups().hasOriginal(story.directory + "/d.txt"), "a new file is recorded, so a reset removes it");
     });
 }

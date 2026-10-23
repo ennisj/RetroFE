@@ -141,9 +141,10 @@ const char* const playlistsForm = R"(
 <form id="game-playlists" title="Playlists and collections" bind="game:screenTitle">
   <note bind="game:notFound"/>
   <section label="Favourite" visibleWhen="game:isFound">
+    <choice label="On the page of" bind="game:favouritePage" options="game:favouritePages" visibleWhen="game:hasSeveralPages"/>
     <value label="Favourite" bind="game:favouriteText"/>
-    <button label="Add to favourites" action="game.addFavourite" visibleWhen="!game:isFavourite"/>
-    <button label="Remove from favourites" action="game.removeFavourite" visibleWhen="game:isFavourite"/>
+    <button label="Add to favourites" action="game.addFavourite" visibleWhen="!game:isFavourite" enabledWhen="game:canFavourite"/>
+    <button label="Remove from favourites" action="game.removeFavourite" visibleWhen="game:isFavourite" enabledWhen="game:canFavourite"/>
     <note bind="game:favouriteNote"/>
   </section>
   <section label="Playlists" visibleWhen="game:isFound">
@@ -171,7 +172,8 @@ const char* const descriptionForm = R"(
   <note bind="game:notFound"/>
   <note bind="game:story:status"/>
   <note bind="game:story:preview"/>
-  <text label="Story" bind="game:story:text" visibleWhen="game:isFound" hint="No story text yet"
+  <note bind="game:story:note"/>
+  <text label="Story" bind="game:story:text" visibleWhen="game:story:canEdit" hint="No story text yet"
         help="One line per paragraph: a | starts a new one."/>
   <actions>
     <button label="Save" action="game.saveStory"/>
