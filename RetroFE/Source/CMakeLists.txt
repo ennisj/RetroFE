@@ -40,6 +40,7 @@ add_custom_command(
 set(SQLITE3_ROOT "${RETROFE_THIRD_PARTY_DIR}/sqlite3")
 set(RAPIDXML_ROOT "${RETROFE_THIRD_PARTY_DIR}/rapidxml-1.13")
 set(IMGUI_ROOT "${RETROFE_THIRD_PARTY_DIR}/imgui-1.91.5")
+set(NLOHMANN_JSON_ROOT "${RETROFE_THIRD_PARTY_DIR}/nlohmann-json-3.11.3")
 
 if(WIN32)
     if(MSVC)
@@ -173,6 +174,7 @@ set(RETROFE_INCLUDE_DIRS
     "${RAPIDXML_ROOT}"
     "${IMGUI_ROOT}"
     "${IMGUI_ROOT}/backends"
+    "${NLOHMANN_JSON_ROOT}"
     "${PACDRIVE_ROOT}"
     "/opt/homebrew/lib/glib-2.0/include"
 )
@@ -363,7 +365,14 @@ endif()
 option(RETROFE_BUILD_TESTS "Build the retrofe_tests unit tests" OFF)
 if(RETROFE_BUILD_TESTS)
 	add_executable(retrofe_tests
+		"${RETROFE_DIR}/Tests/TestsMain.cpp"
 		"${RETROFE_DIR}/Tests/FormsTests.cpp"
+		"${RETROFE_DIR}/Tests/CatalogTests.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Index.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
 		"${RETROFE_DIR}/Source/Database/Configuration.cpp"
 		"${RETROFE_DIR}/Source/Database/GlobalOpts.cpp"
@@ -376,6 +385,14 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Utility/Utils.cpp"
 	)
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
+	# The Catalog tests extract and write zip archives
+	if(WIN32)
+		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES})
+		add_custom_command(TARGET retrofe_tests POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZLIB_ROOT}/lib/zlib.dll" "$<TARGET_FILE_DIR:retrofe_tests>")
+	else()
+		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES})
+	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)
 endif()

@@ -15,74 +15,21 @@
  */
 
 // Tests for the forms layer: SettingsFile, form parsing and ManagerModel.
-// Build with -DRETROFE_BUILD_TESTS=ON and run retrofe_tests.
 
+#include "TestSupport.h"
 #include "../Source/Builtin/Builtin.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Forms/SettingsFile.h"
 #include "../Source/Manager/ManagerModel.h"
 #include <filesystem>
-#include <fstream>
-#include <functional>
-#include <iostream>
-#include <iterator>
 #include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
+using namespace Test;
 
-namespace
-{
-    int failures = 0;
-    int checks = 0;
-    std::string currentTest;
-
-    void check(bool condition, const std::string& what)
-    {
-        checks++;
-        if (!condition) {
-            failures++;
-            std::cout << "  FAIL [" << currentTest << "] " << what << std::endl;
-        }
-    }
-
-    void checkEqual(const std::string& actual, const std::string& expected, const std::string& what)
-    {
-        check(actual == expected, what + ": expected \"" + expected + "\", got \"" + actual + "\"");
-    }
-
-    // A fresh, empty folder per test
-    std::string makeRoot(const std::string& name)
-    {
-        fs::path root = fs::temp_directory_path() / "retrofe_tests" / name;
-        fs::remove_all(root);
-        fs::create_directories(root);
-        return root.string();
-    }
-
-    void writeFile(const std::string& path, const std::string& content)
-    {
-        std::ofstream out(path, std::ios::binary | std::ios::trunc);
-        out << content;
-    }
-
-    std::string readFile(const std::string& path)
-    {
-        std::ifstream in(path, std::ios::binary);
-        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    }
-
-    void run(const std::string& name, const std::function<void()>& test)
-    {
-        currentTest = name;
-        int before = failures;
-        test();
-        std::cout << (failures == before ? "ok   " : "FAIL ") << name << std::endl;
-    }
-}
-
-int main()
+void runFormsTests()
 {
     std::string error;
 
@@ -264,7 +211,4 @@ int main()
         checkEqual(model.get("info:source:settings:layout"), "settings2.conf", "override file named");
         checkEqual(model.get("info:source:settings:hideMouse"), "", "settings.conf isn't mentioned");
     });
-
-    std::cout << std::endl << checks - failures << "/" << checks << " checks passed" << std::endl;
-    return failures == 0 ? 0 : 1;
 }
