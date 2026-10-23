@@ -719,10 +719,19 @@ bool RetroFE::run()
 					firstCollection = Home::collectionName;
 				}
 
+				// Get collection info with error checking; an empty first collection is fine
+				CollectionInfo* info = homeMenu_ ? getHomeCollection() : getCollection(firstCollection, true);
+				if (!info) {
+					LOG_ERROR("RetroFE", "Failed to load collection info for: " + firstCollection);
+					state = RETROFE_QUIT_REQUEST;
+					break;
+				}
+
 				// Load new page with error checking
-				currentPage_ = loadPage(firstCollection);
+				currentPage_ = loadPage(firstCollection, info);
 				if (!currentPage_) {
 					LOG_ERROR("RetroFE", "Failed to load initial page after splash");
+					delete info;
 					state = RETROFE_QUIT_REQUEST;
 					break;
 				}
@@ -740,14 +749,6 @@ bool RetroFE::run()
 				// Update current collection configuration
 				cycleVector_.clear();
 				config_.setProperty("currentCollection", firstCollection);
-
-				// Get collection info with error checking; an empty first collection is fine
-				CollectionInfo* info = homeMenu_ ? getHomeCollection() : getCollection(firstCollection, true);
-				if (!info) {
-					LOG_ERROR("RetroFE", "Failed to load collection info for: " + firstCollection);
-					state = RETROFE_QUIT_REQUEST;
-					break;
-				}
 
 				// Push collection to page
 				if (!currentPage_->pushCollection(info)) {
@@ -1417,6 +1418,7 @@ bool RetroFE::run()
 						config_.getProperty(OPTION_LAYOUT, layoutName);
 					}
 					PageBuilder pb(layoutName, getLayoutFileName(), config_, &fontcache_);
+					pb.setMenuCollection(isMenuCollection(info));
 
 					bool defaultToCurrentLayout = false;
 					if (std::string settingPrefix = "collections." + currentPage_->getCollectionName() + ".";
@@ -3296,8 +3298,19 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 	return state;
 }
 
+// A collection whose items are all collections, like Main: layouts can draw
+// these with collections/_menu/layout (LayoutPages::collectionFolder)
+bool RetroFE::isMenuCollection(const CollectionInfo* info)
+{
+	if (!info || info->items.empty())
+	{
+		return false;
+	}
+	return std::none_of(info->items.begin(), info->items.end(), [](const Item* item) { return item->leaf; });
+}
+
 // Load a page
-Page* RetroFE::loadPage(const std::string& collectionName)
+Page* RetroFE::loadPage(const std::string& collectionName, const CollectionInfo* info)
 {
 	// check if collection's assets are in a different theme
 	std::string layoutName;
@@ -3307,6 +3320,7 @@ Page* RetroFE::loadPage(const std::string& collectionName)
 		config_.getProperty(OPTION_LAYOUT, layoutName);
 	}
 	PageBuilder pb(layoutName, getLayoutFileName(), config_, &fontcache_);
+	pb.setMenuCollection(isMenuCollection(info));
 	Page* page = pb.buildPage(collectionName);
 	if (!page)
 	{
@@ -3675,6 +3689,8 @@ std::string RetroFE::getLayoutFileName()
 		}
 	}
 
+	// The management screens match the page they're drawn over (forms/<page>.xml)
+	manager_.setLayoutPage(layoutName);
 	return layoutName;
 }
 

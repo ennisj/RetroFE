@@ -1,0 +1,14 @@
+<layout width="1920" height="1080" loadFontSize="32" fontColor="dedede">
+
+<!-- Aeon Nox: the intro video, shown while RetroFE starts -->
+
+    <video src="video/intro.mp4" x="0" y="0" width="1920" height="1080" alpha="1">
+        <onExit>
+            <set duration=".3">
+                <animate type="alpha"  to="0"/>
+                <animate type="volume" to="0"/>
+            </set>
+        </onExit>
+    </video>
+
+</layout>

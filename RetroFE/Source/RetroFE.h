@@ -157,7 +157,8 @@ private:
     bool isInAttractModeSkipPlaylist(std::string playlist);
     void goToNextAttractModePlaylistByCycle(std::vector<std::string> cycleVector);
     void            quit( );
-    Page           *loadPage(const std::string& collectionName);
+    Page           *loadPage(const std::string& collectionName, const CollectionInfo* info = nullptr);
+    static bool     isMenuCollection(const CollectionInfo* info);
     Page           *loadSplashPage( );
 
     std::vector<std::string> collectionCycle_;

@@ -73,7 +73,7 @@ const global_options::options_entry global_options::s_option_entries[] =
     { OPTION_GLSWAPINTERVAL,           "1",        global_options::option_type::INTEGER,  "OpenGL Swap Interval (0=immediate updates, 1=synchronized vsync, -1=adaptive vsync" },
 
     { nullptr,                         nullptr,    global_options::option_type::HEADER,   "CUSTOMIZATION OPTIONS" },
-    { OPTION_LAYOUT,                   "Arcades",  global_options::option_type::STRING,   "Theme to be used in RetroFE, a folder name in /layouts" },
+    { OPTION_LAYOUT,                   "Aeon Nox", global_options::option_type::STRING,   "Theme to be used in RetroFE, a folder name in /layouts" },
     { OPTION_RANDOMLAYOUT,             "",         global_options::option_type::MSTRING,  "Randomly choose a layout on launch, CSV list of layout names" },
     { OPTION_FIRSTPLAYLIST,            "arcades",  global_options::option_type::STRING,   "Start on this playlist if available" },
     { OPTION_AUTOPLAYLIST,             "all",      global_options::option_type::STRING,   "Start on this playlist when entering a collection if available" },

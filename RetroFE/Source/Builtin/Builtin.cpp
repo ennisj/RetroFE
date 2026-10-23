@@ -28,6 +28,7 @@ vertical = 720
 windowBorder = true
 windowResize = true
 hideMouse = no
+layout = Aeon Nox
 firstCollection = Main
 homeMenu = yes
 )";
@@ -84,7 +85,7 @@ static const char* const homeLayout = R"(
     <item x="980"/>
   </menu>
 
-  <text value="Left/Right: choose    Enter: select    F10: Settings    Q: quit" x="center" y="675" xOrigin="center" yOrigin="center" fontSize="20" alpha="0.4" layer="1"/>
+  <text value="Left/Right: choose    Enter: select    Q: quit" x="center" y="675" xOrigin="center" yOrigin="center" fontSize="20" alpha="0.4" layer="1"/>
 </layout>
 )";
 
