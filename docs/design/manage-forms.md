@@ -224,9 +224,13 @@ Things to know:
   instead closes the manager and reloads straight away; Settings' Save and
   Add a system use that, because the user expects to see the result at once.
 - `Manager::Services` (`Provider.h`) is what providers can use: the
-  configuration, the Catalog and `requestReload`. If you need more (say
-  RetroFE's metadata database), add a field there and set it where
-  `ManagerUI::initialize` registers providers.
+  configuration, the Catalog, `requestReload`, and the shared library:
+  `library` (one `Library::Indexer` for every section, rebuilt each time the
+  manager opens) and `editor` (the `Library::Editor` all writes go through).
+  After a write, call `library->changed("what")`; when the manager closes with
+  changes pending, RetroFE reloads. Don't create your own Indexer. If you need
+  more, add a field there and set it where `ManagerUI::initialize` registers
+  providers.
 
 ## Forms for a section
 

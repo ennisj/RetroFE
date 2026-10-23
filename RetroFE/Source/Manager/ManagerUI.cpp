@@ -127,8 +127,11 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
     // Forms are loaded when first opened, from the layout in use now
     forms_.clear();
     startCatalog();
+    startLibrary();
     if (!providersAdded_) {
         Manager::Services services{ config_, catalog_.get() };
+        services.library = library_.get();
+        services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
         Manager::registerProviders(model_, services);
         providersAdded_ = true;
@@ -147,6 +150,21 @@ const Forms::Form* ManagerUI::form(const std::string& id)
         found = forms_.emplace(id, Forms::load(id, layoutName)).first;
     }
     return found->second.get();
+}
+
+void ManagerUI::startLibrary()
+{
+    if (library_) {
+        return;
+    }
+    // Paths as RetroFE resolved them, so command-line and settings overrides count
+    Library::ScanOptions options;
+    options.root = Configuration::absolutePath;
+    options.firstCollection = Setup::firstCollection();
+    config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, options.baseItemPath);
+    config_.getPropertyAbsolutePath(OPTION_BASEMEDIAPATH, options.baseMediaPath);
+    library_ = std::make_unique<Library::Indexer>(options);
+    libraryEditor_ = std::make_unique<Library::Editor>(Configuration::absolutePath);
 }
 
 void ManagerUI::startCatalog()
@@ -363,6 +381,10 @@ void ManagerUI::show()
     if (!wasOpen) {
         model_.refresh();
         cursorWasShown_ = SDL_ShowCursor(SDL_QUERY);
+        // Files may have changed since the last look (games added, a Catalog install)
+        if (library_) {
+            library_->rebuild();
+        }
     }
     model_.setScreen(frame->form, frame->params);
     const Forms::Form* shown = form(frame->form);
@@ -396,7 +418,11 @@ void ManagerUI::close()
     view_.discardImages();
     SDL_ShowCursor(cursorWasShown_);
 
-    // Changes that asked for a reload once the user was done
+    // Changes that asked for a reload once the user was done, including library edits
+    if (library_ && library_->changesPending()) {
+        library_->clearPendingChanges();
+        reloadWhenClosed_ = true;
+    }
     if (reloadWhenClosed_) {
         reloadWhenClosed_ = false;
         reloadRequested_ = true;

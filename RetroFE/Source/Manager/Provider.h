@@ -25,6 +25,7 @@
 class Configuration;
 class ManagerModel;
 namespace Catalog { class Service; }
+namespace Library { class Indexer; class Editor; }
 
 // Entity modules for the Manage screens (games, menus, systems...). A provider
 // serves every binding under its prefix, so a "game" provider answers:
@@ -147,6 +148,14 @@ namespace Manager
     {
         Configuration& config;
         Catalog::Service* catalog = nullptr;   // may be null
+
+        // The shared library (docs/design/manage-library.md): one index for
+        // every section, rebuilt each time the manager opens, and the one
+        // editor all writes go through. After a write, call
+        // library->changed(): the manager then reloads RetroFE when it closes.
+        // Both may be null (tests), so check.
+        Library::Indexer* library = nullptr;
+        Library::Editor* editor = nullptr;
 
         // RetroFE should reload to show a change (e.g. a game's new title),
         // once the user closes the manager rather than straight away

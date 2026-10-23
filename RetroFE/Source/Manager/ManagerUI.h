@@ -20,6 +20,8 @@
 #include "Navigator.h"
 #include "../Catalog/Service.h"
 #include "../Forms/Form.h"
+#include "../Library/Edits.h"
+#include "../Library/Indexer.h"
 #include "../Graphics/Component/FormWidget.h"
 #include "../Graphics/Component/KeyboardWidget.h"
 #include <SDL2/SDL.h>
@@ -120,6 +122,7 @@ public:
 private:
     void drawWindow();
     void startCatalog();
+    void startLibrary();
     const Forms::Form* form(const std::string& id);
     void show();   // shows the navigator's current screen
 
@@ -150,6 +153,8 @@ private:
 
     Configuration& config_;
     std::unique_ptr<Catalog::Service> catalog_;   // destroyed after model_, which points to it
+    std::unique_ptr<Library::Indexer> library_;   // the same for the library, which providers use
+    std::unique_ptr<Library::Editor> libraryEditor_;
     ManagerModel model_;
     bool providersAdded_ = false;
     FormView view_;
