@@ -4,6 +4,16 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 4 — editing hand-made themes (2026-10-23)
+
+- **Layout editor for hand-made themes.** Edit on Aeon Nox (or any theme not
+  made with the widget editor) opens its pages — main and 4:3 layouts,
+  splash, collection pages, `_menu`, form pages — previewed as RetroFE builds
+  them. Select, move, resize and nudge elements and menu items, edit any
+  attribute, duplicate or delete elements. Saving changes only the values you
+  edited; the original is kept and can be put back (decision M10).
+- Unit tests: 4,189 → 4,430 checks.
+
 ## Round 3 — editing extras, theme templates, QA, Linux (2026-10-23)
 
 Unit tests: 3,879 → 4,189 checks; also built and run on Linux (WSL,

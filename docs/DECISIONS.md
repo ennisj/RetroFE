@@ -151,7 +151,7 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   menu edits would be undone by its own frontend, which regenerates `menu.txt`;
   that install isn't this fork's target.
 
-### M10. The theme editor only edits themes made with it — Open
+### M10. Editing hand-made themes — Decided (was Open)
 - One Saucier's editor generates layouts from a widget-based project; it can't
   open hand-made layouts (it ships pre-converted examples made by a 2,183-line
   Python importer). Aeon Nox, the default, is hand-made.
@@ -159,9 +159,19 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   themes; (2) also port the importer (2–3 rounds, lossy by design); (3) add a
   simpler "layout-native" mode that moves and resizes the elements of any
   existing layout file, keeping everything else.
-- Chosen for now: **(1)**, since you asked for One Saucier's editor; (3) looks
-  like the best value for editing Aeon Nox and other hand-made themes, and is
-  my recommendation for after the port. Your call.
+- Chosen: **(1) and (3)**, done in rounds 2–4. Editor-made themes open One
+  Saucier's widget editor; hand-made themes (Aeon Nox, anything else in
+  `layouts/`) open a **layout editor** that moves, resizes and edits the
+  attributes of existing elements in place, changing only the bytes of the
+  values you edit (comments, formatting and line endings stay), with the
+  original kept in `manage/backups/layouts/`. Adding new elements and
+  editing animations there are later steps. (2), the importer, isn't
+  planned. Status: **Decided**, unless you'd rather have (2).
+- Layout editor details: moves write the exact delta (positions that aren't
+  whole get up to 2 decimals), only the axes you drag are written (so
+  `x="center"` survives a vertical drag), restoring the original is refused
+  when the file changed elsewhere and can be undone, and pages written by
+  the widget editor aren't opened there.
 
 ### M11. The theme editor is drawn with ImGui — Decided
 - It's a canvas editor (drag handles, overlays, colour pickers, dropdowns),
