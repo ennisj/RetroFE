@@ -30,6 +30,7 @@
 // games
 
 // menus
+#include "Menus/MenuProvider.h"
 
 // systems
 
@@ -47,6 +48,7 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     // games
 
     // menus
+    model.addProvider(std::make_unique<Manager::MenuProvider>(services));
 
     // systems
 

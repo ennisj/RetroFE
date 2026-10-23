@@ -90,6 +90,27 @@ namespace Library
         EditResult removeMenuChild(const Index& index, const std::string& menu, const std::string& child);
         EditResult moveMenuChild(const Index& index, const std::string& menu, const std::string& child, int position);
 
+        // New collections that hold no games of their own, listed under parent
+        // (a menu, or the top menu even before it exists; never a collection of
+        // games, LB9). Both write settings.conf (list.menuSort = yes) and
+        // info.conf (title = name); a menu gets an empty menu.txt, a merged
+        // collection an empty <source>.sub (every game of that system).
+        EditResult createMenu(const Index& index, const std::string& name, const std::string& parent);
+        EditResult createMerged(const Index& index, const std::string& name, const std::string& parent,
+                                const std::string& source);
+        // A merged collection's sources: adding writes an empty <source>.sub
+        // (every game); removing takes the .sub out (kept in the backups)
+        EditResult addSubSource(const Index& index, const std::string& merged, const std::string& source);
+        EditResult removeSubSource(const Index& index, const std::string& merged, const std::string& source);
+        // Deletes a menu or merged collection with nothing of its own: no games,
+        // only settings, info, menu files, .sub files, artwork and empty
+        // favorites/lastplayed lists. Its entries move up into each menu that
+        // listed it (in its place); it's taken out of those menus; every file
+        // is moved to the backups. The top menu and reserved names can't go.
+        // checkDeleteMenu says why not, or "".
+        static std::string checkDeleteMenu(const Index& index, const std::string& name);
+        EditResult deleteMenu(const Index& index, const std::string& name);
+
         // --- Playlists and merged collections ------------------------------------------
         // A playlist of collection (playlists/<name>.txt). The game is named by its
         // own collection; entries for another collection's game are "_<C>:<name>".
@@ -117,6 +138,9 @@ namespace Library
     private:
         // Makes RetroFE re-import meta/ (and the overrides) on its next start
         void requestMetadataImport();
+        // createMenu ("" source) and createMerged
+        EditResult createListed(const Index& index, const std::string& name, const std::string& parent,
+                                const std::string& source);
 
         std::string root_;
         Backups backups_;
@@ -147,5 +171,8 @@ namespace Library
                     Backups* backups, std::string& error, bool* removed = nullptr);
         bool move(const std::string& root, const std::string& menu, const std::string& child, int position,
                   Backups* backups, std::string& error);
+        // Re-spells an entry as the folder is spelt (removes entry, adds folderName at its position)
+        bool respell(const std::string& root, const std::string& menu, const std::string& entry,
+                     const std::string& folderName, int position, Backups* backups, std::string& error);
     }
 }
