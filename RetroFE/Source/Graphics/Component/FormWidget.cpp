@@ -159,6 +159,9 @@ void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, 
 void FormWidget::addFields(const std::vector<Field>& fields)
 {
     for (const Field& field : fields) {
+        if (!Forms::isVisible(field, *model_)) {
+            continue;
+        }
         switch (field.type) {
         case FieldType::Section: {
             Row header;
@@ -172,9 +175,13 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             addFields(field.children);
             break;
 
-        case FieldType::Note:
-            addWrapped(RowKind::Note, field.label, false);
+        case FieldType::Note: {
+            std::string text = Forms::noteText(field, *model_);
+            if (!text.empty()) {
+                addWrapped(RowKind::Note, text, false);
+            }
             break;
+        }
 
         case FieldType::List: {
             std::vector<std::string> values = model_->list(field.bind);
@@ -233,10 +240,11 @@ void FormWidget::buildRows()
     if (!form_ || !model_) {
         return;
     }
-    if (style_.showTitle && !form_->title.empty()) {
+    std::string titleText = Forms::title(*form_, *model_);
+    if (style_.showTitle && !titleText.empty()) {
         Row title;
         title.kind = RowKind::Title;
-        title.text = form_->title;
+        title.text = titleText;
         rows_.push_back(title);
     }
     addFields(form_->fields);

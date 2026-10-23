@@ -30,4 +30,11 @@ namespace Home
     constexpr const char* browse = "Browse";   // goes to firstCollection
 
     constexpr const char* items[] = { catalog, settings, manage, browse };
+
+    // The Catalog list, opened from Home's Catalog item: also built in memory,
+    // one item per package, named by package id, so artwork is <id>.png.
+    // Layouts style it as the "Catalog" collection.
+    constexpr const char* catalogCollectionName = "Catalog";
+    // Its last item, which opens the Sources screen (ids can't contain spaces)
+    constexpr const char* catalogSourcesItem = "Catalog Sources";
 }

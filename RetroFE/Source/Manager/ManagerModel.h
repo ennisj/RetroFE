@@ -22,6 +22,7 @@
 #include <vector>
 
 class Configuration;
+namespace Catalog { class Service; }
 
 // What the manager's forms are bound to.
 //   settings:<key>         global settings; edits are pending until settings.save.
@@ -30,7 +31,15 @@ class Configuration;
 //   info:collections       the collection folders (list)
 //   info:romCount          matching files in draft:romPath
 //   info:source:<binding>  the file a settings: value comes from, when it isn't settings.conf
-// Actions: settings.save, collection.create
+//   info:sources, info:installed, info:catalogWarnings   Catalog lists
+//   info:catalogStatus     what the Catalog is doing, or how many packages it has
+//   info:hasSources, info:sourceIsFolder                 for visibleWhen
+//   package:<key>          the package chosen in the Catalog list: name, summary,
+//                          description, installedStatus, requires, checksum, progress,
+//                          and canInstall, canUpdate, canRemove, isBusy for visibleWhen
+//   draft:source*          the Sources form's input
+// Actions: settings.save, collection.create, package.install, package.remove,
+// package.cancel, source.add, source.remove, catalog.refresh, open.sources
 class ManagerModel : public Forms::Model
 {
 public:
@@ -38,6 +47,17 @@ public:
 
     // Re-reads settings and collections and drops unsaved setting edits
     void refresh();
+
+    // The Catalog the package:, source and catalog bindings use; may be null
+    void setCatalog(Catalog::Service* catalog) { catalog_ = catalog; }
+    void selectPackage(const std::string& id) { package_ = id; }
+
+    // A screen an action asked to open ("sources"), once
+    std::string takeOpenRequest();
+
+    // Writes settings.conf from the built-in defaults if there isn't one, so a
+    // bare install that now has content keeps its settings (Home included)
+    bool ensureSettingsFile(std::string& error) { return settings_.ensureExists(initialSettings(), error); }
 
     std::string get(const std::string& key) override;
     void set(const std::string& key, const std::string& value) override;
@@ -48,13 +68,21 @@ public:
     Result runAction(const std::string& action) override;
 
 private:
+    static std::string initialSettings();
     std::string settingKey(const std::string& key) const;
     std::string settingValue(const std::string& key);
     std::string romCount();
     Result saveSettings();
     Result createCollection();
+    std::string packageValue(const std::string& key);
+    std::string catalogStatus();
+    std::string catalogProblem(const std::string& action);
+    Result runCatalogAction(const std::string& action);
 
     Configuration& config_;
+    Catalog::Service* catalog_ = nullptr;
+    std::string package_;
+    std::string openRequest_;
     SettingsFile settings_;
     std::map<std::string, std::string> pendingSettings_;
     std::map<std::string, std::string> settingDefaults_;  // what RetroFE uses when nothing sets a key

@@ -37,6 +37,16 @@ namespace
         return slash == std::string::npos ? name : name.substr(slash + 1);
     }
 
+    uint64_t sizeOf(const fs::path& path)
+    {
+        std::error_code ec;
+        uint64_t size = fs::file_size(path, ec);
+        return ec ? 0 : size;
+    }
+}
+
+namespace Catalog
+{
     std::string describeSize(uint64_t bytes)
     {
         const char* units[] = { "bytes", "KB", "MB", "GB", "TB" };
@@ -51,16 +61,6 @@ namespace
         return text;
     }
 
-    uint64_t sizeOf(const fs::path& path)
-    {
-        std::error_code ec;
-        uint64_t size = fs::file_size(path, ec);
-        return ec ? 0 : size;
-    }
-}
-
-namespace Catalog
-{
     Resume planResume(bool exists, uint64_t partSize, uint64_t expected)
     {
         if (!exists || partSize == 0) return Resume::Fresh;

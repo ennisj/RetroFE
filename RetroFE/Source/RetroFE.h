@@ -168,6 +168,8 @@ private:
     CollectionInfo *getCollection( const std::string& collectionName, bool allowMissing = false );
     CollectionInfo *getHomeCollection( );
     RETROFE_STATE   selectHomeItem( const Item *item );
+    CollectionInfo *getCatalogCollection( );
+    bool            isHomeMenuPage( const std::string& collectionName ) const;  // Home or the Catalog list
     void updatePageControls(const std::string& type);
     CollectionInfo *getMenuCollection( const std::string& collectionName );
 	void            saveRetroFEState( ) const;

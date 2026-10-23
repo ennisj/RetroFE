@@ -198,6 +198,7 @@ if(WIN32)
         "${WEBP_ROOT}/lib/libwebpdemux_dll.lib"
         "${ZLIB_ROOT}/lib/minizip.lib"
         "dxgi.lib"
+        "winhttp.lib"
     )
 endif()
 
@@ -328,6 +329,14 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Video/VideoFactory.cpp"
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Http.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Index.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Service.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 	"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"
 	"${RETROFE_DIR}/Source/Forms/Form.cpp"
 	"${RETROFE_DIR}/Source/Forms/SettingsFile.cpp"
@@ -374,6 +383,7 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Catalog/Index.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Service.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
 		"${RETROFE_DIR}/Source/Database/Configuration.cpp"

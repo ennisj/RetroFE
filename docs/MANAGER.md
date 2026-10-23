@@ -1,4 +1,4 @@
-# Home Menu, Settings and Manage
+# Home Menu, Catalog, Settings and Manage
 
 RetroFE can start with nothing but its executable. With no `settings.conf`,
 `controls.conf`, collections or layout it uses built-in defaults, and you set
@@ -10,9 +10,9 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 
 | Item     | What it does |
 |----------|--------------|
-| Catalog  | Content you can download (not built yet) |
+| Catalog  | Packages you can install from your sources (see [The Catalog](#the-catalog)) |
 | Settings | Display, menu and video settings |
-| Manage   | Add collections |
+| Manage   | Add collections, see what's installed, and open Catalog sources |
 | Browse   | Opens `firstCollection`, your usual top menu. Back returns to Home. |
 
 `homeMenu` is on for a bare install and in the `settings.conf` the setup
@@ -26,6 +26,41 @@ Escape closes a screen.
 Home is a collection built into RetroFE, so a layout styles it like any other:
 `layouts/<layout>/collections/Home/layout/layout.xml`, with artwork named after
 the items (`Catalog`, `Settings`, `Manage`, `Browse`).
+
+## The Catalog
+
+The Catalog installs packages (collections, artwork, layouts and so on) from
+**sources** you add: an index file on the web or on disk, or a folder of
+package archives such as a USB stick or a NAS share. The design, including the
+index format, is in [design/catalog-sources.md](design/catalog-sources.md).
+
+- **Catalog** on Home lists every package your sources offer, followed by a
+  **Sources** item. Until there's something to list it opens the Sources screen.
+- Selecting a package shows its details, with **Install**, **Update**,
+  **Remove** or **Stop** as they apply. Downloads continue in the background,
+  so you can go back to the list and pick another; they run one at a time.
+- Once you're back on Home with nothing left to do, RetroFE reloads so new
+  content shows up. Installed collections are added to the Main menu, so they
+  appear under Browse; removed ones are taken off it.
+- **Sources** (from the Catalog or Manage) adds and removes sources. Adding
+  one asks you to confirm that you trust it: RetroFE doesn't check what sources
+  offer. Plain `http://` is only allowed on your own network.
+
+Everything the Catalog keeps is in one folder, `catalogPath` in
+`settings.conf` (default `catalog` under the RetroFE root): `sources.conf`,
+cached indexes, downloads, artwork, backups of files it replaced, and a record
+of every installed file in `installed/<id>.json`. Removing a package deletes
+only the files it installed, and keeps any you've changed since.
+
+The Catalog list is a collection built into RetroFE like Home, so layouts
+style it as `layouts/<layout>/collections/Catalog/layout/layout.xml`. Each
+item is named by package id, so artwork follows the usual naming: the Catalog
+saves package artwork as `catalog/artwork/<type>/<id>.<ext>` and points the
+Catalog collection's `media.<type>` there. Items also carry the package's kind
+as `genre`, its source as `manufacturer` and its version as `year`.
+
+HTTP sources need Windows for now; on Linux and macOS folder sources and
+index files on disk work.
 
 ## Settings and Manage screens
 
@@ -45,7 +80,7 @@ A screen is drawn as a page from your layout, so it can use backgrounds,
 images, video, text and animations like any other page. RetroFE looks for:
 
 1. `layouts/<layout>/forms/<screen>/layout.xml` for one screen (`settings`,
-   `manage` or `catalog`)
+   `manage`, `sources` or `package`)
 2. `layouts/<layout>/forms/layout.xml` for all of them
 3. otherwise its built-in form page
 
@@ -140,14 +175,16 @@ The fields themselves are also XML. RetroFE's built-in screens are in
 | `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`) |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
-| `choice` | One of a list (`options="layouts"` or `options="collections"`) |
+| `choice` | One of a list (`options` is `layouts`, `collections`, `sources` or `sourceTypes`) |
 | `list` | A read-only list (`empty` is shown when there's nothing in it) |
-| `note` | Text (`value`) |
+| `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
 | `button` | Runs an `action` |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
 under it), `status` (a value shown under it), `enabledWhen` (a value that must
-be on, or `!value` for off) and `default`.
+be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
+(the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
+a value to use as the title when it has one, e.g. `bind="package:name"`.
 
 `bind` says what a field shows and changes:
 
@@ -155,8 +192,23 @@ be on, or `!value` for off) and `default`.
   `settings.save`. `default` is the value RetroFE uses when no file sets it.
 - `draft:<key>`: input for an action, such as a new collection's name.
   `default` is its starting value.
-- `info:<key>`: read-only: `info:collections` (list), `info:romCount`.
+- `info:<key>`: read-only: `info:collections`, `info:sources`,
+  `info:installed` and `info:catalogWarnings` (lists), `info:romCount`,
+  `info:catalogStatus`, and `info:hasSources` and `info:sourceIsFolder` for
+  `visibleWhen`.
+- `package:<key>`: the package chosen in the Catalog: `name`, `summary`,
+  `description`, `installedStatus`, `requires`, `checksum` (a warning when the
+  source gives none), `progress`, and `canInstall`, `canUpdate`, `canRemove`
+  and `isBusy` for `visibleWhen`.
 
-Actions are `settings.save` and `collection.create` (which uses
-`draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and
-`draft:arguments`).
+Actions:
+
+| Action | Does |
+|--------|------|
+| `settings.save` | Writes the changed settings |
+| `collection.create` | Creates a collection from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
+| `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the chosen package |
+| `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on |
+| `source.remove` | Removes `draft:removeSource` |
+| `catalog.refresh` | Reads the sources again |
+| `open.sources` | Opens the Sources screen |

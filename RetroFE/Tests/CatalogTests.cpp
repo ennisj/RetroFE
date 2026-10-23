@@ -23,7 +23,11 @@
 #include "../Source/Catalog/Index.h"
 #include "../Source/Catalog/Installer.h"
 #include "../Source/Catalog/Package.h"
+#include "../Source/Catalog/Service.h"
 #include "../Source/Catalog/Sources.h"
+#include "../Source/Database/Configuration.h"
+#include "../Source/Manager/ManagerModel.h"
+#include "../Source/Manager/Setup.h"
 #include "minizip/zip.h"
 #include <algorithm>
 #include <cstdlib>
@@ -697,6 +701,167 @@ void runCatalogTests()
         Installer installer(root + "/catalog", targetsUnder(root));
         check(installer.install(package, result.files, error), "installed: " + error);
         checkEqual(readFile(root + "/collections/Pack/settings.conf"), "list.extensions = zip", "installed content");
+    });
+
+    // --- The Catalog service and its screens ---------------------------------------
+
+    // A catalog folder with a local index offering two packages, one needing the other
+    auto makeCatalog = [&](const std::string& name) {
+        std::string root = makeRoot(name);
+        makeZip(root + "/share/base.zip", { { "base.txt", "base" } });
+        makeZip(root + "/share/pack.zip", { { "pack.txt", "pack" } });
+        writeFile(root + "/share/index.json", R"({"packages": [
+            {"id": "base", "name": "Base", "version": "1.0", "files": [{"url": "base.zip", "target": "root"}]},
+            {"id": "pack", "name": "Pack", "version": "2.0", "kind": "media",
+             "requires": [{"id": "base", "version": ">=1.0"}],
+             "files": [{"url": "pack.zip", "target": "root"}]}
+        ]})");
+        return root;
+    };
+    auto localSource = [](const std::string& root) {
+        SourceConfig source;
+        source.name = "local";
+        source.type = "index";
+        source.url = root + "/share/index.json";
+        return source;
+    };
+
+    run("the service lists, installs and removes packages", [&] {
+        std::string root = makeCatalog("service");
+        Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        service.waitUntilIdle();
+        check(service.entries().empty(), "no sources, no packages");
+
+        check(service.addSource(localSource(root), error), "added: " + error);
+        service.waitUntilIdle();
+        check(fs::exists(root + "/catalog/sources.conf"), "sources saved");
+        std::vector<Entry> entries = service.entries();
+        check(entries.size() == 2, "two packages");
+
+        bool ok = true;
+        std::string message;
+        service.install("pack");
+        service.waitUntilIdle();
+        check(service.outcome("pack", ok, message) && !ok && message == "Install Base >=1.0 first.", "needs base: " + message);
+
+        service.install("base");
+        service.waitUntilIdle();
+        check(service.outcome("base", ok, message) && ok, "installed: " + message);
+        checkEqual(readFile(root + "/base.txt"), "base", "file installed");
+        Entry base;
+        check(service.entry("base", base) && base.installedVersion == "1.0" && !base.updateAvailable, "shown as installed");
+        Service::Changes changes;
+        check(service.takeChanges(changes) && !service.takeChanges(changes), "changes reported once");
+
+        service.install("pack");
+        service.waitUntilIdle();
+        check(service.outcome("pack", ok, message) && ok, "then pack installs: " + message);
+
+        service.remove("base");
+        service.waitUntilIdle();
+        check(service.outcome("base", ok, message) && ok && !fs::exists(root + "/base.txt"), "removed: " + message);
+        check(service.installed().size() == 1, "one left");
+
+        std::string sourceError;
+        check(!service.addSource(localSource(root), sourceError), "the same name twice is refused");
+        check(service.removeSource("local", error), "source removed: " + error);
+        service.waitUntilIdle();
+        check(service.entries().empty(), "its packages are gone");
+    });
+
+    run("installed collections are reported for the Main menu", [&] {
+        std::string root = makeRoot("service-collections");
+        makeZip(root + "/share/demo.zip", { { "settings.conf", "list.extensions = txt" } });
+        writeFile(root + "/share/index.json", R"({"packages": [
+            {"id": "demo", "name": "Demo", "version": "1", "kind": "collection",
+             "files": [{"url": "demo.zip", "target": "collections", "path": "Demo"}]}]})");
+        Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        bool added = service.addSource(localSource(root), error);
+        check(added, "source: " + error);
+        service.waitUntilIdle();
+        service.install("demo");
+        service.waitUntilIdle();
+        Service::Changes changes;
+        check(service.takeChanges(changes) && changes.addedCollections == std::set<std::string>({ "Demo" }), "Demo added");
+        service.remove("demo");
+        service.waitUntilIdle();
+        check(service.takeChanges(changes) && changes.removedCollections == std::set<std::string>({ "Demo" })
+              && changes.addedCollections.empty(), "Demo removed");
+
+        Configuration::absolutePath = root;
+        writeFile(root + "/collections/Main/menu.txt", "Arcade\r\n# mine\r\n");
+        check(Setup::addToMainMenu("Demo", error) && Setup::addToMainMenu("Demo", error), "added twice: " + error);
+        checkEqual(readFile(root + "/collections/Main/menu.txt"), "Arcade\r\n# mine\r\nDemo\r\n", "listed once, with the file's line endings");
+        check(Setup::removeFromMainMenu("Demo", error), "removed: " + error);
+        checkEqual(readFile(root + "/collections/Main/menu.txt"), "Arcade\r\n# mine\r\n", "other lines kept");
+    });
+
+    run("the service reports unreachable sources and keeps sources across restarts", [&] {
+        std::string root = makeCatalog("service-restart");
+        {
+            Service service(root + "/catalog", targetsUnder(root), nullptr);
+            service.start();
+            writeFile(root + "/usb/index.json", R"({"packages": []})");
+            SourceConfig missing = localSource(root);
+            missing.name = "usb";
+            missing.url = root + "/usb/index.json";
+            bool added = service.addSource(missing, error);
+            check(added, "added: " + error);
+            added = service.addSource(localSource(root), error);
+            check(added, "added: " + error);
+            service.waitUntilIdle();
+            fs::remove_all(root + "/usb");   // the stick was taken out
+            service.refresh();
+            service.waitUntilIdle();
+            check(!service.warnings().empty(), "the missing one is reported");
+        }
+        Service again(root + "/catalog", targetsUnder(root), nullptr);
+        again.start();
+        again.waitUntilIdle();
+        check(again.sources().size() == 2 && again.entries().size() == 2, "read again on start");
+    });
+
+    run("the package and sources screens are bound to the service", [&] {
+        std::string root = makeCatalog("service-model");
+        Configuration::absolutePath = root;
+        Configuration config;
+        Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        ManagerModel model(config);
+        model.setCatalog(&service);
+
+        checkEqual(model.get("info:hasSources"), "no", "no sources yet");
+        checkEqual(model.actionProblem("source.add"), "Give the source a name.", "name first");
+        model.set("draft:sourceName", "local");
+        model.set("draft:sourceType", "index");
+        model.set("draft:sourceUrl", root + "/share/index.json");
+        checkEqual(model.actionProblem("source.add"), "Confirm that you trust this source.", "trust asked for");
+        model.set("draft:sourceTrusted", "yes");
+        Forms::Model::Result added = model.runAction("source.add");
+        check(added.ok, "added: " + added.message);
+        service.waitUntilIdle();
+        checkEqual(model.get("info:catalogStatus"), "2 packages from 1 source.", "status");
+        checkEqual(model.get("draft:removeSource"), "local", "removal starts on the first source");
+
+        model.selectPackage("base");
+        checkEqual(model.get("package:name"), "Base", "name");
+        checkEqual(model.get("package:canInstall"), "yes", "can install");
+        checkEqual(model.get("package:canRemove"), "no", "nothing to remove");
+        check(model.get("package:checksum").find("no checksums") != std::string::npos, "unchecked downloads are pointed out");
+        check(model.runAction("package.install").ok, "install started");
+        service.waitUntilIdle();
+        checkEqual(model.get("package:progress"), "Installed Base 1.0.", "outcome shown");
+        checkEqual(model.get("package:installedStatus"), "Installed.", "installed");
+        checkEqual(model.actionProblem("package.install"), "Installed, and up to date.", "nothing to do");
+        checkEqual(model.get("package:canRemove"), "yes", "can remove");
+        check(model.list("info:installed") == std::vector<std::string>({ "Base 1.0" }), "installed list");
+
+        model.selectPackage("pack");
+        checkEqual(model.get("package:requires"), "Needs Base >=1.0", "requirements");
+
+        check(model.runAction("open.sources").ok && model.takeOpenRequest() == "sources" && model.takeOpenRequest().empty(), "open.sources asks once");
     });
 
     // --- Real HTTP, against a test server ----------------------------------------

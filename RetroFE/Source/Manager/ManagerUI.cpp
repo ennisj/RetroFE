@@ -15,6 +15,7 @@
  */
 #include "ManagerUI.h"
 #include "FileDialog.h"
+#include "Setup.h"
 #include "../Builtin/Builtin.h"
 #include "../Database/Configuration.h"
 #include "../Database/GlobalOpts.h"
@@ -36,10 +37,15 @@ namespace
         switch (screen) {
         case ManagerUI::Screen::Settings: return "settings";
         case ManagerUI::Screen::Manage:   return "manage";
-        case ManagerUI::Screen::Catalog:  return "catalog";
+        case ManagerUI::Screen::Sources:  return "sources";
+        case ManagerUI::Screen::Package:  return "package";
         }
         return "";
     }
+
+    constexpr ManagerUI::Screen screens[] = {
+        ManagerUI::Screen::Settings, ManagerUI::Screen::Manage, ManagerUI::Screen::Sources, ManagerUI::Screen::Package
+    };
 }
 
 ManagerUI::ManagerUI(Configuration& config)
@@ -125,6 +131,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
     }
 
     loadForms();
+    startCatalog();
     LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open Settings");
     return true;
 }
@@ -134,9 +141,66 @@ void ManagerUI::loadForms()
     // A layout can provide its own versions in layouts/<layout>/forms/
     std::string layoutName;
     config_.getProperty(OPTION_LAYOUT, layoutName);
-    for (Screen screen : { Screen::Settings, Screen::Manage, Screen::Catalog }) {
+    for (Screen screen : screens) {
         forms_[screen] = Forms::load(formId(screen), layoutName);
     }
+}
+
+void ManagerUI::startCatalog()
+{
+    if (catalog_) {
+        return;
+    }
+    // catalogPath, relative to the root like other paths; downloads and installs all happen under it
+    std::string folder;
+    if (!config_.getPropertyAbsolutePath(OPTION_CATALOGPATH, folder) || folder.empty()) {
+        folder = Utils::combinePath(Configuration::absolutePath, "catalog");
+    }
+    Catalog::Targets targets;
+    targets.root = Configuration::absolutePath;
+    targets.collections = Utils::combinePath(Configuration::absolutePath, "collections");
+    targets.layouts = Utils::combinePath(Configuration::absolutePath, "layouts");
+    targets.meta = Utils::combinePath(Configuration::absolutePath, "meta");
+    if (!config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, targets.items)) {
+        targets.items = targets.collections;
+    }
+    if (!config_.getPropertyAbsolutePath(OPTION_BASEMEDIAPATH, targets.media)) {
+        targets.media = targets.collections;
+    }
+
+    catalog_ = std::make_unique<Catalog::Service>(folder, targets, Catalog::createHttp());
+    catalog_->start();
+    model_.setCatalog(catalog_.get());
+}
+
+bool ManagerUI::takeCatalogChanges()
+{
+    Catalog::Service::Changes changes;
+    if (!catalog_ || !catalog_->takeChanges(changes)) {
+        return false;
+    }
+    // Installed collections show under Browse, like ones made in Manage
+    std::string error;
+    if (!changes.addedCollections.empty() && !model_.ensureSettingsFile(error)) {
+        LOG_ERROR("Manager", error);
+    }
+    for (const std::string& name : changes.addedCollections) {
+        if (name != "Main" && !Setup::addToMainMenu(name, error)) {
+            LOG_ERROR("Manager", error);
+        }
+    }
+    for (const std::string& name : changes.removedCollections) {
+        if (!Setup::removeFromMainMenu(name, error)) {
+            LOG_ERROR("Manager", error);
+        }
+    }
+    return true;
+}
+
+void ManagerUI::openPackage(const std::string& id)
+{
+    model_.selectPackage(id);
+    open(Screen::Package);
 }
 
 void ManagerUI::deInitialize()
@@ -458,10 +522,18 @@ void ManagerUI::handleWidgetResults()
     }
     if (auto result = widget_->takeResult()) {
         widget_->setStatus(result->message, !result->ok);
-        if (result->ok && result->reload) {
-            reloadRequested_ = true;
-            close();
-        }
+        handleResult(*result);
+    }
+}
+
+void ManagerUI::handleResult(const Forms::Model::Result& result)
+{
+    if (result.ok && result.reload) {
+        reloadRequested_ = true;
+        close();
+    }
+    else if (model_.takeOpenRequest() == "sources") {
+        open(Screen::Sources);
     }
 }
 
@@ -512,7 +584,7 @@ void ManagerUI::drawWindow()
     ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, io.DisplaySize.y - 40.0f * scale_));
 
     // "###manager" keeps one window while the title changes with the form
-    std::string title = (form ? form->title : std::string(formId(screen_))) + "###manager";
+    std::string title = (form ? Forms::title(*form, model_) : std::string(formId(screen_))) + "###manager";
     if (focusNext_) {
         ImGui::SetNextWindowFocus();
         focusNext_ = false;
@@ -527,13 +599,10 @@ void ManagerUI::drawWindow()
         ImGui::TextWrapped("This form couldn't be loaded. Check the log for details.");
     }
 
-    if (auto result = view_.takeResult()) {
+    std::optional<Forms::Model::Result> result = view_.takeResult();
+    if (result) {
         status_ = result->message;
         statusIsError_ = !result->ok;
-        if (result->ok && result->reload) {
-            reloadRequested_ = true;
-            keepOpen = false;
-        }
     }
 
     if (!status_.empty()) {
@@ -557,5 +626,8 @@ void ManagerUI::drawWindow()
 
     if (!keepOpen) {
         close();
+    }
+    else if (result) {
+        handleResult(*result);
     }
 }

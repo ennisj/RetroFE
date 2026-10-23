@@ -97,6 +97,9 @@ void FormView::drawNotes(const Field& field, Forms::Model& model)
 
 void FormView::drawField(const Field& field, Forms::Model& model)
 {
+    if (!Forms::isVisible(field, model)) {
+        return;
+    }
     bool enabled = Forms::isEnabled(field, model);
     ImGui::BeginDisabled(!enabled);
 
@@ -110,6 +113,9 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         ImGui::Spacing();
         bool first = true;
         for (const Field& child : field.children) {
+            if (!Forms::isVisible(child, model)) {
+                continue;
+            }
             if (!first) {
                 ImGui::SameLine();
             }
@@ -215,11 +221,15 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         break;
     }
 
-    case FieldType::Note:
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("%s", field.label.c_str());
-        ImGui::PopTextWrapPos();
+    case FieldType::Note: {
+        std::string text = Forms::noteText(field, model);
+        if (!text.empty()) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", text.c_str());
+            ImGui::PopTextWrapPos();
+        }
         break;
+    }
 
     case FieldType::Button:
         drawButton(field, model, false);

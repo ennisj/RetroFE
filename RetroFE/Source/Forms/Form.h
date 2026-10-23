@@ -64,6 +64,7 @@ namespace Forms
         std::string help;         // fixed text shown under the field
         std::string status;       // model key whose value is shown under the field
         std::string enabledWhen;  // model key that must be truthy, or "!key" for falsy
+        std::string visibleWhen;  // the same, but the field is hidden rather than greyed out
         std::string defaultValue; // draft: the initial value; settings: the value RetroFE uses when nothing sets it
         std::string options;      // Choice: name of the option source
         std::string filterName;   // File: e.g. "Programs"
@@ -78,6 +79,7 @@ namespace Forms
     {
         std::string id;
         std::string title;
+        std::string titleBind;    // model key whose value replaces the title when set
         std::vector<Field> fields;
     };
 
@@ -116,6 +118,16 @@ namespace Forms
 
     // Whether a field's enabledWhen condition holds
     bool isEnabled(const Field& field, Model& model);
+
+    // Whether a field's visibleWhen condition holds; hidden fields aren't shown at all
+    bool isVisible(const Field& field, Model& model);
+
+    // What a note shows: its value, or with bind the model's text. A note
+    // with nothing to say ("") isn't shown.
+    std::string noteText(const Field& field, Model& model);
+
+    // The form's title: the model's value for its bind attribute, if any, or its title
+    std::string title(const Form& form, Model& model);
 
     // Parses form XML. Returns nullptr and sets error if it isn't a valid form.
     std::unique_ptr<Form> parse(const std::string& xml, std::string& error);

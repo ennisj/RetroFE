@@ -17,6 +17,7 @@
 
 #include "FormView.h"
 #include "ManagerModel.h"
+#include "../Catalog/Service.h"
 #include "../Forms/Form.h"
 #include "../Graphics/Component/FormWidget.h"
 #include "../Graphics/Component/KeyboardWidget.h"
@@ -31,7 +32,7 @@ class FontCache;
 class Page;
 struct ImGuiContext;
 
-// The management screens (Settings, Manage, Catalog), shown over the current page.
+// The management screens (Settings, Manage, Catalog sources and packages), shown over the current page.
 // Each screen is a form (see Forms/Form.h). It's drawn as a RetroFE page with a
 // <form> element, styled by layouts/<layout>/forms/<id>/layout.xml or
 // forms/layout.xml, or the built-in form page, and driven by RetroFE's
@@ -43,8 +44,8 @@ struct ImGuiContext;
 class ManagerUI
 {
 public:
-    // The screens opened from the Home menu
-    enum class Screen { Settings, Manage, Catalog };
+    // The screens opened from the Home menu and the Catalog
+    enum class Screen { Settings, Manage, Sources, Package };
 
     explicit ManagerUI(Configuration& config);
     ~ManagerUI();
@@ -55,6 +56,16 @@ public:
     bool isOpen() const { return open_; }
     void open(Screen screen);
     void close();
+
+    // The Catalog, which keeps working while the screens are closed; null before initialize()
+    Catalog::Service* catalog() { return catalog_.get(); }
+
+    // Opens the details of a package from the Catalog list
+    void openPackage(const std::string& id);
+
+    // True once after Catalog installs or removals finished, having added
+    // collections they installed to the Main menu: RetroFE should reload
+    bool takeCatalogChanges();
 
     // Returns true if the UI used the event, including the key that opens Settings.
     // Unused events should go to RetroFE's input so navigate() gets them.
@@ -83,6 +94,8 @@ public:
 private:
     void drawWindow();
     void loadForms();
+    void startCatalog();
+    void handleResult(const Forms::Model::Result& result);
     bool buildPage();
     void destroyPage();
     void handleWidgetResults();
@@ -101,6 +114,7 @@ private:
     std::array<float, 6> navRepeatAt_{};
 
     Configuration& config_;
+    std::unique_ptr<Catalog::Service> catalog_;   // destroyed after model_, which points to it
     ManagerModel model_;
     FormView view_;
     std::map<Screen, std::unique_ptr<Forms::Form>> forms_;

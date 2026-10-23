@@ -16,6 +16,8 @@
 #include "ManagerModel.h"
 #include "Setup.h"
 #include "../Builtin/Builtin.h"
+#include "../Catalog/Download.h"
+#include "../Catalog/Service.h"
 #include "../Database/Configuration.h"
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
@@ -42,14 +44,30 @@ namespace
         return true;
     }
 
-    // What a new settings.conf starts with: the built-in defaults RetroFE was running on
-    std::string initialSettings()
+
+    // The source the Sources form describes
+    Catalog::SourceConfig draftSource(std::map<std::string, std::string>& drafts)
     {
-        return std::string("# Created by RetroFE.\n"
-                           "# Run \"retrofe -createconfig\" to get a reference of every setting.\n")
-            + Builtin::settings;
+        Catalog::SourceConfig source;
+        source.name = Utils::trimEnds(drafts["sourceName"]);
+        source.type = drafts["sourceType"].empty() ? "index" : drafts["sourceType"];
+        if (source.type == "folder") {
+            source.path = Utils::trimEnds(drafts["sourcePath"]);
+        }
+        else {
+            source.url = Utils::trimEnds(drafts["sourceUrl"]);
+        }
+        return source;
     }
 
+}
+
+// What a new settings.conf starts with: the built-in defaults RetroFE was running on
+std::string ManagerModel::initialSettings()
+{
+    return std::string("# Created by RetroFE.\n"
+                       "# Run \"retrofe -createconfig\" to get a reference of every setting.\n")
+        + Builtin::settings;
 }
 
 ManagerModel::ManagerModel(Configuration& config)
@@ -115,6 +133,11 @@ std::string ManagerModel::get(const std::string& key)
         return pending != pendingSettings_.end() ? pending->second : settingValue(name);
     }
     if (stripPrefix(key, "draft:", name)) {
+        // Removing starts on the first source
+        if (name == "removeSource" && drafts_[name].empty() && catalog_) {
+            std::vector<Catalog::SourceConfig> sources = catalog_->sources();
+            return sources.empty() ? "" : sources.front().name;
+        }
         return drafts_[name];
     }
     if (key == "info:romCount") {
@@ -124,7 +147,118 @@ std::string ManagerModel::get(const std::string& key)
         std::string source = settings_.source(settingKey(name));
         return source == "settings.conf" ? "" : source;
     }
+    if (stripPrefix(key, "package:", name)) {
+        return packageValue(name);
+    }
+    if (key == "info:catalogStatus") {
+        return catalogStatus();
+    }
+    if (key == "info:hasSources") {
+        return catalog_ && !catalog_->sources().empty() ? "yes" : "no";
+    }
+    if (key == "info:sourceIsFolder") {
+        return drafts_["sourceType"] == "folder" ? "yes" : "no";
+    }
     return "";
+}
+
+std::string ManagerModel::packageValue(const std::string& key)
+{
+    Catalog::Entry entry;
+    if (!catalog_ || !catalog_->entry(package_, entry)) {
+        return key == "summary" ? "This package isn't offered by any source any more." : "";
+    }
+    const Catalog::Package& package = entry.package;
+    bool installed = !entry.installedVersion.empty();
+    bool busy = catalog_->isQueued(package.id);
+
+    if (key == "name") return package.name;
+    if (key == "description") return package.description;
+    if (key == "canInstall") return !installed && !busy ? "yes" : "no";
+    if (key == "canUpdate") return installed && entry.updateAvailable && !busy ? "yes" : "no";
+    if (key == "canRemove") return installed && !busy ? "yes" : "no";
+    if (key == "isBusy") return busy ? "yes" : "no";
+    if (key == "summary") {
+        std::string text = "Version " + package.version;
+        if (package.totalSize() > 0) text += "  -  " + Catalog::describeSize(package.totalSize());
+        if (!package.kind.empty()) {
+            std::string kind = package.kind;
+            kind[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(kind[0])));
+            text += "  -  " + kind;
+        }
+        if (!package.source.empty()) text += "  -  from " + package.source;
+        return text;
+    }
+    if (key == "installedStatus") {
+        if (!installed) return "";
+        if (entry.updateAvailable) return "Version " + entry.installedVersion + " is installed. " + package.version + " is available.";
+        return entry.installedVersion == package.version ? "Installed." : "Version " + entry.installedVersion + " is installed.";
+    }
+    if (key == "requires") {
+        std::string text;
+        for (const Catalog::Requirement& requirement : package.requirements) {
+            Catalog::Entry needed;
+            std::string name = catalog_->entry(requirement.id, needed) ? needed.package.name : requirement.id;
+            text += (text.empty() ? "Needs " : ", ") + name + (requirement.version.empty() ? "" : " " + requirement.version);
+        }
+        return text;
+    }
+    if (key == "checksum") {
+        bool checked = std::any_of(package.files.begin(), package.files.end(),
+                                   [](const Catalog::PackageFile& file) { return !file.sha256.empty() || !file.md5.empty(); });
+        return checked ? "" : "The source gives no checksums, so this download can't be checked for damage.";
+    }
+    if (key == "progress") {
+        Catalog::Service::Activity activity;
+        if (catalog_->activity(activity) && activity.id == package.id) {
+            if (activity.removing) return "Removing...";
+            if (activity.total > 0) {
+                int percent = static_cast<int>(activity.received * 100 / activity.total);
+                if (activity.received >= activity.total) return "Installing...";
+                return "Downloading: " + Catalog::describeSize(activity.received) + " of "
+                     + Catalog::describeSize(activity.total) + " (" + std::to_string(percent) + "%)";
+            }
+            return "Downloading: " + Catalog::describeSize(activity.received);
+        }
+        if (busy) return "Waiting for other packages to finish...";
+        bool ok = false;
+        std::string message;
+        return catalog_->outcome(package.id, ok, message) ? message : "";
+    }
+    return "";
+}
+
+std::string ManagerModel::catalogStatus()
+{
+    if (!catalog_) {
+        return "The Catalog isn't available.";
+    }
+    Catalog::Service::Activity activity;
+    if (catalog_->activity(activity)) {
+        if (activity.removing) return "Removing " + activity.name + "...";
+        std::string text = "Installing " + activity.name;
+        if (activity.total > 0) {
+            text += ": " + std::to_string(static_cast<int>(activity.received * 100 / activity.total)) + "%";
+        }
+        return text;
+    }
+    if (catalog_->refreshing()) {
+        return "Reading sources...";
+    }
+    size_t sources = catalog_->sources().size();
+    if (sources == 0) {
+        return "";
+    }
+    size_t packages = catalog_->entries().size();
+    return std::to_string(packages) + (packages == 1 ? " package from " : " packages from ")
+         + std::to_string(sources) + (sources == 1 ? " source." : " sources.");
+}
+
+std::string ManagerModel::takeOpenRequest()
+{
+    std::string request = openRequest_;
+    openRequest_.clear();
+    return request;
 }
 
 void ManagerModel::set(const std::string& key, const std::string& value)
@@ -157,7 +291,25 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
     if (key == "info:collections") {
         return collections_;
     }
-    return {};
+    if (!catalog_) {
+        return {};
+    }
+    std::vector<std::string> values;
+    if (key == "info:sources") {
+        for (const Catalog::SourceConfig& source : catalog_->sources()) {
+            std::string location = source.type == "folder" ? source.path : source.url;
+            values.push_back(source.name + ": " + location + (source.enabled ? "" : " (off)"));
+        }
+    }
+    else if (key == "info:installed") {
+        for (const Catalog::Manifest& manifest : catalog_->installed()) {
+            values.push_back(manifest.name + " " + manifest.version);
+        }
+    }
+    else if (key == "info:catalogWarnings") {
+        values = catalog_->warnings();
+    }
+    return values;
 }
 
 std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std::string& source)
@@ -184,6 +336,15 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
             result.emplace_back(name, name);
         }
     }
+    else if (source == "sourceTypes") {
+        result.emplace_back("index", "Index file");
+        result.emplace_back("folder", "Folder of packages");
+    }
+    else if (source == "sources" && catalog_) {
+        for (const Catalog::SourceConfig& config : catalog_->sources()) {
+            result.emplace_back(config.name, config.name);
+        }
+    }
     return result;
 }
 
@@ -196,7 +357,89 @@ std::string ManagerModel::actionProblem(const std::string& action)
         return Setup::validate(Setup::NewCollection{ drafts_["name"], drafts_["romPath"], drafts_["extensions"],
                                                      drafts_["executable"], drafts_["arguments"] });
     }
-    return "Unknown action " + action;
+    if (action == "open.sources") {
+        return "";
+    }
+    return catalogProblem(action);
+}
+
+std::string ManagerModel::catalogProblem(const std::string& action)
+{
+    bool known = action == "package.install" || action == "package.remove" || action == "package.cancel"
+              || action == "source.add" || action == "source.remove" || action == "catalog.refresh";
+    if (!known) {
+        return "Unknown action " + action;
+    }
+    if (!catalog_) {
+        return "The Catalog isn't available.";
+    }
+
+    if (action == "package.install" || action == "package.remove" || action == "package.cancel") {
+        Catalog::Entry entry;
+        if (!catalog_->entry(package_, entry)) {
+            return "This package isn't offered by any source any more.";
+        }
+        bool busy = catalog_->isQueued(package_);
+        bool installed = !entry.installedVersion.empty();
+        if (action == "package.cancel") return busy ? "" : "Nothing to stop.";
+        if (busy) return "Already working on it.";
+        if (action == "package.remove") return installed ? "" : "It isn't installed.";
+        return installed && !entry.updateAvailable ? "Installed, and up to date." : "";
+    }
+    if (action == "source.add") {
+        Catalog::SourceConfig source = draftSource(drafts_);
+        if (source.name.empty()) return "Give the source a name.";
+        if (source.url.empty() && source.path.empty()) return source.type == "folder" ? "Choose the folder." : "Enter the address of the index file.";
+        std::string problem = Catalog::validateSource(source, catalog_->sources());
+        if (!problem.empty()) return problem;
+        return Forms::isTruthy(drafts_["sourceTrusted"]) ? "" : "Confirm that you trust this source.";
+    }
+    if (action == "source.remove") {
+        return get("draft:removeSource").empty() ? "Choose a source to remove." : "";
+    }
+    return catalog_->refreshing() ? "Already reading the sources." : "";
+}
+
+Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
+{
+    Result result;
+    result.message = catalogProblem(action);
+    if (!result.message.empty()) {
+        return result;
+    }
+    result.ok = true;
+    if (action == "package.install") {
+        catalog_->install(package_);
+    }
+    else if (action == "package.remove") {
+        catalog_->remove(package_);
+    }
+    else if (action == "package.cancel") {
+        catalog_->cancel(package_);
+    }
+    else if (action == "catalog.refresh") {
+        catalog_->refresh();
+    }
+    else if (action == "source.add") {
+        Catalog::SourceConfig source = draftSource(drafts_);
+        result.ok = catalog_->addSource(source, result.message);
+        if (result.ok) {
+            result.message = "Added " + source.name + ".";
+            drafts_["sourceName"].clear();
+            drafts_["sourceUrl"].clear();
+            drafts_["sourcePath"].clear();
+            drafts_["sourceTrusted"] = "no";
+        }
+    }
+    else if (action == "source.remove") {
+        std::string name = get("draft:removeSource");
+        result.ok = catalog_->removeSource(name, result.message);
+        if (result.ok) {
+            result.message = "Removed " + name + ".";
+            drafts_["removeSource"].clear();
+        }
+    }
+    return result;
 }
 
 Forms::Model::Result ManagerModel::runAction(const std::string& action)
@@ -207,9 +450,13 @@ Forms::Model::Result ManagerModel::runAction(const std::string& action)
     if (action == "collection.create") {
         return createCollection();
     }
-    Result result;
-    result.message = "Unknown action " + action;
-    return result;
+    if (action == "open.sources") {
+        openRequest_ = "sources";
+        Result result;
+        result.ok = true;
+        return result;
+    }
+    return runCatalogAction(action);
 }
 
 std::string ManagerModel::romCount()

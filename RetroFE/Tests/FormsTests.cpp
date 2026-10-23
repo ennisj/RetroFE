@@ -115,7 +115,7 @@ void runFormsTests()
     // --- Form parsing ---------------------------------------------------------
 
     run("built-in forms parse", [&] {
-        for (const char* id : { "settings", "manage", "catalog" }) {
+        for (const char* id : { "settings", "manage", "sources", "package" }) {
             auto form = Forms::parse(Forms::builtinForm(id), error);
             check(form != nullptr, std::string(id) + ": " + error);
             if (form) {
@@ -145,6 +145,27 @@ void runFormsTests()
         checkEqual(section.children[0].defaultValue, "\"%ITEM_FILEPATH%\"", "entities decoded");
         check(section.children[1].min == 1 && section.children[1].max == 9, "min and max");
         checkEqual(form->fields[1].label, "Hello", "note value");
+    });
+
+    run("visibleWhen, bound notes and bound titles", [&] {
+        auto form = Forms::parse(R"(<form id="t" title="Fallback" bind="draft:title">
+              <note bind="draft:text"/>
+              <button label="Go" action="x" visibleWhen="!draft:hide"/>
+            </form>)", error);
+        check(form != nullptr, "parsed: " + error);
+        if (!form) return;
+        std::string root = makeRoot("visible");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        checkEqual(Forms::title(*form, model), "Fallback", "title without a value");
+        model.set("draft:title", "Bound");
+        checkEqual(Forms::title(*form, model), "Bound", "bound title");
+        model.set("draft:text", "hello");
+        checkEqual(Forms::noteText(form->fields[0], model), "hello", "bound note");
+        check(Forms::isVisible(form->fields[1], model), "visible");
+        model.set("draft:hide", "yes");
+        check(!Forms::isVisible(form->fields[1], model), "hidden");
     });
 
     run("invalid form XML is reported", [&] {

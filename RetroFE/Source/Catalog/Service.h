@@ -1,0 +1,149 @@
+/* This file is part of RetroFE.
+ *
+ * RetroFE is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * RetroFE is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#pragma once
+
+#include "Http.h"
+#include "Installer.h"
+#include "Package.h"
+#include "Sources.h"
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <string>
+#include <thread>
+#include <vector>
+
+// The Catalog as the screens see it: the packages every source offers, what's
+// installed, and installs and removals run one at a time on a worker thread so
+// the frontend keeps drawing. Everything it keeps is under the catalog folder:
+//   sources.conf   the sources
+//   cache/         the last copy of each index
+//   artwork/<type>/<id>.<ext>   package artwork, shown like collection artwork
+//   downloads/, staging/, backups/, installed/   see Downloader and Installer
+// All public functions can be called from any thread.
+namespace Catalog
+{
+    struct Entry
+    {
+        Package package;
+        std::string installedVersion;   // "" if not installed
+        bool updateAvailable = false;
+    };
+
+    class Service
+    {
+    public:
+        // http may be null, in which case only folder sources and file indexes work
+        Service(const std::string& catalogFolder, const Targets& targets, std::unique_ptr<Http> http);
+        ~Service();
+
+        // Finishes interrupted installs and starts reading the sources
+        void start();
+
+        // Packages from every enabled source, by kind then name
+        std::vector<Entry> entries() const;
+        bool entry(const std::string& id, Entry& entry) const;
+        std::vector<Manifest> installed() const;          // by name
+        std::vector<SourceConfig> sources() const;
+        std::vector<std::string> warnings() const;        // from reading the sources
+        bool refreshing() const;                          // sources are being read
+
+        std::string artworkFolder() const;
+        std::vector<std::string> artworkTypes() const;    // artwork/ subfolders
+
+        // The package being installed or removed, and how far along it is
+        struct Activity
+        {
+            std::string id;
+            std::string name;
+            bool removing = false;
+            uint64_t received = 0;
+            uint64_t total = 0;     // 0 if unknown
+        };
+        bool activity(Activity& activity) const;
+
+        bool isQueued(const std::string& id) const;       // waiting or in progress
+        // The last install or removal of a package: ok and a message for the user
+        bool outcome(const std::string& id, bool& ok, std::string& message) const;
+
+        void refresh();
+        void install(const std::string& id);              // installs or updates
+        void remove(const std::string& id);
+        void cancel(const std::string& id);               // keeps what's downloaded, to continue later
+
+        bool addSource(const SourceConfig& source, std::string& error);
+        bool removeSource(const std::string& name, std::string& error);
+
+        // What installs and removals changed
+        struct Changes
+        {
+            std::set<std::string> addedCollections;     // collections/ folders installed into
+            std::set<std::string> removedCollections;   // collections/ folders that are now gone
+        };
+
+        // True once after packages were installed or removed, when nothing
+        // else is queued: RetroFE should reload to show them
+        bool takeChanges(Changes& changes);
+
+        // For tests: blocks until everything queued has finished
+        void waitUntilIdle();
+
+    private:
+        struct Job
+        {
+            enum class Kind { Refresh, Install, Remove } kind;
+            std::string id;
+        };
+
+        void run();
+        void doRefresh();
+        void doInstall(const std::string& id);
+        void doRemove(const std::string& id);
+        void fetchArtwork(const std::vector<Package>& packages);
+        void finish(const std::string& id, bool ok, const std::string& message);
+        void enqueue(const Job& job);
+
+        std::string folder_;
+        Targets targets_;
+        std::unique_ptr<Http> http_;
+        Installer installer_;
+
+        mutable std::mutex mutex_;
+        std::condition_variable wake_;
+        std::condition_variable idle_;
+        std::deque<Job> jobs_;
+        bool working_ = false;
+        bool refreshingNow_ = false;
+        std::atomic<bool> stopping_{ false };
+        std::thread worker_;
+
+        std::vector<SourceConfig> sources_;
+        std::vector<Package> packages_;
+        std::map<std::string, Manifest> installed_;
+        std::vector<std::string> warnings_;
+        std::map<std::string, std::pair<bool, std::string>> outcomes_;
+        Activity activity_;
+        bool active_ = false;
+        bool changed_ = false;
+        Changes changes_;
+        std::atomic<bool> cancelRequested_{ false };
+    };
+}

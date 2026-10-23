@@ -1392,6 +1392,8 @@ bool RetroFE::run()
 					// don't load collection unless it's different the current collection
 					if (menuMode_)
 						info = getMenuCollection(nextPageName);
+					else if (homeMenu_ && nextPageName == Home::catalogCollectionName)
+						info = getCatalogCollection();
 					else
 						// Browse always opens, even before the first collection exists
 						info = getCollection(nextPageName, homeMenu_ && nextPageName == browseCollection_);
@@ -2336,8 +2338,8 @@ bool RetroFE::run()
 
 			if (currentPage_)
 			{
-				// Attract mode shows off games, so it doesn't run on the Home menu
-				bool onHome = homeMenu_ && currentPage_->getCollectionName() == Home::collectionName;
+				// Attract mode shows off games, so it doesn't run on the Home menu or the Catalog
+				bool onHome = isHomeMenuPage(currentPage_->getCollectionName());
 				if (!splashMode && !paused_ && !onHome)
 				{
 					int attractReturn = attract_.update(deltaTime, *currentPage_);
@@ -2421,7 +2423,10 @@ bool RetroFE::run()
 
 			// File dialogs block, so they run here rather than while rendering
 			manager_.update(deltaTime);
-			if (manager_.takeReloadRequest())
+			// Catalog installs show up once the user is back on Home and nothing's left to do
+			bool backHome = homeMenu_ && state == RETROFE_IDLE && !manager_.isOpen() &&
+				currentPage_ && currentPage_->getCollectionName() == Home::collectionName;
+			if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
 			{
 				// Reload everything so the changes show up
 				reboot_ = true;
@@ -3183,6 +3188,14 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 				{
 					state = selectHomeItem(nextPageItem_);
 				}
+				else if (homeMenu_ && page->getCollectionName() == Home::catalogCollectionName)
+				{
+					// Catalog items are packages: show the chosen one's details
+					if (nextPageItem_->name == Home::catalogSourcesItem)
+						manager_.open(ManagerUI::Screen::Sources);
+					else
+						manager_.openPackage(nextPageItem_->name);
+				}
 				else if (nextPageItem_->leaf)
 				{
 					if (menuMode_)
@@ -3361,9 +3374,63 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 	}
 	else if (item->name == Home::catalog)
 	{
-		manager_.open(ManagerUI::Screen::Catalog);
+		// The Catalog list, or the Sources screen until there's something to list
+		Catalog::Service* catalog = manager_.catalog();
+		if (catalog && !catalog->entries().empty())
+		{
+			nextPageName_ = Home::catalogCollectionName;
+			return RETROFE_NEXT_PAGE_REQUEST;
+		}
+		manager_.open(ManagerUI::Screen::Sources);
 	}
 	return RETROFE_IDLE;
+}
+
+// Build the Catalog list in memory: one item per package, then the Sources item
+CollectionInfo* RetroFE::getCatalogCollection()
+{
+	CollectionInfoBuilder cib(config_, *metadb_);
+	CollectionInfo* collection = cib.buildCollection(Home::catalogCollectionName);
+	Catalog::Service* catalog = manager_.catalog();
+	if (!catalog)
+	{
+		return collection;
+	}
+
+	// Package artwork is kept by the Catalog; point the collection's media there
+	for (const std::string& type : catalog->artworkTypes())
+	{
+		config_.setProperty(std::string("collections.") + Home::catalogCollectionName + ".media." + type,
+			Utils::combinePath(catalog->artworkFolder(), type));
+	}
+
+	auto addItem = [&](const std::string& name, const std::string& title) {
+		auto* item = new Item();
+		item->name = name;
+		item->title = title;
+		item->fullTitle = title;
+		item->leaf = true;
+		item->collectionInfo = collection;
+		collection->items.push_back(item);
+		return item;
+	};
+	for (const Catalog::Entry& entry : catalog->entries())
+	{
+		Item* item = addItem(entry.package.id, entry.package.name);
+		item->genre = entry.package.kind;
+		item->manufacturer = entry.package.source;
+		item->year = entry.package.version;
+	}
+	addItem(Home::catalogSourcesItem, "Sources");
+
+	// Keep the Catalog's order rather than sorting
+	cib.addPlaylists(collection);
+	return collection;
+}
+
+bool RetroFE::isHomeMenuPage(const std::string& collectionName) const
+{
+	return homeMenu_ && (collectionName == Home::collectionName || collectionName == Home::catalogCollectionName);
 }
 
 // Load a collection

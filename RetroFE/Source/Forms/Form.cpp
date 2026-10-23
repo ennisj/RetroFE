@@ -68,6 +68,7 @@ namespace
             field.help = attribute(node, "help");
             field.status = attribute(node, "status");
             field.enabledWhen = attribute(node, "enabledWhen");
+            field.visibleWhen = attribute(node, "visibleWhen");
             field.defaultValue = attribute(node, "default");
             field.options = attribute(node, "options");
             field.filterName = attribute(node, "filter");
@@ -117,6 +118,33 @@ bool isEnabled(const Field& field, Model& model)
     return isTruthy(model.get(field.enabledWhen));
 }
 
+bool isVisible(const Field& field, Model& model)
+{
+    if (field.visibleWhen.empty()) {
+        return true;
+    }
+    if (field.visibleWhen[0] == '!') {
+        return !isTruthy(model.get(field.visibleWhen.substr(1)));
+    }
+    return isTruthy(model.get(field.visibleWhen));
+}
+
+std::string noteText(const Field& field, Model& model)
+{
+    return field.bind.empty() ? field.label : model.get(field.bind);
+}
+
+std::string title(const Form& form, Model& model)
+{
+    if (!form.titleBind.empty()) {
+        std::string value = model.get(form.titleBind);
+        if (!value.empty()) {
+            return value;
+        }
+    }
+    return form.title;
+}
+
 std::unique_ptr<Form> parse(const std::string& xml, std::string& error)
 {
     // rapidxml parses in place
@@ -141,6 +169,7 @@ std::unique_ptr<Form> parse(const std::string& xml, std::string& error)
     auto form = std::make_unique<Form>();
     form->id = attribute(root, "id");
     form->title = attribute(root, "title");
+    form->titleBind = attribute(root, "bind");
     parseFields(root, form->fields, form->id);
     return form;
 }

@@ -90,4 +90,7 @@ namespace Catalog
 
     // Whether a file has the size and hash it should, with the reason if not
     bool verifyFile(const std::string& path, const PackageFile& file, std::string& error);
+
+    // e.g. "512 bytes", "48.2 MB"
+    std::string describeSize(uint64_t bytes);
 }

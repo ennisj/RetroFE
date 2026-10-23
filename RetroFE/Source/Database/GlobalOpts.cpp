@@ -140,6 +140,7 @@ const global_options::options_entry global_options::s_option_entries[] =
     { nullptr,                        nullptr,     global_options::option_type::HEADER,   "MEDIA SEARCH PATH OPTIONS" },
     { OPTION_BASEMEDIAPATH,            "",         global_options::option_type::PATH,     "Path to media if stored outside the build" },
     { OPTION_BASEITEMPATH,             "",         global_options::option_type::PATH,     "Path to items if stored outside the build" },
+    { OPTION_CATALOGPATH,              "catalog",  global_options::option_type::PATH,     "Folder the Catalog keeps its sources, downloads, backups and records of installed packages in" },
 
     { nullptr }
 };

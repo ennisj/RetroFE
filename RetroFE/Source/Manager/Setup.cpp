@@ -77,48 +77,89 @@ namespace
         LOG_INFO("Setup", "Wrote " + path);
         return true;
     }
-
-    // Adds a collection to the Main menu if it isn't listed yet
-    bool addToMainMenu(const std::string& name, std::string& error)
-    {
-        std::string mainPath = Utils::combinePath(collectionsPath(), mainCollection);
-        fs::create_directories(mainPath);
-
-        std::string settingsFile = Utils::combinePath(mainPath, "settings.conf");
-        if (!fs::exists(settingsFile) && !writeFile(settingsFile, "list.menuSort = yes\n", error)) {
-            return false;
-        }
-
-        std::string menuFile = Utils::combinePath(mainPath, "menu.txt");
-        std::ifstream existing(menuFile, std::ios::binary);
-        std::string content((std::istreambuf_iterator<char>(existing)), std::istreambuf_iterator<char>());
-        existing.close();
-
-        std::istringstream lines(content);
-        std::string line;
-        while (std::getline(lines, line)) {
-            if (Utils::trimEnds(Utils::filterComments(line)) == name) {
-                return true;
-            }
-        }
-
-        std::ofstream menu(menuFile, std::ios::app);
-        if (!menu) {
-            error = "Could not write " + menuFile;
-            return false;
-        }
-        // Don't join the new entry onto a last line that has no line break
-        if (!content.empty() && content.back() != '\n') {
-            menu << "\n";
-        }
-        menu << name << "\n";
-        LOG_INFO("Setup", "Added " + name + " to " + menuFile);
-        return true;
-    }
 }
 
 namespace Setup
 {
+
+bool addToMainMenu(const std::string& name, std::string& error)
+{
+    std::string mainPath = Utils::combinePath(collectionsPath(), mainCollection);
+    fs::create_directories(mainPath);
+
+    std::string settingsFile = Utils::combinePath(mainPath, "settings.conf");
+    if (!fs::exists(settingsFile) && !writeFile(settingsFile, "list.menuSort = yes\n", error)) {
+        return false;
+    }
+
+    std::string menuFile = Utils::combinePath(mainPath, "menu.txt");
+    std::ifstream existing(menuFile, std::ios::binary);
+    std::string content((std::istreambuf_iterator<char>(existing)), std::istreambuf_iterator<char>());
+    existing.close();
+
+    std::istringstream lines(content);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (Utils::trimEnds(Utils::filterComments(line)) == name) {
+            return true;
+        }
+    }
+
+    std::ofstream menu(menuFile, std::ios::binary | std::ios::app);
+    if (!menu) {
+        error = "Could not write " + menuFile;
+        return false;
+    }
+    // Match the file's line endings, and don't join the new entry onto a last line that has no line break
+    const char* newline = content.find("\r\n") != std::string::npos ? "\r\n" : "\n";
+    if (!content.empty() && content.back() != '\n') {
+        menu << newline;
+    }
+    menu << name << newline;
+    LOG_INFO("Setup", "Added " + name + " to " + menuFile);
+    return true;
+}
+
+bool removeFromMainMenu(const std::string& name, std::string& error)
+{
+    std::string menuFile = Utils::combinePath(collectionsPath(), mainCollection, "menu.txt");
+    std::ifstream existing(menuFile, std::ios::binary);
+    if (!existing) {
+        return true;
+    }
+    std::string content((std::istreambuf_iterator<char>(existing)), std::istreambuf_iterator<char>());
+    existing.close();
+
+    // Keep every other line as it was, line endings included
+    std::string kept;
+    bool removed = false;
+    size_t start = 0;
+    while (start < content.size()) {
+        size_t end = content.find('\n', start);
+        end = end == std::string::npos ? content.size() : end + 1;
+        std::string line = content.substr(start, end - start);
+        std::string text = line.substr(0, line.find_first_of("\r\n"));
+        if (Utils::trimEnds(Utils::filterComments(text)) == name) {
+            removed = true;
+        }
+        else {
+            kept += line;
+        }
+        start = end;
+    }
+    if (!removed) {
+        return true;
+    }
+    // Binary, so the lines' own endings are written as they were read
+    std::ofstream menu(menuFile, std::ios::binary | std::ios::trunc);
+    menu << kept;
+    if (!menu) {
+        error = "Could not write " + menuFile;
+        return false;
+    }
+    LOG_INFO("Setup", "Removed " + name + " from " + menuFile);
+    return true;
+}
 
 bool hasSettingsFile()
 {

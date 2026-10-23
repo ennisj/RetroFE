@@ -24,6 +24,7 @@
 //   draft:<key>      form input that isn't saved anywhere by itself.
 //                    default="" is its initial value.
 //   info:<key>       computed, read-only values
+//   package:<key>    the package chosen in the Catalog list (see ManagerModel.h)
 namespace
 {
 
@@ -54,7 +55,7 @@ const char* const settingsForm = R"(
 const char* const manageForm = R"(
 <form id="manage" title="Manage">
   <list label="Collections" bind="info:collections"
-        empty="Welcome! Nothing is set up yet. Add your first collection below: point RetroFE at a folder of games and the emulator that runs them, and it will reload with the collection under Browse."/>
+        empty="Welcome! Nothing is set up yet. Add your first collection below: point RetroFE at a folder of games and the emulator that runs them, and it will reload with the collection under Browse. Or install one from the Catalog: add a source under Sources."/>
   <section label="Add a collection">
     <text label="Name" bind="draft:name" hint="e.g. Arcade"/>
     <folder label="Games folder" bind="draft:romPath" hint="Not chosen yet" status="info:romCount"/>
@@ -63,12 +64,54 @@ const char* const manageForm = R"(
     <text label="Arguments" bind="draft:arguments" default="&quot;%ITEM_FILEPATH%&quot;" help="%ITEM_FILEPATH% is replaced with the game's file"/>
     <button label="Create collection" action="collection.create"/>
   </section>
+  <section label="Catalog">
+    <list label="Installed" bind="info:installed" empty="Nothing has been installed from the Catalog yet."/>
+    <button label="Sources" action="open.sources"/>
+  </section>
 </form>
 )";
 
-const char* const catalogForm = R"(
-<form id="catalog" title="Catalog">
-  <note value="The catalog isn't built yet. It will list content you can download from sources you configure, and install it into your collections."/>
+// Where the Catalog gets packages from
+const char* const sourcesForm = R"(
+<form id="sources" title="Catalog sources">
+  <note bind="info:catalogStatus"/>
+  <list label="Sources" bind="info:sources"
+        empty="The Catalog lists packages from sources you add here: an index file on the web or on disk, or a folder of package archives, e.g. on a USB stick or a NAS."/>
+  <list label="Problems" bind="info:catalogWarnings"/>
+  <section label="Add a source">
+    <text label="Name" bind="draft:sourceName" hint="e.g. community"/>
+    <choice label="Type" bind="draft:sourceType" options="sourceTypes" default="index"/>
+    <text label="Address" bind="draft:sourceUrl" hint="https://..." visibleWhen="!info:sourceIsFolder"/>
+    <folder label="Folder" bind="draft:sourcePath" hint="Not chosen yet" visibleWhen="info:sourceIsFolder"/>
+    <toggle label="I trust this source" bind="draft:sourceTrusted" default="no"
+            help="RetroFE doesn't check what sources offer. Only add sources you trust."/>
+    <button label="Add source" action="source.add"/>
+  </section>
+  <section label="Remove a source" visibleWhen="info:hasSources">
+    <choice label="Source" bind="draft:removeSource" options="sources"/>
+    <button label="Remove source" action="source.remove"/>
+  </section>
+  <actions>
+    <button label="Check for updates" action="catalog.refresh"/>
+  </actions>
+</form>
+)";
+
+// One package from the Catalog; package: is the package chosen in the Catalog list
+const char* const packageForm = R"(
+<form id="package" title="Package" bind="package:name">
+  <note bind="package:summary"/>
+  <note bind="package:description"/>
+  <note bind="package:installedStatus"/>
+  <note bind="package:requires"/>
+  <note bind="package:checksum"/>
+  <note bind="package:progress"/>
+  <actions>
+    <button label="Install" action="package.install" visibleWhen="package:canInstall"/>
+    <button label="Update" action="package.install" visibleWhen="package:canUpdate"/>
+    <button label="Remove" action="package.remove" visibleWhen="package:canRemove"/>
+    <button label="Stop" action="package.cancel" visibleWhen="package:isBusy"/>
+  </actions>
 </form>
 )";
 
@@ -81,7 +124,8 @@ const char* builtinForm(const std::string& id)
 {
     if (id == "settings") return settingsForm;
     if (id == "manage") return manageForm;
-    if (id == "catalog") return catalogForm;
+    if (id == "sources") return sourcesForm;
+    if (id == "package") return packageForm;
     return nullptr;
 }
 

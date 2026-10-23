@@ -133,6 +133,7 @@
 // MEDIA SEARCH PATH OPTIONS
 #define OPTION_BASEMEDIAPATH          "baseMediaPath"
 #define OPTION_BASEITEMPATH           "baseItemPath"
+#define OPTION_CATALOGPATH            "catalogPath"
 
 // Forward declaration
 struct options_entry;

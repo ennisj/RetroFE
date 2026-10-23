@@ -167,8 +167,13 @@ The One Saucier pipeline, which works, moved behind the adapters:
 - **Retries** with exponential backoff (2 s doubling to 60 s, 5 tries).
 - **Verify** size always, and the hash whenever the source gives one. A
   mismatch fails the job; it never installs.
-- **Progress** goes into the model (`info:downloads`), so Catalog and Manage
-  screens show it with ordinary form fields and a new `progress` field type.
+- **Progress** goes into the model, so Catalog and Manage screens show it with
+  ordinary form fields (`package:progress`, `info:catalogStatus`). A
+  `progress` bar field type is still to come.
+
+Phase 1 runs one job at a time (a queue on one worker thread), not a couple at
+once, and has no separate Downloads screen yet: each package's screen shows its
+own progress and a Stop button, which keeps the partial download.
 
 ## Install
 
@@ -185,6 +190,10 @@ The One Saucier pipeline, which works, moved behind the adapters:
   that old installs have no file list and that user content is detected by
   markers; installing from day one with manifests avoids both.
 - **Then reload** RetroFE, as Manage already does after creating a collection.
+  So as not to interrupt browsing the Catalog, the reload waits until the user
+  is back on Home and nothing is queued. Collections installed into
+  `collections/` are added to the Main menu first (and removed from it when
+  their folder is gone), and a bare install gets its `settings.conf`.
 
 Formats: ZIP (including ZIP64) through the minizip already in the tree.
 7-Zip is left out for now; it would need another library.
@@ -245,7 +254,10 @@ Copied deliberately, with One Saucier itself unchanged:
 
 1. **Index and folder sources, download, install, manifests,** and the
    Catalog list and details screens. Enough to install a collection pack from
-   a URL or a USB stick.
+   a URL or a USB stick. *Built.* It also covers update and remove from the
+   package screen, and checks `requires` (without installing requirements).
+   Not yet: `ETag`/`Last-Modified` (indexes are fetched in full each time),
+   the `progress` field type, a Downloads screen, and HTTP on Linux/macOS.
 2. **The `archiveorg` adapter,** so OnesaUCE content can come through the same
    Catalog.
 3. **Updates, uninstall, repair, and requires** in Manage.
