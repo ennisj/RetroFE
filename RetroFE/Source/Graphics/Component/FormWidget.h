@@ -37,7 +37,12 @@ class Image;
 //         focusColor="ffffff" rowHeight="44" labelWidth="300"
 //         focusBackgroundColor="ffffff" focusBackgroundAlpha="0.12" focusImage="images/row.png"
 //         backgroundColor="000000" backgroundAlpha="0.85" onText="On" offText="Off"
-//         rowDetailColor="9fb4d0" rowDetailAlpha="0.8" linkMarker=">"/>
+//         rowDetailColor="9fb4d0" rowDetailAlpha="0.8" linkMarker=">"
+//         headerColor="75c8f7" separatorColor="75c8f7" separatorAlpha="0.2"
+//         imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
+//         statusColor="9fe3a6" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"/>
+//
+// Text too long for its column ends in "..." (see WidgetPainter).
 //
 // Up/Down move between fields; Left/Right change a toggle, number or choice,
 // or page through a results list; Select edits text, picks a folder or file,
@@ -56,12 +61,28 @@ public:
         std::string focusImage;             // absolute path; drawn behind the focused row
         float noteAlpha = 0.55f;
         float disabledAlpha = 0.35f;
-        float rowDetailAlpha = 0.7f;        // a result's detail, on the right
+        float rowDetailAlpha = 0.7f;        // a result's detail, and a link's status and marker
         std::string linkMarker = ">";       // at the right of a link
+        float headerAlpha = 0.7f;           // section headers (headerColor)
+        SDL_Color separator{ 255, 255, 255, 255 };
+        float separatorAlpha = 0.0f;        // a line under headers and between results; 0: none
+        SDL_Color imageBackground{ 0, 0, 0, 255 };
+        float imageBackgroundAlpha = 0.0f;  // behind pictures and thumbnails; 0: none
+        SDL_Color confirmBackground{ 255, 255, 255, 255 };
+        float confirmBackgroundAlpha = 0.0f; // over a button waiting for confirmation; 0: none
         std::string onText = "On";
         std::string offText = "Off";
         bool showTitle = true;
         bool showHints = true;
+    };
+
+    // Fonts of the same face in other colors; null means the normal font
+    enum class FontRole
+    {
+        Detail,   // rowDetailColor: results' details, links' status and marker
+        Header,   // headerColor: section headers
+        Status,   // statusColor: the status line after an action
+        Error     // errorColor: errors, and the question of a button to confirm
     };
 
     // A request for a native file or folder picker
@@ -79,8 +100,7 @@ public:
 
     void setStyle(const Style& style) { style_ = style; }
 
-    // The font for results' details (rowDetailColor); the normal font when null
-    void setDetailFont(FontManager* font) { detailFont_ = font; }
+    void setFont(FontRole role, FontManager* font);
 
     void bind(const Forms::Form* form, Forms::Model* model);
 
@@ -113,8 +133,10 @@ public:
 
     // The screen is rebuilt from the model on input, when the model's
     // generation changes, and a few times a second; this rebuilds it on the
-    // next draw, e.g. after setting a value from outside
-    void invalidate() { stale_ = true; }
+    // next draw, e.g. after setting a value from outside. Pictures check
+    // whether their files changed after this, a new screen, an action, or a
+    // new generation, and at no other time.
+    void invalidate() { stale_ = true; pictures_.recheck(); }
 
     // Shown under the form until the next action, e.g. a result or a warning
     void setStatus(const std::string& message, bool isError);
@@ -176,11 +198,15 @@ private:
     float fontSize() const;
     float pixelScale() const;   // screen pixels per layout unit, for sizing pictures
 
-    void drawPicture(SDL_Texture* texture, float x, float y, float maxWidth, float maxHeight);
+    void drawPicture(SDL_Texture* texture, float x, float y, float maxWidth, float maxHeight, bool centered, bool backed,
+                     float clipTop = -1e9f, float clipBottom = 1e9f);
 
     WidgetPainter painter_;
     Style style_;
     FontManager* detailFont_ = nullptr;
+    FontManager* headerFont_ = nullptr;
+    FontManager* statusFont_ = nullptr;
+    FontManager* errorFont_ = nullptr;
     const Forms::Form* form_ = nullptr;
     Forms::Model* model_ = nullptr;
 
@@ -191,6 +217,8 @@ private:
     unsigned generation_ = 0;     // the model's, when built
     std::unordered_map<std::string, std::vector<std::string>> wrapped_;   // by width and text
     int focus_ = -1;              // index into rows_
+    bool focusGuarded_ = false;   // focus landed on a file or folder field because rows went away:
+                                  // Select there waits for the user to move first (it opens a picker)
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key
     float scroll_ = 0.0f;

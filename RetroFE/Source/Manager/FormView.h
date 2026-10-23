@@ -79,6 +79,7 @@ private:
     float scale_ = 1.0f;
     TextureCache pictures_;
     bool discard_ = false;
+    unsigned generation_ = 0;   // the model's when last drawn: a new one rechecks pictures' files
     Forms::Confirm confirm_;
     const Forms::Field* editing_ = nullptr;   // the text field being edited
     std::string editBuffer_;
