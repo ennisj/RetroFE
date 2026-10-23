@@ -21,6 +21,7 @@
 #include "Configuration.h"
 #include "DB.h"
 #include "GlobalOpts.h"
+#include "../Library/MetadataOverrides.h"
 #include <algorithm>
 #include <fstream>
 #include <list>
@@ -139,6 +140,10 @@ bool MetadataDatabase::importDirectory()
     processDirectory(mameListPath, ".xml", [this](const std::string& file, const std::string& name) { importMamelist(file, name); });
     processDirectory(emuarcListPath, ".dat", [this](const std::string& file, const std::string& name) { importEmuArclist(file); });
 
+    // Then the user's own changes (manage/metadata/*.xml), field by field, so
+    // they survive this re-import and shipped updates to other fields still apply
+    Library::MetadataOverrides::applyAll(db_.handle, Configuration::absolutePath);
+
     return true;
 }
 
@@ -236,8 +241,10 @@ bool MetadataDatabase::needsRefresh()
         fs::file_time_type metaDbTime = fs::exists(metaDbPath) ? fs::last_write_time(metaDbPath) : fs::file_time_type::min();
         fs::file_time_type exeTime = fs::exists(exePath) ? fs::last_write_time(exePath) : fs::file_time_type::min();
         fs::file_time_type metadirTime = timeDir(Utils::combinePath(Configuration::absolutePath, "meta"));
+        // A hand edit to the user's metadata changes also needs a re-import
+        fs::file_time_type overridesTime = Library::MetadataOverrides::newestChange(Configuration::absolutePath);
 
-        result = (count == 0 || metaDbTime < metadirTime || exeTime < metadirTime) ? true : false;
+        result = (count == 0 || metaDbTime < metadirTime || exeTime < metadirTime || metaDbTime < overridesTime) ? true : false;
     }
     else {
         result = true;

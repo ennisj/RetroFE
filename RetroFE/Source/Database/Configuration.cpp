@@ -446,6 +446,16 @@ void Configuration::getMediaPropertyAbsolutePath(const std::string& collectionNa
         return;
     }
 
+    // Fork-compat (OneSauce data): media.basePath names the folder that holds
+    // this collection's medium_artwork and system_artwork. Stock RetroFE
+    // ignores the key; Library::Properties::mediaPath follows the same rule.
+    std::string collectionMediaBase;
+    if (getPropertyAbsolutePath("collections." + collectionName + ".media.basePath", collectionMediaBase)) {
+        value = system ? Utils::combinePath(collectionMediaBase, "system_artwork")
+                       : Utils::combinePath(collectionMediaBase, "medium_artwork", mediaType);
+        return;
+    }
+
     // use user-overridden base media path if it was specified
     std::string baseMediaPath;
     if(!getPropertyAbsolutePath(OPTION_BASEMEDIAPATH, baseMediaPath)) {

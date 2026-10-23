@@ -46,8 +46,13 @@ namespace Setup
     // Creates collections/<name> with its settings and launcher, and adds it to the Main menu
     bool createCollection(const NewCollection& collection, std::string& error);
 
-    // Adds a collection to the Main menu's menu.txt if it isn't listed yet,
-    // or removes it, leaving the other lines as they were
+    // Adds a collection to the top menu (firstCollection, "Main" by default) if
+    // it isn't listed yet, or removes it, leaving the other lines as they were.
+    // The top menu's menu.txt is used, or its menu/ folder when it has no
+    // menu.txt (see Library::MenuFiles); originals go to manage/backups.
     bool addToMainMenu(const std::string& name, std::string& error);
     bool removeFromMainMenu(const std::string& name, std::string& error);
+
+    // firstCollection from the settings files, "Main" when unset
+    std::string topMenu();
 }

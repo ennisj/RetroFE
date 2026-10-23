@@ -83,3 +83,53 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 ### W2. The fork's changelog is separate from upstream's — Decided
 - Upstream's `CHANGELOG.md` is left alone so upstream merges stay clean. The
   fork's rounds are summarized in [FORK-CHANGELOG.md](FORK-CHANGELOG.md).
+
+---
+
+## Library (Manage data layer)
+
+The full reasoning, with the options considered for each, is in
+[design/manage-library.md](design/manage-library.md#decisions).
+
+### LB1. One conf editor; SettingsFile is built on it — Decided
+- `Library::ConfFile` (one file) and `ConfLayers` (later files win) replace
+  SettingsFile's own code. Edits keep every untouched byte, including each
+  line's own ending.
+
+### LB2. Originals are kept in `<root>/manage/backups/` — Decided
+- Before a file's first change, it's copied there at the same relative path;
+  a file that didn't exist gets an `.absent` marker. RetroFE never reads
+  `manage/`.
+
+### LB3. Metadata edits go in `<root>/manage/metadata/<type>.xml` — Decided
+- The file is hyperlist format and holds only the changed fields.
+  `MetadataDatabase` applies it after importing `meta/`, so edits survive
+  content updates and re-imports. Edits are also written into meta.db at once.
+- Not inside `meta/`, because a change there makes RetroFE re-import on every
+  start, due to its exe-time check.
+
+### LB4. `media.basePath` (OneSauce) is honoured — Decided
+- The order is `media.<type>`, then `media.basePath`, then `baseMediaPath`.
+  The rule is applied in `Configuration` and in the library, so OneSauce game
+  art shows.
+
+### LB5–LB10 — Decided
+- **LB5.** Menu-folder menus get `menu/<child>.txt`, and `menu_supported.txt`
+  is kept in step.
+- **LB6.** An empty `.sub` means every game: adding to it is a no-op, removing
+  from it is refused, and removing the last entry deletes the file.
+- **LB7.** A launcher override naming the default is removed.
+- **LB8.** Media lookups check files rather than list folders.
+- **LB9.** Setup's top-menu helpers use `firstCollection`.
+- **LB10.** The index is an immutable snapshot, rebuilt in the background.
+
+### LB11. Comma launcher lists (RetroFE Plus) — Open
+- `launcher = lr-a, lr-b` is unresolved in this RetroFE. On K:, 25
+  collections use such lists. Options:
+  - (a) leave it;
+  - (b) use the first name, in RetroFE and the library (fork compat, like LB4);
+  - (c) let the Systems screen rewrite the list to one name.
+- Recommendation: (b), if OneSauce data should launch on this fork.
+
+### LB12. `list.includeFile` / `list.excludeFile` (OneSauce) — Open
+- Ignored, as RetroFE ignores them. Options: honour them like LB4, or leave them ignored.
