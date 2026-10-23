@@ -75,34 +75,6 @@ namespace
         return fs::is_regular_file(path, ec);
     }
 
-    // The folders of the PATH environment variable
-    std::vector<std::string> searchPath()
-    {
-        std::vector<std::string> folders;
-        const char* value = std::getenv("PATH");
-        if (!value) {
-            return folders;
-        }
-#ifdef WIN32
-        const char separator = ';';
-#else
-        const char separator = ':';
-#endif
-        std::string all = value;
-        size_t start = 0;
-        while (start <= all.size()) {
-            size_t end = all.find(separator, start);
-            if (end == std::string::npos) {
-                end = all.size();
-            }
-            if (end > start) {
-                folders.push_back(all.substr(start, end - start));
-            }
-            start = end + 1;
-        }
-        return folders;
-    }
-
     std::string plural(size_t n, const std::string& one, const std::string& many)
     {
         return std::to_string(n) + " " + (n == 1 ? one : many);
@@ -171,24 +143,13 @@ ExecutableCheck checkExecutable(const Library::Index& index, const std::string& 
         check.sentence = "Found.";
         return check;
     }
-    if (value.find_first_of("/\\") == std::string::npos) {
-        std::vector<std::string> names = { value };
-#ifdef WIN32
-        if (fs::path(value).extension().empty()) {
-            names.push_back(value + ".exe");
-        }
-#endif
-        for (const std::string& folder : searchPath()) {
-            for (const std::string& name : names) {
-                fs::path candidate = fs::path(folder) / name;
-                if (isFile(candidate)) {
-                    check.state = ExecutableCheck::State::OnPath;
-                    check.path = Library::narrow(candidate);
-                    check.sentence = "Not in RetroFE's folder; found on the system path (" + check.path + ").";
-                    return check;
-                }
-            }
-        }
+    // A bare name is looked up the way Launcher::run does (Library::findProgram)
+    std::string found = Library::findProgram(value);
+    if (!found.empty()) {
+        check.state = ExecutableCheck::State::OnPath;
+        check.path = found;
+        check.sentence = "Not in RetroFE's folder; found on the system path (" + check.path + ").";
+        return check;
     }
     check.state = ExecutableCheck::State::Missing;
     check.path = Library::normalPath(Library::narrow(path));

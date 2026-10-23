@@ -27,6 +27,7 @@
 #include "../Source/Library/Backups.h"
 #include "../Source/Library/ConfFile.h"
 #include "../Source/Library/Edits.h"
+#include "../Source/Library/Files.h"
 #include "../Source/Library/Index.h"
 #include "../Source/Library/Indexer.h"
 #include "../Source/Library/LineList.h"
@@ -133,6 +134,29 @@ static void runLibraryTests()
 
     // --- File primitives ------------------------------------------------------------
 
+    run("library: cmd.exe /c commands keep their quotes, and bare program names are found", [&] {
+        checkEqual(cmdArguments("/c \"%RETROFE_PATH%/scripts/theme_switch.bat\" \"%ITEM_FILEPATH%\""),
+                   "/c \"\"%RETROFE_PATH%/scripts/theme_switch.bat\" \"%ITEM_FILEPATH%\"\"",
+                   "more than two quotes after /c: wrapped in one more pair");
+        checkEqual(cmdArguments("/K \"a.bat\" \"b\"  "), "/K \"\"a.bat\" \"b\"\"", "/k too, any case, trailing spaces dropped");
+        checkEqual(cmdArguments("/c \"\"a.bat\" \"b\"\""), "/c \"\"a.bat\" \"b\"\"", "already wrapped: unchanged");
+        checkEqual(cmdArguments("/c \"a b.bat\""), "/c \"a b.bat\"", "one quoted path: unchanged");
+        checkEqual(cmdArguments("/c dir"), "/c dir", "no quotes: unchanged");
+        checkEqual(cmdArguments("/s /c \"a\" \"b\""), "/s /c \"a\" \"b\"", "/s first: left to the author");
+        checkEqual(cmdArguments("\"a\" \"b\""), "\"a\" \"b\"", "not a /c command: unchanged");
+        checkEqual(cmdArguments(""), "", "empty");
+
+        checkEqual(findProgram(""), "", "no name");
+        checkEqual(findProgram("folder/x.exe"), "", "a path isn't looked up");
+        checkEqual(findProgram("no-such-program-qa-7f3e"), "", "an unknown name isn't found");
+#ifdef WIN32
+        std::string cmd = findProgram("cmd.exe");
+        check(!cmd.empty() && iequals(fs::path(cmd).filename().string(), "cmd.exe"), "cmd.exe is found: " + cmd);
+        check(iequals(findProgram("cmd"), cmd), ".exe is added to a name without an extension");
+#else
+        check(!findProgram("sh").empty(), "sh is found on PATH");
+#endif
+    });
     run("library: conf edits keep comments, spacing and CRLF", [&] {
         std::string root = makeRoot("lib-conf");
         std::string path = root + "/info.conf";

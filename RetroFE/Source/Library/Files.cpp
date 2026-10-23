@@ -16,6 +16,7 @@
 #include "Files.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -213,6 +214,64 @@ bool isInside(const std::string& path, const std::string& folder)
         return false;
     }
     return relative.native().empty() || *relative.begin() != "..";
+}
+
+std::string cmdArguments(const std::string& arguments)
+{
+    size_t start = arguments.find_first_not_of(" \t");
+    if (start == std::string::npos || arguments.size() < start + 3) {
+        return arguments;
+    }
+    std::string sw = toLower(arguments.substr(start, 2));
+    bool spaced = arguments.size() > start + 2 && (arguments[start + 2] == ' ' || arguments[start + 2] == '\t');
+    if ((sw != "/c" && sw != "/k") || !spaced) {
+        return arguments;   // other switches first (e.g. /s): leave it to the author
+    }
+    size_t command = arguments.find_first_not_of(" \t", start + 2);
+    if (command == std::string::npos) {
+        return arguments;
+    }
+    std::string rest = arguments.substr(command);
+    size_t end = rest.find_last_not_of(" \t");
+    rest = rest.substr(0, end + 1);
+    size_t quotes = static_cast<size_t>(std::count(rest.begin(), rest.end(), '"'));
+    bool wrapped = rest.size() >= 2 && rest.compare(0, 2, "\"\"") == 0 && rest.back() == '"';
+    if (quotes <= 2 || wrapped) {
+        return arguments;
+    }
+    return arguments.substr(0, command) + "\"" + rest + "\"";
+}
+
+std::string findProgram(const std::string& name)
+{
+    if (name.empty() || name.find_first_of("/\\") != std::string::npos) {
+        return "";
+    }
+#ifdef _WIN32
+    char found[MAX_PATH] = {};
+    DWORD n = SearchPathA(nullptr, name.c_str(), ".exe", MAX_PATH, found, nullptr);
+    // n >= MAX_PATH means the buffer was too small (n is the size needed)
+    return n > 0 && n < MAX_PATH ? std::string(found, n) : "";
+#else
+    const char* value = std::getenv("PATH");
+    std::string all = value ? value : "";
+    size_t start = 0;
+    while (start <= all.size()) {
+        size_t end = all.find(':', start);
+        if (end == std::string::npos) {
+            end = all.size();
+        }
+        if (end > start) {
+            fs::path candidate = fs::path(all.substr(start, end - start)) / name;
+            std::error_code ec;
+            if (fs::is_regular_file(candidate, ec)) {
+                return candidate.string();
+            }
+        }
+        start = end + 1;
+    }
+    return "";
+#endif
 }
 
 Lines Lines::parse(const std::string& content)

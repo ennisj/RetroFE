@@ -33,7 +33,13 @@ RetroFE)
     arguments  = "%ITEM_FILEPATH%"
 
 On Windows a bare program name such as `cmd.exe` that isn't in RetroFE's
-root folder is looked up on the system path, as a command prompt would.
+root folder is looked up the way Windows finds programs (RetroFE's program
+folder, the system folders, then `PATH`), as a command prompt would; Manage's
+Emulators screen checks it the same way. For `cmd.exe`, a `/c` (or `/k`)
+command with more than two quotes, such as
+`/c "%RETROFE_PATH%/scripts/switch.bat" "%ITEM_FILEPATH%"`, is wrapped in one
+more pair of quotes, because cmd drops the first and the last quote of such a
+command.
 
 Launcher variables
 

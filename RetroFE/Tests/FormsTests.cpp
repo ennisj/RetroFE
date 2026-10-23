@@ -21,6 +21,7 @@
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Forms/SettingsFile.h"
+#include "../Source/Library/ConfFile.h"
 #include "../Source/Manager/EditBuffer.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Navigator.h"
@@ -141,6 +142,33 @@ void runFormsTests()
                    "horizontal = 1600 # number of horizontal pixels, or use stretch\r\n"
                    "attractModeTime\t= 30\r\n",
                    "file content");
+    });
+
+    run("a settings.conf another editor created meanwhile is read, never replaced", [&] {
+        std::string root = makeRoot("created-meanwhile");
+        SettingsFile manager(root);   // loaded while there's no settings.conf
+        SettingsFile themes(root);
+        check(themes.set("layout", "Mine", "# defaults\nlayout = Aeon Nox\n", error), "the other editor creates it: " + error);
+        std::string created = readFile(root + "/settings.conf");
+        check(created.find("layout = Mine") != std::string::npos, "with its value");
+
+        check(manager.ensureExists("# defaults\nlayout = Aeon Nox\nvideoEnable = yes\n", error), "ensureExists: " + error);
+        checkEqual(readFile(root + "/settings.conf"), created, "not overwritten with the defaults");
+        checkEqual(manager.get("layout"), "Mine", "and read from disk");
+
+        SettingsFile late(root);
+        std::filesystem::remove(root + "/settings.conf");
+        late.load();   // missing again
+        writeFile(root + "/settings.conf", "layout = Other\n");
+        check(late.set("videoEnable", "no", "# defaults\n", error), "setting a key reads the new file: " + error);
+        checkEqual(readFile(root + "/settings.conf"), "layout = Other\nvideoEnable = no\n", "the key is added to it");
+
+        Library::ConfFile stale(root + "/settings2.conf");
+        stale.load();
+        writeFile(root + "/settings2.conf", "horizontal = 1280\n");
+        check(stale.set("vertical", "720", error), "set in memory");
+        check(!stale.save(error) && !error.empty(), "saving a copy read as missing refuses to overwrite");
+        checkEqual(readFile(root + "/settings2.conf"), "horizontal = 1280\n", "the other file is untouched");
     });
 
     run("LF files stay LF and new keys are appended", [&] {
