@@ -49,6 +49,7 @@ void FormView::reset()
     confirm_.cancel();
     editing_ = nullptr;
     result_.reset();
+    pictures_.recheck();
 }
 
 bool FormView::cancelConfirm()
@@ -77,6 +78,12 @@ void FormView::draw(const Forms::Form& form, Forms::Model& model)
 {
     if (discard_) {
         freeImages();
+    }
+    // Pictures check whether their files changed after something was written
+    // (a new generation, an action, a new screen), never on a timer
+    if (model.generation() != generation_) {
+        generation_ = model.generation();
+        pictures_.recheck();
     }
     pictures_.beginFrame(2);
     drawFields(form.fields, model);
@@ -116,6 +123,9 @@ std::optional<Forms::Model::Result> FormView::takeResult()
 {
     std::optional<Forms::Model::Result> result = result_;
     result_.reset();
+    if (result) {
+        pictures_.recheck();   // an action ran (it may have written artwork) or a screen opens
+    }
     return result;
 }
 
@@ -133,6 +143,7 @@ void FormView::update(SDL_Window* window, Forms::Model& model)
         : FileDialog::pickFile(window, browse.title, browse.filterName, browse.pattern, path);
     if (chosen) {
         model.set(browse.bind, path);
+        pictures_.recheck();
     }
 }
 

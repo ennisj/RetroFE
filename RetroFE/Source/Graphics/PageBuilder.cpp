@@ -1005,22 +1005,37 @@ FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>*
 // Attribute helpers for <form> and <keyboard>
 namespace
 {
-	SDL_Color color(const xml_node<>* node, const char* name, SDL_Color fallback)
+	// "rrggbb" or "#rrggbb"; anything else is reported and the default kept
+	SDL_Color color(const xml_node<>* node, const char* name, SDL_Color fallback, bool* valid = nullptr)
 	{
-		if (const xml_attribute<>* attr = node->first_attribute(name)) {
-			int value = 0;
-			std::stringstream ss;
-			ss << std::hex << attr->value();
-			ss >> value;
-			return SDL_Color{ static_cast<Uint8>((value >> 16) & 0xFF), static_cast<Uint8>((value >> 8) & 0xFF), static_cast<Uint8>(value & 0xFF), 255 };
+		if (valid) *valid = false;
+		const xml_attribute<>* attr = node->first_attribute(name);
+		if (!attr) {
+			return fallback;
 		}
-		return fallback;
+		unsigned char rgb[3] = { fallback.r, fallback.g, fallback.b };
+		if (!Forms::parseColor(attr->value(), rgb)) {
+			LOG_WARNING("Layout", std::string("<") + node->name() + "> " + name + "=\"" + attr->value()
+				+ "\" isn't a color (six hex digits, e.g. 75c8f7); using the default");
+			return fallback;
+		}
+		if (valid) *valid = true;
+		return SDL_Color{ rgb[0], rgb[1], rgb[2], 255 };
 	}
 
+	// A number; anything else is reported and the default kept
 	float number(const xml_node<>* node, const char* name, float fallback)
 	{
 		const xml_attribute<>* attr = node->first_attribute(name);
-		return attr ? Utils::convertFloat(attr->value()) : fallback;
+		if (!attr) {
+			return fallback;
+		}
+		float value = fallback;
+		if (!Forms::parseNumber(attr->value(), value)) {
+			LOG_WARNING("Layout", std::string("<") + node->name() + "> " + name + "=\"" + attr->value()
+				+ "\" isn't a number; using the default");
+		}
+		return value;
 	}
 
 	std::string text(const xml_node<>* node, const char* name, const std::string& fallback)
@@ -1121,8 +1136,9 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 			{ "errorColor", FormWidget::FontRole::Error },
 		};
 		for (const auto& [attribute, role] : colorFonts) {
-			if (componentXml->first_attribute(attribute)) {
-				SDL_Color fontColor = color(componentXml, attribute, SDL_Color{ 255, 255, 255, 255 });
+			bool valid = false;
+			SDL_Color fontColor = color(componentXml, attribute, SDL_Color{ 255, 255, 255, 255 }, &valid);
+			if (valid) {
 				form->setFont(role, addFont(componentXml, nullptr, formMonitor, &fontColor));
 			}
 		}

@@ -28,11 +28,12 @@ struct FileStamp
     uintmax_t size = 0;
     int64_t written = 0;   // last write time, in the file clock's ticks
 
+    // path in UTF-8
     static FileStamp of(const std::string& path)
     {
         FileStamp stamp;
         std::error_code ec;
-        std::filesystem::path file(path);
+        std::filesystem::path file = std::filesystem::u8path(path);   // UTF-8, as RetroFE keeps paths
         uintmax_t size = std::filesystem::file_size(file, ec);
         if (ec) {
             return stamp;

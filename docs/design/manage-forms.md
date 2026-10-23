@@ -205,7 +205,10 @@ Things to know:
   drawn are dropped past a memory budget, and files that fail are tried again
   every few seconds, so artwork that appears while the screen is open shows
   up. A file replaced under the same name (new size or write time) is loaded
-  again within a second, so "replace this logo" can keep the path. Prefer small artwork for thumbnails (a box or logo) when you have a
+  again after an action runs, a screen opens or `generation()` changes (files
+  aren't checked on a timer, so a slow network drive never stalls drawing),
+  so "replace this logo" can keep the path; the old picture stays until the
+  new one loads. Prefer small artwork for thumbnails (a box or logo) when you have a
   choice: big files still cost a decode each.
 - **Leaving**: `leaving(screen)` is asked when the user leaves a screen with
   Back or Escape, and for every open screen when the manager closes or F10

@@ -133,8 +133,10 @@ public:
 
     // The screen is rebuilt from the model on input, when the model's
     // generation changes, and a few times a second; this rebuilds it on the
-    // next draw, e.g. after setting a value from outside
-    void invalidate() { stale_ = true; }
+    // next draw, e.g. after setting a value from outside. Pictures check
+    // whether their files changed after this, a new screen, an action, or a
+    // new generation, and at no other time.
+    void invalidate() { stale_ = true; pictures_.recheck(); }
 
     // Shown under the form until the next action, e.g. a result or a warning
     void setStatus(const std::string& message, bool isError);

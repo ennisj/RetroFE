@@ -67,6 +67,37 @@ static Test::Suite renderingSuite("rendering", [] {
         checkEqual(Forms::ellipsize("Missing", 20.0f, measure), "", "not even the dots fit");
     });
 
+    run("ellipsize and wrapText cope with text that isn't UTF-8", [] {
+        // e.g. Latin-1 metadata: bytes that look like stray UTF-8 continuation bytes
+        auto bytes = [](const std::string& s) { return 10.0f * static_cast<float>(s.size()); };
+        checkEqual(Forms::ellipsize("caf\xe9 cr\xe8me", 60.0f, bytes), "caf...", "Latin-1 accents count as characters");
+        checkEqual(Forms::ellipsize("\x80\x81\x82\x83", 30.0f, bytes), "...", "only continuation bytes: just the dots");
+        checkEqual(Forms::ellipsize("\x80\x81\x82\x83", 40.0f, bytes), "\x80\x81\x82\x83", "fits as it is");
+        check(!Forms::wrapText("\x80\x81\x82\x83 \x84\x85", 30.0f, bytes).empty(), "wrapping finishes");
+    });
+
+    run("parseColor takes six hex digits, with or without #", [] {
+        unsigned char rgb[3] = { 1, 2, 3 };
+        check(Forms::parseColor("75c8f7", rgb) && rgb[0] == 0x75 && rgb[1] == 0xc8 && rgb[2] == 0xf7, "rrggbb");
+        check(Forms::parseColor("#FF0000", rgb) && rgb[0] == 255 && rgb[1] == 0 && rgb[2] == 0, "#RRGGBB");
+        rgb[0] = 9;
+        check(!Forms::parseColor("red", rgb) && rgb[0] == 9, "a name is refused, the color untouched");
+        check(!Forms::parseColor("fff", rgb), "three digits");
+        check(!Forms::parseColor("#ff00zz", rgb), "not hex");
+        check(!Forms::parseColor("", rgb), "empty");
+    });
+
+    run("parseNumber takes numbers only", [] {
+        float value = 7.0f;
+        check(Forms::parseNumber("0.85", value) && value == 0.85f, "a fraction");
+        check(Forms::parseNumber(" 40 ", value) && value == 40.0f, "spaces around");
+        check(Forms::parseNumber("-2", value) && value == -2.0f, "negative");
+        value = 7.0f;
+        check(!Forms::parseNumber("half", value) && value == 7.0f, "a word is refused, the value untouched");
+        check(!Forms::parseNumber("12px", value), "a unit");
+        check(!Forms::parseNumber("", value), "empty");
+    });
+
     run("wrapText breaks at spaces, and inside words too long for a line", [] {
         checkEqual(joined(Forms::wrapText("one two three", 70.0f, measure)), "one two|three", "at spaces");
         checkEqual(joined(Forms::wrapText("C:\\Games\\Arcade\\roms", 60.0f, measure)), "C:\\Gam|es\\Arc|ade\\ro|ms", "a long path");

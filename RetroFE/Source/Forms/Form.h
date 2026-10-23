@@ -288,4 +288,12 @@ namespace Forms
     // other. -1 when nothing can take focus.
     enum class FocusTarget { None, Free, Guarded };
     int refocusIndex(const std::vector<FocusTarget>& targets, int previous);
+
+    // A layout attribute's color, "rrggbb" or "#rrggbb" in hex: false (rgb
+    // untouched) for anything else, e.g. "red" or "fff"
+    bool parseColor(const std::string& text, unsigned char rgb[3]);
+
+    // A layout attribute's number, e.g. "0.85" or "40": false (value untouched)
+    // for anything else, e.g. "" or "half"
+    bool parseNumber(const std::string& text, float& value);
 }

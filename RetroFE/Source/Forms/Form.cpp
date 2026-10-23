@@ -19,6 +19,8 @@
 #include "../Utility/Utils.h"
 #include <rapidxml.hpp>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -329,6 +331,9 @@ std::string ellipsize(const std::string& text, float width, const std::function<
             starts.push_back(i);
         }
     }
+    if (starts.empty()) {
+        return dots;   // only stray continuation bytes, e.g. Latin-1 text read as UTF-8
+    }
     auto shortened = [&](size_t characters) {
         std::string start = text.substr(0, characters < starts.size() ? starts[characters] : text.size());
         while (!start.empty() && (start.back() == ' ' || start.back() == '\t')) {
@@ -444,6 +449,35 @@ RowSplit splitRow(float labelNeeds, float detailNeeds, float width, float gap, f
     }
     split.label = room - split.detail;
     return split;
+}
+
+bool parseColor(const std::string& text, unsigned char rgb[3])
+{
+    std::string hex = !text.empty() && text[0] == '#' ? text.substr(1) : text;
+    if (hex.size() != 6 || hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+        return false;
+    }
+    for (int i = 0; i < 3; i++) {
+        rgb[i] = static_cast<unsigned char>(std::stoi(hex.substr(i * 2, 2), nullptr, 16));
+    }
+    return true;
+}
+
+bool parseNumber(const std::string& text, float& value)
+{
+    // Leading and trailing spaces are fine; anything else after the number isn't
+    size_t start = text.find_first_not_of(" \t");
+    if (start == std::string::npos) {
+        return false;
+    }
+    const char* begin = text.c_str() + start;
+    char* end = nullptr;
+    float parsed = std::strtof(begin, &end);
+    if (end == begin || std::string(end).find_first_not_of(" \t") != std::string::npos || !std::isfinite(parsed)) {
+        return false;
+    }
+    value = parsed;
+    return true;
 }
 
 int refocusIndex(const std::vector<FocusTarget>& targets, int previous)

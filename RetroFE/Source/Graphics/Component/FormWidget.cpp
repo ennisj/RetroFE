@@ -104,6 +104,7 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     confirm_.cancel();
     rows_.clear();
     stale_ = true;
+    pictures_.recheck();   // a new screen: its pictures may have changed since they were last shown
 }
 
 Forms::Focus FormWidget::focus() const
@@ -625,6 +626,11 @@ bool FormWidget::navigate(Nav nav)
         }
     }
 
+    // Only a Select straight after rows went away is held back on a file or folder field
+    if (nav != Nav::Select) {
+        focusGuarded_ = false;
+    }
+
     switch (nav) {
     case Nav::Up:
         moveFocus(-1);
@@ -690,6 +696,7 @@ void FormWidget::activate(const Row& row)
     case FieldType::Button:
         if (model_->actionProblem(field.action).empty() && confirm_.select(field)) {
             result_ = model_->runAction(field.action);
+            pictures_.recheck();   // it may have written artwork
         }
         break;
     case FieldType::Link:
@@ -751,6 +758,7 @@ void FormWidget::change(const Field& field, int direction)
 void FormWidget::startEditing(const Field& field)
 {
     editing_ = true;
+    focusGuarded_ = false;
     editBuffer_ = model_->get(field.bind);
     editOriginal_ = editBuffer_;
     liveSent_ = editBuffer_;
@@ -895,7 +903,7 @@ std::string FormWidget::hintText() const
         case FieldType::Folder:
         case FieldType::File:
             hint = !canBrowse_ ? "Select: edit"
-                : focusGuarded_ ? "Up/Down, then back here to browse   Right: type"
+                : focusGuarded_ ? "Any direction, then Select: browse   Right: type"
                 : "Select: browse   Right: type";
             break;
         default: break;
@@ -956,6 +964,10 @@ void FormWidget::draw()
     }
 
     // Rebuilt after input, when the model says something changed, and now and then
+    if (model_->generation() != generation_) {
+        // Something was written (e.g. a game's artwork): pictures check their files once
+        pictures_.recheck();
+    }
     if (stale_ || model_->generation() != generation_ || SDL_GetTicks() - builtAt_ >= refreshMs) {
         buildRows();
     }
