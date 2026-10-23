@@ -510,6 +510,12 @@ static void runSystemsTests()
         writeFile(f.root + "/roms/Genesis/sonic.md", "x");
         std::string menu = f.root + "/collections/Consoles/menu.txt";
         fs::permissions(menu, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write, fs::perm_options::remove);
+        if (std::ofstream(menu, std::ios::app)) {
+            // root (e.g. in a container) writes read-only files anyway: nothing fails to test
+            fs::permissions(menu, fs::perms::owner_write, fs::perm_options::add);
+            std::cout << "  (skipped: read-only files are writable here)" << std::endl;
+            return;
+        }
         f.open("system-add", {});
         f.model.set("system:addName", "Genesis");
         f.model.set("system:addMenu", "Consoles");
