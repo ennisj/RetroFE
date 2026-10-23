@@ -72,6 +72,7 @@ namespace
         writeFile(root + "/collections/NES/settings.conf", "list.path = " + roms("NES") + "\nlist.extensions = nes\n");
         writeFile(roms("NES") + "/mario.nes", "x");
         writeFile(root + "/collections/NES/system_artwork/logo.png", "old logo");
+        writeFile(root + "/collections/NES/launchers.local/special.conf", "executable = special.exe\n");
 
         writeFile(root + "/collections/Lonely/settings.conf",
                   "list.path = " + roms("Nowhere") + "\nlist.extensions = bin\nlauncher = ghost\n");
@@ -130,6 +131,14 @@ namespace
             indexer.wait(20000);
         }
 
+        // After a test changed the files by hand
+        void rescan()
+        {
+            settle();
+            indexer.rebuild();
+            settle();
+        }
+
         void open(const std::string& form, const Forms::Params& params)
         {
             settle();
@@ -159,6 +168,18 @@ namespace
     bool has(const std::vector<std::string>& values, const std::string& value)
     {
         return std::find(values.begin(), values.end(), value) != values.end();
+    }
+
+    // Where a deleted collection's folder was kept: manage/backups/deleted/<name> <time>
+    std::string keptFolder(const std::string& root, const std::string& name)
+    {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(root + "/manage/backups/deleted", ec)) {
+            if (entry.path().filename().string().compare(0, name.size() + 1, name + " ") == 0) {
+                return entry.path().string();
+            }
+        }
+        return "";
     }
 }
 
@@ -432,10 +453,216 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:canDelete"), "yes", "empty, so it can go");
         Forms::Model::Result deleted = f.model.runAction("system.delete");
         check(deleted.ok && deleted.back, "deleted: " + deleted.message);
-        check(contains(deleted.message, "stay where they are"), "says what stays");
+        check(contains(deleted.message, "isn't touched"), "says what stays");
         check(!fs::exists(f.root + "/collections/Empty"), "folder gone");
         check(!contains(readFile(f.root + "/collections/Consoles/menu.txt"), "Empty"), "menu line gone");
-        check(fs::exists(f.root + "/manage/backups/collections/Empty/settings.conf"), "settings kept");
+        check(!keptFolder(f.root, "Empty").empty() && fs::exists(keptFolder(f.root, "Empty") + "/settings.conf"),
+              "the whole folder is kept in manage/backups/deleted");
         check(fs::is_directory(Utils::combinePath(f.root, "roms", "Empty")), "games folder untouched");
+    });
+
+    run("systems: delete takes a system out of every menu, and refuses a menu.xml one", [] {
+        Fixture f("sys-delete-menus");
+        writeFile(f.root + "/collections/Twice/settings.conf", "# Created by RetroFE Manage\nlist.path = " + f.root + "/roms/Twice\nlist.extensions = zip\n");
+        writeFile(f.root + "/collections/Pair/settings.conf", "# Created by RetroFE Manage\nlist.path = " + f.root + "/roms/Pair\nlist.extensions = zip\n");
+        writeFile(f.root + "/collections/Main/menu.txt", "Arcade\r\nConsoles\r\nClips\r\nTwice\r\nPair\r\n");
+        writeFile(f.root + "/collections/Consoles/menu.txt", "NES\r\nEmpty\r\nTwice\r\n");
+        writeFile(f.root + "/collections/Xml/menu.xml", "<menu><item collection=\"Pair\"/></menu>");
+        f.rescan();
+        f.open("system", { { "id", "Twice" } });
+        checkEqual(f.model.get("system:menus"), "Consoles, Main", "listed twice");
+        Forms::Model::Result deleted = f.model.runAction("system.delete");
+        check(deleted.ok, "deleted: " + deleted.message);
+        check(!contains(readFile(f.root + "/collections/Main/menu.txt"), "Twice")
+              && !contains(readFile(f.root + "/collections/Consoles/menu.txt"), "Twice"), "out of both menus");
+        f.open("system", { { "id", "Pair" } });
+        checkEqual(f.model.get("system:canDelete"), "no", "a menu.xml lists it");
+        check(contains(f.model.actionProblem("system.delete"), "menu.xml"), "and says so: " + f.model.actionProblem("system.delete"));
+    });
+
+    run("systems: delete never takes games: files inside its folder, or anything but settings and art", [] {
+        Fixture f("sys-delete-inside");
+        // Its games folder is inside it, and holds a file the extensions don't match: 0 games
+        writeFile(f.root + "/collections/Inside/settings.conf",
+                  "# Created by RetroFE Manage\nlist.path = " + f.root + "/collections/Inside/roms\nlist.extensions = zip\n");
+        writeFile(f.root + "/collections/Inside/roms/game.ZIP", "x");
+        // Made here, games elsewhere, but something else in its folder
+        writeFile(f.root + "/collections/Junk/settings.conf",
+                  "# Created by RetroFE Manage\nlist.path = " + f.root + "/roms/Arcade\nlist.extensions = zip\n");
+        writeFile(f.root + "/collections/Junk/notes.zip", "mine");
+        writeFile(f.root + "/collections/Junk/system_artwork/logo.png", "art");
+        f.rescan();
+        f.open("system", { { "id", "Inside" } });
+        checkEqual(f.model.get("system:canDelete"), "no", "games folder inside");
+        check(contains(f.model.actionProblem("system.delete"), "inside its own folder"), f.model.actionProblem("system.delete"));
+        f.open("system", { { "id", "Junk" } });
+        checkEqual(f.model.get("system:canDelete"), "no", "a stray file");
+        check(contains(f.model.actionProblem("system.delete"), "notes.zip"), f.model.actionProblem("system.delete"));
+        auto index = f.indexer.index();
+        check(!Manager::madeHere(index->collections[static_cast<size_t>(index->findCollection("Junk"))]),
+              "a header alone doesn't make it made here");
+        check(Manager::madeHere(index->collections[static_cast<size_t>(index->findCollection("Inside"))]) == false,
+              "nor with a roms folder in it");
+    });
+
+    run("systems: a failed add leaves nothing behind", [] {
+        Fixture f("sys-add-fails");
+        writeFile(f.root + "/roms/Genesis/sonic.md", "x");
+        std::string menu = f.root + "/collections/Consoles/menu.txt";
+        fs::permissions(menu, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write, fs::perm_options::remove);
+        f.open("system-add", {});
+        f.model.set("system:addName", "Genesis");
+        f.model.set("system:addMenu", "Consoles");
+        f.model.set("system:addFolder", Utils::combinePath(f.root, "roms", "Genesis"));
+        f.model.set("system:addExtensions", "md");
+        f.model.set("system:addLauncher", "mame");
+        Forms::Model::Result created = f.model.runAction("system.create");
+        fs::permissions(menu, fs::perms::owner_write, fs::perm_options::add);
+        check(!created.ok && contains(created.message, "Nothing was added"), "refused: " + created.message);
+        check(!fs::exists(f.root + "/collections/Genesis"), "no half-made folder");
+        check(!contains(readFile(menu), "Genesis"), "menu unchanged");
+    });
+
+    run("systems: a name differing only in case from a folder is refused", [] {
+        Fixture f("sys-add-case");
+        f.open("system-add", {});
+        f.model.set("system:addName", "arcade");
+        check(contains(f.model.actionProblem("system.create"), "\"Arcade\""), f.model.actionProblem("system.create"));
+    });
+
+    run("systems: toggles keep yes/no and true/false styles", [] {
+        Fixture f("sys-style");
+        writeFile(f.root + "/collections/NES/settings.conf",
+                  "list.path = " + f.root + "/roms/NES\nlist.extensions = nes\nlist.includeMissingItems = no\n");
+        writeFile(f.root + "/collections/Arcade/settings.conf",
+                  "list.path = " + f.root + "/roms/Arcade\nlist.extensions = zip\nlist.includeMissingItems = false\n");
+        f.rescan();
+        for (const char* system : { "NES", "Arcade" }) {
+            f.open("system-settings", { { "id", system } });
+            checkEqual(f.model.get("system:includeMissing"), "no", std::string(system) + " starts off");
+            f.model.set("system:includeMissing", "yes");
+            check(f.model.runAction("system.saveSettings").ok, "saved");
+        }
+        check(contains(readFile(f.root + "/collections/NES/settings.conf"), "list.includeMissingItems = yes"), "yes/no kept");
+        check(contains(readFile(f.root + "/collections/Arcade/settings.conf"), "list.includeMissingItems = true"), "true/false kept");
+    });
+
+    run("systems: a local launcher is offered by the name RetroFE looks up", [] {
+        Fixture f("sys-local-launcher");
+        f.open("system-launcher", { { "id", "NES" } });
+        auto options = f.model.options("system:launchers");
+        check(std::any_of(options.begin(), options.end(), [](const auto& o) { return o.first == "NES.special"; }), "NES.special offered");
+        check(std::none_of(options.begin(), options.end(), [](const auto& o) { return o.first == "special"; }), "not the bare name");
+        auto index = f.indexer.index();
+        check(contains(Library::Editor::checkSetting(*index, "NES", "launcher", "special"), "NES.special"), "the bare name is refused, saying why");
+        f.model.set("system:launcher", "NES.special");
+        check(f.model.runAction("system.saveLauncher").ok, "saved");
+        f.open("system", { { "id", "NES" } });
+        std::string inEffect = f.model.get("system:launcherInEffect");
+        check(contains(inEffect, "NES.special") && !contains(inEffect, "isn't installed"), "it resolves: " + inEffect);
+    });
+
+    run("systems: playlist edits work before the index catches up", [] {
+        std::string root = makeInstall("sys-stale-library");
+        Library::ScanOptions scan;
+        scan.root = root;
+        auto stale = std::shared_ptr<const Library::Index>(Library::buildIndex(scan).release());
+        Library::Editor editor(root);
+        check(editor.createPlaylist(*stale, "Arcade", "Fresh").ok, "created");
+        check(editor.addToPlaylist(*stale, "Arcade", "Fresh", "Arcade", "a").ok, "added with the old index");
+        check(editor.removeFromPlaylist(*stale, "Arcade", "Fresh", "Arcade", "a").ok, "removed with the old index");
+        check(editor.renamePlaylist(*stale, "Arcade", "Fresh", "Newer").ok, "renamed");
+        check(editor.addToPlaylist(*stale, "Arcade", "Newer", "Arcade", "b").ok
+              && editor.removeFromPlaylist(*stale, "Arcade", "Newer", "Arcade", "b").ok, "the renamed one too");
+
+        Fixture f("sys-stale");
+        f.open("system-playlists", { { "id", "Arcade" } });
+        f.model.set("system:newPlaylist", "Quick");
+        check(f.model.runAction("system.createPlaylist").ok, "created");
+        f.model.setScreen("system-playlists", { { "id", "Arcade" } });   // no waiting for the index
+        check(has(f.ids("system:playlists"), "Quick"), "listed at once");
+        f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
+        check(f.model.runAction("system.addEntry").ok, "added");
+        f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
+        Forms::Model::Result removed = f.model.runAction("system.removeEntry");
+        check(removed.ok, "removed: " + removed.message);
+        f.model.setScreen("system-playlist", { { "id", "Arcade" }, { "playlist", "Quick" } });
+        f.model.set("system:playlistName", "Quicker");
+        check(f.model.runAction("system.renamePlaylist").ok, "renamed");
+        f.model.setScreen("system-playlists", { { "id", "Arcade" } });
+        std::vector<std::string> names = f.ids("system:playlists");
+        check(has(names, "Quicker") && !has(names, "Quick"), "the new name at once");
+    });
+
+    run("systems: cyclePlaylist decides which playlists RetroFE shows", [] {
+        Fixture f("sys-cycle");
+        writeFile(f.root + "/collections/Arcade/settings.conf",
+                  "list.path = " + f.root + "/roms/Arcade\nlist.extensions = zip\ncyclePlaylist = Fighters\n");
+        writeFile(f.root + "/collections/Arcade/playlists/Fighters.txt", "a\n");
+        writeFile(f.root + "/collections/Arcade/playlists/Best.txt", "b\n");
+        writeFile(f.root + "/collections/Arcade/playlists/Year.txt", "a\n");
+        f.rescan();
+        auto index = f.indexer.index();
+        const Library::CollectionRecord& arcade = index->collections[static_cast<size_t>(index->findCollection("Arcade"))];
+        check(arcade.cyclePlaylist == std::vector<std::string>{ "Fighters" } && arcade.cyclePlaylistOwn, "read into the library");
+        f.open("system-check", { { "id", "Arcade" } });
+        check(f.anyFinding("system", "The playlist Best isn't in cyclePlaylist"), "a finding");
+        f.open("system-playlist", { { "id", "Arcade" }, { "playlist", "Year" } });
+        check(contains(f.model.get("system:playlistNote"), "sorts a playlist called Year by Year"), f.model.get("system:playlistNote"));
+        f.open("system-playlist", { { "id", "Arcade" }, { "playlist", "Best" } });
+        check(contains(f.model.get("system:playlistNote"), "isn't in cyclePlaylist"), "the playlist says so");
+        checkEqual(f.model.get("system:canShowPlaylist"), "yes", "and offers to fix it");
+        Forms::Model::Result shown = f.model.runAction("system.showPlaylist");
+        check(shown.ok, "shown: " + shown.message);
+        check(contains(readFile(f.root + "/collections/Arcade/settings.conf"), "cyclePlaylist = Fighters,Best"), "appended");
+        check(contains(f.model.runAction("system.showPlaylist").message, "already"), "not twice");
+        f.open("system-playlists", { { "id", "Arcade" } });
+        f.model.set("system:newPlaylist", "Fresh");
+        check(contains(f.model.runAction("system.createPlaylist").message, "cyclePlaylist"), "creating says it won't show");
+    });
+
+    run("systems: reserved playlist names match RetroFE's, in any case", [] {
+        Fixture f("sys-reserved");
+        writeFile(f.root + "/collections/Arcade/playlists/LastPlayed.txt", "a\n");
+        writeFile(f.root + "/collections/Arcade/playlists/favourites.txt", "a\n");
+        f.rescan();
+        auto index = f.indexer.index();
+        for (const Library::PlaylistInfo& playlist : index->collections[static_cast<size_t>(index->findCollection("Arcade"))].playlists) {
+            check(playlist.reserved == (playlist.name == "LastPlayed"), playlist.name + " reserved as RetroFE treats it");
+        }
+        check(!Library::Editor::isReservedPlaylist("favourites") && Library::Editor::isReservedPlaylist("ALL"), "the same names for edits");
+    });
+
+    run("systems: one finding for missing extensions; metadata names every source", [] {
+        Fixture f("sys-findings");
+        writeFile(f.root + "/collections/Bare/settings.conf", "list.path = " + f.root + "/roms/NES\nlauncher = mame\n");
+        writeFile(f.root + "/collections/Main/menu.txt", "Arcade\r\nConsoles\r\nClips\r\nBare\r\n");
+        f.rescan();
+        f.open("system-check", { { "id", "Bare" } });
+        int mentions = 0;
+        for (int i = 0; i < 12; i++) {
+            mentions += contains(f.model.get("system:finding" + std::to_string(i)), "extensions") ? 1 : 0;
+        }
+        check(mentions == 1, "said once, not " + std::to_string(mentions) + " times");
+        f.open("system-check", { { "id", "Arcade" } });
+        check(f.anyFinding("system", "meta/mamelist"), "mamelist mentioned");
+    });
+
+    run("systems: the info screen marks a system as a video collection", [] {
+        Fixture f("sys-mark-video");
+        f.open("system-info", { { "id", "NES" } });
+        checkEqual(f.model.get("system:isVideo"), "no", "a system");
+        f.model.set("system:isVideo", "yes");
+        Forms::Model::Result saved = f.model.runAction("system.saveInfo");
+        check(saved.ok && contains(saved.message, "Videos"), "saved: " + saved.message);
+        check(contains(readFile(f.root + "/collections/NES/info.conf"), "type = videos"), "written");
+        f.open("videos", {});
+        check(has(f.ids("video:search"), "NES"), "listed under Videos");
+        f.open("video-info", { { "id", "NES" } });
+        f.model.set("video:isVideo", "no");
+        check(f.model.runAction("video.saveInfo").ok, "unmarked");
+        check(!contains(readFile(f.root + "/collections/NES/info.conf"), "type"), "taken out");
+        auto index = f.indexer.index();
+        check(!Library::Editor::checkSetting(*index, "NES", "type", "movies").empty(), "only videos or nothing");
     });
 }

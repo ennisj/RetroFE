@@ -54,6 +54,11 @@ bool isReservedCollection(const std::string& name)
     return name.empty() || name[0] == '_' || iequals(name, "Home") || iequals(name, "Catalog") || iequals(name, "Favorites");
 }
 
+bool isReservedPlaylistName(const std::string& name)
+{
+    return iequals(name, "all") || iequals(name, "favorites") || iequals(name, "lastplayed");
+}
+
 namespace
 {
     // CollectionInfo::extensionList: split on ',', trim each (empty tokens kept)
@@ -445,8 +450,21 @@ namespace
             playlist.name = stem;
             playlist.file = path;
             playlist.entries = readEntries(path);
-            playlist.reserved = stem == "favorites" || stem == "lastplayed";
+            playlist.reserved = isReservedPlaylistName(stem);
             record.playlists.push_back(std::move(playlist));
+        }
+        // Which of them RetroFE shows (CollectionInfoBuilder::loadPlaylistItems)
+        {
+            std::string cycle = props.getOr("cyclePlaylist");
+            if ((cycle.empty() || props.getOr("firstCollection") != record.name) && props.exists(prefix + "cyclePlaylist")) {
+                cycle = props.getOr(prefix + "cyclePlaylist");
+                record.cyclePlaylistOwn = true;
+            }
+            if (record.name == "Favorites") {
+                cycle = "favorites";
+                record.cyclePlaylistOwn = false;
+            }
+            Utils::listToVector(cycle, record.cyclePlaylist, ',');
         }
 
         // What CollectionInfoBuilder::buildCollection reads

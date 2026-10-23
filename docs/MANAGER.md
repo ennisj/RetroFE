@@ -182,28 +182,35 @@ the launcher in effect (and which file sets it), with a link to each part:
   because RetroFE compares it), sort by title, show missing games, and the
   metadata file. Folders are shown, never changed. Save writes only these
   keys, to the file each comes from, in that file's own style (`true`/`yes`).
-- **Launcher**: the default launcher, from the installed ones. A RetroFE Plus
-  list (`launcher = a, b, c`) keeps its alternatives: the one you pick moves to
-  the front. When the system has its own launcher file, the screen says that
-  file decides.
+- **Launcher**: the default launcher, from the installed ones. A system's own
+  local launcher is offered as `<system>.<name>`, the name RetroFE looks it up
+  by. A RetroFE Plus list (`launcher = a, b, c`) keeps its alternatives: the
+  one you pick moves to the front. When the system has its own launcher file,
+  the screen says that file decides.
 - **Info**: title, manufacturer, year and genre in `info.conf`; an emptied
-  field is taken out.
+  field is taken out. "This is a video collection" writes `type = videos`,
+  which moves it to Videos.
 - **Media**: the system's own art in `system_artwork` (logo, marquee,
   device, fanart, video, story and any other file there), each with a
   preview. Replace one from a file, clear it (only its own file, never art
   shown from elsewhere), or put back what it had before Manage changed it.
 - **Playlists**: create, rename and delete playlists, and add or take out
-  games. `all`, `favorites` and `lastplayed` are RetroFE's own and are shown
-  but not changed.
+  games. `all`, `favorites` and `lastplayed` (any case) are RetroFE's own and
+  are shown but not changed. RetroFE shows only playlists with games in them
+  and, when `cyclePlaylist` is set, only the ones it names: a playlist screen
+  says so and can add it to the system's `cyclePlaylist`. A playlist named
+  like a sort field (`year`, `playCount`...) is sorted by it.
 - **Check this system**: warnings, as sentences, for a system no menu lists,
   a games folder that isn't there, no files with its extensions (including
   ones that differ only in case), include and exclude lists that leave
   nothing, a missing or uninstalled launcher or its missing program, and no
   metadata; then a one-line summary. It never changes anything.
 - **Delete this system** appears only for a system that is empty or was added
-  here, isn't a menu or merged collection, and whose games aren't inside its
-  own folder. It asks first, takes it out of its menus, and keeps its files in
-  `manage/backups`; its games stay where they are.
+  here, isn't a menu or merged collection, isn't listed by a `menu.xml`, whose
+  games folder isn't inside its own folder, and whose folder holds only
+  settings, lists and art. It asks first, moves the whole folder to
+  `manage/backups/deleted/<name> <time>`, then takes it out of its menus (if a
+  menu can't be changed, everything is put back); its games aren't touched.
 
 Every change keeps the original file in `manage/backups` first and takes
 effect when RetroFE reloads, after you close Manage.

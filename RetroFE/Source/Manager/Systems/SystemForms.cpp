@@ -95,6 +95,7 @@ const char* const infoForm = R"(
   <text label="Manufacturer" bind="{p}:manufacturer"/>
   <text label="Year" bind="{p}:year"/>
   <text label="Genre" bind="{p}:genre"/>
+  <toggle label="This is a video collection" bind="{p}:isVideo" help="Writes type = videos: it's then listed under Videos instead of Systems."/>
   <note value="Kept in its info.conf. Leave a field empty to take it out."/>
   <actions>
     <button label="Save" action="{p}.saveInfo"/>
@@ -145,6 +146,7 @@ const char* const playlistForm = R"(
 <form id="{p}-playlist" title="Playlist" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
   <note bind="{p}:playlistNote"/>
+  <button label="Show it in RetroFE" action="{p}.showPlaylist" visibleWhen="{p}:canShowPlaylist"/>
   <results label="In this playlist" bind="{p}:entries" open="{p}-playlist-entry" param="game" empty="It's empty."/>
   <section label="Add {items}" visibleWhen="{p}:canEditPlaylist">
     <text label="Search" bind="{p}:playlistQuery" live="yes" hint="Name or title"/>

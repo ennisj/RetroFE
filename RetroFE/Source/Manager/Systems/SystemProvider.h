@@ -50,7 +50,8 @@ namespace Manager
     // RetroFE compares it
     std::string normaliseExtensions(const std::string& text);
 
-    // "settings.conf of a system made here" (Setup's and Manage's own header)
+    // A system made here: Setup's or Manage's header in its settings.conf, and
+    // nothing in its folder but settings, lists and art
     bool madeHere(const Library::CollectionRecord& record);
 
     // A collection Videos lists: info.conf "type = videos"
@@ -119,9 +120,17 @@ namespace Manager
         Forms::Rows entryRows(const Screen& screen);
         Forms::Rows candidateRows(const Screen& screen, size_t limit);
         std::string playlistFile(const Library::CollectionRecord& record, const std::string& name) const;
+        // Why RetroFE won't show a playlist (cyclePlaylist, empty) and how it sorts it, or ""
+        std::string playlistShowNote(const Library::Index& index, const Library::CollectionRecord& record,
+                                     const std::string& playlist, size_t entries) const;
+        static bool canAppendCycle(const Library::Index& index, const Library::CollectionRecord& record);
         bool inPlaylist(const Screen& screen);
 
         // Adding a system
+        // The menu new systems go in (MenuFiles::menuForNewCollections reads up
+        // to 17 conf files), worked out once per snapshot
+        const std::string& defaultMenu(const Library::Index& index);
+        static bool canListIn(const Library::CollectionRecord& menu);
         std::string addProblem();
         Forms::Model::Result create();
         std::string addFolderCount();
@@ -177,6 +186,8 @@ namespace Manager
 
         // playlists
         std::string newPlaylist_;
+        std::string playlistsKey_;         // id + generation the playlists list was read for
+        std::vector<Forms::Row> playlistsRows_;
         std::string playlistKey_;          // id + playlist the entries were read for
         std::string playlistPath_;
         std::vector<std::string> entries_;
@@ -185,6 +196,8 @@ namespace Manager
         Library::Search candidates_;
 
         // adding
+        IndexPtr menuIndex_;
+        std::string defaultMenu_;
         std::map<std::string, std::string> add_;
         std::string countedKey_;
         std::string countText_;

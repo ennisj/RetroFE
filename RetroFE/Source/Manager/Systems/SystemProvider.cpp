@@ -23,6 +23,7 @@
 #include "../../Utility/Utils.h"
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -129,6 +130,117 @@ namespace
     {
         return path.find('%') != std::string::npos;
     }
+
+    // Moves a folder: one rename when it can, else file by file. On failure
+    // whatever moved is moved back, so it's all in one place or the other.
+    bool moveTree(const std::string& from, const std::string& to, std::string& error)
+    {
+        std::error_code ec;
+        fs::create_directories(fs::path(to).parent_path(), ec);
+        fs::rename(from, to, ec);
+        if (!ec) {
+            return true;
+        }
+        std::vector<fs::path> files;
+        for (auto it = fs::recursive_directory_iterator(from, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+            if (it->is_regular_file(ec)) {
+                files.push_back(it->path());
+            }
+        }
+        if (ec) {
+            error = ec.message();
+            return false;
+        }
+        std::vector<std::pair<fs::path, fs::path>> moved;
+        for (const fs::path& file : files) {
+            fs::path target = fs::path(to) / file.lexically_relative(from);
+            fs::create_directories(target.parent_path(), ec);
+            fs::rename(file, target, ec);
+            if (ec) {
+                std::string copyError;
+                if (Library::copyFileAtomic(Library::narrow(file), Library::narrow(target), copyError) && fs::remove(file, ec)) {
+                    ec.clear();
+                }
+            }
+            if (ec) {
+                error = "can't move " + Library::narrow(file) + ": " + ec.message();
+                for (auto back = moved.rbegin(); back != moved.rend(); ++back) {
+                    std::error_code ignored;
+                    fs::rename(back->second, back->first, ignored);
+                }
+                return false;
+            }
+            moved.emplace_back(file, target);
+        }
+        fs::remove_all(from, ec);   // only folders are left
+        return true;
+    }
+
+    // Moves a deleted collection's folder to manage/backups/deleted/<name> <time>
+    bool moveAside(Library::Backups& backups, const std::string& folder, const std::string& name, std::string& kept,
+                   std::string& error)
+    {
+        std::time_t now = std::time(nullptr);
+        char stamp[32] = {};
+        std::tm local{};
+#ifdef _WIN32
+        localtime_s(&local, &now);
+#else
+        localtime_r(&now, &local);
+#endif
+        std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H%M%S", &local);
+        std::error_code ec;
+        fs::path base = fs::path(backups.folder()) / "deleted";
+        fs::path target = base / (name + " " + stamp);
+        for (int n = 2; fs::exists(target, ec); n++) {
+            target = base / (name + " " + stamp + " (" + std::to_string(n) + ")");
+        }
+        kept = Library::narrow(target);
+        return moveTree(folder, kept, error);
+    }
+
+    // Whether RetroFE lists the playlist: cyclePlaylist names it exactly, or is empty
+    bool shownByCycle(const CollectionRecord& record, const std::string& playlist)
+    {
+        return record.cyclePlaylist.empty()
+            || std::find(record.cyclePlaylist.begin(), record.cyclePlaylist.end(), playlist) != record.cyclePlaylist.end();
+    }
+
+    // A playlist named like a sort field (Item::validSortType) is sorted by it
+    bool isSortName(const std::string& name)
+    {
+        static const std::vector<std::string> names = {
+            "year", "manufacturer", "developer", "genre", "numberplayers", "numberbuttons", "ctrltype",
+            "joyways", "rating", "score", "lastplayed", "playcount",
+        };
+        return std::find(names.begin(), names.end(), Library::toLower(name)) != names.end();
+    }
+
+    // The first file in a collection folder that isn't settings, lists or art
+    // (its relative path), or "": what deleting the folder could lose
+    std::string strayFile(const std::string& folder)
+    {
+        std::error_code ec;
+        fs::path base(folder);
+        for (auto it = fs::recursive_directory_iterator(base, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+            if (!it->is_regular_file(ec)) {
+                continue;
+            }
+            fs::path relative = it->path().lexically_relative(base);
+            std::string top = Library::toLower(Library::narrow(*relative.begin()));
+            std::string extension = Library::toLower(Library::narrow(it->path().extension()));
+            bool nested = std::distance(relative.begin(), relative.end()) > 1;
+            bool art = nested && (top == "system_artwork" || top == "medium_artwork");
+            bool lists = nested && top == "playlists" && extension == ".txt";
+            bool launchers = nested && top.compare(0, 9, "launchers") == 0 && extension == ".conf";
+            bool menu = nested && top == "menu" && extension == ".txt";
+            bool config = !nested && (extension == ".conf" || extension == ".txt" || extension == ".sub" || extension == ".xml");
+            if (!art && !lists && !launchers && !menu && !config) {
+                return Library::narrow(relative.generic_string());
+            }
+        }
+        return "";
+    }
 }
 
 std::string normaliseExtensions(const std::string& text)
@@ -162,8 +274,9 @@ bool madeHere(const CollectionRecord& record)
     if (!Library::readFile(Utils::combinePath(record.folder, "settings.conf"), content)) {
         return false;
     }
-    // Setup's "# Created by RetroFE setup" and this screen's own header
-    return content.compare(0, 20, "# Created by RetroFE") == 0;
+    // Setup's "# Created by RetroFE setup" and this screen's own header, and
+    // nothing in the folder but settings, lists and art (a header can be copied)
+    return content.compare(0, 20, "# Created by RetroFE") == 0 && strayFile(record.folder).empty();
 }
 
 bool isVideoCollection(const CollectionRecord& record)
@@ -245,8 +358,8 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
         else if (!hasPercent(def.executable) && fs::path(def.executable).is_absolute() && !fs::exists(def.executable, ec)) {
             add("The launcher " + def.id + " starts " + def.executable + ", which isn't there.");
         }
-        else if (!launcher.problem.empty()) {
-            add(launcher.problem);
+        else if (!launcher.problem.empty() && hasExtensions) {
+            add(launcher.problem);   // (no extensions is said above)
         }
     }
     size_t broken = 0;
@@ -267,20 +380,53 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
             withMetadata += index.games[g].hasMetadata ? 1 : 0;
         }
         if (withMetadata == 0) {
-            std::string file = Utils::combinePath(index.options.root, "meta", "hyperlist", r.metadataType + ".xml");
-            if (!fs::exists(file, ec)) {
-                add("There's no metadata file meta/hyperlist/" + r.metadataType + ".xml, so its " + items
-                    + " show their file names instead of titles.");
+            // What RetroFE imports: meta/hyperlist/<type>.xml, meta/mamelist/<type>*.xml,
+            // and meta/emuarc/*.dat (matched by the name in each file's header)
+            const std::string& type = r.metadataType;
+            std::string meta = Utils::combinePath(index.options.root, "meta");
+            std::vector<std::string> found;
+            if (fs::exists(Utils::combinePath(meta, "hyperlist", type + ".xml"), ec)) {
+                found.push_back("meta/hyperlist/" + type + ".xml");
+            }
+            bool emuarc = false;
+            for (const char* folder : { "mamelist", "emuarc" }) {
+                for (const auto& entry : fs::directory_iterator(Utils::combinePath(meta, folder), ec)) {
+                    std::string name;
+                    if (!entry.is_regular_file(ec) || !Library::narrowName(entry.path().filename(), name)) {
+                        continue;
+                    }
+                    if (std::string(folder) == "mamelist" && name.size() > 4 && iequals(name.substr(name.size() - 4), ".xml")
+                        && Library::toLower(name).compare(0, type.size(), Library::toLower(type)) == 0) {
+                        found.push_back("meta/mamelist/" + name);
+                    }
+                    emuarc |= std::string(folder) == "emuarc" && name.size() > 4 && iequals(name.substr(name.size() - 4), ".dat");
+                }
+            }
+            if (found.empty() && !emuarc) {
+                add("There's no metadata for " + type + " (meta/hyperlist/" + type + ".xml, meta/mamelist/" + type
+                    + "*.xml or a meta/emuarc list), so its " + items + " show their file names instead of titles.");
+            }
+            else if (found.empty()) {
+                add("None of its " + items + " has metadata. There's no meta/hyperlist/" + type + ".xml or meta/mamelist/"
+                    + type + "*.xml; meta/emuarc has lists, but RetroFE uses one only if its header names " + type + ".");
             }
             else {
-                add("None of its " + items + " has metadata, though meta/hyperlist/" + r.metadataType
-                    + ".xml exists: it may be unreadable, name other " + items + ", or not be imported yet.");
+                add("None of its " + items + " has metadata, though " + join(found, ", ") + (found.size() == 1 ? " exists" : " exist")
+                    + ": it may be unreadable, name other " + items + ", or not be imported yet.");
             }
         }
     }
     for (const std::string& problem : index.problems) {
         if (Library::toLower(problem).find("meta") != std::string::npos) {
             add("Metadata couldn't be read: " + problem);
+        }
+    }
+
+    // Playlists RetroFE won't show because cyclePlaylist leaves them out
+    for (const Library::PlaylistInfo& playlist : r.playlists) {
+        if (!playlist.reserved && !shownByCycle(r, playlist.name)) {
+            add("The playlist " + playlist.name + " isn't in cyclePlaylist (" + join(r.cyclePlaylist, ", ")
+                + "), so RetroFE doesn't show it.");
         }
     }
 
@@ -371,6 +517,8 @@ void SystemProvider::refresh()
     detailsIndex_.reset();
     mediaIndex_.reset();
     playlistKey_.clear();
+    playlistsKey_.clear();
+    menuIndex_.reset();
     settings_.from = launcher_.from = info_.from = playlistName_.from = nullptr;
 }
 
@@ -484,6 +632,7 @@ std::map<std::string, std::string> SystemProvider::readInfo(const CollectionReco
         { "manufacturer", value("manufacturer") },
         { "year", value("year") },
         { "genre", value("genre") },
+        { "isVideo", yesNo(isVideoCollection(record)) },
     };
 }
 
@@ -583,21 +732,36 @@ void SystemProvider::ensureDetails(const Screen& screen)
     else if (r->is(Library::KindMerged)) {
         deleteProblem_ = name + " also shows other collections' " + items_ + " (.sub files), so it can't be deleted here.";
     }
-    else if (r->gameCount > 0 && !madeHere(*r)) {
+    for (int parent : r->parents) {
+        // Manage edits menu.txt and menu/ folders; a menu.xml or a menu made from
+        // the collection launchers would keep listing it
+        const CollectionRecord& menu = idx->collections[static_cast<size_t>(parent)];
+        if (deleteProblem_.empty()
+            && (menu.menuSource == Library::MenuSource::MenuXml || menu.menuSource == Library::MenuSource::CollectionLaunchers)) {
+            deleteProblem_ = menu.name + " lists it in "
+                + std::string(menu.menuSource == Library::MenuSource::MenuXml ? "its menu.xml" : "collectionLaunchers")
+                + ", which Manage doesn't change; take it out there first.";
+        }
+    }
+    std::error_code ec;
+    for (const std::string& folder : r->listPaths) {
+        if (deleteProblem_.empty() && !folder.empty() && Library::isInside(folder, r->folder) && fs::exists(folder, ec)) {
+            deleteProblem_ = "Its " + items_ + " folder (" + folder + ") is inside its own folder, so deleting it would take that folder too.";
+        }
+    }
+    if (deleteProblem_.empty()) {
+        std::string stray = strayFile(r->folder);
+        if (!stray.empty()) {
+            deleteProblem_ = "Its folder holds more than settings and art (such as " + stray + "); move those out first.";
+        }
+    }
+    if (deleteProblem_.empty() && r->gameCount > 0 && !madeHere(*r)) {
         deleteProblem_ = "It has " + count(r->gameCount, item_, items_) + ". Only an empty " + noun_ + ", or one added here, can be deleted.";
     }
     for (const CollectionRecord& other : idx->collections) {
         for (const Library::SubSource& sub : other.subs) {
             if (deleteProblem_.empty() && sub.collection == c) {
                 deleteProblem_ = other.name + " shows its " + items_ + " (" + sub.source + ".sub), so it can't be deleted.";
-            }
-        }
-    }
-    if (deleteProblem_.empty() && static_cast<size_t>(c) < idx->candidates.size()) {
-        for (const Index::Candidate& candidate : idx->candidates[static_cast<size_t>(c)]) {
-            if (Library::isInside(candidate.file, r->folder)) {
-                deleteProblem_ = "Its " + items_ + " are inside its own folder, so deleting it would delete them.";
-                break;
             }
         }
     }
@@ -868,19 +1032,75 @@ Forms::Rows SystemProvider::playlistRows(const Screen& screen)
     if (!r) {
         return rows;
     }
-    for (const Library::PlaylistInfo& playlist : r->playlists) {
-        Forms::Row row;
-        row.id = playlist.name;
-        row.label = playlist.name;
-        row.detail = count(playlist.entries.size(), "entry", "entries");
-        if (Library::Editor::isReservedPlaylist(playlist.name)) {
-            row.detail = "Kept by RetroFE, " + row.detail;
+    // The folder as it is now (a playlist made or renamed a moment ago isn't in
+    // the index yet), read again when something changes
+    std::string key = r->name + "\n" + std::to_string(generation());
+    if (key != playlistsKey_) {
+        playlistsKey_ = key;
+        playlistsRows_.clear();
+        std::error_code ec;
+        std::vector<std::pair<std::string, std::string>> files;   // stem, path
+        for (const auto& entry : fs::directory_iterator(Utils::combinePath(r->folder, "playlists"), ec)) {
+            std::string file;
+            if (entry.is_regular_file(ec) && Library::narrowName(entry.path().filename(), file) && file.size() > 4
+                && file.compare(file.size() - 4, 4, ".txt") == 0) {
+                files.emplace_back(file.substr(0, file.size() - 4), Library::narrow(entry.path()));
+            }
         }
-        row.params = { { "id", r->name } };
-        rows.items.push_back(std::move(row));
+        std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return Library::toLower(a.first) < Library::toLower(b.first); });
+        for (const auto& [name, path] : files) {
+            Library::LineList list(path);
+            list.load();
+            size_t entries = list.size();
+            Forms::Row row;
+            row.id = name;
+            row.label = name;
+            row.detail = count(entries, "entry", "entries");
+            if (Library::Editor::isReservedPlaylist(name)) {
+                row.detail = "Kept by RetroFE, " + row.detail;
+            }
+            else if (!shownByCycle(*r, name)) {
+                row.detail += ", hidden by cyclePlaylist";
+            }
+            else if (entries == 0) {
+                row.detail = "Empty, so not shown";
+            }
+            row.params = { { "id", r->name } };
+            playlistsRows_.push_back(std::move(row));
+        }
     }
+    rows.items = playlistsRows_;
     rows.total = rows.items.size();
     return rows;
+}
+
+std::string SystemProvider::playlistShowNote(const Index& index, const CollectionRecord& record, const std::string& playlist,
+                                             size_t entries) const
+{
+    if (Library::Editor::isReservedPlaylist(playlist)) {
+        return "";
+    }
+    std::string note;
+    if (!shownByCycle(record, playlist)) {
+        note = "It isn't in cyclePlaylist (" + join(record.cyclePlaylist, ", ") + "), so RetroFE doesn't show it. "
+             + (canAppendCycle(index, record) ? "Show it in RetroFE adds it there."
+                                              : "Add it to cyclePlaylist in RetroFE's settings.conf to show it.");
+    }
+    else if (entries == 0) {
+        note = "RetroFE shows a playlist once it has " + items_ + " in it.";
+    }
+    if (isSortName(playlist)) {
+        note += std::string(note.empty() ? "" : " ") + "RetroFE sorts a playlist called " + playlist + " by " + playlist + ".";
+    }
+    return note;
+}
+
+bool SystemProvider::canAppendCycle(const Index& index, const CollectionRecord& record)
+{
+    // The collection's own cyclePlaylist can be added to; it's ignored for
+    // firstCollection while the global one is set
+    bool global = !index.properties.getOr("cyclePlaylist").empty() && index.properties.getOr("firstCollection") == record.name;
+    return !global && record.name != "Favorites";
 }
 
 Forms::Rows SystemProvider::entryRows(const Screen& screen)
@@ -1004,7 +1224,7 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 
     // Edit buffers
     static const std::set<std::string> settingKeys = { "extensions", "menuSort", "includeMissing", "metadataType" };
-    static const std::set<std::string> infoKeys = { "infoTitle", "manufacturer", "year", "genre" };
+    static const std::set<std::string> infoKeys = { "infoTitle", "manufacturer", "year", "genre", "isVideo" };
     if (settingKeys.count(key) || key == "settingsDirty") {
         syncBuffers(screen);
         return key == "settingsDirty" ? yesNo(settings_.edits.isDirty()) : settings_.edits.get(key);
@@ -1059,7 +1279,19 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
             return "RetroFE keeps this list itself, so it's shown here but not changed.";
         }
         ensurePlaylist(screen);
-        return playlistPath_.empty() ? "" : count(entries_.size(), "entry", "entries") + ", in " + playlistPath_;
+        if (playlistPath_.empty()) {
+            return "";
+        }
+        IndexPtr idx = index();
+        const CollectionRecord* r = idx ? record(*idx, screen) : nullptr;
+        std::string show = r ? playlistShowNote(*idx, *r, screen.param("playlist"), entries_.size()) : "";
+        return count(entries_.size(), "entry", "entries") + ", in " + playlistPath_ + "." + (show.empty() ? "" : " " + show);
+    }
+    if (key == "canShowPlaylist") {
+        IndexPtr idx = index();
+        const CollectionRecord* r = idx ? record(*idx, screen) : nullptr;
+        std::string playlist = screen.param("playlist");
+        return yesNo(r && !Library::Editor::isReservedPlaylist(playlist) && !shownByCycle(*r, playlist) && canAppendCycle(*idx, *r));
     }
     if (key == "isInPlaylist") return yesNo(inPlaylist(screen));
     if (key == "entryTitle" || key == "entryName" || key == "entrySystem" || key == "entryPlaylist" || key == "entryNote") {
@@ -1083,7 +1315,7 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         auto found = add_.find(key);
         if (found != add_.end()) return found->second;
         IndexPtr idx = index();
-        return idx ? Library::MenuFiles::menuForNewCollections(root(), idx->topMenu) : "";
+        return idx ? defaultMenu(*idx) : "";
     }
     if (key == "addLauncher") {
         auto found = add_.find(key);
@@ -1116,7 +1348,7 @@ void SystemProvider::set(const std::string& key, const std::string& value, const
         launcher_.edits.set(key, value);
         return;
     }
-    if (key == "infoTitle" || key == "manufacturer" || key == "year" || key == "genre") {
+    if (key == "infoTitle" || key == "manufacturer" || key == "year" || key == "genre" || key == "isVideo") {
         syncBuffers(screen);
         info_.edits.set(key, value);
         return;
@@ -1192,15 +1424,16 @@ std::vector<std::pair<std::string, std::string>> SystemProvider::options(const s
         return result;
     }
     if (key == "menus" || key == "addMenus") {
-        std::string top = Library::MenuFiles::menuForNewCollections(root(), idx->topMenu);
+        std::string top = defaultMenu(*idx);
+        int topIndex = idx->findCollection(top);
         if (key == "menus") {
             result.emplace_back("", "Every menu");
         }
-        else {
-            result.emplace_back(top, top);
+        else if (topIndex < 0 || canListIn(idx->collections[static_cast<size_t>(topIndex)])) {
+            result.emplace_back(top, top);   // may not exist yet: adding makes it
         }
         for (const CollectionRecord& r : idx->collections) {
-            if (r.is(Library::KindMenu) && !r.reserved && (key == "menus" || !iequals(r.name, top))) {
+            if (key == "menus" ? r.is(Library::KindMenu) && !r.reserved : canListIn(r) && !iequals(r.name, top)) {
                 result.emplace_back(r.name, r.name);
             }
         }
@@ -1218,7 +1451,8 @@ std::vector<std::pair<std::string, std::string>> SystemProvider::options(const s
                 result.emplace_back(def.id, def.id);
             }
             else if (def.scope == Library::LauncherScope::Local && r && def.collection == r->name) {
-                result.emplace_back(def.name, def.name + " (this " + noun_ + "'s own)");
+                // As a collection's default, RetroFE looks a local launcher up as <collection>.<name>
+                result.emplace_back(def.id, def.id + " (this " + noun_ + "'s own)");
             }
         }
         std::string current = launcher_.edits.get("launcher");
@@ -1283,7 +1517,7 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
         if (!info_.edits.isDirty()) return "No changes to save.";
         if (action == "resetInfo") return "";
         for (const auto& [k, v] : info_.edits.changes()) {
-            if (Utils::trimEnds(v).empty()) continue;
+            if (Utils::trimEnds(v).empty() || k == "isVideo") continue;
             std::string problem = Library::Editor::checkSetting(*idx, r->name, k == "infoTitle" ? "title" : k, v);
             if (!problem.empty()) return problem;
         }
@@ -1320,6 +1554,12 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
         if (action == "addEntry") return inPlaylist(screen) ? "It's in the playlist already." : "";
         if (action == "removeEntry") return inPlaylist(screen) ? "" : "It isn't in the playlist.";
         return "";
+    }
+    if (action == "showPlaylist") {
+        std::string playlist = screen.param("playlist");
+        if (Library::Editor::isReservedPlaylist(playlist)) return "RetroFE keeps this list itself.";
+        if (shownByCycle(*r, playlist)) return "RetroFE shows it already.";
+        return canAppendCycle(*idx, *r) ? "" : "RetroFE's own cyclePlaylist (settings.conf) decides for " + r->name + ".";
     }
     return Provider::actionProblem(action, screen);
 }
@@ -1407,11 +1647,14 @@ Forms::Model::Result SystemProvider::saveInfo(const Screen& screen)
     IndexPtr idx = index();
     std::string name = record(*idx, screen)->name;
     bool wrote = false;
+    bool movedList = false;
     for (const auto& [k, v] : info_.edits.changes()) {
-        std::string infoKey = k == "infoTitle" ? "title" : k;
-        Library::EditResult edit = Utils::trimEnds(v).empty()
+        std::string infoKey = k == "infoTitle" ? "title" : k == "isVideo" ? "type" : k;
+        std::string value = k == "isVideo" ? (Forms::isTruthy(v) ? "videos" : "") : v;
+        movedList |= k == "isVideo";
+        Library::EditResult edit = Utils::trimEnds(value).empty()
             ? services_.editor->removeCollectionSetting(*idx, name, infoKey)
-            : services_.editor->setCollectionSetting(*idx, name, infoKey, v);
+            : services_.editor->setCollectionSetting(*idx, name, infoKey, value);
         if (!edit.ok) {
             if (wrote) changed("info of " + name);
             result.message = edit.message;
@@ -1423,6 +1666,9 @@ Forms::Model::Result SystemProvider::saveInfo(const Screen& screen)
     changed("info of " + name);
     result.ok = true;
     result.message = "Saved in info.conf. RetroFE shows it after it reloads, when you close Manage.";
+    if (movedList) {
+        result.message += Forms::isTruthy(info_.edits.get("isVideo")) ? " It's listed under Videos now." : " It's listed under Systems now.";
+    }
     return result;
 }
 
@@ -1499,10 +1745,40 @@ Forms::Model::Result SystemProvider::playlistAction(const std::string& action, c
         edit = services_.editor->removeFromPlaylist(*idx, name, playlist, source, screen.param("game"));
         result.back = edit.ok;
     }
+    else if (action == "showPlaylist") {
+        // The list as the files say now (the index may not have caught up with an earlier add)
+        const CollectionRecord& r = *record(*idx, screen);
+        Library::ConfLayers layers(r.folder, Library::ConfLayers::collectionFileNames());
+        layers.load();
+        std::vector<std::string> cycle;
+        if (layers.has("cyclePlaylist")) {
+            Utils::listToVector(layers.get("cyclePlaylist"), cycle, ',');
+        }
+        else {
+            cycle = r.cyclePlaylist;   // the global list, kept for the others
+        }
+        if (std::find(cycle.begin(), cycle.end(), playlist) == cycle.end()) {
+            cycle.push_back(playlist);
+            edit = services_.editor->setCollectionSetting(*idx, name, "cyclePlaylist", join(cycle, ","));
+            if (edit.ok) {
+                edit.message = "Added " + playlist + " to " + name + "'s cyclePlaylist; RetroFE shows it after it reloads"
+                             + (entries_.empty() ? ", once it has " + items_ + " in it." : ".");
+            }
+        }
+        else {
+            edit = Library::EditResult{ true, playlist + " is in cyclePlaylist already.", {} };
+        }
+    }
     else {
         return Provider::runAction(action, screen);
     }
     result.message = edit.message;
+    if (edit.ok && (action == "createPlaylist" || action == "renamePlaylist")) {
+        std::string shown = action == "createPlaylist" ? Utils::trimEnds(newPlaylist_.empty() ? result.params["playlist"] : newPlaylist_)
+                                                       : Utils::trimEnds(playlistName_.edits.get("playlistName"));
+        std::string note = playlistShowNote(*idx, *record(*idx, screen), shown, action == "createPlaylist" ? 0 : entries_.size());
+        result.message += note.empty() ? "" : " " + note;
+    }
     result.ok = edit.ok;
     if (edit.ok) {
         changed("playlist " + playlist + " of " + name);
@@ -1512,6 +1788,24 @@ Forms::Model::Result SystemProvider::playlistAction(const std::string& action, c
 }
 
 // --- Adding and deleting ---------------------------------------------------------------------
+
+const std::string& SystemProvider::defaultMenu(const Index& index)
+{
+    if (menuIndex_.get() != &index) {
+        IndexPtr current = this->index();
+        menuIndex_ = current.get() == &index ? current : nullptr;
+        defaultMenu_ = Library::MenuFiles::menuForNewCollections(root(), index.topMenu);
+    }
+    return defaultMenu_;
+}
+
+bool SystemProvider::canListIn(const CollectionRecord& menu)
+{
+    // Manage writes menu.txt or menu/<child>.txt; a menu.txt beside a menu.xml
+    // would replace it, and a menu made from collectionLaunchers has no file
+    return menu.is(Library::KindMenu) && !menu.reserved && menu.menuSource != Library::MenuSource::MenuXml
+        && menu.menuSource != Library::MenuSource::CollectionLaunchers;
+}
 
 bool SystemProvider::addIsNewLauncher() const
 {
@@ -1593,8 +1887,16 @@ std::string SystemProvider::addProblem()
         return "Choose the menu to list it in.";
     }
     int menuIndex = idx->findCollection(menu);
-    bool isMenu = menuIndex >= 0 && idx->collections[static_cast<size_t>(menuIndex)].is(Library::KindMenu);
-    if (!isMenu && menu != Library::MenuFiles::menuForNewCollections(root(), idx->topMenu)) {
+    if (menuIndex >= 0) {
+        const CollectionRecord& listing = idx->collections[static_cast<size_t>(menuIndex)];
+        if (!canListIn(listing) && !(menu == defaultMenu(*idx) && !listing.is(Library::KindMenu))) {
+            return listing.menuSource == Library::MenuSource::MenuXml || listing.menuSource == Library::MenuSource::CollectionLaunchers
+                ? menu + "'s list comes from " + (listing.menuSource == Library::MenuSource::MenuXml ? "menu.xml" : "collectionLaunchers")
+                      + ", which Manage doesn't change. Choose another menu."
+                : menu + " isn't a menu.";
+        }
+    }
+    else if (menu != defaultMenu(*idx)) {
         return menu + " isn't a menu.";
     }
     std::string folder = Utils::trimEnds(add_["addFolder"]);
@@ -1656,6 +1958,9 @@ Forms::Model::Result SystemProvider::create()
         + "list.includeMissingItems = false" + nl
         + "list.menuSort = yes" + nl;
     std::string launcherNote;
+    std::string launcherConf = std::string(createdHeader) + nl + "executable = " + program + nl + "arguments = " + arguments + nl;
+    std::string newLauncher;   // a new global launcher file, to take back if adding fails
+    std::string ownLauncher;   // or the collection's own launcher file
     if (!addIsNewLauncher()) {
         std::string launcher = get("addLauncher", Screen{});
         settings += "launcher = " + launcher + nl;
@@ -1669,28 +1974,33 @@ Forms::Model::Result SystemProvider::create()
              || fs::exists(Utils::combinePath(root(), "launchers." + os, launcher + ".conf"), ec); n++) {
             launcher = std::string(videoPlayerLauncher) + std::to_string(n);
         }
-        std::string file = Utils::combinePath(root(), "launchers." + os, launcher + ".conf");
-        if (!writeNew(backups, file, std::string(createdHeader) + nl + "executable = " + program + nl + "arguments = " + arguments + nl, error)) {
-            result.message = error;
-            return result;
-        }
+        newLauncher = Utils::combinePath(root(), "launchers." + os, launcher + ".conf");
         settings += "launcher = " + launcher + nl;
         launcherNote = "It plays its videos with the new launcher " + launcher + " (" + fileName(program) + ").";
     }
     else {
         // As Setup does: the collection's own launcher file
-        std::string file = Utils::combinePath(collection, "launcher." + os + ".conf");
-        if (!writeNew(backups, file, std::string(createdHeader) + nl + "executable = " + program + nl + "arguments = " + arguments + nl, error)) {
-            result.message = error;
-            return result;
-        }
+        ownLauncher = Utils::combinePath(collection, "launcher." + os + ".conf");
         launcherNote = "It starts its games with " + fileName(program) + ".";
     }
-    if (!writeNew(backups, Utils::combinePath(collection, "settings.conf"), settings, error)
+    bool wroteLauncher = false;
+    if (!(newLauncher.empty() || (wroteLauncher = writeNew(backups, newLauncher, launcherConf, error)))
+        || !(ownLauncher.empty() || writeNew(backups, ownLauncher, launcherConf, error))
+        || !writeNew(backups, Utils::combinePath(collection, "settings.conf"), settings, error)
         || (videos_ && !writeNew(backups, Utils::combinePath(collection, "info.conf"), "type = videos" + nl, error))
         || !Library::MenuFiles::add(root(), menu, name, -1, &backups, error)) {
-        result.message = error.empty() ? "Could not add " + name + "." : error;
-        changed("added " + name + " (incomplete)");
+        // Nothing half made is left behind: the new folder (and a new player
+        // launcher) go to the backups, so RetroFE never sees a system no menu lists
+        std::string ignored;
+        std::string kept;
+        std::error_code ec;
+        if (fs::exists(collection, ec)) {
+            moveAside(backups, collection, name, kept, ignored);
+        }
+        if (wroteLauncher) {
+            backups.removeKeepingOriginal(newLauncher, ignored);
+        }
+        result.message = (error.empty() ? "Could not add " + name + "." : error) + " Nothing was added.";
         return result;
     }
     changed("added " + name);
@@ -1712,35 +2022,35 @@ Forms::Model::Result SystemProvider::remove(const Screen& screen)
     IndexPtr idx = index();
     const CollectionRecord& r = *record(*idx, screen);
     std::string name = r.name;
-    for (int parent : r.parents) {
-        Library::EditResult edit = services_.editor->removeMenuChild(*idx, idx->collections[static_cast<size_t>(parent)].name, name);
-        if (!edit.ok) {
-            result.message = edit.message;
-            return result;
-        }
-    }
-    // Every file goes to the backups (moved, so art isn't copied)
-    std::error_code ec;
-    std::vector<std::string> files;
-    for (auto it = fs::recursive_directory_iterator(r.folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        if (it->is_regular_file(ec)) {
-            files.push_back(Library::narrow(it->path()));
-        }
-    }
+    // The folder goes first, in one rename when it can
     std::string error;
-    for (const std::string& file : files) {
-        if (!services_.editor->backups().removeKeepingOriginal(file, error)) {
-            changed("deleted " + name + " (incomplete)");
-            result.message = error;
+    std::string kept;
+    if (!moveAside(services_.editor->backups(), r.folder, name, kept, error)) {
+        result.message = "Couldn't move " + name + "'s folder into manage/backups (" + error + "). Nothing was changed.";
+        return result;
+    }
+    // Then its menu lines; if one can't go, everything is put back as it was
+    std::vector<std::pair<std::string, int>> unlisted;
+    for (int parent : r.parents) {
+        const CollectionRecord& menu = idx->collections[static_cast<size_t>(parent)];
+        int position = -1;
+        for (size_t i = 0; i < menu.children.size(); i++) {
+            if (position < 0 && menu.children[i].collection == static_cast<int>(idx->findCollection(name))) {
+                position = static_cast<int>(i);
+            }
+        }
+        Library::EditResult edit = services_.editor->removeMenuChild(*idx, menu.name, name);
+        if (!edit.ok) {
+            std::string ignored;
+            bool back = moveTree(kept, r.folder, ignored);
+            for (const auto& [listed, at] : unlisted) {
+                services_.editor->addMenuChild(*idx, listed, name, at);
+            }
+            changed("delete of " + name + " undone");
+            result.message = edit.message + (back ? " Nothing was changed." : " Its folder is in " + kept + ".");
             return result;
         }
-    }
-    bool emptied = true;
-    for (auto it = fs::recursive_directory_iterator(r.folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        emptied &= !it->is_regular_file(ec);
-    }
-    if (emptied) {
-        fs::remove_all(r.folder, ec);
+        unlisted.emplace_back(menu.name, position);
     }
     changed("deleted " + name);
 
@@ -1751,8 +2061,8 @@ Forms::Model::Result SystemProvider::remove(const Screen& screen)
     result.ok = true;
     result.back = true;
     result.message = "Deleted " + name + "."
-        + (folders.empty() ? "" : " Its " + items_ + " in " + join(folders, "; ") + " stay where they are.")
-        + " Its settings, art and playlists are kept in manage/backups."
+        + (folders.empty() ? "" : " Its " + items_ + " folder " + join(folders, "; ") + " isn't touched.")
+        + " Its settings, art and playlists are kept in " + kept + "."
         + (r.launcher.via == Library::LauncherVia::Setting && r.launcher.launcher >= 0 ? " The launcher " + r.launcher.name + " stays installed." : "");
     return result;
 }
