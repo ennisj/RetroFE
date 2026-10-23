@@ -208,10 +208,20 @@ The page places the form with a `<form>` element:
 | `noteAlpha` | Opacity of help text and notes (default 0.55) |
 | `disabledAlpha` | Opacity of fields that can't be changed right now (default 0.35) |
 | `onText`, `offText` | How switches read (default `On` / `Off`) |
-| `rowDetailColor`, `rowDetailAlpha` | Color and opacity of a result's detail on the right (default `fontColor` at 0.7) |
+| `rowDetailColor`, `rowDetailAlpha` | Color and opacity of a result's detail on the right, and of a link's status and marker (default `fontColor` at 0.7) |
 | `linkMarker` | Text at the right of a link (default `>`; empty for none) |
+| `headerColor`, `headerAlpha` | Section headers and results' labels (default `fontColor` at 0.7) |
+| `separatorColor`, `separatorAlpha` | A thin line under section headers and between the rows of a results list (default alpha 0: none) |
+| `imageBackgroundColor`, `imageBackgroundAlpha` | Backing behind pictures and results' thumbnail boxes (default alpha 0: none) |
+| `statusColor` | The message an action leaves above the hints (default `fontColor`) |
+| `errorColor` | Error messages, and the question of a button waiting for confirmation (default `fontColor`) |
+| `confirmBackgroundColor`, `confirmBackgroundAlpha` | Tint over a button waiting for a second Select to confirm (default alpha 0: none) |
 | `title` | `no` hides the screen's title |
 | `hints` | `no` hides the controls hint at the bottom |
+
+Text that doesn't fit its column ends in `...`; a result's detail gets the
+room it needs, up to about half the row when the name needs the rest. Long
+notes and values wrap, breaking long paths where they reach the edge.
 
 Set `formsRenderer = imgui` in `settings.conf` to draw the screens with Dear
 ImGui instead, for example while developing.

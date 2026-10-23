@@ -1098,6 +1098,13 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		style.offText = text(componentXml, "offText", style.offText);
 		style.rowDetailAlpha = number(componentXml, "rowDetailAlpha", style.rowDetailAlpha);
 		style.linkMarker = text(componentXml, "linkMarker", style.linkMarker);
+		style.headerAlpha = number(componentXml, "headerAlpha", style.headerAlpha);
+		style.separator = color(componentXml, "separatorColor", style.separator);
+		style.separatorAlpha = number(componentXml, "separatorAlpha", style.separatorAlpha);
+		style.imageBackground = color(componentXml, "imageBackgroundColor", style.imageBackground);
+		style.imageBackgroundAlpha = number(componentXml, "imageBackgroundAlpha", style.imageBackgroundAlpha);
+		style.confirmBackground = color(componentXml, "confirmBackgroundColor", style.confirmBackground);
+		style.confirmBackgroundAlpha = number(componentXml, "confirmBackgroundAlpha", style.confirmBackgroundAlpha);
 		style.showTitle = flag(componentXml, "title", style.showTitle);
 		style.showHints = flag(componentXml, "hints", style.showHints);
 		if (const xml_attribute<>* image = componentXml->first_attribute("focusImage")) {
@@ -1106,9 +1113,18 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 
 		auto* form = new FormWidget(*page, font, focusFont, formMonitor);
 		form->setStyle(style);
-		if (componentXml->first_attribute("rowDetailColor")) {
-			SDL_Color detailColor = color(componentXml, "rowDetailColor", SDL_Color{ 255, 255, 255, 255 });
-			form->setDetailFont(addFont(componentXml, nullptr, formMonitor, &detailColor));
+		// Text in other colors: the same font again in that color, when the page sets one
+		const std::pair<const char*, FormWidget::FontRole> colorFonts[] = {
+			{ "rowDetailColor", FormWidget::FontRole::Detail },
+			{ "headerColor", FormWidget::FontRole::Header },
+			{ "statusColor", FormWidget::FontRole::Status },
+			{ "errorColor", FormWidget::FontRole::Error },
+		};
+		for (const auto& [attribute, role] : colorFonts) {
+			if (componentXml->first_attribute(attribute)) {
+				SDL_Color fontColor = color(componentXml, attribute, SDL_Color{ 255, 255, 255, 255 });
+				form->setFont(role, addFont(componentXml, nullptr, formMonitor, &fontColor));
+			}
 		}
 		buildViewInfo(componentXml, form->baseViewInfo);
 		loadTweens(form, componentXml);

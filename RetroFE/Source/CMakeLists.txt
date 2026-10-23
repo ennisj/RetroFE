@@ -255,6 +255,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Graphics/ThreadPool.h"
 	"${RETROFE_DIR}/Source/Menu/Menu.h"
 	"${RETROFE_DIR}/Source/Sound/Sound.h"
+	"${RETROFE_DIR}/Source/Utility/FileStamp.h"
 	"${RETROFE_DIR}/Source/Utility/Log.h"
 	"${RETROFE_DIR}/Source/Utility/Utils.h"
 	"${RETROFE_DIR}/Source/Video/IVideo.h"

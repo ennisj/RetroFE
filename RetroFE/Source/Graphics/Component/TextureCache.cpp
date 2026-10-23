@@ -33,6 +33,9 @@ namespace
     // How long a picture that couldn't be loaded waits before another try
     constexpr uint32_t retryMs = 3000;
 
+    // How often a loaded picture's file is checked for a new version
+    constexpr uint32_t checkMs = 1000;
+
     // Entries kept at most, failures included
     constexpr size_t maxEntries = 512;
 
@@ -123,7 +126,22 @@ SDL_Texture* TextureCache::get(const std::string& path, int maxWidth, int maxHei
         Entry& entry = found->second;
         entry.used = frame_;
         if (entry.texture) {
-            return report(State::Ready, entry.texture);
+            // Now and then, check whether the file was replaced under the same name
+            uint32_t now = SDL_GetTicks();
+            if (now - entry.checkedAt < checkMs) {
+                return report(State::Ready, entry.texture);
+            }
+            entry.checkedAt = now;
+            if (FileStamp::of(path) == entry.stamp) {
+                return report(State::Ready, entry.texture);
+            }
+            SDL_LockMutex(SDL::getMutex());
+            SDL_DestroyTexture(entry.texture);
+            SDL_UnlockMutex(SDL::getMutex());
+            entry.texture = nullptr;
+            pixels_ -= entry.pixels;
+            entry.pixels = 0;
+            entry.failedAt = now - retryMs;   // load it again straight away
         }
         if (SDL_GetTicks() - entry.failedAt < retryMs) {
             return report(State::Missing, nullptr);
@@ -139,6 +157,8 @@ SDL_Texture* TextureCache::get(const std::string& path, int maxWidth, int maxHei
     bool firstTry = found == entries_.end();
     Entry& entry = entries_[key];
     entry.used = frame_;
+    entry.stamp = FileStamp::of(path);
+    entry.checkedAt = SDL_GetTicks();
     entry.texture = load(path, maxWidth, maxHeight, entry.pixels);
     if (!entry.texture) {
         entry.failedAt = SDL_GetTicks();

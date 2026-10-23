@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "../../Utility/FileStamp.h"
 #include <SDL2/SDL.h>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,8 @@
 // load per frame so paging through a list doesn't stall, the least recently
 // drawn are dropped past a pixel budget, and files that can't be loaded are
 // tried again a few seconds later, so artwork added meanwhile shows up.
+// Loaded files are checked every second or so and loaded again when they've
+// changed (a new size or write time), e.g. after a logo was replaced.
 class TextureCache
 {
 public:
@@ -57,6 +60,8 @@ private:
         size_t pixels = 0;
         uint64_t used = 0;       // the frame it was last asked for
         uint32_t failedAt = 0;   // SDL ticks when loading it last failed
+        FileStamp stamp;         // the file's when it was loaded: a new one is loaded again
+        uint32_t checkedAt = 0;  // SDL ticks when the stamp was last compared
     };
 
     SDL_Texture* load(const std::string& path, int maxWidth, int maxHeight, size_t& pixels);

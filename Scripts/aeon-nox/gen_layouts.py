@@ -378,10 +378,19 @@ def catalog_page(variant):
 # for the page collections are drawn with ("layout" or, with randomLayout, "layout 4x3").
 
 def form_attrs(up):
-    # focusImage is relative to the page's own folder
-    return ('font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff" '
-            'rowHeight="50" focusImage="%simages/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35" '
-            'backgroundColor="000000" backgroundAlpha="0"' % up)
+    # focusImage is relative to the page's own folder. Details (a result's, a link's
+    # status) in a pale accent, section headers and separators in the accent, pictures
+    # on a faint light backing, results in green, errors and a button waiting for
+    # confirmation in red.
+    lines = [
+        'font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"',
+        'rowHeight="50" focusImage="%simages/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35"' % up,
+        'rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="%s" headerAlpha="0.95"' % ACCENT,
+        'separatorColor="%s" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"' % ACCENT,
+        'statusColor="9fe3a6" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"',
+        'backgroundColor="000000" backgroundAlpha="0"',
+    ]
+    return ('\n' + ' ' * 10).join(lines)
 
 # The info panel images have a transparent margin (12 px of 811 x 214) that grows when
 # they're stretched, so they're drawn larger than the panel that shows.
@@ -429,7 +438,8 @@ def forms_page(v):
     <!-- Panel: the theme's info panel and its frame, stretched (seen at x %d-%d, y %d-%d) -->
 %s
 
-    <form x="%d" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="center" labelWidth="%d" %s layer="3"/>
+    <form x="%d" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="center" labelWidth="%d"
+          %s layer="3"/>
 
 </layout>
 ''' % (head(f), f['W'], f['H'], topbar(f, 'RETROFE'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),
@@ -453,7 +463,8 @@ def package_page(v):
     <!-- Panel (seen at x %d-%d, y %d-%d) -->
 %s
 
-    <form x="%d" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="top" labelWidth="%d" %s layer="3"/>
+    <form x="%d" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="top" labelWidth="%d"
+          %s layer="3"/>
 
 </layout>
 ''' % (head(f), f['W'], f['pkg_cover'], topbar(f, 'CATALOG'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),

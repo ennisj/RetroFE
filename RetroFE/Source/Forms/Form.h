@@ -16,6 +16,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -254,4 +255,37 @@ namespace Forms
 
     // Passes every field's default attribute to the model
     void applyDefaults(const Form& form, Model& model);
+
+    // --- For renderers ---------------------------------------------------------
+
+    // Text that fits in width, as measured by measure: the text itself, or as
+    // much of its start as fits followed by "...". Whole UTF-8 characters are
+    // kept and spaces before the "..." dropped; "" when not even "..." fits.
+    std::string ellipsize(const std::string& text, float width, const std::function<float(const std::string&)>& measure);
+
+    // Text split into lines no wider than width: at spaces, and within a word
+    // (at a whole character) only when the word alone is too wide, e.g. a long
+    // path. Each line of the text starts a new line; an empty one stays empty.
+    std::vector<std::string> wrapText(const std::string& text, float width, const std::function<float(const std::string&)>& measure);
+
+    // How a row of width is shared between a label on the left and a detail on
+    // the right, gap apart, given the width each needs. Both get what they need
+    // when they fit; otherwise the detail gets what the label leaves, but at
+    // most what it needs and at least maxDetailShare of the row, and the label
+    // the rest (to be ellipsized).
+    struct RowSplit
+    {
+        float label = 0.0f;
+        float detail = 0.0f;   // 0 when there's no detail
+    };
+    RowSplit splitRow(float labelNeeds, float detailNeeds, float width, float gap, float maxDetailShare = 0.45f);
+
+    // Where focus goes when the focused field has gone (e.g. a button that hid
+    // itself once pressed). targets[i] says whether row i can take focus;
+    // Guarded rows can (e.g. a file field, whose Select opens a picker) but
+    // shouldn't get it by themselves. Prefers the row at previous, then the
+    // nearest one above it, then below; a Guarded row only when there's no
+    // other. -1 when nothing can take focus.
+    enum class FocusTarget { None, Free, Guarded };
+    int refocusIndex(const std::vector<FocusTarget>& targets, int previous);
 }

@@ -43,6 +43,12 @@ namespace
         }
     }
 
+    // A field whose Select opens a native file or folder picker
+    bool isPathField(const Field* field)
+    {
+        return field && (field->type == FieldType::Folder || field->type == FieldType::File);
+    }
+
     // Drop the last UTF-8 character
     void popCharacter(std::string& s)
     {
@@ -64,6 +70,9 @@ namespace
 
     // Wrapped texts remembered; more and they're all forgotten
     constexpr size_t maxWrapped = 1024;
+
+    // Notes, headers and hints are drawn this much smaller than fields
+    constexpr float noteScale = 0.85f;
 }
 
 FormWidget::FormWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor)
@@ -87,6 +96,7 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     form_ = form;
     model_ = model;
     focus_ = -1;
+    focusGuarded_ = false;
     focusedField_ = nullptr;
     focusedItem_.clear();
     scroll_ = 0.0f;
@@ -115,8 +125,20 @@ void FormWidget::restoreFocus(const Forms::Focus& focus)
     focusedField_ = Forms::fieldAt(*form_, focus.field);
     focusedItem_ = focus.item;
     scroll_ = focus.scroll;
+    focus_ = -1;
+    focusGuarded_ = false;
     rows_.clear();
     stale_ = true;
+}
+
+void FormWidget::setFont(FontRole role, FontManager* font)
+{
+    switch (role) {
+    case FontRole::Detail: detailFont_ = font; break;
+    case FontRole::Header: headerFont_ = font; break;
+    case FontRole::Status: statusFont_ = font; break;
+    case FontRole::Error:  errorFont_ = font; break;
+    }
 }
 
 void FormWidget::allocateGraphicsMemory()
@@ -215,7 +237,11 @@ const std::vector<std::string>& FormWidget::wrap(const std::string& text, float 
 void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, bool isError)
 {
     float width = indent ? contentWidth() - labelWidth() : contentWidth();
-    for (const std::string& line : wrap(text, width)) {
+    if (kind == RowKind::Note) {
+        width /= noteScale;   // notes are drawn smaller, so more fits on a line
+    }
+    // isError marks a question that needs an answer, e.g. a confirmation
+    for (const std::string& line : wrap(isError ? "! " + text : text, width)) {
         Row row;
         row.kind = kind;
         row.text = line;
@@ -418,6 +444,7 @@ void FormWidget::buildRows()
 {
     stale_ = false;
     builtAt_ = SDL_GetTicks();
+    const int previousFocus = focus_;
     rows_.clear();
     statusLines_.clear();
     if (!form_ || !model_) {
@@ -455,6 +482,21 @@ void FormWidget::buildRows()
     if (focus_ < 0) {
         focus_ = sameList;
     }
+    if (focus_ < 0 && focusedField_ && previousFocus >= 0) {
+        // The focused field went away (e.g. a button that hides itself once
+        // pressed): stay where it was, or go up. Not onto a file or folder field
+        // when there's anything else, and if it has to be one, Select there
+        // waits for a move, so a second press doesn't open a picker.
+        std::vector<Forms::FocusTarget> targets;
+        targets.reserve(rows_.size());
+        for (const Row& r : rows_) {
+            targets.push_back(!r.focusable ? Forms::FocusTarget::None
+                              : isPathField(r.field) ? Forms::FocusTarget::Guarded
+                              : Forms::FocusTarget::Free);
+        }
+        focus_ = Forms::refocusIndex(targets, previousFocus);
+        focusGuarded_ = focus_ >= 0 && isPathField(rows_[focus_].field);
+    }
     if (focus_ < 0) {
         for (size_t i = 0; i < rows_.size(); i++) {
             if (rows_[i].focusable) {
@@ -484,11 +526,19 @@ void FormWidget::keepFocusVisible(float visibleHeight)
         for (size_t below = static_cast<size_t>(focus_) + 1; below < rows_.size() && rows_[below].kind == RowKind::Note && rows_[below].indent; below++) {
             bottomY += rowHeight();
         }
+        // At the last field, everything below it too (notes the user can't move to)
+        bool lastFocusable = std::none_of(rows_.begin() + focus_ + 1, rows_.end(), [](const Row& r) { return r.focusable; });
+        if (lastFocusable) {
+            bottomY = total;
+        }
         if (topY < scroll_) {
             scroll_ = topY;
         }
         if (bottomY > scroll_ + visibleHeight) {
-            scroll_ = std::min(topY, bottomY - visibleHeight);
+            // Whole rows at the top when that still shows the focused one
+            float wanted = bottomY - visibleHeight;
+            float snapped = std::ceil(wanted / rowHeight() - 0.01f) * rowHeight();
+            scroll_ = std::min(topY, snapped <= topY ? snapped : wanted);
         }
         // At the first field, show everything above it
         bool firstFocusable = std::none_of(rows_.begin(), rows_.begin() + focus_, [](const Row& r) { return r.focusable; });
@@ -496,13 +546,19 @@ void FormWidget::keepFocusVisible(float visibleHeight)
             scroll_ = 0.0f;
         }
     }
-    scroll_ = std::clamp(scroll_, 0.0f, std::max(0.0f, total - visibleHeight));
+    // Scrolled to the end, whole rows at the top too, and a gap under the last one
+    float maxScroll = std::max(0.0f, total - visibleHeight);
+    if (maxScroll > 0.0f) {
+        maxScroll = std::ceil(maxScroll / rowHeight() - 0.01f) * rowHeight();
+    }
+    scroll_ = std::clamp(scroll_, 0.0f, maxScroll);
 }
 
 // --- Input ---------------------------------------------------------------------
 
 void FormWidget::moveFocus(int direction)
 {
+    focusGuarded_ = false;
     if (rows_.empty()) {
         return;
     }
@@ -611,6 +667,9 @@ void FormWidget::activate(const Row& row)
         break;
     case FieldType::Folder:
     case FieldType::File:
+        if (canBrowse_ && focusGuarded_) {
+            break;   // focus only got here because rows went away; the user moves first
+        }
         if (canBrowse_) {
             Browse browse;
             browse.bind = field.bind;
@@ -834,15 +893,21 @@ std::string FormWidget::hintText() const
         case FieldType::Button: hint = "Select: " + field->label; break;
         case FieldType::Link:   hint = "Select: open"; break;
         case FieldType::Folder:
-        case FieldType::File:   hint = canBrowse_ ? "Select: browse   Right: type" : "Select: edit"; break;
+        case FieldType::File:
+            hint = !canBrowse_ ? "Select: edit"
+                : focusGuarded_ ? "Up/Down, then back here to browse   Right: type"
+                : "Select: browse   Right: type";
+            break;
         default: break;
         }
     }
     return (hint.empty() ? "" : hint + "   ") + (backCloses_ ? "Back: close" : "Back: return");
 }
 
-// Fits the picture in the box, keeping its shape, at the box's top left
-void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWidth, float maxHeight)
+// Fits the picture in the box, keeping its shape, at the box's top left or
+// centred in it; backed: on imageBackgroundColor, a little larger than the picture
+void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWidth, float maxHeight, bool centered, bool backed,
+                             float clipTop, float clipBottom)
 {
     int w = 0;
     int h = 0;
@@ -851,7 +916,35 @@ void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWi
         return;
     }
     float scale = std::min(maxWidth / static_cast<float>(w), maxHeight / static_cast<float>(h));
-    painter_.texture(picture, x, y, w * scale, h * scale, 1.0f);
+    float drawnWidth = w * scale;
+    float drawnHeight = h * scale;
+    if (centered) {
+        x += (maxWidth - drawnWidth) / 2.0f;
+        y += (maxHeight - drawnHeight) / 2.0f;
+    }
+    if (backed && style_.imageBackgroundAlpha > 0.0f) {
+        float margin = fontSize() * 0.15f;
+        float backTop = std::max(y - margin, clipTop);
+        float backBottom = std::min(y + drawnHeight + margin, clipBottom);
+        if (backBottom > backTop) {
+            painter_.rect(x - margin, backTop, drawnWidth + margin * 2.0f, backBottom - backTop,
+                          style_.imageBackground, style_.imageBackgroundAlpha);
+        }
+    }
+    // Only the part between clipTop and clipBottom, e.g. while it's scrolled part way out
+    float shownTop = std::max(y, clipTop);
+    float shownBottom = std::min(y + drawnHeight, clipBottom);
+    if (shownBottom - shownTop < 1.0f) {
+        return;
+    }
+    if (shownTop == y && shownBottom == y + drawnHeight) {
+        painter_.texture(picture, x, y, drawnWidth, drawnHeight, 1.0f);
+        return;
+    }
+    SDL_Rect source{ 0, static_cast<int>(std::lround((shownTop - y) / scale)), w,
+                     std::max(1, static_cast<int>(std::lround((shownBottom - shownTop) / scale))) };
+    source.h = std::min(source.h, h - source.y);
+    painter_.texture(picture, x, shownTop, drawnWidth, source.h * scale, 1.0f, &source);
 }
 
 void FormWidget::draw()
@@ -889,13 +982,22 @@ void FormWidget::draw()
     pageRows_ = std::max(1, static_cast<int>(visible / row) - 1);
     keepFocusVisible(visible);
 
+    const float line = std::max(1.0f, size * 0.04f);   // separators
+    const Field* armed = confirm_.armed();
+
     for (size_t i = 0; i < rows_.size(); i++) {
         float y = top + i * row - scroll_;
-        if (y < top - 0.5f || y + row > top + visible + 0.5f) {
+        const Row& r = rows_[i];
+        // A row shows when all of it is in view, and a picture also when its
+        // first row has scrolled out the top but some of the rest hasn't
+        float rowsHeight = r.kind == RowKind::Image ? r.span * row : row;
+        bool inView = y >= top - 0.5f && y + row <= top + visible + 0.5f;
+        bool partlyAbove = r.kind == RowKind::Image && y < top - 0.5f && y + rowsHeight >= top + row * 0.5f;
+        if (!inView && !partlyAbove) {
             continue;
         }
-        const Row& r = rows_[i];
         bool focused = static_cast<int>(i) == focus_;
+        bool confirming = focused && armed && r.field == armed;
         float textY = y + textOffset;
 
         if (focused) {
@@ -913,23 +1015,40 @@ void FormWidget::draw()
             else {
                 painter_.rect(left - padding / 2.0f, y, width + padding, row, style_.focusBackground, style_.focusBackgroundAlpha);
             }
+            if (confirming && style_.confirmBackgroundAlpha > 0.0f) {
+                painter_.rect(left - padding / 2.0f, y, width + padding, row, style_.confirmBackground, style_.confirmBackgroundAlpha);
+            }
         }
 
         switch (r.kind) {
         case RowKind::Title:
             painter_.text(r.text, left, y + (row - size * 1.3f) / 2.0f, width, size * 1.3f, false, 1.0f);
             break;
-        case RowKind::Header:
-            painter_.text(r.text, left, textY, width, size * 0.85f, false, 0.7f);
+        case RowKind::Header: {
+            float headerSize = size * noteScale;
+            painter_.textWith(headerFont_, r.text, left, y + (row - headerSize) / 2.0f, width, headerSize, style_.headerAlpha);
+            if (style_.separatorAlpha > 0.0f) {
+                painter_.rect(left, y + row - line, width, line, style_.separator, style_.separatorAlpha);
+            }
             break;
-        case RowKind::Note:
+        }
+        case RowKind::Note: {
             // isError marks a question that needs an answer, e.g. a confirmation
-            painter_.text((r.isError ? "! " : "") + r.text, r.indent ? valueX : left, textY, r.indent ? valueWidth : width,
-                          size * 0.85f, false, r.isError ? 1.0f : style_.noteAlpha);
+            float noteSize = size * noteScale;
+            float noteY = y + (row - noteSize) / 2.0f;
+            float noteX = r.indent ? valueX : left;
+            float noteWidth = r.indent ? valueWidth : width;
+            if (r.isError) {
+                painter_.textWith(errorFont_, r.text, noteX, noteY, noteWidth, noteSize, 1.0f);
+            }
+            else {
+                painter_.text(r.text, noteX, noteY, noteWidth, noteSize, false, style_.noteAlpha);
+            }
             break;
+        }
         case RowKind::Value:
             if (r.field) {
-                painter_.text(r.field->label, left, textY, labelWidth(), size, false, 1.0f);
+                painter_.text(r.field->label, left, textY, labelWidth() - gap, size, false, 1.0f);
             }
             painter_.text(r.text, valueX, textY, valueWidth, size, false, 1.0f);
             break;
@@ -937,34 +1056,47 @@ void FormWidget::draw()
             float x = left;
             if (r.thumbnail) {
                 float thumbWidth = row * 1.4f;
+                float thumbHeight = row * 0.84f;
+                float thumbY = y + row * 0.08f;
+                if (style_.imageBackgroundAlpha > 0.0f) {
+                    // The same box on every row, so the names line up and a missing picture shows as a gap
+                    painter_.rect(x, thumbY, thumbWidth, thumbHeight, style_.imageBackground, style_.imageBackgroundAlpha);
+                }
                 if (!r.image.empty()) {
                     SDL_Texture* thumbnail = pictures_.get(r.image, static_cast<int>(thumbWidth * scale),
-                                                           static_cast<int>(row * 0.84f * scale), false);
-                    drawPicture(thumbnail, x, y + row * 0.08f, thumbWidth, row * 0.84f);
+                                                           static_cast<int>(thumbHeight * scale), false);
+                    drawPicture(thumbnail, x, thumbY, thumbWidth, thumbHeight, true, false);
                 }
                 x += thumbWidth + gap;
             }
-            // The detail on the right, the label in what's left
-            float detailWidth = 0.0f;
-            if (!r.detail.empty()) {
-                detailWidth = std::min(painter_.textWidth(r.detail, size), width * 0.4f);
-                painter_.textWith(detailFont_, r.detail, left + width - detailWidth, textY, detailWidth, size, style_.rowDetailAlpha);
+            // The detail on the right, as wide as it needs up to about half the row
+            // when the label needs the room; whichever doesn't fit ends in "..."
+            float available = left + width - x;
+            float detailNeeds = r.detail.empty() ? 0.0f : painter_.textWidthWith(detailFont_, r.detail, size);
+            Forms::RowSplit split = Forms::splitRow(painter_.textWidthWith(nullptr, r.text, size), detailNeeds, available, gap);
+            if (split.detail > 0.0f) {
+                float detailX = left + width - std::min(detailNeeds, split.detail);
+                painter_.textWith(detailFont_, r.detail, detailX, textY, split.detail, size, style_.rowDetailAlpha);
             }
-            painter_.text(r.text, x, textY, left + width - x - detailWidth - (detailWidth > 0 ? gap : 0.0f), size, focused, 1.0f);
+            painter_.text(r.text, x, textY, split.label, size, focused, 1.0f);
+            // A line between this and the next row of the list
+            if (style_.separatorAlpha > 0.0f && i + 1 < rows_.size() && rows_[i + 1].kind == RowKind::Item && rows_[i + 1].field == r.field) {
+                painter_.rect(left, y + row - line / 2.0f, width, line, style_.separator, style_.separatorAlpha * 0.6f);
+            }
             break;
         }
         case RowKind::Image: {
             const Field& field = *r.field;
             bool labelled = !field.label.empty();
-            if (labelled) {
-                painter_.text(field.label, left, textY, labelWidth(), size, false, 1.0f);
+            if (labelled && inView) {
+                painter_.text(field.label, left, textY, labelWidth() - gap, size, false, 1.0f);
             }
-            // Loaded at the size addImage asked for; drawn smaller when its last rows are scrolled out
+            // Loaded at the size addImage asked for; cut off where its rows are scrolled out
             float boxWidth = labelled ? valueWidth : width;
             SDL_Texture* picture = pictures_.get(r.image, static_cast<int>(boxWidth * scale),
                                                  static_cast<int>(r.span * row * scale), true);
-            float boxHeight = std::min(r.span * row, top + visible - y) - row * 0.1f;
-            drawPicture(picture, labelled ? valueX : left, y + row * 0.05f, boxWidth, boxHeight);
+            drawPicture(picture, labelled ? valueX : left, y + row * 0.1f, boxWidth, rowsHeight - row * 0.2f, false, true,
+                        top, top + visible);
             break;
         }
         case RowKind::Spacer:
@@ -972,11 +1104,17 @@ void FormWidget::draw()
         case RowKind::Field: {
             const Field& field = *r.field;
             float alpha = r.enabled ? 1.0f : style_.disabledAlpha;
-            painter_.text(field.label, left, textY, labelWidth(), size, focused, alpha);
+            painter_.text(field.label, left, textY, labelWidth() - gap, size, focused, alpha);
             float fieldValueWidth = valueWidth;
-            if (field.type == FieldType::Link && !style_.linkMarker.empty()) {
-                float markerWidth = painter_.textWidth(style_.linkMarker, size);
-                painter_.text(style_.linkMarker, left + width - markerWidth, textY, markerWidth, size, focused, alpha);
+            bool isLink = field.type == FieldType::Link;
+            if (isLink && !style_.linkMarker.empty()) {
+                float markerWidth = painter_.textWidthWith(detailFont_, style_.linkMarker, size);
+                if (focused) {
+                    painter_.text(style_.linkMarker, left + width - markerWidth, textY, markerWidth, size, true, alpha);
+                }
+                else {
+                    painter_.textWith(detailFont_, style_.linkMarker, left + width - markerWidth, textY, markerWidth, size, style_.rowDetailAlpha * alpha);
+                }
                 fieldValueWidth -= markerWidth + gap;
             }
             bool editingThis = editing_ && focused;
@@ -986,10 +1124,16 @@ void FormWidget::draw()
                 value = painter_.tail(editBuffer_ + "_", valueWidth, size);
             }
             else if (focused && (field.type == FieldType::Number || field.type == FieldType::Choice)) {
-                value = "< " + value + " >";
+                // The arrows stay when the value is too long
+                float arrows = painter_.textWidth("<  >", size);
+                value = "< " + painter_.fit(nullptr, value, fieldValueWidth - arrows, size) + " >";
             }
             if (value.empty() && !field.hint.empty() && !editingThis) {
                 painter_.text(field.hint, valueX, textY, fieldValueWidth, size, false, style_.noteAlpha * alpha);
+            }
+            else if (isLink && !focused) {
+                // A link's status reads like a result's detail
+                painter_.textWith(detailFont_, value, valueX, textY, fieldValueWidth, size, style_.rowDetailAlpha * alpha);
             }
             else {
                 painter_.text(value, valueX, textY, fieldValueWidth, size, focused, alpha);
@@ -999,13 +1143,15 @@ void FormWidget::draw()
         }
     }
 
-    // The last result or warning stays in view above the hints
+    // The last result or warning stays in view above the hints; the rows'
+    // visible height leaves room for it, so it never covers the focused row
     float statusY = top + visible;
-    for (const std::string& line : statusLines_) {
-        painter_.text(line, left, statusY + textOffset, width, size, false, 1.0f);
+    for (const std::string& statusLine : statusLines_) {
+        painter_.textWith(statusIsError_ ? errorFont_ : statusFont_, statusLine, left, statusY + textOffset, width, size, 1.0f);
         statusY += row;
     }
     if (style_.showHints) {
-        painter_.text(hintText(), left, top + height - hintsHeight + textOffset, width, size * 0.85f, false, style_.noteAlpha);
+        const float hintSize = size * noteScale;
+        painter_.text(hintText(), left, top + height - hintsHeight + (row - hintSize) / 2.0f, width, hintSize, false, style_.noteAlpha);
     }
 }
