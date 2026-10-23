@@ -115,6 +115,9 @@ namespace Library
         EditResult restoreOriginal(const std::string& file);
 
     private:
+        // Makes RetroFE re-import meta/ (and the overrides) on its next start
+        void requestMetadataImport();
+
         std::string root_;
         Backups backups_;
     };
@@ -126,12 +129,22 @@ namespace Library
         // firstCollection from the root's settings (as RetroFE reads it), default "Main"
         std::string topMenu(const std::string& root);
 
+        // Where new collections get listed: firstCollection when it's a menu,
+        // or could become one (no games of its own: no list.extensions,
+        // list.path, roms folder or .sub files); otherwise "Main", so a games
+        // collection never gets a menu.txt that would mix collections into its games
+        std::string menuForNewCollections(const std::string& root, const std::string& firstCollection);
+
+        // Empty when name can be a child entry (a collection folder name), otherwise why not
+        std::string checkChildName(const std::string& name);
+
         // Adds child unless it's listed already (ignoring case). createSettings writes a
         // minimal settings.conf when the menu folder is new, as Setup always did.
         bool add(const std::string& root, const std::string& menu, const std::string& child, int position,
                  Backups* backups, std::string& error);
+        // removed (if given) says whether the menu listed child at all
         bool remove(const std::string& root, const std::string& menu, const std::string& child,
-                    Backups* backups, std::string& error);
+                    Backups* backups, std::string& error, bool* removed = nullptr);
         bool move(const std::string& root, const std::string& menu, const std::string& child, int position,
                   Backups* backups, std::string& error);
     }

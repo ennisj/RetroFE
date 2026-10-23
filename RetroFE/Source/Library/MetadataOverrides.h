@@ -86,9 +86,21 @@ namespace Library
         // RetroFE's refresh check); file_time_type::min() when there's none
         std::filesystem::file_time_type newestChange(const std::string& root);
 
-        // The values the shipped meta/hyperlist/<type>*.xml files give a game
-        // (later files win, as when RetroFE imports them); false if none lists it
-        bool shipped(const std::string& root, const std::string& metadataType, const std::string& name,
-                     std::map<std::string, std::string>& values);
+        // The row RetroFE's import would give a game from the shipped files, read
+        // the way MetadataDatabase::importDirectory reads them: meta/hyperlist/
+        // and meta/mamelist/ (<type>*.xml), then meta/emuarc/*.dat (by header
+        // name), each replacing the whole row. Fields an importer doesn't set
+        // come back empty, as in the table.
+        enum class Shipped
+        {
+            Found,     // values holds every field
+            NotFound,  // no shipped file lists the game: its row came from the overrides alone
+            Unknown,   // a matching file couldn't be read: don't guess
+        };
+        Shipped shipped(const std::string& root, const std::string& metadataType, const std::string& name,
+                        std::map<std::string, std::string>& values, std::string* error = nullptr);
+
+        // Deletes a game's row (for a game whose only metadata was the user's)
+        bool removeRow(sqlite3* db, const std::string& metadataType, const std::string& name, std::string& error);
     }
 }

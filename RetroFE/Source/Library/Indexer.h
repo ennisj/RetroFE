@@ -32,12 +32,15 @@ namespace Library
     // without locks for as long as the shared_ptr is held.
     //
     // After a change (an Editor call), call changed(): it marks changes as
-    // pending, for the Manage hub to reload RetroFE when it closes, and starts
-    // a fresh build; the old snapshot stays available until the new one is ready.
+    // pending, for the Manage hub to reload RetroFE when it closes, and asks
+    // for a fresh build; the old snapshot stays available until the new one
+    // is ready. A build that's running is never cancelled by a change: it
+    // finishes and publishes, and one more build then starts, so a burst of
+    // edits still gets snapshots out (each picking up every change so far).
     class Indexer
     {
     public:
-        enum class State { Idle, Building, Ready, Cancelled };
+        enum class State { Idle, Building, Ready, Cancelled, Failed };
 
         struct Status
         {
@@ -45,6 +48,7 @@ namespace Library
             float progress = 0;         // 0..1 of the current build
             std::string phase;          // "Listing MAME", ...
             unsigned generation = 0;    // bumps with every published snapshot
+            std::string error;          // when Failed
         };
 
         explicit Indexer(ScanOptions options);
@@ -53,8 +57,9 @@ namespace Library
         Indexer(const Indexer&) = delete;
         Indexer& operator=(const Indexer&) = delete;
 
-        // Starts a build; one already running is cancelled and restarted
+        // Starts a build, or, while one runs, asks for another right after it
         void rebuild();
+        // Stops the running build without publishing it (shutdown); a later rebuild() starts afresh
         void cancel();
         Status status() const;
         std::shared_ptr<const Index> index() const;
@@ -71,23 +76,17 @@ namespace Library
         const ScanOptions& options() const { return options_; }
 
     private:
-        struct Job
-        {
-            std::thread thread;
-            std::shared_ptr<std::atomic<bool>> cancel;
-            std::shared_ptr<std::atomic<bool>> done;
-        };
-        void run(unsigned ticket, std::shared_ptr<std::atomic<bool>> cancel, std::shared_ptr<std::atomic<bool>> done);
-        void joinFinished();
+        void run();
 
         ScanOptions options_;
         mutable std::mutex mutex_;
         std::condition_variable idle_;
-        std::vector<Job> jobs_;  // the current build last; earlier ones are cancelled and finishing
+        std::thread worker_;          // one at a time; it loops while rebuilds are asked for
+        std::atomic<bool> cancel_{ false };
         std::shared_ptr<const Index> index_;
         Status status_;
-        unsigned ticket_ = 0;
         bool running_ = false;
+        bool again_ = false;          // another build was asked for while one ran
         std::vector<std::string> pending_;
         bool pendingFlag_ = false;
     };

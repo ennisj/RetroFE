@@ -19,6 +19,16 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -33,6 +43,48 @@ bool readFile(const std::string& path, std::string& content)
     }
     content.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     return true;
+}
+
+bool flushToDisk(const std::string& path)
+{
+#ifdef _WIN32
+    HANDLE file = CreateFileW(fs::path(path).wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    bool ok = FlushFileBuffers(file) != 0;
+    CloseHandle(file);
+    return ok;
+#else
+    int file = open(path.c_str(), O_RDWR);
+    if (file < 0) {
+        return false;
+    }
+    bool ok = fsync(file) == 0;
+    close(file);
+    return ok;
+#endif
+}
+
+bool replaceFile(const std::string& from, const std::string& to)
+{
+#ifdef _WIN32
+    return MoveFileExW(fs::path(from).wstring().c_str(), fs::path(to).wstring().c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    if (std::rename(from.c_str(), to.c_str()) != 0) {
+        return false;
+    }
+    // Make the rename itself durable
+    std::string folder = fs::path(to).parent_path().string();
+    int handle = open(folder.empty() ? "." : folder.c_str(), O_RDONLY);
+    if (handle >= 0) {
+        fsync(handle);
+        close(handle);
+    }
+    return true;
+#endif
 }
 
 bool writeFileAtomic(const std::string& path, const std::string& content, std::string& error)
@@ -58,8 +110,8 @@ bool writeFileAtomic(const std::string& path, const std::string& content, std::s
             return false;
         }
     }
-    fs::rename(temp, path, ec);
-    if (ec) {
+    // On the disk before it replaces anything, so a power cut leaves the old file or the new one
+    if (!flushToDisk(temp) || !replaceFile(temp, path)) {
         fs::remove(temp, ec);
         error = "Could not replace " + path;
         return false;
@@ -72,15 +124,14 @@ bool copyFileAtomic(const std::string& from, const std::string& to, std::string&
     std::error_code ec;
     fs::path target(to);
     fs::create_directories(target.parent_path(), ec);
-    fs::path temp = target.parent_path() / ("." + target.filename().string() + ".tmp");
+    std::string temp = narrow(target.parent_path() / ("." + narrow(target.filename()) + ".tmp"));
     fs::remove(temp, ec);
     if (!fs::copy_file(from, temp, fs::copy_options::overwrite_existing, ec) || ec) {
         fs::remove(temp, ec);
         error = "Could not copy " + from + " to " + to;
         return false;
     }
-    fs::rename(temp, target, ec);
-    if (ec) {
+    if (!flushToDisk(temp) || !replaceFile(temp, to)) {
         fs::remove(temp, ec);
         error = "Could not replace " + to;
         return false;

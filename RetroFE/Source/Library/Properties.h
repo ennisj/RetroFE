@@ -22,6 +22,11 @@
 
 namespace Library
 {
+    // Fork-compat (OneSauce / RetroFE Plus data): "launcher = a, b, c" names a
+    // default and its alternatives. RetroFE and the library use the first name;
+    // rest (if given) gets the others. A single name is returned as it is.
+    std::string firstLauncher(const std::string& value, std::vector<std::string>* rest = nullptr);
+
     // The flat key/value map RetroFE builds at start-up (ImportConfiguration
     // in Main.cpp), rebuilt without the Configuration singleton so it can run
     // on a worker thread against any root. Each value remembers the file it

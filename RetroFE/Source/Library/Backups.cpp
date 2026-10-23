@@ -16,8 +16,11 @@
 #include "Backups.h"
 #include "Files.h"
 #include "../Utility/Log.h"
+#include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <system_error>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -84,6 +87,98 @@ bool Backups::beforeChange(const std::string& path, std::string& error)
     return true;
 }
 
+namespace
+{
+    bool sameContent(const std::string& a, const std::string& b)
+    {
+        std::error_code ec;
+        if (fs::file_size(a, ec) != fs::file_size(b, ec) || ec) {
+            return false;
+        }
+        std::ifstream left(a, std::ios::binary);
+        std::ifstream right(b, std::ios::binary);
+        if (!left || !right) {
+            return false;
+        }
+        std::vector<char> x(1 << 16);
+        std::vector<char> y(1 << 16);
+        while (left && right) {
+            left.read(x.data(), static_cast<std::streamsize>(x.size()));
+            right.read(y.data(), static_cast<std::streamsize>(y.size()));
+            if (left.gcount() != right.gcount() || !std::equal(x.begin(), x.begin() + left.gcount(), y.begin())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Moves a file, copying (flushed) then deleting when it has to cross drives
+    bool moveFile(const std::string& from, const std::string& to, std::string& error)
+    {
+        std::error_code ec;
+        fs::create_directories(fs::path(to).parent_path(), ec);
+        fs::rename(from, to, ec);
+        if (!ec) {
+            return true;
+        }
+        if (!copyFileAtomic(from, to, error)) {
+            return false;
+        }
+        fs::remove(from, ec);
+        if (ec) {
+            error = "Could not delete " + from;
+            return false;
+        }
+        return true;
+    }
+}
+
+bool Backups::keepIfChanged(const std::string& path, std::string& error)
+{
+    // The live file is about to go (deleted or overwritten). Once an original
+    // is kept, it may go only if it's that original; anything else (an
+    // earlier Manage change, a content update, a file copied in by hand) is
+    // kept beside the original as "<name> (2).<ext>", "(3)", ...
+    std::error_code ec;
+    if (!fs::is_regular_file(path, ec)) {
+        return true;
+    }
+    if (isOriginal(path)) {
+        return true;
+    }
+    std::string copy = numberedCopyPath(path);
+    if (copy.empty()) {
+        error = "Too many kept copies of " + path;
+        return false;
+    }
+    if (!copyFileAtomic(path, copy, error)) {
+        return false;
+    }
+    LOG_INFO("Library", "Kept the changed " + path + " as " + copy);
+    return true;
+}
+
+bool Backups::isOriginal(const std::string& path) const
+{
+    std::error_code ec;
+    std::string backup = backupPath(path);
+    return fs::exists(backup, ec) && sameContent(path, backup);
+}
+
+std::string Backups::numberedCopyPath(const std::string& path) const
+{
+    std::error_code ec;
+    fs::path original(backupPath(path));
+    for (int n = 2; n < 10000; n++) {
+        fs::path numbered = original.parent_path()
+            / (narrow(original.stem()) + " (" + std::to_string(n) + ")" + narrow(original.extension()));
+        if (!fs::exists(numbered, ec)) {
+            return narrow(numbered);
+        }
+    }
+    return "";
+}
+
 bool Backups::removeKeepingOriginal(const std::string& path, std::string& error)
 {
     std::error_code ec;
@@ -91,16 +186,18 @@ bool Backups::removeKeepingOriginal(const std::string& path, std::string& error)
         return true;
     }
     if (!hasOriginal(path)) {
-        std::string backup = backupPath(path);
-        fs::create_directories(fs::path(backup).parent_path(), ec);
-        fs::rename(path, backup, ec);
-        if (!ec) {
-            return true;
-        }
-        // Another drive: copy, then delete
-        if (!beforeChange(path, error)) {
+        // First change: the file itself becomes the original (a cheap rename for big media)
+        return moveFile(path, backupPath(path), error);
+    }
+    if (!isOriginal(path)) {
+        // Changed since the original was kept: move it beside the original
+        std::string copy = numberedCopyPath(path);
+        if (copy.empty()) {
+            error = "Too many kept copies of " + path;
             return false;
         }
+        LOG_INFO("Library", "Kept the changed " + path + " as " + copy);
+        return moveFile(path, copy, error);
     }
     fs::remove(path, ec);
     if (ec) {
@@ -114,19 +211,25 @@ bool Backups::restore(const std::string& path, std::string& error)
 {
     std::error_code ec;
     std::string backup = backupPath(path);
-    if (fs::exists(backup, ec)) {
+    bool original = fs::exists(backup, ec);
+    bool absent = fs::exists(backup + absentSuffix, ec);
+    if (!original && !absent) {
+        error = "No original was kept for " + path;
+        return false;
+    }
+    // What's there now is kept too, unless it is the original
+    if (!keepIfChanged(path, error)) {
+        return false;
+    }
+    if (original) {
         return copyFileAtomic(backup, path, error);
     }
-    if (fs::exists(backup + absentSuffix, ec)) {
-        fs::remove(path, ec);
-        if (ec) {
-            error = "Could not delete " + path;
-            return false;
-        }
-        return true;
+    fs::remove(path, ec);
+    if (ec) {
+        error = "Could not delete " + path;
+        return false;
     }
-    error = "No original was kept for " + path;
-    return false;
+    return true;
 }
 
 }

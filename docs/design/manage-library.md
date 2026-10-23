@@ -25,9 +25,15 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
 
 - Create one `Library::Indexer` for the Manage hub, with `ScanOptions{ root = Configuration::absolutePath }`,
   and call `rebuild()` when Manage opens. It builds on its own thread.
-- `indexer.status()` gives `state` (Idle, Building, Ready, Cancelled),
-  `progress` (0..1), a `phase` ("Listing MAME") and `generation`, which
-  increases with every new snapshot. Show the progress while there's no index yet.
+- `indexer.status()` gives `state` (Idle, Building, Ready, Cancelled, Failed),
+  `progress` (0..1), a `phase` ("Listing MAME"), `generation`, which
+  increases with every new snapshot, and `error` when a build failed. Show the
+  progress while there's no index yet.
+- `rebuild()` and `changed()` never cancel a running build. The running build
+  finishes and publishes, then exactly one more build runs and picks up every
+  change made meanwhile. A burst of edits therefore still produces snapshots;
+  it can't keep restarting a build that never finishes. Only the destructor and
+  `cancel()` stop a build.
 - `indexer.index()` returns a `std::shared_ptr<const Index>`. A snapshot never
   changes after it's published, so read it without locks. Hold the pointer for as long as a screen
   shows its data. A rebuild publishes a new snapshot and leaves yours alone.
@@ -42,15 +48,32 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
   The exception is `replaceMedia` with a large video, which copies the file;
   call it from a worker if that matters.
 
-Timings on the OneSauce-shaped data on K: (146 collections, 30,817 games,
-12 MB meta.db, read only):
+### What's safe to call every frame
+
+| Per frame: fine | Once per screen or selection change |
+|-----------------|-------------------------------------|
+| `Search::games` / `Search::collections`, which are cached | `index->menuTree()`, which walks the tree |
+| `findCollection`, `findGame`, `findLauncher`, `findLayout` | `index->gameMask()`, which is one pass over all games (Search caches it per filter) |
+| `itemsOf`, `mergedCollectionsShowing`, `playlistsListing`, which are precomputed and return references | `index->usesOf()`, a filter over every use |
+| `resolveLauncher`, which is a few map lookups | `gameMedia` / `collectionMedia` / `menuEntryMedia` (see below) |
+| Reading any record field | `MetadataOverrides::shipped`, `Editor::metadataOverrides`, `ConfFile(...).load()`, all of which read files |
+
+`gameMedia` is **not** per-frame safe. A game's slots cost up to
+types × names × folders × extensions file checks: up to 2–4 thousand stat
+calls for every slot of a game with a title and a clone. That's slow on
+exFAT/USB drives and cold disks (330–510 ms measured on K: cold). Look media up
+when the selection changes, keep the `MediaSlot`s, and refresh them after a
+media edit.
+
+Timings on the OneSauce-shaped data on K: (146 collections, 30,201 games once
+OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
 
 | Measurement | Time |
 |-------------|------|
-| First build, cold disk cache | 5.2 s |
+| First build, cold disk cache | 5–10 s |
 | Builds after that | 0.5–0.9 s |
-| Everything under `Main` (menu filter mask) | 15 ms |
-| All 19 media slots of one game | 2–40 ms (144 ms cold) |
+| Everything under `Main` (menu filter mask) | 0.2 ms |
+| All 19 media slots of one game | 2–40 ms warm, 330–510 ms cold |
 
 ## Reading: what each screen calls
 
@@ -124,7 +147,9 @@ Timings on the OneSauce-shaped data on K: (146 collections, 30,817 games,
   - `metadataType`;
   - `includeMissingItems`, `romHierarchy`, `emuarc` and `menuSort`;
   - `layout`;
-  - `includeList` and `excludeList`;
+  - `includeFile` and `excludeFile`: `include.txt` and `exclude.txt`, or the files
+    OneSauce's `list.includeFile` and `list.excludeFile` name (LB12);
+  - `includeList` and `excludeList`, their entries;
   - `gameCount`;
   - `caseMismatchCount` and `caseMismatches`: files whose extension matches only
     if case is ignored, which RetroFE doesn't list;
@@ -144,10 +169,14 @@ Timings on the OneSauce-shaped data on K: (146 collections, 30,817 games,
   - `executable`, `arguments`, `currentDirectory` and `reboot`.
 
   To show the conf verbatim, use `ConfFile(file).load()` and then `text()`.
-- **Users:** `index->usesOf(launcher)` returns `LauncherUse{collection, game, via}`.
+- **Users:** `index->usesOf(launcher)` returns `LauncherUse{collection, game, via, launcher}`.
   An empty `game` means it's the collection's default.
+- **Alternatives:** OneSauce writes `launcher = a, b, c`. RetroFE and the library
+  use `a`. `LauncherResolution::alternatives` lists `b, c`, read-only (LB11).
 - **Problems:** `index->unresolvedLaunchers` lists the names that something asks
-  for but that don't exist. That includes OneSauce's comma lists.
+  for but that don't exist. On Linux and macOS, that includes an override file
+  whose first line ends in `\r`: `resolveLauncher` keeps the `\r` in `name` and
+  says so in `problem`, because RetroFE's text-mode read keeps it there.
 - **Platform:** `ScanOptions::os` picks which `launchers.<os>` folder to read.
   The default is this platform's. Set it to "linux" to inspect a cabinet's
   launchers from Windows.
@@ -207,19 +236,32 @@ After a successful write, call `indexer.changed("what")`.
 
 | Call | Writes | Rules |
 |------|--------|-------|
-| `setGameLauncher(index, collection, game, launcher)` | `collections/<c>/launchers/<game>.conf`, first line only | The launcher must exist for that collection. Naming the collection's default, or passing "", removes the file, because Launcher::run treats them the same. `collection` is the game's own (source) collection. |
-| `setMetadata(index, collection, game, field, value)` / `clearMetadata` | `manage/metadata/<metadata.type>.xml`, then meta.db straight away | A field from `MetadataOverrides::fields()`. One line, at most 200 bytes. A title can't be blank. Clearing restores the shipped hyperlist value in meta.db. |
-| `setCollectionSetting(index, collection, key, value)` / `removeCollectionSetting` | The settings*.conf or info.conf the effective value comes from. Otherwise settings.conf, or info.conf for info keys. | Settings keys: `list.extensions`, `list.menuSort`, `list.includeMissingItems`, `list.sortType`, `launcher`, `metadata.type`, `layout`. Info keys: `title`, `manufacturer`, `developer`, `year`, `genre`. Each value is checked: extensions, yes/no, sort types, an existing launcher or layout. Remove takes the key out of every file. |
-| `addMenuChild(index, menu, child, position)` / `removeMenuChild` / `moveMenuChild` | `menu.txt`. For a menu-folder menu with no menu.txt: `menu/<child>.txt`. Plus `menu_supported.txt` if present. | The child must be an existing collection; its folder spelling is used. Refused: Home or Catalog, the menu itself, a loop, and reordering a folder menu. |
+| `setGameLauncher(index, collection, game, launcher)` | `collections/<c>/launchers/<game>.conf`, first line only, always ending in `\n` | The launcher must exist for that collection. Naming the collection's default, or passing "", removes the file, because Launcher::run treats them the same. `collection` is the game's own (source) collection. |
+| `setMetadata(index, collection, game, field, value)` / `clearMetadata` | `manage/metadata/<metadata.type>.xml`, then meta.db straight away | A field from `MetadataOverrides::fields()`. One line, at most 200 bytes. A title can't be blank. Clearing puts back what RetroFE's import would give (see below). |
+| `setCollectionSetting(index, collection, key, value)` / `removeCollectionSetting` | The settings*.conf or info.conf the effective value comes from. Otherwise settings.conf, or info.conf for info keys. | Settings keys: `list.extensions`, `list.menuSort`, `list.includeMissingItems`, `list.sortType`, `launcher`, `metadata.type`, `layout`. Info keys: `title`, `manufacturer`, `developer`, `year`, `genre`. Each value is checked: extensions, yes/no, sort types, an existing launcher or layout. Setting `launcher` on an `a, b, c` list moves the pick to the front and keeps the rest. Remove takes the key out of every file. |
+| `addMenuChild(index, menu, child, position)` / `removeMenuChild` / `moveMenuChild` | `menu.txt`. For a menu-folder menu with no menu.txt: `menu/<child>.txt`. Plus `menu_supported.txt` if present. | The child must be an existing collection; its folder spelling is used. Refused: Home or Catalog, the menu itself, a loop, reordering a folder menu, and removing a child that isn't listed. For a folder menu, the message says the position didn't apply. |
 | `addToPlaylist(index, collection, playlist, gameCollection, game)` / `removeFromPlaylist` | `collections/<c>/playlists/<name>.txt` | A game of another collection is written as `_<C>:<name>`. The game must be on that page. `all` and `lastplayed` are refused. An entry covered by `*` can't be removed. |
 | `addToSub(index, merged, source, game)` / `removeFromSub` | `collections/<merged>/<source>.sub` | An empty .sub already shows everything, so adding is a no-op and removing one game is refused. Removing the last entry deletes the file. |
 | `replaceMedia(slot, file)` / `clearMedia(slot)` | The slot's own folder, as `<basename>.<ext>`, with the extension lower-cased | The file kind must fit the slot. The slot's other files of that kind are moved aside. Clearing is refused when the slot only shows a fallback. Nothing is ever written into a fallback's folder. |
 | `restoreOriginal(file)` | Puts back the copy kept before the first change, or deletes a file that didn't exist then | |
 
+**Clearing metadata.** `MetadataOverrides::shipped` reads the game's row the
+way RetroFE's import builds it: `meta/hyperlist`, then `meta/mamelist`, then
+`meta/emuarc`, each replacing the whole row. There are three outcomes:
+- **Found:** that field's shipped value is written back.
+- **Not found anywhere:** the row exists only because of the user's changes.
+  It's deleted with the last of them; otherwise just that field is reset.
+- **A shipped file can't be read:** meta.db is left alone and a
+  `manage/metadata/.reimport` marker, newer than meta.db, makes RetroFE
+  re-import on its next start. The message says so.
+
 Safety rules that hold for all of these:
 - **Never edited:** `executable`, `arguments`, `list.path` and any other path
   key. Menu lines are only ever added, removed or moved one at a time.
-- **Atomic:** writes go to a temp file and are renamed into place.
+- **Atomic and durable:** writes go to a temp file. It's flushed to the disk
+  (`FlushFileBuffers`, or `fsync`) and then renamed into place
+  (`MOVEFILE_WRITE_THROUGH`, or rename plus an fsync of the folder). A power cut
+  leaves the old file or the new one, never a short one.
 - **Byte-for-byte:** every byte the edit doesn't change stays as it was. That
   includes comments, blank lines, spacing, a trailing comment on the edited
   line, the file's own line endings, and a missing final line break.
@@ -227,6 +269,10 @@ Safety rules that hold for all of these:
   `<root>/manage/backups/<path relative to root>`. A file that didn't exist yet
   gets an `.absent` marker instead. Replaced media files are moved there, which
   is cheap for videos. Files outside the root go under `manage/backups/_external/<drive>/...`.
+- **Nothing that differs is lost:** once an original is kept, a file is deleted
+  or overwritten (by a later removal, or by a reset) only if it's identical to
+  that original. Anything else is kept beside it first as `<name> (2).<ext>`,
+  `(3)` and so on. That covers a content update, a hand copy, or an earlier Manage change.
 
 The editing primitives can be used directly for anything not covered above:
 - `ConfFile`: one file, last-wins or first-wins;
@@ -263,16 +309,19 @@ These are modelled exactly:
 - `romHierarchy` and `emuarc`;
 - the menu.txt, menu/ and menu.xml order;
 - launcher resolution: overrides, local launchers, a collection launcher file
-  beating `launcher =`, and the executable lookup order;
-- metadata matched on the exact name per `metadata.type`.
+  beating `launcher =`, and the executable lookup order. That includes the
+  platform's line-ending behaviour when reading override files;
+- metadata matched on the exact name per `metadata.type`. A busy meta.db (RetroFE
+  importing) is retried, and other read errors go into `Index::problems`;
+- emuarc: include and exclude match the file's basename, while the item is named after its folder.
 
 These are simplified or not modelled:
 - the `info/<item>.conf` media basename overrides;
 - layout-mode and common-mode media (`layouts/<L>/collections/...`, `_common`);
 - `randomSelect` art;
 - `cyclePlaylist`;
-- emuarc's duplicate items, which are collapsed to one per folder;
-- shipped values for `clearMetadata`, which come from hyperlist files only (not mamelist or emuarc).
+- emuarc's duplicate items, which RetroFE can create for several files in one
+  folder: they're collapsed to one per folder.
 
 ## Decisions
 
@@ -296,6 +345,8 @@ These are simplified or not modelled:
 - Chosen: **one tree that mirrors relative paths**.
 - Why: RetroFE never reads `manage/`. It's easy to find and to delete. A future
   "Reset" just calls `restoreOriginal`.
+- After the review: a file that differs from the kept original is never deleted.
+  It's kept as a numbered copy beside the original.
 
 **LB3. Metadata edits live in a user override layer that RetroFE applies after meta/.**
 - Options:
@@ -315,6 +366,8 @@ These are simplified or not modelled:
   - `needsRefresh` also re-imports when the override folder is newer than
     meta.db, so hand edits are picked up.
   - The Editor writes meta.db straight away too.
+  - Clearing an edit restores what the import of all three shipped formats
+    would give. It never blanks a field it can't verify; see "Clearing metadata".
 - Why not inside `meta/`: RetroFE re-imports when anything under `meta/` is
   newer than its executable. An edit there would trigger a full re-import on
   every start until the exe was updated.
@@ -351,32 +404,55 @@ These are simplified or not modelled:
 - `findMediaFile` checks each candidate name instead: 2–40 ms, with no cache to
   invalidate after writes.
 
-**LB9. Setup's top-menu helpers use `firstCollection`.**
-- `Setup::addToMainMenu` and `removeFromMainMenu` delegate to
-  `Library::MenuFiles`, aimed at `firstCollection` ("Main" by default). They
-  never add the top menu to itself, keep originals, and handle menu-folder menus.
-- `Setup::validate` and `listCollections` still single out "Main". They feed the
-  Settings UI, which other work owns.
+**LB9. New systems are listed in the top menu, which is `firstCollection` only when it's a menu.**
+- `Setup::addToMainMenu` and `removeFromMainMenu` delegate to `Library::MenuFiles`.
+- `Setup::topMenu()` is `firstCollection` when it is a menu or could become one,
+  meaning it has no games of its own: no `list.extensions`, `list.path`, roms
+  folder or `.sub`. Otherwise it's "Main".
+  - So `firstCollection = MAME` never gets a menu.txt mixing collections into its games.
+- `firstCollection` is read from RetroFE's live `Configuration`
+  (`Setup::setConfiguration`, set by ManagerUI), so a command-line override
+  counts. Without it, the settings files are read.
+- Consistency:
+  - `validate` refuses the top menu's name;
+  - `listCollections` leaves the top menu out, and the "Browse opens" choice lists it first;
+  - `addToMainMenu` refuses names that can't be folder names, using `Setup::checkName`.
 
 **LB10. Snapshots, not live models.**
 - The index is immutable and rebuilt in the background after each change. A
   rebuild takes under a second when the disk cache is warm. Screens never see
   half-built state, and the library needs no locks beyond the snapshot swap.
+- Changes never cancel a running build: it publishes, and one more build follows.
+- Per-game and per-page lookups are precomputed at build time:
+  - the page lists of games (`itemsOf`);
+  - which merged collections show a game;
+  - which playlists list a game, taking `*` and "must be on that page" into account.
+
+**LB11. `launcher = a, b, c` uses `a` (fork compat, decided after review).**
+- OneSauce/RetroFE Plus data names a default launcher and its alternatives. On
+  K:, 25 collections do.
+- What changed:
+  - `CollectionInfoBuilder::buildCollection` and `Launcher::launcherName` take
+    the first name, via `Library::firstLauncher`.
+  - In the library, `LauncherResolution::configured` is that name and
+    `alternatives` holds the rest, read-only.
+  - Setting a collection's `launcher` in Manage moves the pick to the front of
+    the list and keeps the others.
+- Effect on K: with Linux launchers, 22 launcher names are unresolved instead of 39.
+
+**LB12. `list.includeFile` / `list.excludeFile` are honoured (fork compat, decided after review).**
+- When set, they name the collection's include and exclude lists *instead of*
+  `collections/<c>/include.txt` and `exclude.txt`, with the same format and rules.
+  - Values are resolved like other path keys: `%BASE_ITEM_PATH%` is expanded,
+    `%ITEM_COLLECTION_NAME%` is replaced at import, and relative paths resolve
+    against the root.
+- Applied in `CollectionInfoBuilder::ImportDirectory` and in the library scanner.
+- On K:, the content-side lists now apply: 30,201 games are listed instead of 30,817.
 
 ## Open items
 
-- **Comma launcher lists** (`launcher = lr-a, lr-b`, RetroFE Plus) are
-  reported as unresolved. On K:, 25 collections use them; with Linux launchers,
-  39 launcher names in all are unresolved. Options:
-  - (a) leave as is, faithful to this RetroFE;
-  - (b) make RetroFE and the library use the first name, a fork-compat change
-    like LB4;
-  - (c) let the Systems screen rewrite the list to one name.
-  - Recommendation: **(b)**, if OneSauce data is meant to launch on this fork.
-- **`list.includeFile` / `list.excludeFile`** (OneSauce) are ignored, as RetroFE
-  ignores them. The include and exclude lists on the content side don't apply,
-  and neither do playlists kept there. Options: honour them like
-  `media.basePath`, or leave them ignored.
+- **Playlists on OneSauce's content side** (`content/.../<c>/playlists`) are
+  still ignored. RetroFE reads `collections/<c>/playlists` only.
 - **`media.<type>` keys are paths**, so they aren't in the editable set. A
   "media folder" picker would need its own rules.
 - **Favorites editing:** `addToPlaylist` allows `favorites`. RetroFE rewrites

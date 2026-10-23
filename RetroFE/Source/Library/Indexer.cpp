@@ -17,6 +17,7 @@
 #include "../Utility/Log.h"
 #include <chrono>
 #include <sstream>
+#include <system_error>
 
 namespace Library
 {
@@ -28,104 +29,121 @@ Indexer::Indexer(ScanOptions options)
 
 Indexer::~Indexer()
 {
-    std::vector<Job> jobs;
+    std::thread worker;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        for (Job& job : jobs_) {
-            *job.cancel = true;
-        }
-        jobs = std::move(jobs_);
-        jobs_.clear();
+        cancel_ = true;
+        again_ = false;
+        worker = std::move(worker_);
     }
-    for (Job& job : jobs) {
-        if (job.thread.joinable()) {
-            job.thread.join();
-        }
-    }
-}
-
-void Indexer::joinFinished()
-{
-    // Called with mutex_ held: join builds that have already stopped
-    for (auto it = jobs_.begin(); it != jobs_.end();) {
-        if (*it->done && it->thread.joinable()) {
-            it->thread.join();
-            it = jobs_.erase(it);
-        }
-        else {
-            ++it;
-        }
+    if (worker.joinable()) {
+        worker.join();
     }
 }
 
 void Indexer::rebuild()
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    // A running build is told to stop; it finishes on its own and its result is dropped
-    for (Job& job : jobs_) {
-        *job.cancel = true;
+    std::thread finished;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (running_) {
+            // Don't cancel: the running build publishes, then one more runs
+            again_ = true;
+            return;
+        }
+        // The last worker has stopped (running_ is false); collect it outside the lock
+        finished = std::move(worker_);
     }
-    joinFinished();
-    unsigned ticket = ++ticket_;
+    if (finished.joinable()) {
+        finished.join();
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (running_) {
+        again_ = true;  // another caller started one meanwhile
+        return;
+    }
+    cancel_ = false;
+    again_ = false;
     running_ = true;
     status_.state = State::Building;
     status_.progress = 0;
     status_.phase = "Starting";
-    Job job;
-    job.cancel = std::make_shared<std::atomic<bool>>(false);
-    job.done = std::make_shared<std::atomic<bool>>(false);
-    job.thread = std::thread(&Indexer::run, this, ticket, job.cancel, job.done);
-    jobs_.push_back(std::move(job));
+    status_.error.clear();
+    try {
+        worker_ = std::thread(&Indexer::run, this);
+    }
+    catch (const std::system_error& e) {
+        running_ = false;
+        status_.state = State::Failed;
+        status_.error = std::string("Could not start the index build: ") + e.what();
+        LOG_ERROR("Library", status_.error);
+        idle_.notify_all();
+    }
 }
 
-void Indexer::run(unsigned ticket, std::shared_ptr<std::atomic<bool>> cancel, std::shared_ptr<std::atomic<bool>> done)
+void Indexer::run()
 {
-    BuildCallbacks callbacks;
-    callbacks.cancel = cancel.get();
-    callbacks.progress = [this, ticket](float progress, const std::string& phase) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (ticket == ticket_) {
+    for (;;) {
+        BuildCallbacks callbacks;
+        callbacks.cancel = &cancel_;
+        callbacks.progress = [this](float progress, const std::string& phase) {
+            std::lock_guard<std::mutex> lock(mutex_);
             status_.progress = progress;
             status_.phase = phase;
+        };
+        std::unique_ptr<Index> built;
+        std::string failure;
+        try {
+            built = buildIndex(options_, callbacks);
         }
-    };
-    std::unique_ptr<Index> built;
-    try {
-        built = buildIndex(options_, callbacks);
-    }
-    catch (const std::exception& e) {
-        LOG_ERROR("Library", std::string("Building the library index failed: ") + e.what());
-    }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (ticket == ticket_) {
-            if (built) {
-                std::ostringstream ss;
-                ss << "Indexed " << built->collections.size() << " collections and " << built->games.size()
-                   << " games in " << built->seconds << " s";
-                LOG_INFO("Library", ss.str());
-                index_ = std::shared_ptr<const Index>(built.release());
-                status_.state = State::Ready;
-                status_.progress = 1;
-                status_.phase = "Ready";
-                status_.generation++;
-            }
-            else {
-                status_.state = State::Cancelled;
-            }
-            running_ = false;
+        catch (const std::exception& e) {
+            failure = std::string("Building the library index failed: ") + e.what();
+            LOG_ERROR("Library", failure);
         }
-        *done = true;
+
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (built) {
+            std::ostringstream ss;
+            ss << "Indexed " << built->collections.size() << " collections and " << built->games.size()
+               << " games in " << built->seconds << " s";
+            LOG_INFO("Library", ss.str());
+            index_ = std::shared_ptr<const Index>(built.release());
+            status_.state = State::Ready;
+            status_.progress = 1;
+            status_.phase = "Ready";
+            status_.generation++;
+        }
+        else if (!failure.empty()) {
+            status_.state = State::Failed;
+            status_.error = failure;
+        }
+        else {
+            status_.state = State::Cancelled;
+        }
+        if (again_ && !cancel_) {
+            // Changes came in while this build ran: one more, which sees them all
+            again_ = false;
+            status_.state = State::Building;
+            status_.progress = 0;
+            status_.phase = "Starting";
+            lock.unlock();
+            idle_.notify_all();  // a snapshot was published
+            continue;
+        }
+        running_ = false;
+        again_ = false;
+        lock.unlock();
+        idle_.notify_all();
+        return;
     }
-    idle_.notify_all();
 }
 
 void Indexer::cancel()
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (Job& job : jobs_) {
-        *job.cancel = true;
-    }
+    cancel_ = true;
+    again_ = false;
 }
 
 Indexer::Status Indexer::status() const

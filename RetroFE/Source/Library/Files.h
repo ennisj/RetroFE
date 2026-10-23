@@ -35,6 +35,13 @@ namespace Library
     // Copies a file the same way: to a temp file beside the destination, then renamed into place
     bool copyFileAtomic(const std::string& from, const std::string& to, std::string& error);
 
+    // Both atomic writes flush the temp file to the disk before the rename,
+    // so a power cut leaves the old file or the new one, never a short one.
+    // FlushFileBuffers / fsync on an existing file:
+    bool flushToDisk(const std::string& path);
+    // Renames over an existing file (MOVEFILE_WRITE_THROUGH / rename + fsync of the folder)
+    bool replaceFile(const std::string& from, const std::string& to);
+
     // "\r\n" on Windows, "\n" elsewhere: the line ending for files that don't exist yet
     const char* defaultNewline();
 

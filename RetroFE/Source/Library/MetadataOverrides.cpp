@@ -302,38 +302,197 @@ fs::file_time_type newestChange(const std::string& root)
     return newest;
 }
 
-bool shipped(const std::string& root, const std::string& metadataType, const std::string& name,
-             std::map<std::string, std::string>& values)
+namespace
+{
+    std::map<std::string, std::string> emptyRow()
+    {
+        std::map<std::string, std::string> row;
+        for (const Field& field : fields()) {
+            row[field.element] = "";
+        }
+        return row;
+    }
+
+    // The files of one meta/ folder with an extension, in directory order (as RetroFE imports them)
+    std::vector<fs::path> metaFiles(const std::string& root, const char* folder, const char* extension)
+    {
+        std::vector<fs::path> files;
+        std::error_code ec;
+        std::string path = Utils::combinePath(root, "meta", folder);
+        if (!fs::is_directory(path, ec)) {
+            return files;
+        }
+        for (const auto& entry : fs::directory_iterator(path, ec)) {
+            if (entry.is_regular_file(ec) && entry.path().extension() == extension) {
+                files.push_back(entry.path());
+            }
+        }
+        return files;
+    }
+
+    struct XmlFile
+    {
+        std::vector<char> buffer;
+        rapidxml::xml_document<> doc;
+
+        bool load(const fs::path& path, std::string& error)
+        {
+            std::string file;
+            std::string content;
+            if (!narrowName(path, file) || !readFile(file, content)) {
+                error = "Could not read " + narrow(path);
+                return false;
+            }
+            buffer.assign(content.begin(), content.end());
+            buffer.push_back('\0');
+            try {
+                doc.parse<0>(buffer.data());
+            }
+            catch (const rapidxml::parse_error& e) {
+                error = narrow(path) + " isn't valid XML: " + e.what();
+                return false;
+            }
+            return true;
+        }
+    };
+
+    std::string valueOf(rapidxml::xml_node<>* node, const char* child)
+    {
+        rapidxml::xml_node<>* found = node ? node->first_node(child) : nullptr;
+        return found ? found->value() : "";
+    }
+}
+
+Shipped shipped(const std::string& root, const std::string& metadataType, const std::string& name,
+                std::map<std::string, std::string>& values, std::string* error)
 {
     values.clear();
     bool found = false;
-    std::error_code ec;
-    std::string path = Utils::combinePath(root, "meta", "hyperlist");
-    if (!fs::is_directory(path, ec)) {
-        return false;
-    }
-    for (const auto& entry : fs::directory_iterator(path, ec)) {
-        std::string file;
-        if (!entry.is_regular_file(ec) || entry.path().extension() != ".xml" || typeOf(entry.path()) != metadataType
-            || !narrowName(entry.path(), file)) {
+    std::string problem;
+
+    // meta/hyperlist/<type>*.xml (MetadataDatabase::importHyperlist)
+    for (const fs::path& path : metaFiles(root, "hyperlist", ".xml")) {
+        if (typeOf(path) != metadataType) {
             continue;
         }
         Overrides one;
-        std::string error;
-        if (parseFile(file, one, &name, error) && one.count(name)) {
-            // Importing replaces the whole row, so a later file's entry wins entirely
-            std::map<std::string, std::string> row;
-            for (const Field& field : fields()) {
-                row[field.element] = "";
+        if (!parseFile(narrow(path), one, &name, problem)) {
+            if (error) {
+                *error = problem;
             }
+            return Shipped::Unknown;
+        }
+        if (one.count(name)) {
+            // Importing replaces the whole row, so a later file's entry wins entirely
+            values = emptyRow();
             for (const auto& [element, value] : one[name]) {
-                row[element] = value;
+                values[element] = value;
+            }
+            found = true;
+        }
+    }
+
+    // meta/mamelist/<type>*.xml (importMamelist): <mame><game|machine name= cloneof=>
+    for (const fs::path& path : metaFiles(root, "mamelist", ".xml")) {
+        if (typeOf(path) != metadataType) {
+            continue;
+        }
+        XmlFile xml;
+        if (!xml.load(path, problem)) {
+            if (error) {
+                *error = problem;
+            }
+            return Shipped::Unknown;
+        }
+        rapidxml::xml_node<>* mame = xml.doc.first_node("mame");
+        if (!mame) {
+            continue;
+        }
+        const char* nodeName = mame->first_node("game") ? "game" : "machine";
+        for (rapidxml::xml_node<>* game = mame->first_node(nodeName); game; game = game->next_sibling()) {
+            rapidxml::xml_attribute<>* attribute = game->first_attribute("name");
+            if (!attribute || name != attribute->value()) {
+                continue;
+            }
+            std::map<std::string, std::string> row = emptyRow();
+            rapidxml::xml_node<>* description = game->first_node("description");
+            row["description"] = description ? description->value() : attribute->value();
+            row["year"] = valueOf(game, "year");
+            row["manufacturer"] = valueOf(game, "manufacturer");
+            row["genre"] = valueOf(game, "genre");
+            rapidxml::xml_attribute<>* cloneOf = game->first_attribute("cloneof");
+            row["cloneof"] = cloneOf ? cloneOf->value() : "";
+            if (rapidxml::xml_node<>* input = game->first_node("input")) {
+                if (rapidxml::xml_attribute<>* players = input->first_attribute("players")) {
+                    row["players"] = players->value();
+                }
+                if (rapidxml::xml_attribute<>* buttons = input->first_attribute("buttons")) {
+                    row["buttons"] = buttons->value();
+                }
             }
             values = row;
             found = true;
         }
     }
-    return found;
+
+    // meta/emuarc/*.dat (importEmuArclist): the type is the header name up to " - "
+    for (const fs::path& path : metaFiles(root, "emuarc", ".dat")) {
+        XmlFile xml;
+        if (!xml.load(path, problem)) {
+            if (error) {
+                *error = problem;
+            }
+            return Shipped::Unknown;
+        }
+        rapidxml::xml_node<>* datafile = xml.doc.first_node("datafile");
+        rapidxml::xml_node<>* header = datafile ? datafile->first_node("header") : nullptr;
+        rapidxml::xml_node<>* headerName = header ? header->first_node("name") : nullptr;
+        if (!headerName) {
+            continue;
+        }
+        std::string type = headerName->value();
+        type = type.substr(0, type.find(" - "));
+        if (type != metadataType) {
+            continue;
+        }
+        for (rapidxml::xml_node<>* game = datafile->first_node("game"); game; game = game->next_sibling("game")) {
+            rapidxml::xml_node<>* emuarc = game->first_node("EmuArc");
+            if (!emuarc || valueOf(game, "description") != name) {
+                continue;
+            }
+            std::map<std::string, std::string> row = emptyRow();
+            row["description"] = name;
+            row["cloneof"] = valueOf(emuarc, "cloneof");
+            row["manufacturer"] = valueOf(emuarc, "publisher");
+            row["developer"] = valueOf(emuarc, "developer");
+            row["year"] = valueOf(emuarc, "year");
+            std::string subgenre = valueOf(emuarc, "subgenre");
+            row["genre"] = valueOf(emuarc, "genre") + (subgenre.empty() ? "" : "_" + subgenre);
+            row["rating"] = valueOf(emuarc, "ratings");
+            row["score"] = valueOf(emuarc, "score");
+            row["players"] = valueOf(emuarc, "players");
+            values = row;
+            found = true;
+        }
+    }
+    return found ? Shipped::Found : Shipped::NotFound;
+}
+
+bool removeRow(sqlite3* db, const std::string& metadataType, const std::string& name, std::string& error)
+{
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, "DELETE FROM Meta WHERE collectionName = ? AND name = ?;", -1, &stmt, nullptr) != SQLITE_OK) {
+        error = sqlite3_errmsg(db);
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, metadataType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        error = sqlite3_errmsg(db);
+    }
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
 }
 
 }

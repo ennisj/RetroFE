@@ -27,6 +27,22 @@ namespace fs = std::filesystem;
 namespace Library
 {
 
+std::string firstLauncher(const std::string& value, std::vector<std::string>* rest)
+{
+    if (value.find(',') == std::string::npos) {
+        return value;
+    }
+    std::vector<std::string> names;
+    Utils::listToVector(value, names, ',');
+    if (names.empty()) {
+        return "";
+    }
+    if (rest) {
+        rest->assign(names.begin() + 1, names.end());
+    }
+    return names.front();
+}
+
 Properties::Properties(std::string root)
     : root_(std::move(root))
 {

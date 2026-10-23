@@ -106,7 +106,8 @@ namespace Library
     // Which launcher a launch actually uses, worked out as Launcher::run does
     struct LauncherResolution
     {
-        std::string configured;    // collections.<c>.launcher
+        std::string configured;    // collections.<c>.launcher (the first name of a "a, b, c" list)
+        std::vector<std::string> alternatives;  // the rest of such a list (fork-compat, read-only)
         std::string overrideName;  // first line of the game's override file ("" if none)
         std::string overrideFile;
         std::string name;          // the launcher name Launcher::run ends up with
@@ -153,8 +154,10 @@ namespace Library
         bool menuSort = true;
         std::string layout;                           // collections.<c>.layout
         bool videos = false;                          // every extension is a video type
-        std::vector<std::string> includeList;         // include.txt entries
-        std::vector<std::string> excludeList;         // exclude.txt entries
+        std::string includeFile;                      // include.txt, or list.includeFile (fork-compat)
+        std::string excludeFile;                      // exclude.txt, or list.excludeFile (fork-compat)
+        std::vector<std::string> includeList;         // its entries
+        std::vector<std::string> excludeList;
         size_t gameBegin = 0;                         // its own games: Index::games[gameBegin, gameBegin + gameCount)
         size_t gameCount = 0;
         size_t caseMismatchCount = 0;                 // files whose extension matches only ignoring case
@@ -198,6 +201,7 @@ namespace Library
         int collection = -1;
         std::string game;          // "" = the collection's default
         LauncherVia via = LauncherVia::None;
+        int launcher = -1;         // what it resolves to (index into Index::launchers), -1 unresolved
     };
 
     struct LayoutRecord
@@ -248,38 +252,45 @@ namespace Library
         int findLayout(const std::string& name) const;
 
         // The games a collection's page lists, in RetroFE's order before sorting:
-        // its own games, then each .sub source's (filtered by the .sub)
-        std::vector<ItemRef> itemsOf(int collection) const;
+        // its own games, then each .sub source's (filtered by the .sub).
+        // Precomputed: cheap, per-frame safe.
+        const std::vector<ItemRef>& itemsOf(int collection) const;
 
-        // The menu tree from a collection (default: topMenu), depth first, cycles marked
+        // The menu tree from a collection (default: topMenu), depth first,
+        // cycles marked. Walks the tree each call: call when the screen opens.
         std::vector<MenuRow> menuTree(const std::string& from = "") const;
 
         // For filters: which games are under a collection. A system has its own
         // games, a merged collection its sources', a menu everything below it.
+        // One pass over the games: Search caches it per filter.
         std::vector<char> gameMask(int collection) const;
 
-        // Which launcher a collection's games (game "") or one game would use
+        // Which launcher a collection's games (game "") or one game would use.
+        // A few map lookups: per-frame safe.
         LauncherResolution resolveLauncher(int collection, const std::string& game = "") const;
 
-        // Who uses a launcher (by index into launchers)
+        // Who uses a launcher (by index into launchers); a filter over launcherUses
         std::vector<LauncherUse> usesOf(int launcher) const;
 
-        // Merged collections whose page shows a game, and playlists listing it
-        std::vector<int> mergedCollectionsShowing(int game) const;
+        // Merged collections whose page shows a game, and playlists listing it.
+        // Precomputed: per-frame safe.
+        const std::vector<int>& mergedCollectionsShowing(int game) const;
         struct PlaylistRef
         {
             int collection = -1;
             std::string playlist;
         };
-        std::vector<PlaylistRef> playlistsListing(int game) const;
+        const std::vector<PlaylistRef>& playlistsListing(int game) const;
 
         // Called by the builder
         struct Candidate
         {
-            std::string name;
+            std::string name;       // the item name (the folder's for emuarc)
+            std::string basename;   // the file name without its extension (what include/exclude match)
             std::string file;
             std::string directory;
         };
+        void precompute();
         std::vector<std::vector<Candidate>> candidates;  // per collection: files matching its extensions
         std::map<std::string, int> collectionByName;     // exact folder name -> index
         std::map<std::string, int> collectionByLower;    // lower-case name -> index
@@ -290,6 +301,10 @@ namespace Library
 
     private:
         std::vector<ItemRef> itemsFromSource(int source, int merged, const SubSource* sub) const;
+
+        std::vector<std::vector<ItemRef>> items_;                // per collection
+        std::vector<std::vector<int>> mergedShowing_;            // per game
+        std::vector<std::vector<PlaylistRef>> playlistsListing_; // per game
     };
 
     // Builds an Index. progress gets 0..1 and a short phase name; cancel stops it early.

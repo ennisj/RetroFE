@@ -46,13 +46,23 @@ namespace Library
         bool beforeChange(const std::string& path, std::string& error);
 
         // Call instead of deleting path: the first time the file is moved into
-        // the backups (cheap for big media files), later times it's deleted.
+        // the backups (cheap for big media files). Later, it's deleted only if
+        // it's identical to the kept original; otherwise it's kept as a
+        // numbered copy beside it ("name (2).ext") first. Nothing that differs
+        // from what's kept is ever lost.
         bool removeKeepingOriginal(const std::string& path, std::string& error);
 
-        // Puts the original back (or deletes the file if it didn't exist)
+        // Puts the original back (or deletes the file if it didn't exist);
+        // the current file is kept as a numbered copy if it differs
         bool restore(const std::string& path, std::string& error);
 
+        // Keeps a numbered copy of path unless it's identical to its kept original
+        bool keepIfChanged(const std::string& path, std::string& error);
+
     private:
+        bool isOriginal(const std::string& path) const;
+        std::string numberedCopyPath(const std::string& path) const;
+
         std::string root_;
         std::string folder_;
     };

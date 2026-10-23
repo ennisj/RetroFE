@@ -27,6 +27,7 @@
 #include <set>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <unordered_set>
 
 namespace fs = std::filesystem;
@@ -153,7 +154,9 @@ namespace
     }
 
     // RetroFE's own text-mode getline: the first line of a file, without its line ending
-    bool firstLine(const std::string& path, std::string& line)
+    // Only Windows' text mode turns "\r\n" into "\n"; elsewhere a '\r' stays
+    // on the line (Launcher::run reads override files this way)
+    bool firstLine(const std::string& path, const std::string& os, std::string& line)
     {
         std::string content;
         if (!readFile(path, content) || content.empty()) {
@@ -161,7 +164,7 @@ namespace
         }
         size_t end = content.find('\n');
         line = content.substr(0, end);
-        if (end != std::string::npos && !line.empty() && line.back() == '\r') {
+        if (os == "windows" && end != std::string::npos && !line.empty() && line.back() == '\r') {
             line.pop_back();
         }
         return true;
@@ -281,6 +284,9 @@ namespace
             }
         }
         index.games = std::move(sorted);
+
+        progress(0.94f, "Linking collections");
+        index.precompute();
 
         progress(0.95f, "Working out launchers");
         resolveLaunchers();
@@ -472,8 +478,14 @@ namespace
         }
         props.getBool(prefix + "list.menuSort", record.menuSort);
         record.layout = props.getOr(prefix + "layout");
-        record.includeList = readEntries(Utils::combinePath(record.folder, "include.txt"));
-        record.excludeList = readEntries(Utils::combinePath(record.folder, "exclude.txt"));
+        // Fork-compat: list.includeFile / list.excludeFile (OneSauce) name the lists
+        // instead, as in CollectionInfoBuilder::ImportDirectory
+        record.includeFile = Utils::combinePath(record.folder, "include.txt");
+        record.excludeFile = Utils::combinePath(record.folder, "exclude.txt");
+        props.getAbsolutePath(prefix + "list.includeFile", record.includeFile);
+        props.getAbsolutePath(prefix + "list.excludeFile", record.excludeFile);
+        record.includeList = readEntries(record.includeFile);
+        record.excludeList = readEntries(record.excludeFile);
         record.videos = !record.extensions.empty()
             && std::all_of(record.extensions.begin(), record.extensions.end(), isVideoExtension);
 
@@ -492,16 +504,16 @@ namespace
             record.notes.push_back("media.basePath (a OneSauce key) sets where this collection's media are; this fork honours it.");
         }
         if (props.exists(prefix + "list.includeFile") || props.exists(prefix + "list.excludeFile")) {
-            record.notes.push_back("list.includeFile / list.excludeFile are OneSauce keys that RetroFE ignores; it reads include.txt and exclude.txt in the collection folder.");
+            record.notes.push_back("list.includeFile / list.excludeFile (OneSauce keys) name its include and exclude lists; this fork honours them.");
         }
         if (props.getOr(prefix + "launcher").find(',') != std::string::npos) {
-            record.notes.push_back("\"launcher =\" lists several launchers (RetroFE Plus); this RetroFE takes the whole text as one name.");
+            record.notes.push_back("\"launcher =\" lists several launchers (OneSauce); this fork uses the first and shows the rest as alternatives.");
         }
 
         // Per-game launcher overrides
         for (const auto& [stem, path] : filesEnding(Utils::combinePath(record.folder, "launchers"), ".conf")) {
             std::string line;
-            record.launcherOverrides[stem] = firstLine(path, line) ? std::optional<std::string>(line) : std::nullopt;
+            record.launcherOverrides[stem] = firstLine(path, options_.os, line) ? std::optional<std::string>(line) : std::nullopt;
         }
     }
 
@@ -645,12 +657,15 @@ namespace
                 }
                 continue;
             }
+            // emuarc: the item is named after its folder, but include/exclude match
+            // the file's basename, so every file stays a candidate; items are
+            // made unique by name when the filters are applied
             std::string name = record.emuarc ? Utils::getFileName(folder) : basename;
-            if (!seen.insert(name).second) {
+            if (!seen.insert(record.emuarc ? folder + '\n' + basename : basename).second) {
                 continue;
             }
             index.candidates[static_cast<size_t>(collection)].push_back(
-                Index::Candidate{ name, Utils::combinePath(folder, file), folder });
+                Index::Candidate{ name, basename, Utils::combinePath(folder, file), folder });
         }
     }
 
@@ -714,7 +729,7 @@ namespace
             }
             if (!showMissing || include.empty()) {
                 for (const Index::Candidate& candidate : index.candidates[c]) {
-                    if ((include.empty() || include.count(candidate.name)) && !exclude.count(candidate.name)
+                    if ((include.empty() || include.count(candidate.basename)) && !exclude.count(candidate.basename)
                         && !listed.count(candidate.name)) {
                         addGame(candidate.name, &candidate);
                     }
@@ -762,9 +777,17 @@ namespace
             for (GameRecord* game : games) {
                 byName.emplace(game->name, game);
             }
-            sqlite3_reset(stmt);
-            sqlite3_bind_text(stmt, 1, type.c_str(), -1, SQLITE_TRANSIENT);
-            while (sqlite3_step(stmt) == SQLITE_ROW) {
+            // RetroFE may be writing meta.db (an import): a busy database is
+            // retried from the start (rows are applied idempotently)
+            int rc = SQLITE_OK;
+            for (int attempt = 0; attempt < 5; attempt++) {
+                sqlite3_reset(stmt);
+                sqlite3_bind_text(stmt, 1, type.c_str(), -1, SQLITE_TRANSIENT);
+                size_t rows = 0;
+                while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+                    if ((++rows & 4095) == 0 && cancelled()) {
+                        break;
+                    }
                 auto text = [&](int column) {
                     const unsigned char* value = sqlite3_column_text(stmt, column);
                     return value ? std::string(reinterpret_cast<const char*>(value)) : std::string();
@@ -794,6 +817,15 @@ namespace
                     game.title = meta.title;
                     game.hasMetadata = true;
                 }
+                }
+                if ((rc != SQLITE_BUSY && rc != SQLITE_LOCKED) || cancelled()) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
+            if (rc != SQLITE_DONE && rc != SQLITE_ROW && !cancelled()) {
+                index.problems.push_back("Reading metadata for " + type + " from meta.db failed (" + sqlite3_errmsg(db)
+                    + "); some titles may show as file names.");
             }
         }
         sqlite3_finalize(stmt);
@@ -812,7 +844,7 @@ namespace
             }
             record.launcher = index.resolveLauncher(static_cast<int>(c));
             if (record.is(KindSystem)) {
-                index.launcherUses.push_back(LauncherUse{ static_cast<int>(c), "", record.launcher.via });
+                index.launcherUses.push_back(LauncherUse{ static_cast<int>(c), "", record.launcher.via, record.launcher.launcher });
                 if (record.launcher.launcher < 0 && !record.launcher.name.empty()) {
                     unresolved.insert(record.launcher.name);
                 }
@@ -822,7 +854,7 @@ namespace
                     continue;
                 }
                 LauncherResolution resolution = index.resolveLauncher(static_cast<int>(c), game);
-                index.launcherUses.push_back(LauncherUse{ static_cast<int>(c), game, resolution.via });
+                index.launcherUses.push_back(LauncherUse{ static_cast<int>(c), game, resolution.via, resolution.launcher });
                 if (resolution.launcher < 0 && !resolution.name.empty()) {
                     unresolved.insert(resolution.name);
                 }
@@ -992,7 +1024,8 @@ std::vector<ItemRef> Index::itemsFromSource(int source, int merged, const SubSou
     }
     if (!showMissing || include.empty()) {
         for (const Candidate& candidate : candidates[static_cast<size_t>(source)]) {
-            if ((include.empty() || include.count(candidate.name)) && !exclude.count(candidate.name) && !listed.count(candidate.name)) {
+            if ((include.empty() || include.count(candidate.basename)) && !exclude.count(candidate.basename)
+                && !listed.count(candidate.name)) {
                 add(candidate.name);
             }
         }
@@ -1000,24 +1033,80 @@ std::vector<ItemRef> Index::itemsFromSource(int source, int merged, const SubSou
     return result;
 }
 
-std::vector<ItemRef> Index::itemsOf(int collection) const
+void Index::precompute()
 {
-    std::vector<ItemRef> result;
-    if (collection < 0 || static_cast<size_t>(collection) >= collections.size()) {
-        return result;
-    }
-    const CollectionRecord& record = collections[static_cast<size_t>(collection)];
-    for (size_t i = record.gameBegin; i < record.gameBegin + record.gameCount; i++) {
-        result.push_back(ItemRef{ static_cast<int>(i), collection, games[i].name });
-    }
-    for (const SubSource& sub : record.subs) {
-        // RetroFE builds the source by the .sub's spelling; settings are keyed by the folder's
-        if (sub.collection >= 0 && sub.exactCase) {
-            std::vector<ItemRef> items = itemsFromSource(sub.collection, collection, &sub);
-            result.insert(result.end(), items.begin(), items.end());
+    // Snapshots never change, so the page lists, the merged collections
+    // showing each game and the playlists listing it are worked out once
+    items_.assign(collections.size(), {});
+    mergedShowing_.assign(games.size(), {});
+    playlistsListing_.assign(games.size(), {});
+    for (size_t c = 0; c < collections.size(); c++) {
+        const CollectionRecord& record = collections[c];
+        std::vector<ItemRef>& items = items_[c];
+        for (size_t i = record.gameBegin; i < record.gameBegin + record.gameCount; i++) {
+            items.push_back(ItemRef{ static_cast<int>(i), static_cast<int>(c), games[i].name });
+        }
+        for (const SubSource& sub : record.subs) {
+            // RetroFE builds the source by the .sub's spelling; settings are keyed by the folder's
+            if (sub.collection < 0 || !sub.exactCase) {
+                continue;
+            }
+            for (ItemRef& item : itemsFromSource(sub.collection, static_cast<int>(c), &sub)) {
+                if (item.game >= 0) {
+                    std::vector<int>& showing = mergedShowing_[static_cast<size_t>(item.game)];
+                    if (showing.empty() || showing.back() != static_cast<int>(c)) {
+                        showing.push_back(static_cast<int>(c));
+                    }
+                }
+                items.push_back(std::move(item));
+            }
         }
     }
-    return result;
+
+    // A playlist of collection C lists a game only if C's page shows it
+    // (CollectionInfoBuilder::loadPlaylistItems matches against info->items)
+    for (size_t c = 0; c < collections.size(); c++) {
+        const CollectionRecord& record = collections[c];
+        if (record.playlists.empty()) {
+            continue;
+        }
+        std::map<std::pair<std::string, std::string>, int> onPage;  // (collection, name) -> game
+        for (const ItemRef& item : items_[c]) {
+            if (item.game >= 0) {
+                onPage.emplace(std::make_pair(collections[static_cast<size_t>(item.collection)].name, item.name), item.game);
+            }
+        }
+        for (const PlaylistInfo& playlist : record.playlists) {
+            std::set<int> listed;
+            for (const std::string& entry : playlist.entries) {
+                LineList::Qualified q = LineList::parseQualified(entry, record.name);
+                if (q.name == "*") {
+                    for (const auto& [key, game] : onPage) {
+                        if (key.first == q.collection) {
+                            listed.insert(game);
+                        }
+                    }
+                    continue;
+                }
+                auto it = onPage.find({ q.collection, q.name });
+                if (it != onPage.end()) {
+                    listed.insert(it->second);
+                }
+            }
+            for (int game : listed) {
+                playlistsListing_[static_cast<size_t>(game)].push_back(PlaylistRef{ static_cast<int>(c), playlist.name });
+            }
+        }
+    }
+}
+
+const std::vector<ItemRef>& Index::itemsOf(int collection) const
+{
+    static const std::vector<ItemRef> none;
+    if (collection < 0 || static_cast<size_t>(collection) >= items_.size()) {
+        return none;
+    }
+    return items_[static_cast<size_t>(collection)];
 }
 
 std::vector<MenuRow> Index::menuTree(const std::string& from) const
@@ -1088,7 +1177,8 @@ LauncherResolution Index::resolveLauncher(int collection, const std::string& gam
     }
     const CollectionRecord& record = collections[static_cast<size_t>(collection)];
     const std::string& c = record.name;
-    r.configured = properties.getOr("collections." + c + ".launcher", "");
+    // Fork-compat: the first of "launcher = a, b, c"; the rest are alternatives
+    r.configured = firstLauncher(properties.getOr("collections." + c + ".launcher", ""), &r.alternatives);
     r.name = r.configured;
     r.via = r.configured.empty() ? LauncherVia::None : LauncherVia::Setting;
 
@@ -1128,8 +1218,9 @@ LauncherResolution Index::resolveLauncher(int collection, const std::string& gam
         if (r.name.empty()) {
             r.problem = "No launcher is set, so its games can't be started.";
         }
-        else if (r.name.find(',') != std::string::npos) {
-            r.problem = "\"" + r.name + "\" is a list of launchers (RetroFE Plus); this RetroFE needs one launcher name.";
+        else if (!r.overrideName.empty() && r.overrideName.back() == '\r') {
+            r.problem = r.overrideFile + " ends its first line with Windows line endings; on "
+                + options.os + " RetroFE reads the launcher name with a stray carriage return and finds no launcher.";
         }
         else {
             r.problem = "There's no launcher called \"" + r.name + "\" (launchers." + options.os + "/" + r.name + ".conf).";
@@ -1145,59 +1236,29 @@ std::vector<LauncherUse> Index::usesOf(int launcher) const
 {
     std::vector<LauncherUse> result;
     for (const LauncherUse& use : launcherUses) {
-        LauncherResolution resolution = use.game.empty()
-            ? collections[static_cast<size_t>(use.collection)].launcher
-            : resolveLauncher(use.collection, use.game);
-        if (resolution.launcher == launcher) {
+        if (use.launcher == launcher) {
             result.push_back(use);
         }
     }
     return result;
 }
 
-std::vector<int> Index::mergedCollectionsShowing(int game) const
+const std::vector<int>& Index::mergedCollectionsShowing(int game) const
 {
-    std::vector<int> result;
-    if (game < 0 || static_cast<size_t>(game) >= games.size()) {
-        return result;
+    static const std::vector<int> none;
+    if (game < 0 || static_cast<size_t>(game) >= mergedShowing_.size()) {
+        return none;
     }
-    const GameRecord& record = games[static_cast<size_t>(game)];
-    for (size_t c = 0; c < collections.size(); c++) {
-        for (const SubSource& sub : collections[c].subs) {
-            if (sub.collection != record.collection || !sub.exactCase) {
-                continue;
-            }
-            for (const ItemRef& item : itemsFromSource(sub.collection, static_cast<int>(c), &sub)) {
-                if (item.name == record.name) {
-                    result.push_back(static_cast<int>(c));
-                    break;
-                }
-            }
-        }
-    }
-    return result;
+    return mergedShowing_[static_cast<size_t>(game)];
 }
 
-std::vector<Index::PlaylistRef> Index::playlistsListing(int game) const
+const std::vector<Index::PlaylistRef>& Index::playlistsListing(int game) const
 {
-    std::vector<PlaylistRef> result;
-    if (game < 0 || static_cast<size_t>(game) >= games.size()) {
-        return result;
+    static const std::vector<PlaylistRef> none;
+    if (game < 0 || static_cast<size_t>(game) >= playlistsListing_.size()) {
+        return none;
     }
-    const GameRecord& record = games[static_cast<size_t>(game)];
-    const std::string& own = collections[static_cast<size_t>(record.collection)].name;
-    for (size_t c = 0; c < collections.size(); c++) {
-        for (const PlaylistInfo& playlist : collections[c].playlists) {
-            for (const std::string& entry : playlist.entries) {
-                LineList::Qualified q = LineList::parseQualified(entry, collections[c].name);
-                if (q.collection == own && (q.name == record.name || q.name == "*")) {
-                    result.push_back(PlaylistRef{ static_cast<int>(c), playlist.name });
-                    break;
-                }
-            }
-        }
-    }
-    return result;
+    return playlistsListing_[static_cast<size_t>(game)];
 }
 
 }

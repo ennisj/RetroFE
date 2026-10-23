@@ -20,6 +20,7 @@
 #include "../Database/MetadataDatabase.h"
 #include "../Database/DB.h"
 #include "../Database/GlobalOpts.h"
+#include "../Library/Properties.h"
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 
@@ -232,6 +233,8 @@ CollectionInfo *CollectionInfoBuilder::buildCollection(const std::string& name, 
     auto *collection = new CollectionInfo(conf_, name, listItemsPath, extensions, metadataType, metadataPath);
 
     (void)conf_.getProperty("collections." + collection->name + ".launcher", collection->launcher);
+    // Fork-compat (OneSauce data): "launcher = a, b, c" lists alternatives; the first is the launcher
+    collection->launcher = Library::firstLauncher(collection->launcher);
 
     ImportDirectory(collection, mergedCollectionName);
 
@@ -315,6 +318,10 @@ bool CollectionInfoBuilder::ImportDirectory(CollectionInfo *info, const std::str
     std::map<std::string, Item *> excludeFilter;
     std::string includeFile    = Utils::combinePath(Configuration::absolutePath, "collections", info->name, "include.txt");
     std::string excludeFile    = Utils::combinePath(Configuration::absolutePath, "collections", info->name, "exclude.txt");
+    // Fork-compat (OneSauce data): list.includeFile / list.excludeFile name the
+    // collection's include and exclude lists instead (same format and rules)
+    (void)conf_.getPropertyAbsolutePath("collections." + info->name + ".list.includeFile", includeFile);
+    (void)conf_.getPropertyAbsolutePath("collections." + info->name + ".list.excludeFile", excludeFile);
 
     std::string launcher;
     bool showMissing  = false; 

@@ -15,6 +15,7 @@
  */
 #include "Setup.h"
 #include "../Database/Configuration.h"
+#include "../Database/GlobalOpts.h"
 #include "../Library/Backups.h"
 #include "../Library/Edits.h"
 #include "../Utility/Log.h"
@@ -31,6 +32,7 @@ namespace fs = std::filesystem;
 namespace
 {
     const char* const mainCollection = "Main";
+    Configuration* liveConfig = nullptr;
 
     std::string collectionsPath()
     {
@@ -84,9 +86,40 @@ namespace
 namespace Setup
 {
 
+void setConfiguration(Configuration* config)
+{
+    liveConfig = config;
+}
+
+std::string firstCollection()
+{
+    // RetroFE's own value (settings files plus any command-line override) when it's running
+    if (liveConfig) {
+        std::string first;
+        liveConfig->getProperty(OPTION_FIRSTCOLLECTION, first);
+        return first.empty() ? mainCollection : first;
+    }
+    return Library::MenuFiles::topMenu(Configuration::absolutePath);
+}
+
+std::string topMenu()
+{
+    return Library::MenuFiles::menuForNewCollections(Configuration::absolutePath, firstCollection());
+}
+
+std::string checkName(const std::string& name)
+{
+    std::string problem = Library::MenuFiles::checkChildName(Utils::trimEnds(name));
+    return problem.empty() ? "" : "That system name won't work: " + problem;
+}
+
 bool addToMainMenu(const std::string& name, std::string& error)
 {
-    // The top menu is firstCollection (Browse), not always "Main"; it can't list itself
+    error = checkName(name);
+    if (!error.empty()) {
+        return false;
+    }
+    // The top menu can't list itself
     std::string top = topMenu();
     if (Utils::toLower(name) == Utils::toLower(top)) {
         return true;
@@ -101,11 +134,6 @@ bool removeFromMainMenu(const std::string& name, std::string& error)
     return Library::MenuFiles::remove(Configuration::absolutePath, topMenu(), name, &backups, error);
 }
 
-std::string topMenu()
-{
-    return Library::MenuFiles::topMenu(Configuration::absolutePath);
-}
-
 bool hasSettingsFile()
 {
     return fs::exists(Utils::combinePath(Configuration::absolutePath, "settings.conf"));
@@ -115,9 +143,10 @@ std::vector<std::string> listCollections()
 {
     std::vector<std::string> names;
     std::error_code ec;
+    std::string top = topMenu();
     for (const auto& entry : fs::directory_iterator(collectionsPath(), ec)) {
         std::string name = entry.path().filename().string();
-        if (entry.is_directory() && !name.empty() && name[0] != '_' && name != mainCollection) {
+        if (entry.is_directory() && !name.empty() && name[0] != '_' && name != top) {
             names.push_back(name);
         }
     }
@@ -158,8 +187,9 @@ std::string validate(const NewCollection& collection)
     if (name[0] == '_' || name[0] == '.') {
         return "The name can't start with _ or a dot.";
     }
-    if (Utils::toLower(name) == Utils::toLower(mainCollection)) {
-        return "\"Main\" is the menu RetroFE starts on. Pick another name.";
+    std::string top = topMenu();
+    if (Utils::toLower(name) == Utils::toLower(top)) {
+        return "\"" + top + "\" is the menu new systems are listed in. Pick another name.";
     }
     if (fs::exists(Utils::combinePath(collectionsPath(), name))) {
         return "A system called \"" + name + "\" already exists.";

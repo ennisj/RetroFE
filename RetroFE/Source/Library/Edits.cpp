@@ -24,6 +24,7 @@
 #include <sqlite3.h>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <system_error>
@@ -90,8 +91,7 @@ namespace
         return result;
     }
 
-    bool writeMetaDb(const std::string& root, const std::string& type, const std::string& game,
-                     const std::map<std::string, std::string>& values, std::string& error)
+    bool withMetaDb(const std::string& root, const std::function<bool(sqlite3*, std::string&)>& work, std::string& error)
     {
         std::string path = Utils::combinePath(root, "meta.db");
         std::error_code ec;
@@ -106,9 +106,15 @@ namespace
             return false;
         }
         sqlite3_busy_timeout(db, 2000);
-        bool ok = MetadataOverrides::apply(db, type, game, values, error);
+        bool ok = work(db, error);
         sqlite3_close(db);
         return ok;
+    }
+
+    bool writeMetaDb(const std::string& root, const std::string& type, const std::string& game,
+                     const std::map<std::string, std::string>& values, std::string& error)
+    {
+        return withMetaDb(root, [&](sqlite3* db, std::string& e) { return MetadataOverrides::apply(db, type, game, values, e); }, error);
     }
 }
 
@@ -178,14 +184,15 @@ EditResult Editor::setGameLauncher(const Index& index, const std::string& collec
     if (readFile(file, content)) {
         lines = Lines::parse(content);
     }
+    // Always "\n" after the name: RetroFE reads only this line, and on Linux
+    // and macOS its text-mode getline keeps a '\r', which would become part
+    // of the launcher name
     if (lines.lines.empty()) {
-        lines.append(name);
+        lines.lines.push_back(Line{ name, "\n" });
     }
     else {
         lines.lines[0].text = name;
-        if (lines.lines[0].eol.empty()) {
-            lines.lines[0].eol = lines.newline();
-        }
+        lines.lines[0].eol = "\n";
     }
     std::string error;
     if (!backups_.beforeChange(file, error) || !writeFileAtomic(file, lines.join(), error)) {
@@ -234,6 +241,7 @@ EditResult Editor::setMetadata(const Index& index, const std::string& collection
         result.message = std::string(info->label) + " saved.";
     }
     else {
+        requestMetadataImport();
         result.message = std::string(info->label) + " saved; RetroFE applies it the next time it imports metadata ("
             + error + ").";
     }
@@ -267,20 +275,57 @@ EditResult Editor::clearMetadata(const Index& index, const std::string& collecti
         return EditResult::fail(error);
     }
 
-    // meta.db gets the shipped value back (rows from other sources are left alone)
-    std::map<std::string, std::string> shipped;
-    std::string value;
-    if (MetadataOverrides::shipped(root_, type, game, shipped)) {
-        value = shipped[info->element];
-    }
-    else if (std::string(info->element) == "description") {
-        value = game;
-    }
+    // meta.db gets back what RetroFE's own import would give it
     EditResult result{ true, std::string(info->label) + " is back to the shipped value.", { file } };
-    if (!writeMetaDb(root_, type, game, { { info->element, value } }, error)) {
-        result.message += " RetroFE shows it after its next metadata import (" + error + ").";
+    std::map<std::string, std::string> shipped;
+    std::string problem;
+    switch (MetadataOverrides::shipped(root_, type, game, shipped, &problem)) {
+    case MetadataOverrides::Shipped::Found:
+        if (!writeMetaDb(root_, type, game, { { info->element, shipped[info->element] } }, error)) {
+            requestMetadataImport();
+            result.message += " RetroFE shows it after its next metadata import (" + error + ").";
+        }
+        break;
+    case MetadataOverrides::Shipped::NotFound: {
+        // No shipped file lists the game, so its row exists only because of the
+        // user's changes: drop it with the last of them, or reset just this field
+        bool lastChange = overrides.find(game) == overrides.end();
+        std::string fallback = std::string(info->element) == "description" ? game : "";
+        bool ok = lastChange ? withMetaDb(root_, [&](sqlite3* db, std::string& e) { return MetadataOverrides::removeRow(db, type, game, e); }, error)
+                             : writeMetaDb(root_, type, game, { { info->element, fallback } }, error);
+        if (!ok) {
+            requestMetadataImport();
+            result.message += " RetroFE shows it after its next metadata import (" + error + ").";
+        }
+        break;
+    }
+    case MetadataOverrides::Shipped::Unknown:
+        // A shipped file can't be read, so the shipped value isn't known: leave
+        // meta.db alone and have RetroFE re-import it on its next start
+        requestMetadataImport();
+        result.message += " RetroFE re-imports its metadata on its next start (" + problem + ").";
+        break;
     }
     return result;
+}
+
+void Editor::requestMetadataImport()
+{
+    // MetadataDatabase::needsRefresh re-imports when anything in the override
+    // folder is newer than meta.db; make sure this marker is, whatever the file
+    // system's time resolution (FAT keeps 2 s)
+    std::error_code ec;
+    std::string marker = Utils::combinePath(MetadataOverrides::folder(root_), ".reimport");
+    std::string error;
+    if (!writeFileAtomic(marker, "Asks RetroFE to re-import its metadata (written by Manage).\n", error)) {
+        LOG_ERROR("Library", error);
+        return;
+    }
+    std::string db = Utils::combinePath(root_, "meta.db");
+    fs::file_time_type dbTime = fs::last_write_time(db, ec);
+    if (!ec && fs::last_write_time(marker, ec) <= dbTime + std::chrono::seconds(2)) {
+        fs::last_write_time(marker, dbTime + std::chrono::seconds(3), ec);
+    }
 }
 
 std::map<std::string, std::string> Editor::metadataOverrides(const Index& index, const std::string& collection,
@@ -402,8 +447,23 @@ EditResult Editor::setCollectionSetting(const Index& index, const std::string& c
     bool isInfo = std::find(info.begin(), info.end(), key) != info.end();
     ConfLayers layers(record->folder, ConfLayers::collectionFileNames());
     size_t target = isInfo ? static_cast<size_t>(layers.indexOf("info.conf")) : 0;
+    std::string written = Utils::trimEnds(value);
+    if (key == "launcher") {
+        // Fork-compat: in a "launcher = a, b, c" list the pick moves to the
+        // front (becoming the default) and the alternatives are kept
+        std::vector<std::string> alternatives;
+        firstLauncher(layers.get("launcher"), &alternatives);
+        std::string current = firstLauncher(layers.get("launcher"));
+        if (!alternatives.empty()) {
+            alternatives.insert(alternatives.begin(), current);
+            alternatives.erase(std::remove(alternatives.begin(), alternatives.end(), written), alternatives.end());
+            for (const std::string& name : alternatives) {
+                written += ", " + name;
+            }
+        }
+    }
     std::string error;
-    if (!layers.set(key, value, error, target, "", &backups_)) {
+    if (!layers.set(key, written, error, target, "", &backups_)) {
         return EditResult::fail(error);
     }
     EditResult result{ true, "Saved " + key + " in " + layers.source(key) + ".",
@@ -452,6 +512,43 @@ namespace MenuFiles
         return top.empty() ? "Main" : top;
     }
 
+    std::string menuForNewCollections(const std::string& root, const std::string& firstCollection)
+    {
+        if (firstCollection.empty() || !checkChildName(firstCollection).empty()) {
+            return "Main";
+        }
+        std::error_code ec;
+        std::string folder = Utils::combinePath(root, "collections", firstCollection);
+        if (!fs::is_directory(folder, ec) || fs::exists(Utils::combinePath(folder, "menu.txt"), ec)
+            || fs::is_directory(Utils::combinePath(folder, "menu"), ec) || fs::exists(Utils::combinePath(folder, "menu.xml"), ec)) {
+            return firstCollection;
+        }
+        ConfLayers settings(folder, ConfLayers::collectionFileNames());
+        bool games = !Utils::trimEnds(settings.get("list.extensions")).empty() || settings.has("list.path")
+            || fs::is_directory(Utils::combinePath(folder, "roms"), ec);
+        for (const auto& entry : fs::directory_iterator(folder, ec)) {
+            games |= entry.is_regular_file(ec) && entry.path().extension() == ".sub";
+        }
+        return games ? "Main" : firstCollection;
+    }
+
+    std::string checkChildName(const std::string& name)
+    {
+        if (Utils::trimEnds(name).empty()) {
+            return "The name is empty.";
+        }
+        if (Utils::trimEnds(name) != name) {
+            return "The name can't start or end with a space.";
+        }
+        if (name.find_first_of("\\/:*?\"<>|#\r\n") != std::string::npos) {
+            return "The name can't contain \\ / : * ? \" < > | or #.";
+        }
+        if (name[0] == '_' || name[0] == '.') {
+            return "The name can't start with _ or a dot.";
+        }
+        return "";
+    }
+
     namespace
     {
         // menu/<child>.txt, matched ignoring case; "" when there's none
@@ -489,6 +586,14 @@ namespace MenuFiles
     bool add(const std::string& root, const std::string& menu, const std::string& child, int position,
              Backups* backups, std::string& error)
     {
+        // The name becomes a line or, for a menu folder, a file name: no paths
+        error = checkChildName(child);
+        if (error.empty()) {
+            error = checkChildName(menu);
+        }
+        if (!error.empty()) {
+            return false;
+        }
         std::error_code ec;
         std::string folder = Utils::combinePath(root, "collections", menu);
         bool newFolder = !fs::is_directory(folder, ec);
@@ -528,19 +633,25 @@ namespace MenuFiles
         return true;
     }
 
-    bool remove(const std::string& root, const std::string& menu, const std::string& child, Backups* backups, std::string& error)
+    bool remove(const std::string& root, const std::string& menu, const std::string& child, Backups* backups,
+                std::string& error, bool* removed)
     {
         std::error_code ec;
+        bool any = false;
         std::string folder = Utils::combinePath(root, "collections", menu);
         std::string menuTxt = Utils::combinePath(folder, "menu.txt");
         std::string menuFolder = Utils::combinePath(folder, "menu");
         if (fs::exists(menuTxt, ec)) {
-            if (!editList(menuTxt, [&](LineList& list) { return removeFrom(list, child); }, backups, error)) {
+            if (!editList(menuTxt, [&](LineList& list) { return any = removeFrom(list, child); }, backups, error)) {
                 return false;
             }
         }
+        else if (fs::is_directory(menuFolder, ec) && !checkChildName(child).empty()) {
+            // Not a name a menu file can have, so there's no such file
+        }
         else if (fs::is_directory(menuFolder, ec)) {
             std::string file = folderEntry(menuFolder, child);
+            any = !file.empty();
             if (!file.empty()) {
                 if (backups ? !backups->removeKeepingOriginal(file, error) : !fs::remove(file, ec)) {
                     if (error.empty()) {
@@ -554,6 +665,9 @@ namespace MenuFiles
         if (fs::exists(supported, ec)
             && !editList(supported, [&](LineList& list) { return removeFrom(list, child); }, backups, error)) {
             return false;
+        }
+        if (removed) {
+            *removed = any;
         }
         return true;
     }
@@ -631,7 +745,11 @@ EditResult Editor::addMenuChild(const Index& index, const std::string& menu, con
     if (!MenuFiles::add(index.options.root, menuRecord->name, childRecord->name, position, &backups_, error)) {
         return EditResult::fail(error);
     }
-    return EditResult{ true, "Added " + childRecord->name + " to " + menuRecord->name + ".", { menuRecord->folder } };
+    std::string message = "Added " + childRecord->name + " to " + menuRecord->name + ".";
+    if (position >= 0 && menuRecord->menuSource == MenuSource::MenuFolder) {
+        message += " This menu lists its menu folder's files, which RetroFE sorts by name, so it goes in name order.";
+    }
+    return EditResult{ true, message, { menuRecord->folder } };
 }
 
 EditResult Editor::removeMenuChild(const Index& index, const std::string& menu, const std::string& child)
@@ -642,8 +760,12 @@ EditResult Editor::removeMenuChild(const Index& index, const std::string& menu, 
         return EditResult::fail("There's no collection called \"" + menu + "\".");
     }
     std::string error;
-    if (!MenuFiles::remove(index.options.root, menuRecord->name, child, &backups_, error)) {
+    bool removed = false;
+    if (!MenuFiles::remove(index.options.root, menuRecord->name, child, &backups_, error, &removed)) {
         return EditResult::fail(error);
+    }
+    if (!removed) {
+        return EditResult::fail(child + " isn't listed in " + menuRecord->name + ".");
     }
     return EditResult{ true, "Removed " + child + " from " + menuRecord->name + ". The collection itself is unchanged.",
                        { menuRecord->folder } };
@@ -897,8 +1019,7 @@ EditResult Editor::replaceMedia(const MediaSlot& slot, const std::string& file)
         fs::remove(temp, ec);
         return EditResult::fail(error);
     }
-    fs::rename(temp, target, ec);
-    if (ec) {
+    if (!flushToDisk(temp) || !replaceFile(temp, target)) {
         fs::remove(temp, ec);
         return EditResult::fail("Could not put the new file in place: " + target);
     }

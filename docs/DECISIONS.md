@@ -212,6 +212,8 @@ The full reasoning, with the options considered for each, is in
 - Before a file's first change, it's copied there at the same relative path;
   a file that didn't exist gets an `.absent` marker. RetroFE never reads
   `manage/`.
+- A file that differs from the kept original is never deleted or overwritten:
+  it's kept beside it first as `<name> (2).<ext>` and so on.
 
 ### LB3. Metadata edits go in `<root>/manage/metadata/<type>.xml` — Decided
 - The file is hyperlist format and holds only the changed fields.
@@ -219,6 +221,10 @@ The full reasoning, with the options considered for each, is in
   content updates and re-imports. Edits are also written into meta.db at once.
 - Not inside `meta/`, because a change there makes RetroFE re-import on every
   start, due to its exe-time check.
+- Clearing an edit restores the value RetroFE's import would give, read from
+  hyperlist, mamelist and emuarc. A row that only the user's edits created is
+  deleted. If a shipped file can't be read, meta.db is left alone and a
+  re-import is requested.
 
 ### LB4. `media.basePath` (OneSauce) is honoured — Decided
 - The order is `media.<type>`, then `media.basePath`, then `baseMediaPath`.
@@ -232,16 +238,26 @@ The full reasoning, with the options considered for each, is in
   from it is refused, and removing the last entry deletes the file.
 - **LB7.** A launcher override naming the default is removed.
 - **LB8.** Media lookups check files rather than list folders.
-- **LB9.** Setup's top-menu helpers use `firstCollection`.
-- **LB10.** The index is an immutable snapshot, rebuilt in the background.
+- **LB9.** New systems are listed in `firstCollection` (read from RetroFE's live
+  configuration) only when it's a menu or can become one. Otherwise they go in
+  "Main", so a games collection never gets a menu.txt.
+- **LB10.** The index is an immutable snapshot, rebuilt in the background. A
+  change never cancels a running build: the build publishes, then one more follows.
 
-### LB11. Comma launcher lists (RetroFE Plus) — Open
-- `launcher = lr-a, lr-b` is unresolved in this RetroFE. On K:, 25
-  collections use such lists. Options:
-  - (a) leave it;
-  - (b) use the first name, in RetroFE and the library (fork compat, like LB4);
-  - (c) let the Systems screen rewrite the list to one name.
-- Recommendation: (b), if OneSauce data should launch on this fork.
+### LB11. `launcher = a, b, c` uses `a` (fork compat) — Decided
+- OneSauce/RetroFE Plus data names a default and its alternatives; 25
+  collections on K: do this.
+- RetroFE (`CollectionInfoBuilder`, `Launcher`) and the library use the first
+  name. The library shows the rest as read-only alternatives.
+- Setting the launcher in Manage moves the pick to the front and keeps the rest.
+- Options considered: leave the lists unresolved, or rewrite each list to a
+  single name. Both were rejected: the first stops OneSauce games launching,
+  and the second loses the alternatives.
 
-### LB12. `list.includeFile` / `list.excludeFile` (OneSauce) — Open
-- Ignored, as RetroFE ignores them. Options: honour them like LB4, or leave them ignored.
+### LB12. `list.includeFile` / `list.excludeFile` are honoured (fork compat) — Decided
+- When set, they replace `include.txt` and `exclude.txt` as the collection's
+  lists, with the same format and rules. Paths are resolved like other keys:
+  `%BASE_ITEM_PATH%`, `%ITEM_COLLECTION_NAME%`, and relative to the root.
+- Applied in RetroFE's `ImportDirectory` and in the library scanner.
+- Option considered: keep ignoring them. Rejected, because then stock RetroFE
+  would list games OneSauce hides.

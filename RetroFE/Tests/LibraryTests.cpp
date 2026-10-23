@@ -19,6 +19,7 @@
 
 #include "TestSupport.h"
 #include "../Source/Collection/CollectionInfo.h"
+#include "../Source/Collection/CollectionInfoBuilder.h"
 #include "../Source/Collection/Item.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Database/DB.h"
@@ -38,7 +39,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -58,7 +61,7 @@ namespace
     //   Arcade (system): roms/ a.zip b.zip c.ZIP d.7z, exclude.txt b, launcher mame,
     //                    launchers/a.conf -> fbneo
     //   NES (system, own launcher.conf beats "launcher = mame"; local launcher "special")
-    //   SNES (system with launcher "lr-a, lr-b")
+    //   SNES (system with launcher "fbneo, mame, lr-x": OneSauce's list, first wins)
     //   All (merged): Arcade.sub (empty = all), NES.sub (mario), playlist
     std::string makeInstall(const std::string& name)
     {
@@ -88,7 +91,7 @@ namespace
         writeFile(root + "/collections/NES/roms/mario.nes", "x");
         writeFile(root + "/collections/NES/roms/zelda.nes", "x");
 
-        writeFile(root + "/collections/SNES/settings.conf", "list.extensions = sfc\nlauncher = lr-a, lr-b\n");
+        writeFile(root + "/collections/SNES/settings.conf", "list.extensions = sfc\nlauncher = fbneo, mame, lr-x\n");
         writeFile(root + "/collections/SNES/roms/f-zero.sfc", "x");
 
         writeFile(root + "/collections/All/Arcade.sub", "");
@@ -278,13 +281,76 @@ static void runLibraryTests()
         checkEqual(resolved("Arcade", "a"), "fbneo", "a game's override");
         checkEqual(resolved("NES", "zelda"), "NES", "the collection's launcher.conf beats launcher = mame");
         checkEqual(resolved("NES", "mario"), "NES.special", "an override naming a local launcher");
-        checkEqual(resolved("SNES", ""), "?lr-a, lr-b", "a comma list doesn't resolve");
+        checkEqual(resolved("SNES", ""), "fbneo", "a comma list uses its first name (fork compat)");
         LauncherResolution snes = index->resolveLauncher(index->findCollection("SNES"));
-        check(snes.problem.find("list of launchers") != std::string::npos, "and says why");
-        check(std::find(index->unresolvedLaunchers.begin(), index->unresolvedLaunchers.end(), "lr-a, lr-b")
-              != index->unresolvedLaunchers.end(), "listed as unresolved");
+        check(snes.configured == "fbneo" && snes.alternatives == std::vector<std::string>({ "mame", "lr-x" }) && snes.problem.empty(),
+              "the rest are alternatives");
         std::vector<LauncherUse> uses = index->usesOf(index->findLauncher("fbneo"));
-        check(uses.size() == 1 && uses[0].game == "a", "fbneo is used by one game");
+        check(uses.size() == 2, "fbneo is SNES's default and game a's pick");
+
+        // Override files with Windows line endings break on Linux (text-mode getline keeps '\r')
+        writeFile(root + "/launchers.linux/fbneo.conf", "executable = fbneo\n");
+        writeFile(root + "/launchers.windows/fbneo.conf", "executable = fbneo.exe\n");
+        writeFile(root + "/collections/Arcade/launchers/a.conf", "fbneo\r\n");
+        for (const char* platform : { "windows", "linux" }) {
+            ScanOptions options;
+            options.root = root;
+            options.os = platform;
+            auto scanned = std::shared_ptr<const Index>(buildIndex(options).release());
+            LauncherResolution r = scanned->resolveLauncher(scanned->findCollection("Arcade"), "a");
+            if (std::string(platform) == "windows") {
+                check(r.launcher >= 0 && r.name == "fbneo", "CRLF override on Windows resolves");
+            }
+            else {
+                check(r.launcher < 0 && r.name == "fbneo\r" && r.problem.find("carriage return") != std::string::npos,
+                      "CRLF override on Linux keeps the '\\r' and says so");
+            }
+        }
+    });
+
+    run("library: RetroFE honours the OneSauce launcher list and include/exclude files", [&] {
+        // CollectionInfoBuilder (RetroFE itself), against the same fixture as the library
+        std::string root = makeInstall("lib-forkcompat");
+        writeFile(root + "/collections/NES/settings1.conf",
+                  "list.includeFile = content/NES/include.txt\nlist.excludeFile = " + root + "/content/NES/exclude.txt\n");
+        writeFile(root + "/content/NES/include.txt", "mario\nzelda\n");
+        writeFile(root + "/content/NES/exclude.txt", "zelda\n");
+        writeFile(root + "/collections/NES/include.txt", "nothing\n");  // replaced by list.includeFile
+        Configuration::absolutePath = root;
+        Configuration config;
+        for (const char* name : { "NES", "SNES" }) {
+            std::string folder = root + "/collections/" + name;
+            for (const char* file : { "/settings.conf", "/settings1.conf" }) {
+                if (fs::exists(folder + file)) {
+                    config.import(name, std::string("collections.") + name, folder + file, false);
+                }
+            }
+        }
+        DB db(root + "/meta.db");
+        db.initialize();
+        MetadataDatabase meta(db, config);
+        CollectionInfoBuilder builder(config, meta);
+        std::unique_ptr<CollectionInfo> nes(builder.buildCollection("NES"));
+        std::vector<std::string> nesItems;
+        for (const Item* item : nes->items) {
+            nesItems.push_back(item->name);
+        }
+        check(nesItems == std::vector<std::string>({ "mario" }), "list.includeFile and list.excludeFile are read (relative and absolute)");
+        std::unique_ptr<CollectionInfo> snes(builder.buildCollection("SNES"));
+        checkEqual(snes->launcher, "fbneo", "launcher = fbneo, mame, lr-x launches with fbneo");
+
+        // The library reads them the same way, %BASE_ITEM_PATH%/%ITEM_COLLECTION_NAME% included
+        writeFile(root + "/settings1.conf", "baseItemPath = content\n");
+        writeFile(root + "/collections/NES/settings1.conf",
+                  "list.includeFile = %BASE_ITEM_PATH%/%ITEM_COLLECTION_NAME%/include.txt\n"
+                  "list.excludeFile = %BASE_ITEM_PATH%/%ITEM_COLLECTION_NAME%/exclude.txt\n"
+                  "list.path = collections/NES/roms\n");
+        auto index = scan(root);
+        int c = index->findCollection("NES");
+        check(names(*index, index->itemsOf(c)) == std::vector<std::string>({ "NES:mario" }), "library: same games");
+        check(fs::path(index->collections[static_cast<size_t>(c)].includeFile).parent_path().filename() == "NES"
+              && fs::path(index->collections[static_cast<size_t>(c)].includeFile).parent_path().parent_path().filename() == "content",
+              "include file expanded from %BASE_ITEM_PATH%/%ITEM_COLLECTION_NAME%");
     });
 
     run("library: media lookup and fallbacks", [&] {
@@ -398,13 +464,14 @@ static void runLibraryTests()
         check(fs::exists(root + "/manage/backups/collections/Arcade/launchers/a.conf"), "the old override is kept");
         index = scan(root);
         check(editor.setGameLauncher(*index, "NES", "zelda", "special").ok
-              && readFile(root + "/collections/NES/launchers/zelda.conf") == std::string("special") + (Utils::getOSType() == "windows" ? "\r\n" : "\n"),
-              "an override file with the launcher's name");
+              && readFile(root + "/collections/NES/launchers/zelda.conf") == "special\n",
+              "an override file with the launcher's name, ending in \\n on every platform");
         check(!editor.setGameLauncher(*index, "NES", "zelda", "nothing").ok, "unknown launcher refused");
         writeFile(root + "/collections/NES/launchers/mario.conf", "special\r\n# keep me\r\n");
         index = scan(root);
         check(editor.setGameLauncher(*index, "NES", "mario", "fbneo").ok
-              && readFile(root + "/collections/NES/launchers/mario.conf") == "fbneo\r\n# keep me\r\n", "only the first line changes");
+              && readFile(root + "/collections/NES/launchers/mario.conf") == "fbneo\n# keep me\r\n",
+              "only the first line changes (and loses its \\r, which Linux would read as part of the name)");
 
         check(editor.addToPlaylist(*index, "All", "best", "NES", "mario").ok
               && readFile(root + "/collections/All/playlists/best.txt") == "_Arcade:a\n_NES:mario\n", "qualified playlist entry");
@@ -552,6 +619,138 @@ static void runLibraryTests()
 
         indexer.changed("test");
         check(indexer.changesPending() && indexer.wait(10000) && indexer.status().generation == 2, "a change rebuilds and is pending");
+    });
+
+    run("library: a file that changed since its original was kept is never deleted", [&] {
+        std::string root = makeRoot("lib-backups-changed");
+        std::string path = root + "/collections/A/medium_artwork/logo/a.png";
+        writeFile(path, "original");
+        Backups backups(root);
+        check(backups.removeKeepingOriginal(path, error) && !fs::exists(path), "first removal moves the original aside");
+        writeFile(path, "copied in later");  // a content update or a hand copy
+        check(backups.removeKeepingOriginal(path, error) && !fs::exists(path), "removed again");
+        std::string kept = (fs::path(backups.backupPath(path)).parent_path() / "a (2).png").string();
+        checkEqual(readFile(kept), "copied in later", "the changed file is kept as a numbered copy");
+        checkEqual(readFile(backups.backupPath(path)), "original", "the original is untouched");
+        writeFile(path, "original");
+        check(backups.removeKeepingOriginal(path, error) && !fs::exists((fs::path(kept).parent_path() / "a (3).png")),
+              "a file identical to the original is simply removed");
+        writeFile(path, "edited");
+        check(backups.restore(path, error) && readFile(path) == "original"
+              && readFile((fs::path(kept).parent_path() / "a (3).png").string()) == "edited",
+              "a reset keeps what it replaces");
+    });
+
+    run("library: clearing metadata restores mamelist values, or drops user-only rows", [&] {
+        std::string root = makeInstall("lib-metadata-mame");
+        writeFile(root + "/meta/mamelist/Arcade.xml",
+                  "<mame><machine name=\"a\" cloneof=\"z\"><description>Alpha</description><year>1981</year>"
+                  "<manufacturer>Namco</manufacturer><input players=\"2\" buttons=\"1\"/></machine></mame>");
+        Configuration::absolutePath = root;
+        Configuration config;
+        {
+            DB db(root + "/meta.db");
+            db.initialize();
+            MetadataDatabase meta(db, config);
+            meta.initialize();
+        }
+        std::map<std::string, std::string> shippedRow;
+        check(MetadataOverrides::shipped(root, "Arcade", "a", shippedRow) == MetadataOverrides::Shipped::Found
+              && shippedRow["description"] == "Alpha" && shippedRow["manufacturer"] == "Namco" && shippedRow["players"] == "2"
+              && shippedRow["cloneof"] == "z", "shipped() reads the mamelist row");
+
+        Editor editor(root);
+        auto index = scan(root);
+        check(editor.setMetadata(*index, "Arcade", "a", "manufacturer", "Midway").ok, "set");
+        check(editor.clearMetadata(*index, "Arcade", "a", "manufacturer").ok, "clear");
+        index = scan(root);
+        const GameRecord& a = index->games[static_cast<size_t>(index->findGame("Arcade", "a"))];
+        check(a.meta.manufacturer == "Namco" && a.title == "Alpha", "back to the mamelist value, not blank");
+
+        // A game no shipped file lists: its row was the user's alone
+        check(editor.setMetadata(*index, "NES", "zelda", "genre", "Adventure").ok, "metadata for an unlisted game");
+        index = scan(root);
+        check(index->games[static_cast<size_t>(index->findGame("NES", "zelda"))].hasMetadata, "it has a row now");
+        check(editor.clearMetadata(*index, "NES", "zelda", "genre").ok, "clear it");
+        index = scan(root);
+        check(!index->games[static_cast<size_t>(index->findGame("NES", "zelda"))].hasMetadata, "the row is gone again");
+
+        // A shipped file that can't be read: meta.db is left alone and a re-import is asked for
+        check(editor.setMetadata(*index, "Arcade", "a", "year", "1999").ok, "set year");
+        writeFile(root + "/meta/hyperlist/Arcade.xml", "<menu><game name=\"a\"><year>1980</year>");  // broken
+        check(editor.clearMetadata(*index, "Arcade", "a", "year").ok, "clear with an unreadable shipped file");
+        index = scan(root);
+        checkEqual(index->games[static_cast<size_t>(index->findGame("Arcade", "a"))].meta.year, "1999", "meta.db not guessed at");
+        check(MetadataOverrides::newestChange(root) > fs::last_write_time(root + "/meta.db"), "RetroFE will re-import");
+    });
+
+    run("library: a burst of changes still publishes snapshots", [&] {
+        std::string root = makeInstall("lib-burst");
+        ScanOptions options;
+        options.root = root;
+        Indexer indexer(options);
+        indexer.rebuild();
+        // Changes every millisecond for half a second: snapshots must still come out
+        auto start = std::chrono::steady_clock::now();
+        int changes = 0;
+        while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+            indexer.changed("edit " + std::to_string(changes++));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        check(indexer.status().generation >= 2, "snapshots were published during the burst ("
+              + std::to_string(indexer.status().generation) + ")");
+        writeFile(root + "/collections/NES/roms/metroid.nes", "x");
+        indexer.changed("edit " + std::to_string(changes++));
+        check(indexer.wait(20000), "settles");
+        auto index = indexer.index();
+        check(index && indexer.status().state == Indexer::State::Ready && indexer.status().generation >= 1,
+              "builds finished and published instead of being cancelled");
+        check(index && index->findGame("NES", "metroid") >= 0, "the last snapshot has every change");
+        check(indexer.pendingChanges().size() == static_cast<size_t>(changes), "all changes recorded as pending");
+    });
+
+    run("library: new systems go to a menu, never into a games collection", [&] {
+        std::string root = makeInstall("lib-top-menu");
+        Configuration::absolutePath = root;
+        writeFile(root + "/settings.conf", "firstCollection = Arcade\r\n");
+        checkEqual(Setup::firstCollection(), "Arcade", "Browse opens Arcade");
+        checkEqual(Setup::topMenu(), "Main", "but Arcade has games, so new systems go to Main");
+        check(Setup::addToMainMenu("Extra", error) && readFile(root + "/collections/Main/menu.txt").find("Extra") != std::string::npos
+              && !fs::exists(root + "/collections/Arcade/menu.txt"), "added to Main, Arcade untouched");
+        writeFile(root + "/settings.conf", "firstCollection = Consoles\r\n");
+        checkEqual(Setup::topMenu(), "Consoles", "a menu is used as it is");
+        Configuration live;
+        live.setProperty("firstCollection", std::string("All"));  // a literal would pick the bool overload
+        Setup::setConfiguration(&live);
+        checkEqual(Setup::firstCollection(), "All", "the live value wins (command-line overrides)");
+        checkEqual(Setup::topMenu(), "Main", "All shows .sub games, so it isn't used as the menu");
+        Setup::setConfiguration(nullptr);
+        check(!Setup::addToMainMenu("../evil", error) && !error.empty(), "names that aren't folder names are refused");
+        check(!Setup::validate(Setup::NewCollection{ "Consoles", root, "zip", "", "" }).empty(), "the top menu's name is taken");
+    });
+
+    run("library: emuarc filters on file names; precomputed membership", [&] {
+        std::string root = makeInstall("lib-emuarc");
+        writeFile(root + "/collections/Discs/settings.conf", "list.extensions = chd\nlist.emuarc = true\n");
+        writeFile(root + "/collections/Discs/roms/Game One/disc1.chd", "x");
+        writeFile(root + "/collections/Discs/roms/Game One/disc2.chd", "x");
+        writeFile(root + "/collections/Discs/roms/Game Two/disc1.chd", "x");
+        writeFile(root + "/collections/Discs/exclude.txt", "disc1\n");
+        auto index = scan(root);
+        int discs = index->findCollection("Discs");
+        check(names(*index, index->itemsOf(discs)) == std::vector<std::string>({ "Discs:Game One" }),
+              "exclude.txt matches file names: Game One still has disc2, Game Two has nothing left");
+
+        int a = index->findGame("Arcade", "a");
+        const auto& merged = index->mergedCollectionsShowing(a);
+        check(merged.size() == 1 && index->collections[static_cast<size_t>(merged[0])].name == "All", "a is shown by All");
+        const auto& playlists = index->playlistsListing(a);
+        check(playlists.size() == 1 && playlists[0].playlist == "best", "and listed in All's best playlist");
+
+        Editor editor(root);
+        check(!editor.removeMenuChild(*index, "Main", "Nowhere").ok, "removing a child that isn't listed fails");
+        EditResult added = editor.addMenuChild(*index, "Consoles", "Discs", 0);
+        check(added.ok && added.message.find("name order") != std::string::npos, "a folder menu says the position doesn't apply");
     });
 
     // --- Optional read-only smoke run over a real install -------------------------------

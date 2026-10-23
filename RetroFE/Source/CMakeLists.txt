@@ -499,6 +499,7 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Library/Properties.cpp"
 		"${RETROFE_DIR}/Source/Library/Search.cpp"
 		"${RETROFE_DIR}/Source/Collection/CollectionInfo.cpp"
+		"${RETROFE_DIR}/Source/Collection/CollectionInfoBuilder.cpp"
 		"${RETROFE_DIR}/Source/Collection/Item.cpp"
 		"${RETROFE_DIR}/Source/Database/DB.cpp"
 		"${RETROFE_DIR}/Source/Database/MetadataDatabase.cpp"
