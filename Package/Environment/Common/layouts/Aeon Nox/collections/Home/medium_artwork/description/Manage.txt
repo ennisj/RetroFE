@@ -1,0 +1,1 @@
+Add a collection from a folder of games and the emulator that runs them. See what the Catalog has installed and remove it, and add or remove the sources the Catalog uses.

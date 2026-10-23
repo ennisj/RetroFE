@@ -16,6 +16,7 @@
 #include "Hash.h"
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <vector>
 
@@ -68,7 +69,7 @@ namespace
     };
 
     template <typename Hasher>
-    std::string hashFile(const std::string& path)
+    std::string hashFile(const std::filesystem::path& path)
     {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
@@ -238,12 +239,12 @@ std::string Md5::hex()
     return toHex(digest, sizeof(digest));
 }
 
-std::string sha256File(const std::string& path)
+std::string sha256File(const std::filesystem::path& path)
 {
     return hashFile<Sha256>(path);
 }
 
-std::string md5File(const std::string& path)
+std::string md5File(const std::filesystem::path& path)
 {
     return hashFile<Md5>(path);
 }

@@ -17,8 +17,10 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 // HTTP(S) for the Catalog. Windows uses WinHTTP, so no extra libraries are needed.
 // An Http makes one request at a time; use one per thread.
@@ -48,6 +50,30 @@ namespace Catalog
 
         // Fetches a small document such as an index
         virtual bool get(const std::string& url, std::string& body, std::string& error) = 0;
+
+        // What a server answered, whatever the status
+        struct Response
+        {
+            int status = 0;
+            std::string body;
+            std::map<std::string, std::string> headers;   // names in lower case
+            std::string error;                            // when there was no answer
+        };
+
+        // Fetches a small document, sending extra request headers ("Name: value")
+        // and keeping the status and headers of any answer, e.g. a 304 or 403.
+        // False only when no answer came. The default is get(), for Https that
+        // don't need more.
+        virtual bool request(const std::string& url, const std::vector<std::string>& headers, Response& response)
+        {
+            (void)headers;
+            response = Response();
+            if (!get(url, response.body, response.error)) {
+                return false;
+            }
+            response.status = 200;
+            return true;
+        }
 
         // Downloads url into file. With offset > 0 the file already holds that
         // many bytes and the rest is requested; if the server can't resume,

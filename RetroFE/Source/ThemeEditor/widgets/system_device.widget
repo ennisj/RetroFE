@@ -1,0 +1,28 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+[widget]
+id = system_device
+name = System Device
+category = media
+color = 4CC9B0
+summary = The browsed system's device art (the console photo).
+info = type=device - mode=system (system_artwork)
+w = 320
+h = 320
+minw = 40
+minh = 40
+layer = 9
+
+[var]
+token = ASPECT
+name = Maintain Aspect Ratio
+type = bool
+default = true
+
+[fragment]
+<reloadableImage id="{{ID}}" type="device" mode="system" x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" width="{{W}}" {{ASPECT:maxHeight:height}}="{{H}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableImage>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

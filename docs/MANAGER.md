@@ -12,7 +12,7 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 |----------|--------------|
 | Catalog  | Packages you can install from your sources (see [The Catalog](#the-catalog)) |
 | Settings | Display, menu and video settings |
-| Manage   | Add collections, see what's installed, and open Catalog sources |
+| Manage   | Games, menus, systems, videos, emulators and themes, plus what the Catalog installed and its sources |
 | Browse   | Opens `firstCollection`, your usual top menu. Back returns to Home. |
 
 `homeMenu` is on for a bare install and in the `settings.conf` the setup
@@ -21,7 +21,8 @@ as before. Kiosk mode always skips Home.
 
 F10 opens Settings from anywhere, switches to it from another screen, and
 closes it again; change the key with `manager` in `controls.conf`. Back or
-Escape closes a screen.
+Escape returns to the screen you came from, where you left it, and closes the
+first one.
 
 Home is a collection built into RetroFE, so a layout styles it like any other:
 `layouts/<layout>/collections/Home/layout/layout.xml`, with artwork named after
@@ -55,7 +56,8 @@ index format, is in [design/catalog-sources.md](design/catalog-sources.md).
 What a package may install: content, such as collection settings, launchers,
 artwork, layouts and ROMs, under its targets. Programs and scripts (`.exe`,
 `.dll`, `.bat`, `.ps1`, `.sh` and the like) are refused, as is anything in the
-catalog folder or RetroFE's program folder. File names Windows treats as
+catalog folder or RetroFE's program folder (RetroFE's own updates, below, are
+the one exception). File names Windows treats as
 devices (`CON`, `NUL`, `COM1`…) or that end in a dot or space are refused too.
 
 Everything the Catalog keeps is in one folder, `catalogPath` in
@@ -83,12 +85,81 @@ as `genre`, its source as `manufacturer` and its version as `year`.
 HTTP sources need Windows for now; on Linux and macOS folder sources and
 index files on disk work.
 
+### Updating RetroFE itself
+
+**Sources → Add RetroFE from GitHub** (after confirming you trust it) adds a
+source for this fork's releases (`ennisj/RetroFE`). The Catalog then lists
+**RetroFE from ennisj/RetroFE**, with **Update** when a release is newer than
+the running version. Any other repository can be added with the type "GitHub
+releases" and `owner/name` (or its github.com address) as the address. Only
+the official repository offers RetroFE by default: for any other, add
+`sources.<name>.app = yes` to `catalog/sources.conf`. `prerelease = yes` there
+offers pre-releases too.
+
+Installing it updates RetroFE and restarts it:
+
+- The download must have a SHA-256 (GitHub's digest for the release file, or a
+  `.sha256` file beside it) and match it; a release without one isn't
+  installed. The checksum only guards against a damaged download; what you're
+  trusting is the repository you added. Only versions newer than the running
+  one are installed.
+- Only the program folder (`retrofe\`) and the layouts the release ships are
+  touched; collections, settings, controls, launchers and the catalog never
+  are.
+- The files it replaces are copied to `catalog/backups/retrofe/<old version>/`
+  first.
+- Windows can't overwrite a running program, so the new program folder is
+  prepared as `retrofe.new` beside the old one, then swapped in with two
+  renames (`retrofe` → `retrofe.old`, `retrofe.new` → `retrofe`). If another
+  program has a file in `retrofe\` open, the changed files are swapped one by
+  one instead (`<file>` → `<file>.old`, `<file>.new` → `<file>`). If anything
+  fails, everything is put back and nothing changes.
+- RetroFE then restarts itself (without running `exit.bat`) and deletes what
+  it set aside once the old process has closed.
+- Files and folders of yours named `.old` (e.g. `retrofe.old`, `a.dll.old`)
+  are never deleted; the update uses `.old2` and so on instead.
+- If a folder rename is held up (a virus scanner looking at the new files, for
+  example), RetroFE keeps trying. If no program folder can be put back, it
+  keeps trying while it runs and as it exits, then shows a message pointing
+  at the instructions below.
+- If RetroFE is stopped part way through (a crash or power cut), the next
+  start finishes or undoes the update before anything else, and restarts if
+  it put files back. If it can't finish after three starts, it stops trying
+  and lists where the backup is under **Problems** on the Sources screen
+  (there's no message box at start, so a cabinet isn't held up). The file
+  `retrofe-UPDATE-INTERRUPTED.txt` in the RetroFE folder exists only while an
+  update is under way. If it's still there and RetroFE won't start, follow
+  it: rename `retrofe.old` (or `retrofe.new`) to `retrofe`, or copy the backup
+  folder over the RetroFE folder.
+- RetroFE can't be removed from Manage. GitHub sources only offer RetroFE
+  itself; index and folder sources can't.
+- GitHub allows 60 checks an hour without an account. RetroFE checks at most
+  once a minute and only asks whether anything changed; if the limit is
+  reached it shows the last list, says when it will check again, and waits
+  until then.
+
+Releases are made by pushing a tag such as `v2504.3`
+(`.github/workflows/release-windows.yml`), which attaches
+`RetroFE-2504.3-windows-x64.zip` (`retrofe\` plus `RetroFE.lnk`) and its
+`.sha256` to the release. Tags with a `-` (e.g. `v2504.3-beta.1`) become
+pre-releases. A release build reports its tag's version; other builds report
+the version in `RetroFE/CMake/Versioning.cmake` (2504.2), so tag releases above
+it, or raise it, so that development builds aren't offered older releases.
 ## Settings and Manage screens
 
 Each screen is a **form**: fields bound to settings or other values. Up and
-Down move between fields; Left and Right change a switch, number or choice;
-Select edits text, picks a folder or file, or presses a button. While editing
-text, type and press Enter to keep it or Escape to cancel; Ctrl+V pastes.
+Down move between fields; Left and Right change a switch, number or choice,
+or page through a list of results; Select edits text, picks a folder or file,
+presses a button, or opens a link or a result. While editing text, type and
+press Enter to keep it or Escape to cancel; Ctrl+V pastes.
+
+**Manage** links to a screen for each part of your setup: Games, Menus,
+Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
+its Sources, and removing a package). Most of these say "Coming soon" for
+now. **Systems** lists your systems and adds one: point RetroFE at a folder of
+games and the emulator that runs them, and it reloads with the new system
+under Browse. On a bare install Manage opens by itself and says where to
+start.
 
 Settings writes each value to the file RetroFE actually reads it from:
 `settings.conf`, `settings1.conf` to `settings15.conf`, or
@@ -100,10 +171,16 @@ layout. Values set in an override file say so ("Set in settings1.conf").
 A screen is drawn as a page from your layout, so it can use backgrounds,
 images, video, text and animations like any other page. RetroFE looks for:
 
-1. `layouts/<layout>/forms/<screen>/layout.xml` for one screen (`settings`,
-   `manage`, `sources` or `package`)
+1. `layouts/<layout>/forms/<screen>/layout.xml` for one screen, by form id:
+   `settings`, `manage`, `sources`, `package`, `games`, `menus`, `systems`,
+   `videos`, `emulators`, `themes`, or any screen those open
 2. `layouts/<layout>/forms/layout.xml` for all of them
 3. otherwise its built-in form page
+
+When collections are drawn with another page, such as `layout 4x3` from
+`randomLayout = layout 4x3`, RetroFE first looks for
+`forms/<screen>/layout 4x3.xml`, then `forms/layout 4x3.xml`, then the two
+`layout.xml` files above. The keyboard does the same in `forms/keyboard/`.
 
 The page places the form with a `<form>` element:
 
@@ -131,6 +208,8 @@ The page places the form with a `<form>` element:
 | `noteAlpha` | Opacity of help text and notes (default 0.55) |
 | `disabledAlpha` | Opacity of fields that can't be changed right now (default 0.35) |
 | `onText`, `offText` | How switches read (default `On` / `Off`) |
+| `rowDetailColor`, `rowDetailAlpha` | Color and opacity of a result's detail on the right (default `fontColor` at 0.7) |
+| `linkMarker` | Text at the right of a link (default `>`; empty for none) |
 | `title` | `no` hides the screen's title |
 | `hints` | `no` hides the controls hint at the bottom |
 
@@ -174,8 +253,9 @@ with a `<keyboard>` element; it's drawn over the screen being edited:
 ### Changing what a screen contains
 
 The fields themselves are also XML. RetroFE's built-in screens are in
-`RetroFE/Source/Forms/BuiltinForms.cpp`; a layout can replace one with
-`layouts/<layout>/forms/<screen>.xml`:
+`RetroFE/Source/Forms/BuiltinForms.cpp` and, for the Manage sections,
+`RetroFE/Source/Manager/<Section>/<Section>Forms.cpp`; a layout can replace
+one with `layouts/<layout>/forms/<screen>.xml`:
 
 ```xml
 <form id="settings" title="Settings">
@@ -193,13 +273,17 @@ The fields themselves are also XML. RetroFE's built-in screens are in
 |---------|-------|
 | `section` | A titled group of fields |
 | `actions` | Buttons |
-| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`) |
+| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
 | `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |
 | `list` | A read-only list (`empty` is shown when there's nothing in it) |
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
-| `button` | Runs an `action` |
+| `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
+| `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
+| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
+| `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right |
+| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
 under it), `status` (a value shown under it), `enabledWhen` (a value that must
@@ -207,30 +291,128 @@ be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
 (the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
 a value to use as the title when it has one, e.g. `bind="package:name"`.
 
+#### Screens and parameters
+
+A screen can open other screens: a `link`, a row of `results`, or an action.
+Each opened screen goes on top of the one it came from, and Back returns.
+Screens can have **parameters**: choosing a row from
+`<results bind="game:search" open="game"/>` opens the `game` form with
+`id` (and, say, `collection`) set to that game, and a `link` from there
+passes them on. A row opens only its own parameters, never the current
+screen's, so nothing carries over from an unrelated screen. Forms read them
+as `param:<name>`, e.g. `<value label="Id" bind="param:id"/>`.
+
+A screen with unsaved changes can ask before you leave it (Back, Escape,
+F10 or closing): it says so once, and leaving again drops the changes.
+Removing a package or a source asks you to confirm first.
+
 `bind` says what a field shows and changes:
 
 - `settings:<key>`: a setting from `settings.conf`. Changes are kept until
   `settings.save`. `default` is the value RetroFE uses when no file sets it.
-- `draft:<key>`: input for an action, such as a new collection's name.
+- `draft:<key>`: input for an action, such as a new system's name.
   `default` is its starting value.
+- `param:<name>`: the screen's parameters (read-only).
 - `info:<key>`: read-only: `info:collections`, `info:sources`,
   `info:installed` and `info:catalogWarnings` (lists), `info:romCount`,
-  `info:catalogStatus`, `info:removalStatus`, and `info:hasSources`,
-  `info:hasInstalled` and `info:sourceIsFolder` for `visibleWhen`.
-- `package:<key>`: the package chosen in the Catalog: `name`, `summary`,
-  `description`, `installedStatus`, `requires`, `checksum` (a warning when the
-  source gives none), `progress`, and `canInstall`, `canUpdate`, `canRemove`
-  and `isBusy` for `visibleWhen`.
+  `info:catalogStatus`, `info:removalStatus`, and `info:hasCollections`,
+  `info:hasSources`, `info:hasInstalled` and `info:sourceIsFolder` for
+  `visibleWhen`.
+- `package:<key>`: the Catalog package the screen is about (`param:id`):
+  `name`, `summary`, `description`, `installedStatus`, `requires`, `checksum`
+  (a warning when the source gives none), `progress`, and `canInstall`,
+  `canUpdate`, `canRemove` and `isBusy` for `visibleWhen`.
+- Other prefixes, such as `game:`, come from the Manage sections that provide
+  them; see [design/manage-forms.md](design/manage-forms.md).
 
 Actions:
 
 | Action | Does |
 |--------|------|
 | `settings.save` | Writes the changed settings |
-| `collection.create` | Creates a collection from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
-| `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the chosen package |
+| `collection.create` | Creates a system (collection) from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
+| `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the package the screen is about |
 | `package.removeInstalled` | Removes the installed package `draft:removePackage` |
 | `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on. A layout's form can't give these a `default`. |
 | `source.remove` | Removes `draft:removeSource` |
 | `catalog.refresh` | Reads the sources again |
-| `open.sources` | Opens the Sources screen |
+| `open.<form>` | Opens a screen with this screen's parameters, like a `link`, e.g. `open.sources` |
+| `back` | Returns to the previous screen, e.g. for a Done button |
+
+### For developers: providers
+
+Each Manage section serves its own bindings through a **provider**
+(`RetroFE/Source/Manager/Provider.h`): a `game` provider answers `game:title`,
+`game:search` rows, `options="game:genres"` and actions like `game.save`, and
+gets the screen's parameters with every call. An action can open a screen or
+go back once it succeeds, a provider can object to leaving a screen with
+unsaved changes, and it can ask RetroFE to reload once the manager closes.
+How to add a section, its forms and its provider is in
+[design/manage-forms.md](design/manage-forms.md).
+
+## The default layout: Aeon Nox
+
+RetroFE's default layout is **Aeon Nox**, David Horowitz's theme after Kodi's
+Aeon Nox skin. The built-in settings RetroFE runs on when there's no
+`settings.conf` say `layout = Aeon Nox`, and so does the `settings.conf` it
+creates from them (ManagerModel's `initialSettings`, when Settings or Manage
+first saves something). An existing `settings.conf` without a `layout` line
+gets RetroFE's built-in pages, as before, and so does any install where the
+`layouts/Aeon Nox` folder isn't there. `layouts/Aeon Nox/NOTICE.txt` says
+where the theme comes from and what this fork changed. It styles everything
+above, so it's a working example:
+
+| File in `layouts/Aeon Nox/` | Draws |
+|-----------------------------|-------|
+| `layout.xml` | A collection's games: the information wall and box art. Every collection of games without a page of its own uses it. |
+| `collections/_menu/layout/layout.xml` | Menus of collections, such as Browse: one logo per collection, or its name when there's no logo (see below) |
+| `collections/Home/layout/layout.xml` | Home, in the same style |
+| `collections/Home/medium_artwork/` | Home's artwork and text: `logo/`, `icon/`, `tagline/` and `description/`, each with a file per item (`Catalog.png`, `Catalog.txt`...) |
+| `collections/Catalog/layout/layout.xml` | The Catalog: package logos, with kind, source and version in the info panel |
+| `collections/Catalog/medium_artwork/` | An icon and text for the Sources item (`Catalog Sources.png`, `.txt`), which has no package artwork |
+| `forms/layout.xml` | Settings, Manage, Sources and the other screens |
+| `forms/package/layout.xml` | A package: the form takes the top of the screen, so the Catalog's info panel stays visible below it |
+| `forms/keyboard/layout.xml` | The on-screen keyboard |
+| `layout 4x3.xml` next to each `layout.xml` | 4:3 versions, used with `randomLayout = layout 4x3` |
+
+The pages are generated from upstream's theme by `Scripts/aeon-nox/`.
+
+### Which page a collection gets
+
+Every collection, Home and the Catalog included, is a page of its own. RetroFE
+takes it from the first of these that the layout has:
+
+1. `collections/<collection>/layout/`, the collection's own pages
+2. `collections/_menu/layout/`, when the collection is a **menu**: it has items
+   and they're all collections (from `menu.txt` or `menu/`), like Main, a
+   "Consoles" menu or Home. A menu that's still empty is drawn like a collection
+   of games.
+3. the layout's own folder
+
+The collection's `layoutFromAnotherCollection` setting still wins over all of
+these. In each folder RetroFE uses `layout.xml`, or the page `randomLayout`
+picked (`layout 4x3.xml`...), falling back to the layout's own folder for a
+page the folder doesn't have.
+
+Things worth knowing when you make your own:
+
+- A page's list is at `menuIndex` 0, and a page starts with `onEnter`. Tweens
+  that only use `onMenuEnter` for a deeper menu never run.
+- Home's items and the Sources item are built in, so their artwork comes from the
+  layout: `mode="layout"` on a `<menu>`, `reloadableImage` or
+  `reloadableScrollingText` reads
+  `layouts/<layout>/collections/<collection>/medium_artwork/<type>/<item>`.
+  `reloadableScrollingText` with `direction="vertical"` and `startPosition="0"`
+  shows a text file as wrapped text that only scrolls when it doesn't fit.
+- `src` paths are relative to the page's own folder. RetroFE falls back to the
+  layout's folder but logs an error first, so pages in `collections/<name>/layout/`
+  use `../../../images/...`. Fonts are always relative to the layout's folder.
+- Form and keyboard pages have no selected item, so reloadable components show
+  nothing there (not even `type="time"`). To show a package's artwork, leave part
+  of the Catalog page visible behind the form, as `forms/package/layout.xml` does.
+- A label that should only appear with its value can be the value's prefix
+  (`singlePrefix` and `pluralPrefix`) padded with spaces and cut off by
+  `maxWidth`; the Catalog's Kind, Source and Version and the games page's
+  Publisher, Genre and the rest do this.
+- Text stops at `maxWidth`, even mid-word, so leave names room: Aeon Nox draws
+  names without a logo at 48 px in 460 px, its logos being 480 px apart.

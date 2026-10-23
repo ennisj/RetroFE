@@ -1,0 +1,28 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+[widget]
+id = system_logo
+name = System Logo
+category = media
+color = 4CC9B0
+summary = The browsed system/menu collection's logo art.
+info = type=logo - mode=system (system_artwork)
+w = 400
+h = 200
+minw = 40
+minh = 24
+layer = 9
+
+[var]
+token = ASPECT
+name = Maintain Aspect Ratio
+type = bool
+default = true
+
+[fragment]
+<reloadableImage id="{{ID}}" type="logo" mode="system" x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" width="{{W}}" {{ASPECT:maxHeight:height}}="{{H}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableImage>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

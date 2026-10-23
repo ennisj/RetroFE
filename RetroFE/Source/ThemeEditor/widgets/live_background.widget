@@ -1,0 +1,44 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: no Min Show Time (reloadableVideo doesn't read minShowTime), no
+# Hardware Decode (no hwdec), no layout_preferred mode. One Saucier filled
+# this from its wallpaper pool; here it plays the theme's own
+# collections/_common/medium_artwork/video (commonlayout), with background
+# art as the still fallback.
+[widget]
+id = live_background
+name = Live Background
+category = static
+color = 4CA88F
+glyph = BG
+summary = Full-screen background video from the theme's own _common art.
+info = reloadableVideo imageType=background - mode=commonlayout
+w = 1920
+h = 1080
+minw = 320
+minh = 180
+layer = 1
+
+[var]
+token = ARTMODE
+name = Art Source Mode
+type = text
+default = commonlayout
+options = -|system|layout|common|commonlayout|systemlayout|menu
+
+[var]
+token = VOLUME
+name = Volume
+type = text
+default = 0
+numeric = true
+step = 0.1
+min = 0
+max = 1
+
+[fragment]
+<reloadableVideo id="{{ID}}" imageType="background" mode="{{ARTMODE}}" x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" width="{{W}}" maxHeight="{{H}}" volume="{{VOLUME}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableVideo>
+
+[animDefaults]
+<onEnter><set duration="0.35"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

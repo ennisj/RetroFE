@@ -120,7 +120,10 @@ namespace
     }
 }
 
-void runLibraryTests()
+static void runLibraryTests();
+static Test::Suite librarySuite("library", runLibraryTests);
+
+static void runLibraryTests()
 {
     std::string error;
 

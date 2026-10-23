@@ -1,0 +1,42 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+[widget]
+id = game_letters
+name = Game Letters
+category = media
+color = C9A0E0
+glyph = AZ
+summary = The A-Z index strip, highlighting the selected game's letter.
+info = type=firstLetter - mode=commonlayout - scroll fade
+w = 78
+h = 960
+minw = 30
+minh = 300
+layer = 15
+
+[var]
+token = AUTOHIDE
+name = Auto Hide
+type = bool
+default = true
+
+[var]
+token = TEXTMODE
+name = Letter As Text
+type = bool
+default = false
+
+[fragment]
+{{!TEXTMODE}}<reloadableImage id="{{ID}}" type="firstLetter" mode="commonlayout" {{AUTOHIDE:alpha="0":alpha="1"}} x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" width="{{W}}" maxHeight="{{H}}" menuScrollReload="true" layer="{{LAYER}}">
+  {{?AUTOHIDE}}
+  <onMenuScroll><set duration="0.2"><animate type="alpha" to="1"/></set></onMenuScroll>
+  <onMenuIdle><set duration="1.2"><animate type="alpha" to="0"/></set></onMenuIdle>
+  <onMenuJumpEnter><set duration="0.001"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+  {{/AUTOHIDE}}
+</reloadableImage>{{/TEXTMODE}}{{?TEXTMODE}}<reloadableText id="{{ID}}" type="firstLetter" textFormat="uppercase" {{AUTOHIDE:alpha="0":alpha="1"}} x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" {{?HASFONT}}font="{{FONT}}" {{/HASFONT}}{{?HASFONTCOLOR}}fontColor="{{FONTCOLOR}}" {{/HASFONTCOLOR}}fontSize="{{FS}}" menuScrollReload="true" layer="{{LAYER}}">
+  {{?AUTOHIDE}}
+  <onMenuScroll><set duration="0.2"><animate type="alpha" to="1"/></set></onMenuScroll>
+  <onMenuIdle><set duration="1.2"><animate type="alpha" to="0"/></set></onMenuIdle>
+  <onMenuJumpEnter><set duration="0.001"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+  {{/AUTOHIDE}}
+</reloadableText>{{/TEXTMODE}}

@@ -16,6 +16,7 @@
 
 #include "RetroFE.h"
 #include "Builtin/Builtin.h"
+#include "Catalog/SelfUpdate.h"
 #include "Manager/Home.h"
 #include "Manager/Setup.h"
 #include "Collection/CollectionInfo.h"
@@ -718,10 +719,19 @@ bool RetroFE::run()
 					firstCollection = Home::collectionName;
 				}
 
+				// Get collection info with error checking; an empty first collection is fine
+				CollectionInfo* info = homeMenu_ ? getHomeCollection() : getCollection(firstCollection, true);
+				if (!info) {
+					LOG_ERROR("RetroFE", "Failed to load collection info for: " + firstCollection);
+					state = RETROFE_QUIT_REQUEST;
+					break;
+				}
+
 				// Load new page with error checking
-				currentPage_ = loadPage(firstCollection);
+				currentPage_ = loadPage(firstCollection, info);
 				if (!currentPage_) {
 					LOG_ERROR("RetroFE", "Failed to load initial page after splash");
+					delete info;
 					state = RETROFE_QUIT_REQUEST;
 					break;
 				}
@@ -739,14 +749,6 @@ bool RetroFE::run()
 				// Update current collection configuration
 				cycleVector_.clear();
 				config_.setProperty("currentCollection", firstCollection);
-
-				// Get collection info with error checking; an empty first collection is fine
-				CollectionInfo* info = homeMenu_ ? getHomeCollection() : getCollection(firstCollection, true);
-				if (!info) {
-					LOG_ERROR("RetroFE", "Failed to load collection info for: " + firstCollection);
-					state = RETROFE_QUIT_REQUEST;
-					break;
-				}
 
 				// Push collection to page
 				if (!currentPage_->pushCollection(info)) {
@@ -796,7 +798,7 @@ bool RetroFE::run()
 				// Nothing set up yet: start in the manager
 				if (!Setup::hasSettingsFile() || Setup::listCollections().empty())
 				{
-					manager_.open(ManagerUI::Screen::Manage);
+					manager_.open("manage");
 				}
 
 				splashMode = false;
@@ -1416,6 +1418,7 @@ bool RetroFE::run()
 						config_.getProperty(OPTION_LAYOUT, layoutName);
 					}
 					PageBuilder pb(layoutName, getLayoutFileName(), config_, &fontcache_);
+					pb.setMenuCollection(isMenuCollection(info));
 
 					bool defaultToCurrentLayout = false;
 					if (std::string settingPrefix = "collections." + currentPage_->getCollectionName() + ".";
@@ -2305,7 +2308,9 @@ bool RetroFE::run()
 			if (currentPage_->isGraphicsIdle())
 			{
 				l.LEDBlinky(2);
-				l.exitScript();
+				// Restarting into an update isn't leaving RetroFE (exit.bat may shut the machine down)
+				if (!Catalog::relaunchPending())
+					l.exitScript();
 				running = false;
 			}
 			break;
@@ -2427,7 +2432,13 @@ bool RetroFE::run()
 			// Catalog installs show up once the user is back on Home and nothing's left to do
 			bool backHome = homeMenu_ && state == RETROFE_IDLE && !manager_.isOpen() &&
 				currentPage_ && currentPage_->getCollectionName() == Home::collectionName;
-			if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
+			if (manager_.takeRestartRequest())
+			{
+				// RetroFE updated itself: exit, and main() starts the new version
+				reboot_ = false;
+				state = RETROFE_QUIT_REQUEST;
+			}
+			else if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
 			{
 				// Reload everything so the changes show up
 				reboot_ = true;
@@ -3193,7 +3204,7 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 				{
 					// Catalog items are packages: show the chosen one's details
 					if (nextPageItem_->name == Home::catalogSourcesItem)
-						manager_.open(ManagerUI::Screen::Sources);
+						manager_.open("sources");
 					else
 						manager_.openPackage(nextPageItem_->name);
 				}
@@ -3287,8 +3298,19 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 	return state;
 }
 
+// A collection whose items are all collections, like Main: layouts can draw
+// these with collections/_menu/layout (LayoutPages::collectionFolder)
+bool RetroFE::isMenuCollection(const CollectionInfo* info)
+{
+	if (!info || info->items.empty())
+	{
+		return false;
+	}
+	return std::none_of(info->items.begin(), info->items.end(), [](const Item* item) { return item->leaf; });
+}
+
 // Load a page
-Page* RetroFE::loadPage(const std::string& collectionName)
+Page* RetroFE::loadPage(const std::string& collectionName, const CollectionInfo* info)
 {
 	// check if collection's assets are in a different theme
 	std::string layoutName;
@@ -3298,6 +3320,7 @@ Page* RetroFE::loadPage(const std::string& collectionName)
 		config_.getProperty(OPTION_LAYOUT, layoutName);
 	}
 	PageBuilder pb(layoutName, getLayoutFileName(), config_, &fontcache_);
+	pb.setMenuCollection(isMenuCollection(info));
 	Page* page = pb.buildPage(collectionName);
 	if (!page)
 	{
@@ -3367,11 +3390,11 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 	}
 	if (item->name == Home::settings)
 	{
-		manager_.open(ManagerUI::Screen::Settings);
+		manager_.open("settings");
 	}
 	else if (item->name == Home::manage)
 	{
-		manager_.open(ManagerUI::Screen::Manage);
+		manager_.open("manage");
 	}
 	else if (item->name == Home::catalog)
 	{
@@ -3382,7 +3405,7 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 			nextPageName_ = Home::catalogCollectionName;
 			return RETROFE_NEXT_PAGE_REQUEST;
 		}
-		manager_.open(ManagerUI::Screen::Sources);
+		manager_.open("sources");
 	}
 	return RETROFE_IDLE;
 }
@@ -3666,6 +3689,8 @@ std::string RetroFE::getLayoutFileName()
 		}
 	}
 
+	// The management screens match the page they're drawn over (forms/<page>.xml)
+	manager_.setLayoutPage(layoutName);
 	return layoutName;
 }
 

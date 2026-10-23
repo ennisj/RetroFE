@@ -1,0 +1,35 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+[widget]
+id = static_text
+name = Static Text
+category = static
+color = E0C95C
+glyph = TX
+summary = A fixed text label authored into the theme (captions, separators).
+info = plain <text value=> - font size follows the box height
+w = 200
+h = 60
+minw = 20
+minh = 16
+layer = 15
+
+[var]
+token = VALUE
+name = Text
+type = text
+default = Label
+
+[var]
+token = CENTER
+name = Center Text
+type = bool
+default = false
+
+[fragment]
+<text id="{{ID}}" value="{{VALUE}}" {{?CENTER}}x="{{CX}}" xOrigin="center" {{/CENTER}}{{!CENTER}}x="{{X}}" xOrigin="left" {{/CENTER}}y="{{CY}}" yOrigin="center" fontSize="{{FS}}"{{?HASFONT}} font="{{FONT}}"{{/HASFONT}}{{?HASFONTCOLOR}} fontColor="{{FONTCOLOR}}"{{/HASFONTCOLOR}} alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</text>
+
+[animDefaults]
+<onEnter><set duration="0.35"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

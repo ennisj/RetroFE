@@ -52,6 +52,10 @@ public:
     // The same, from XML text; relative asset paths resolve against assetPath
     void setLayoutXml(const char* xml, const std::string& assetPath) { fixedXml_ = xml; fixedAssetPath_ = assetPath; }
 
+    // The collection is a menu of collections: without a page of its own it uses
+    // the layout's collections/_menu/layout pages, when there are some
+    void setMenuCollection(bool isMenu) { menuCollection_ = isMenu; }
+
     // The <form> and <keyboard> components created by buildPage
     const std::vector<FormWidget*>& formWidgets() const { return formWidgets_; }
     const std::vector<KeyboardWidget*>& keyboardWidgets() const { return keyboardWidgets_; }
@@ -62,6 +66,7 @@ private:
     std::string fixedAssetPath_;
     std::vector<FormWidget*> formWidgets_;
     std::vector<KeyboardWidget*> keyboardWidgets_;
+    bool menuCollection_{ false };
 
     std::string layoutKey;
     std::string layoutPage;

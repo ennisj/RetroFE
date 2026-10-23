@@ -1,0 +1,92 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: no Transform Video (this engine has no transform=), no Pan & Zoom
+# (no reloadablePanningImage), no Text Format (reloadableImage doesn't read
+# textFormat), and no layout_preferred mode; the default is no mode (the
+# game's own media).
+[widget]
+id = game_art
+name = Game Art
+category = media
+color = 9FD08F
+glyph = ART
+summary = Any art slot by name (device, display, background, ...).
+info = type=<Art Slot> - resolves per collection/game like any reloadable
+w = 400
+h = 300
+minw = 40
+minh = 40
+layer = 9
+
+[var]
+token = IMAGETYPE
+name = Art Slot
+type = text
+default = artwork_front
+options = logo|screenshot|artwork_front|artwork_front_s|title|background|marquee|bezel|cabinet|screentitle|video|story|fanart
+
+[var]
+token = ARTMODE
+name = Art Source Mode
+type = text
+default =
+options = -|system|layout|common|commonlayout|systemlayout|menu
+
+[var]
+token = ASPECT
+name = Maintain Aspect Ratio
+type = bool
+default = true
+
+[var]
+token = NATURAL
+name = Natural Size
+type = bool
+default = false
+
+[var]
+token = STRETCH
+name = Fill Screen
+type = bool
+default = false
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[var]
+token = TEXTFALLBACK
+name = Text When No Art
+type = bool
+default = false
+
+[var]
+token = FONTSIZE
+name = Fallback Font Size (px)
+type = text
+default = 36
+numeric = true
+step = 2
+min = 8
+max = 200
+
+[var]
+token = NATPOSSET
+name = Verbatim Natural Position
+type = bool
+default = false
+
+[var]
+token = NATPOS
+name = Natural Position
+type = raw
+default =
+
+[fragment]
+<reloadableImage id="{{ID}}" type="{{IMAGETYPE}}" mode="{{ARTMODE}}" {{?TEXTFALLBACK}}textFallback="true" fontSize="{{FONTSIZE}}" {{/TEXTFALLBACK}}{{?NATURAL}}{{?NATPOSSET}}{{NATPOS}} {{/NATPOSSET}}{{!NATPOSSET}}x="{{X}}" y="{{Y}}" xOrigin="left" yOrigin="top" {{/NATPOSSET}}{{/NATURAL}}{{!NATURAL}}x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" {{?STRETCH}}width="stretch" height="stretch" {{/STRETCH}}{{!STRETCH}}width="{{W}}" {{ASPECT:maxHeight:height}}="{{H}}" {{/STRETCH}}{{/NATURAL}}menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableImage>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

@@ -18,6 +18,7 @@
 #include "Http.h"
 #include "Installer.h"
 #include "Package.h"
+#include "SelfUpdate.h"
 #include "Sources.h"
 #include <atomic>
 #include <condition_variable>
@@ -55,6 +56,11 @@ namespace Catalog
         // http may be null, in which case only folder sources and file indexes work
         Service(const std::string& catalogFolder, const Targets& targets, std::unique_ptr<Http> http);
         ~Service();
+
+        // Where RetroFE itself is, so GitHub sources can update it; call before start().
+        // Without it, updates of RetroFE are refused.
+        void setApp(const AppInstall& app);
+        AppInstall app() const;
 
         // Starts the worker, which first finishes interrupted installs, then reads the sources
         void start();
@@ -108,6 +114,11 @@ namespace Catalog
         // else is queued: RetroFE should reload to show them
         bool takeChanges(Changes& changes);
 
+        // True once after RetroFE updated itself (or an unfinished update was
+        // undone), when nothing else is queued: RetroFE should start the
+        // program now in place and exit
+        bool takeRestartRequest();
+
         // For tests: blocks until everything queued has finished
         void waitUntilIdle();
 
@@ -123,6 +134,7 @@ namespace Catalog
         void doRecover();
         void doRefresh();
         void doInstall(const std::string& id);
+        void doUpdateApp(const Package& package);
         void doRemove(const std::string& id);
         void doArtwork();
         void finish(const std::string& id, bool ok, const std::string& message);
@@ -150,11 +162,14 @@ namespace Catalog
         std::vector<Entry> entries_;               // packages_ and installed_ combined, sorted
         std::map<std::string, size_t> entryIndex_; // id -> position in entries_
         std::vector<std::string> warnings_;
+        std::vector<std::string> appWarnings_;     // about RetroFE's own last update, shown first
         std::map<std::string, std::pair<bool, std::string>> outcomes_;
         Activity activity_;
         bool active_ = false;
         bool changed_ = false;
         Changes changes_;
         std::atomic<bool> cancelRequested_{ false };
+        AppInstall app_;
+        bool restartRequested_ = false;
     };
 }

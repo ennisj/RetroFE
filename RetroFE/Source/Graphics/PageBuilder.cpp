@@ -15,6 +15,7 @@
 */
 
 #include "PageBuilder.h"
+#include "LayoutPages.h"
 #include "Page.h"
 #include "ViewInfo.h"
 #include "Component/Container.h"
@@ -93,17 +94,8 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		layoutPath = Utils::combinePath(Configuration::absolutePath, "menu");
 	}
 	else if (!collectionName.empty()) {
-		// Attempt to set layoutPath to the collection-specific path
-		std::string collectionLayoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", collectionName, "layout");
-
-		// Check if the collection-specific layout directory exists
-		if (std::filesystem::exists(collectionLayoutPath)) {
-			layoutPath = collectionLayoutPath;
-		}
-		else {
-			// If it doesn't exist, fall back to the default layout path
-			layoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
-		}
+		// The collection's own pages, else _menu's for a menu of collections, else the layout's
+		layoutPath = LayoutPages::collectionFolder(layoutPathDefault, collectionName, menuCollection_);
 	}
 	else {
 		// Default case, likely for splash page or general layouts
@@ -1104,6 +1096,8 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		style.disabledAlpha = number(componentXml, "disabledAlpha", style.disabledAlpha);
 		style.onText = text(componentXml, "onText", style.onText);
 		style.offText = text(componentXml, "offText", style.offText);
+		style.rowDetailAlpha = number(componentXml, "rowDetailAlpha", style.rowDetailAlpha);
+		style.linkMarker = text(componentXml, "linkMarker", style.linkMarker);
 		style.showTitle = flag(componentXml, "title", style.showTitle);
 		style.showHints = flag(componentXml, "hints", style.showHints);
 		if (const xml_attribute<>* image = componentXml->first_attribute("focusImage")) {
@@ -1112,6 +1106,10 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 
 		auto* form = new FormWidget(*page, font, focusFont, formMonitor);
 		form->setStyle(style);
+		if (componentXml->first_attribute("rowDetailColor")) {
+			SDL_Color detailColor = color(componentXml, "rowDetailColor", SDL_Color{ 255, 255, 255, 255 });
+			form->setDetailFont(addFont(componentXml, nullptr, formMonitor, &detailColor));
+		}
 		buildViewInfo(componentXml, form->baseViewInfo);
 		loadTweens(form, componentXml);
 		page->addComponent(form);

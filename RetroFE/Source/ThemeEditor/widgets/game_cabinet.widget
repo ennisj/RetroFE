@@ -1,0 +1,20 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# A preset over game_art: fragment, animations and attributes come from it.
+# Changed: no layout_preferred mode (the game's own media), no Transform Video.
+[widget]
+id = game_cabinet
+base = game_art
+name = Game Cabinet
+category = media
+color = 3A3D48
+summary = Selected game's cabinet art, typically a large background layer.
+info = game_art preset - type=cabinet - the game's own art
+w = 1366
+h = 1060
+minw = 100
+minh = 100
+layer = 2
+
+[var]
+token = IMAGETYPE
+default = cabinet

@@ -39,6 +39,10 @@ namespace
         { "list",    Forms::FieldType::List },
         { "note",    Forms::FieldType::Note },
         { "button",  Forms::FieldType::Button },
+        { "results", Forms::FieldType::Results },
+        { "link",    Forms::FieldType::Link },
+        { "value",   Forms::FieldType::Value },
+        { "image",   Forms::FieldType::Image },
     };
 
     std::string attribute(const xml_node<>* node, const char* name)
@@ -64,6 +68,7 @@ namespace
             field.label = attribute(node, "label");
             field.bind = attribute(node, "bind");
             field.action = attribute(node, "action");
+            field.confirm = attribute(node, "confirm");
             field.hint = attribute(node, "hint");
             field.help = attribute(node, "help");
             field.status = attribute(node, "status");
@@ -74,10 +79,27 @@ namespace
             field.filterName = attribute(node, "filter");
             field.pattern = attribute(node, "pattern");
             field.empty = attribute(node, "empty");
+            field.open = attribute(node, "open");
+            field.param = attribute(node, "param");
+            field.live = Forms::isTruthy(attribute(node, "live"));
             field.min = Utils::convertInt(attribute(node, "min"));
             field.max = Utils::convertInt(attribute(node, "max"));
+            int limit = Utils::convertInt(attribute(node, "limit"));
+            if (limit > 0) {
+                field.limit = limit;
+            }
+            int rows = Utils::convertInt(attribute(node, "rows"));
+            if (rows > 0) {
+                field.rows = rows;
+            }
             if (field.type == Forms::FieldType::Note) {
                 field.label = attribute(node, "value");
+            }
+            if (field.type == Forms::FieldType::Results && field.param.empty()) {
+                field.param = "id";
+            }
+            if ((field.type == Forms::FieldType::Results || field.type == Forms::FieldType::Link) && field.open.empty()) {
+                LOG_WARNING("Forms", "Form " + formId + ": <" + std::string(node->name()) + "> without open=\"\" doesn't open anything");
             }
 
             if (field.type == Forms::FieldType::Section || field.type == Forms::FieldType::Actions) {
@@ -95,6 +117,31 @@ namespace
             }
             applyDefaults(field.children, model);
         }
+    }
+
+    // Walks fields in document order; index counts down to the one wanted
+    const Forms::Field* walk(const std::vector<Forms::Field>& fields, int& index, const Forms::Field* wanted)
+    {
+        for (const Forms::Field& field : fields) {
+            if (wanted ? &field == wanted : index == 0) {
+                return &field;
+            }
+            index += wanted ? 1 : -1;
+            if (const Forms::Field* found = walk(field.children, index, wanted)) {
+                return found;
+            }
+        }
+        return nullptr;
+    }
+
+    // 5312 -> "5,312"
+    std::string withSeparators(size_t n)
+    {
+        std::string digits = std::to_string(n);
+        for (int i = static_cast<int>(digits.size()) - 3; i > 0; i -= 3) {
+            digits.insert(static_cast<size_t>(i), ",");
+        }
+        return digits;
     }
 }
 
@@ -143,6 +190,63 @@ std::string title(const Form& form, Model& model)
         }
     }
     return form.title;
+}
+
+int fieldIndex(const Form& form, const Field* field)
+{
+    if (!field) {
+        return -1;
+    }
+    int index = 0;
+    return walk(form.fields, index, field) ? index : -1;
+}
+
+const Field* fieldAt(const Form& form, int index)
+{
+    if (index < 0) {
+        return nullptr;
+    }
+    return walk(form.fields, index, nullptr);
+}
+
+std::string rowsNote(const Rows& rows)
+{
+    if (rows.total <= rows.items.size()) {
+        return "";
+    }
+    return "Showing " + withSeparators(rows.items.size()) + " of " + withSeparators(rows.total)
+         + ". Refine the search to see the rest.";
+}
+
+Params rowParams(const Field& results, const Row& row)
+{
+    Params params = row.params;
+    std::string name = results.param.empty() ? "id" : results.param;
+    if (!params.count(name)) {
+        params[name] = row.id;
+    }
+    return params;
+}
+
+Params openParams(const Params& current, const Model::Result& result)
+{
+    if (!result.keepParams) {
+        return result.params;
+    }
+    Params params = current;
+    for (const auto& [name, value] : result.params) {
+        params[name] = value;
+    }
+    return params;
+}
+
+std::string rowKey(const Row& row)
+{
+    std::string key = row.id;
+    for (const auto& [name, value] : row.params) {
+        key += '\x1f' + name + '=' + value;
+    }
+    return key;
 }
 
 std::unique_ptr<Form> parse(const std::string& xml, std::string& error)

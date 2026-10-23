@@ -17,6 +17,7 @@
 #include "Setup.h"
 #include "../Builtin/Builtin.h"
 #include "../Catalog/Download.h"
+#include "../Catalog/GitHub.h"
 #include "../Catalog/Service.h"
 #include "../Database/Configuration.h"
 #include "../Utility/Log.h"
@@ -44,6 +45,11 @@ namespace
         return true;
     }
 
+    // Binding and action prefixes the model serves itself
+    const std::vector<std::string> builtinPrefixes = {
+        "settings", "draft", "info", "param", "package", "collection", "source", "catalog", "open", "back"
+    };
+
 
     // The source the Sources form describes
     Catalog::SourceConfig draftSource(std::map<std::string, std::string>& drafts)
@@ -54,10 +60,37 @@ namespace
         if (source.type == "folder") {
             source.path = Utils::trimEnds(drafts["sourcePath"]);
         }
+        else if (source.type == "github") {
+            // The Address field takes owner/name or the repository's github.com address
+            std::string text = Utils::trimEnds(drafts["sourceUrl"]);
+            std::string repo = Catalog::parseRepository(text);
+            source.repo = repo.empty() ? text : repo;
+        }
         else {
             source.url = Utils::trimEnds(drafts["sourceUrl"]);
         }
         return source;
+    }
+
+    // Installed packages that can be removed: everything but RetroFE itself
+    std::vector<Catalog::Manifest> removable(Catalog::Service& catalog)
+    {
+        std::vector<Catalog::Manifest> result = catalog.installed();
+        result.erase(std::remove_if(result.begin(), result.end(), [](const Catalog::Manifest& manifest) {
+            return manifest.kind == "app" || manifest.id == Catalog::appPackageId;
+        }), result.end());
+        return result;
+    }
+
+    // The GitHub source for this fork of RetroFE, if one has been added
+    const Catalog::SourceConfig* retrofeSource(const std::vector<Catalog::SourceConfig>& sources)
+    {
+        for (const Catalog::SourceConfig& source : sources) {
+            if (source.type == "github" && Utils::toLower(source.repo) == Utils::toLower(Catalog::retrofeRepository)) {
+                return &source;
+            }
+        }
+        return nullptr;
     }
 
 }
@@ -76,6 +109,8 @@ ManagerModel::ManagerModel(Configuration& config)
 {
 }
 
+ManagerModel::~ManagerModel() = default;
+
 void ManagerModel::refresh()
 {
     settings_.load();
@@ -84,6 +119,85 @@ void ManagerModel::refresh()
     countedPath_.clear();
     countedExtensions_.clear();
     romCountText_.clear();
+    for (auto& [prefix, provider] : providers_) {
+        provider->refresh();
+    }
+}
+
+void ManagerModel::setScreen(const std::string& form, const Forms::Params& params)
+{
+    screen_.form = form;
+    screen_.params = params;
+    for (auto& [prefix, provider] : providers_) {
+        provider->enter(screen_);
+    }
+}
+
+bool ManagerModel::addProvider(std::unique_ptr<Manager::Provider> provider)
+{
+    if (!provider) {
+        return false;
+    }
+    std::string prefix = provider->prefix();
+    bool valid = !prefix.empty() && prefix.find_first_of(":. ") == std::string::npos;
+    if (!valid || providers_.count(prefix)
+        || std::find(builtinPrefixes.begin(), builtinPrefixes.end(), prefix) != builtinPrefixes.end()) {
+        LOG_ERROR("Manager", "Can't add a provider for \"" + prefix + "\": the prefix is invalid, built in or taken");
+        return false;
+    }
+    providers_[prefix] = std::move(provider);
+    return true;
+}
+
+std::string ManagerModel::leaving(const Manager::Screen& screen)
+{
+    for (auto& [prefix, provider] : providers_) {
+        std::string warning = provider->leaving(screen);
+        if (!warning.empty()) {
+            return warning;
+        }
+    }
+    return "";
+}
+
+void ManagerModel::discard(const Manager::Screen& screen)
+{
+    for (auto& [prefix, provider] : providers_) {
+        provider->discard(screen);
+    }
+}
+
+void ManagerModel::update(float dt)
+{
+    for (auto& [prefix, provider] : providers_) {
+        provider->update(dt);
+    }
+}
+
+unsigned ManagerModel::generation()
+{
+    unsigned sum = 0;
+    for (auto& [prefix, provider] : providers_) {
+        sum += provider->generation();
+    }
+    return sum;
+}
+
+Manager::Provider* ManagerModel::provider(const std::string& key, char separator, std::string& rest) const
+{
+    if (providers_.empty()) {
+        return nullptr;
+    }
+    size_t at = key.find(separator);
+    if (at == std::string::npos) {
+        return nullptr;
+    }
+    auto found = providers_.find(key.substr(0, at));
+    if (found == providers_.end()) {
+        return nullptr;
+    }
+    rest = key.substr(at + 1);
+    return found->second.get();
 }
 
 std::string ManagerModel::settingKey(const std::string& key) const
@@ -117,12 +231,15 @@ std::string ManagerModel::settingValue(const std::string& key)
 void ManagerModel::setDefault(const std::string& key, const std::string& value)
 {
     std::string name;
-    if (stripPrefix(key, "settings:", name)) {
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        p->setDefault(name, value, screen_);
+    }
+    else if (stripPrefix(key, "settings:", name)) {
         settingDefaults_[name] = value;
     }
     else if (stripPrefix(key, "draft:", name) && drafts_[name].empty()) {
         // A layout's form can't pre-fill a source or vouch for one: the user adds sources
-        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath") {
+        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath" || name == "retrofeTrusted") {
             return;
         }
         drafts_[name] = value;
@@ -132,6 +249,12 @@ void ManagerModel::setDefault(const std::string& key, const std::string& value)
 std::string ManagerModel::get(const std::string& key)
 {
     std::string name;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        return p->get(name, screen_);
+    }
+    if (stripPrefix(key, "param:", name)) {
+        return screen_.param(name);
+    }
     if (stripPrefix(key, "settings:", name)) {
         auto pending = pendingSettings_.find(name);
         return pending != pendingSettings_.end() ? pending->second : settingValue(name);
@@ -143,7 +266,7 @@ std::string ManagerModel::get(const std::string& key)
             return sources.empty() ? "" : sources.front().name;
         }
         if (name == "removePackage" && drafts_[name].empty() && catalog_) {
-            std::vector<Catalog::Manifest> installed = catalog_->installed();
+            std::vector<Catalog::Manifest> installed = removable(*catalog_);
             return installed.empty() ? "" : installed.front().id;
         }
         return drafts_[name];
@@ -165,7 +288,7 @@ std::string ManagerModel::get(const std::string& key)
         return catalog_ && !catalog_->sources().empty() ? "yes" : "no";
     }
     if (key == "info:hasInstalled") {
-        return catalog_ && !catalog_->installed().empty() ? "yes" : "no";
+        return catalog_ && !removable(*catalog_).empty() ? "yes" : "no";
     }
     if (key == "info:removalStatus") {
         bool ok = false;
@@ -177,24 +300,41 @@ std::string ManagerModel::get(const std::string& key)
     if (key == "info:sourceIsFolder") {
         return drafts_["sourceType"] == "folder" ? "yes" : "no";
     }
+    if (key == "info:hasCollections") {
+        return collections_.empty() ? "no" : "yes";
+    }
+    if (key == "info:hasRetroFESource") {
+        return catalog_ && retrofeSource(catalog_->sources()) ? "yes" : "no";
+    }
+    if (key == "info:retrofeSourceNote") {
+        return std::string("New versions of RetroFE, from the releases of ") + Catalog::retrofeRepository
+             + " on GitHub. Installing one updates RetroFE and restarts it.";
+    }
     return "";
 }
 
 std::string ManagerModel::packageValue(const std::string& key)
 {
     Catalog::Entry entry;
-    if (!catalog_ || !catalog_->entry(package_, entry)) {
+    if (!catalog_ || !catalog_->entry(screen_.param("id"), entry)) {
         return key == "summary" ? "This package isn't offered by any source any more." : "";
     }
     const Catalog::Package& package = entry.package;
     bool installed = !entry.installedVersion.empty();
     bool busy = catalog_->isQueued(package.id);
+    bool isApp = package.kind == "app";
 
     if (key == "name") return package.name;
     if (key == "description") return package.description;
     if (key == "canInstall") return !installed && !busy ? "yes" : "no";
     if (key == "canUpdate") return installed && entry.updateAvailable && !busy ? "yes" : "no";
-    if (key == "canRemove") return installed && !busy ? "yes" : "no";
+    if (key == "canRemove") return installed && !busy && !isApp ? "yes" : "no";
+    if (key == "notice") {
+        return isApp ? "Installing this updates RetroFE itself: it replaces RetroFE's program files, then RetroFE restarts. "
+                       "The files it replaces are kept in the catalog's backups folder. The checksum only guards against a damaged "
+                       "download; what you're trusting is the repository you added."
+                     : "";
+    }
     if (key == "isBusy") return busy ? "yes" : "no";
     if (key == "summary") {
         std::string text = "Version " + package.version;
@@ -225,9 +365,12 @@ std::string ManagerModel::packageValue(const std::string& key)
         return text;
     }
     if (key == "checksum") {
-        bool checked = std::any_of(package.files.begin(), package.files.end(),
-                                   [](const Catalog::PackageFile& file) { return !file.sha256.empty() || !file.md5.empty(); });
-        return checked ? "" : "The source gives no checksums, so this download can't be checked for damage.";
+        bool checked = std::any_of(package.files.begin(), package.files.end(), [](const Catalog::PackageFile& file) {
+            return !file.sha256.empty() || !file.md5.empty() || !file.sha256Url.empty();
+        });
+        if (checked) return "";
+        return isApp ? "This release has no checksum, so RetroFE won't install it."
+                     : "The source gives no checksums, so this download can't be checked for damage.";
     }
     if (key == "progress") {
         Catalog::Service::Activity activity;
@@ -275,17 +418,13 @@ std::string ManagerModel::catalogStatus()
          + std::to_string(sources) + (sources == 1 ? " source." : " sources.");
 }
 
-std::string ManagerModel::takeOpenRequest()
-{
-    std::string request = openRequest_;
-    openRequest_.clear();
-    return request;
-}
-
 void ManagerModel::set(const std::string& key, const std::string& value)
 {
     std::string name;
-    if (stripPrefix(key, "settings:", name)) {
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        p->set(name, value, screen_);
+    }
+    else if (stripPrefix(key, "settings:", name)) {
         std::string saved = settingValue(name);
         std::string newValue = value;
 
@@ -309,6 +448,10 @@ void ManagerModel::set(const std::string& key, const std::string& value)
 
 std::vector<std::string> ManagerModel::list(const std::string& key)
 {
+    std::string name;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        return p->list(name, screen_);
+    }
     if (key == "info:collections") {
         return collections_;
     }
@@ -318,7 +461,9 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
     std::vector<std::string> values;
     if (key == "info:sources") {
         for (const Catalog::SourceConfig& source : catalog_->sources()) {
-            std::string location = source.type == "folder" ? source.path : source.url;
+            std::string location = source.type == "folder" ? source.path
+                                 : source.type == "github" ? "GitHub " + source.repo + (source.prerelease ? " (with pre-releases)" : "")
+                                 : source.url;
             values.push_back(source.name + ": " + location + (source.enabled ? "" : " (off)"));
         }
     }
@@ -333,9 +478,30 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
     return values;
 }
 
+Forms::Rows ManagerModel::rows(const std::string& key, size_t limit)
+{
+    std::string name;
+    Forms::Rows rows;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        rows = p->rows(name, limit, screen_);
+    }
+    // Hold providers to the limit, so a form never draws thousands of rows
+    if (rows.total < rows.items.size()) {
+        rows.total = rows.items.size();
+    }
+    if (rows.items.size() > limit) {
+        rows.items.resize(limit);
+    }
+    return rows;
+}
+
 std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std::string& source)
 {
     std::vector<std::pair<std::string, std::string>> result;
+    std::string name;
+    if (Manager::Provider* p = provider(source, ':', name)) {
+        return p->options(name, screen_);
+    }
 
     if (source == "layouts") {
         result.emplace_back("", "Built-in");
@@ -360,6 +526,7 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
     else if (source == "sourceTypes") {
         result.emplace_back("index", "Index file");
         result.emplace_back("folder", "Folder of packages");
+        result.emplace_back("github", "GitHub releases (RetroFE itself)");
     }
     else if (source == "sources" && catalog_) {
         for (const Catalog::SourceConfig& config : catalog_->sources()) {
@@ -367,7 +534,7 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
         }
     }
     else if (source == "installed" && catalog_) {
-        for (const Catalog::Manifest& manifest : catalog_->installed()) {
+        for (const Catalog::Manifest& manifest : removable(*catalog_)) {
             result.emplace_back(manifest.id, manifest.name + " " + manifest.version);
         }
     }
@@ -376,6 +543,10 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
 
 std::string ManagerModel::actionProblem(const std::string& action)
 {
+    std::string name;
+    if (Manager::Provider* p = provider(action, '.', name)) {
+        return p->actionProblem(name, screen_);
+    }
     if (action == "settings.save") {
         return pendingSettings_.empty() ? "No changes to save." : "";
     }
@@ -383,7 +554,10 @@ std::string ManagerModel::actionProblem(const std::string& action)
         return Setup::validate(Setup::NewCollection{ drafts_["name"], drafts_["romPath"], drafts_["extensions"],
                                                      drafts_["executable"], drafts_["arguments"] });
     }
-    if (action == "open.sources") {
+    if (stripPrefix(action, "open.", name)) {
+        return name.empty() ? "Unknown action " + action : "";
+    }
+    if (action == "back") {
         return "";
     }
     return catalogProblem(action);
@@ -393,7 +567,7 @@ std::string ManagerModel::catalogProblem(const std::string& action)
 {
     bool known = action == "package.install" || action == "package.remove" || action == "package.cancel"
               || action == "package.removeInstalled"
-              || action == "source.add" || action == "source.remove" || action == "catalog.refresh";
+              || action == "source.add" || action == "source.addRetroFE" || action == "source.remove" || action == "catalog.refresh";
     if (!known) {
         return "Unknown action " + action;
     }
@@ -403,23 +577,38 @@ std::string ManagerModel::catalogProblem(const std::string& action)
 
     if (action == "package.install" || action == "package.remove" || action == "package.cancel") {
         Catalog::Entry entry;
-        if (!catalog_->entry(package_, entry)) {
+        if (!catalog_->entry(screen_.param("id"), entry)) {
             return "This package isn't offered by any source any more.";
         }
-        bool busy = catalog_->isQueued(package_);
+        bool busy = catalog_->isQueued(screen_.param("id"));
         bool installed = !entry.installedVersion.empty();
         if (action == "package.cancel") return busy ? "" : "Nothing to stop.";
         if (busy) return "Already working on it.";
+        if (action == "package.remove" && entry.package.kind == "app") return "RetroFE can't remove itself.";
         if (action == "package.remove") return installed ? "" : "It isn't installed.";
+        if (entry.package.kind == "app" && std::none_of(entry.package.files.begin(), entry.package.files.end(), [](const Catalog::PackageFile& file) {
+                return !file.sha256.empty() || !file.sha256Url.empty();
+            })) {
+            return "This release has no checksum, so RetroFE won't install it.";
+        }
         return installed && !entry.updateAvailable ? "Installed, and up to date." : "";
     }
     if (action == "source.add") {
         Catalog::SourceConfig source = draftSource(drafts_);
         if (source.name.empty()) return "Give the source a name.";
-        if (source.url.empty() && source.path.empty()) return source.type == "folder" ? "Choose the folder." : "Enter the address of the index file.";
+        if (source.type == "github" && source.repo.empty()) return "Enter the repository, e.g. " + std::string(Catalog::retrofeRepository) + ".";
+        if (source.type != "github" && source.url.empty() && source.path.empty()) {
+            return source.type == "folder" ? "Choose the folder." : "Enter the address of the index file.";
+        }
         std::string problem = Catalog::validateSource(source, catalog_->sources());
         if (!problem.empty()) return problem;
         return Forms::isTruthy(drafts_["sourceTrusted"]) ? "" : "Confirm that you trust this source.";
+    }
+    if (action == "source.addRetroFE") {
+        if (const Catalog::SourceConfig* existing = retrofeSource(catalog_->sources())) {
+            return "RetroFE's releases are already a source: " + existing->name + ".";
+        }
+        return Forms::isTruthy(drafts_["retrofeTrusted"]) ? "" : "Confirm that you trust this source.";
     }
     if (action == "source.remove") {
         return get("draft:removeSource").empty() ? "Choose a source to remove." : "";
@@ -441,13 +630,13 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
     }
     result.ok = true;
     if (action == "package.install") {
-        catalog_->install(package_);
+        catalog_->install(screen_.param("id"));
     }
     else if (action == "package.remove") {
-        catalog_->remove(package_);
+        catalog_->remove(screen_.param("id"));
     }
     else if (action == "package.cancel") {
-        catalog_->cancel(package_);
+        catalog_->cancel(screen_.param("id"));
     }
     else if (action == "package.removeInstalled") {
         removedPackage_ = get("draft:removePackage");
@@ -468,6 +657,23 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
             drafts_["sourceTrusted"] = "no";
         }
     }
+    else if (action == "source.addRetroFE") {
+        // Named "retrofe", or "retrofe-2"... if that name is taken
+        Catalog::SourceConfig source;
+        source.type = "github";
+        source.repo = Catalog::retrofeRepository;
+        source.app = true;   // it offers RetroFE itself
+        std::vector<Catalog::SourceConfig> sources = catalog_->sources();
+        for (int n = 1; source.name.empty() || !Catalog::validateSource(source, sources).empty(); n++) {
+            source.name = n == 1 ? "retrofe" : "retrofe-" + std::to_string(n);
+            if (n > 50) break;
+        }
+        result.ok = catalog_->addSource(source, result.message);
+        if (result.ok) {
+            result.message = "Added RetroFE's releases on GitHub as " + source.name + ".";
+            drafts_["retrofeTrusted"] = "no";
+        }
+    }
     else if (action == "source.remove") {
         std::string name = get("draft:removeSource");
         result.ok = catalog_->removeSource(name, result.message);
@@ -481,16 +687,23 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
 
 Forms::Model::Result ManagerModel::runAction(const std::string& action)
 {
+    std::string name;
+    if (Manager::Provider* p = provider(action, '.', name)) {
+        return p->runAction(name, screen_);
+    }
     if (action == "settings.save") {
         return saveSettings();
     }
     if (action == "collection.create") {
         return createCollection();
     }
-    if (action == "open.sources") {
-        openRequest_ = "sources";
+    if (stripPrefix(action, "open.", name) || action == "back") {
         Result result;
-        result.ok = true;
+        result.message = actionProblem(action);
+        result.ok = result.message.empty();
+        result.open = name;
+        result.keepParams = true;   // like a link
+        result.back = action == "back";
         return result;
     }
     return runCatalogAction(action);
