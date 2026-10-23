@@ -258,7 +258,12 @@ that has an asset for this system**. That becomes the package:
 **A checksum is required.** RetroFE won't install a release of itself it
 can't check: without a digest or a `.sha256`, the package screen says "This
 release has no checksum, so RetroFE won't install it", and the Catalog refuses
-it. The release workflow uploads both.
+it. The release workflow uploads both. A `.sha256` file may be in any of the
+usual forms: `<hex>`, sha256sum's `<hex>  <name>` or `<hex> *<name>`,
+`<name> <hex>`, or BSD's `SHA256 (<name>) = <hex>`; if it lists several
+files, the line naming the release file counts. The checksum only guards
+against a damaged download: it comes from the same place as the file, so what
+you're trusting is the repository you added.
 
 **Asset naming.** `RetroFE-<version>-<os>-<arch>.zip`, e.g.
 `RetroFE-2504.3-windows-x64.zip`. An asset is this system's if it's a `.zip`
@@ -322,31 +327,50 @@ in it open without delete sharing and it isn't any process's working folder.
    root, each checked against its SHA-256. With the unchanged files still in
    place, that's the whole previous version. Only the last update's backup is
    kept.
-4. **Prepare everything beside where it goes**, so the swap itself is renames
+4. **Journal first.** `<root>/retrofe.update.json` (next to the program
+   folder, so it's found before anything is configured, and independent of
+   where the catalog is) is written, in state *preparing*, before anything is
+   created. It names every file and folder the update will create (`<file>.new`,
+   `retrofe.new`) or set aside (`<file>.old`, `retrofe.old`), with the SHA-256
+   of each file placed and replaced. Only names it records are ever deleted.
+   A `<file>.old` or `retrofe.old` that's already there and that an update
+   didn't record (someone's own backup, say) is left alone, and the update
+   uses `.old2` and so on instead. The journal is flushed to the disk before
+   it replaces the previous one, so a power cut can't leave it empty.
+5. **Prepare everything beside where it goes**, so the swap itself is renames
    only, even when the catalog is on another drive:
    - `<root>/retrofe.new/` becomes the complete new program folder: the
-     release's files, plus every file of the current folder the release
-     doesn't replace or drop (hard-linked, so it's instant and takes no space;
+     release's files, plus every other file of the current folder, the
+     user's own included (hard-linked, so it's instant and takes no space;
      copied if linking fails). Files the previous version installed that this
-     one doesn't have, and haven't been changed, are left out.
+     one doesn't have, and haven't been changed, are left out. If the folder
+     holds a link or junction, it isn't copied; the files are swapped one by
+     one instead.
    - each changed layout file gets `<file>.new` beside it.
-5. **Journal.** `<root>/retrofe.update.json` (next to the program folder, so
-   it's found before anything is configured, and independent of where the
-   catalog is) lists every step, with the SHA-256 of the file each step
-   places and of the file it replaces. `<root>/retrofe-UPDATE-INTERRUPTED.txt`
-   tells anyone looking how to put the previous version back by hand.
+   If RetroFE stops while preparing, the next start deletes what the journal
+   says was being made and nothing else. Then the journal moves to *swapping*,
+   and `<root>/retrofe-UPDATE-INTERRUPTED.txt` tells anyone looking how to get
+   RetroFE back by hand.
 6. **Swap**, renames only, back to back:
    - layout files: `<file>` → `<file>.old`, `<file>.new` → `<file>`;
    - then the program folder: `retrofe` → `retrofe.old`, `retrofe.new` →
      `retrofe`. That second rename is the commit point. RetroFE first moves
      its own working folder to the root if it's inside `retrofe\` (the
      restarted RetroFE gets the original one back).
+   - Each folder rename is tried for about two seconds (10 × 200 ms), since a
+     virus scanner looking at the new files can hold it up. If `retrofe.new`
+     won't go in, `retrofe.old` goes back; if that won't either, `retrofe.new`
+     gets another try. If neither will, there's no program folder. The
+     Catalog keeps trying every two seconds while RetroFE runs, RetroFE tries
+     again as it exits, and if there's still none, it shows a message (it
+     waits for OK) pointing at the note before exiting. The next start tries
+     too.
    - If the program folder can't be renamed (another program has a file in it
      open), the program's changed files are swapped one by one the same way
      instead, removals first and the program file last. That's two renames
      per changed file, with nothing copied in between.
-   - If any rename fails, every step so far is undone and the message says
-     nothing was changed.
+   - If any other rename fails, every step so far is undone and the message
+     says nothing was changed.
 7. **Record.** The journal is marked swapped, `catalog/installed/retrofe.json`
    lists the version's files, and the journal keeps the list of what was set
    aside (`retrofe.old`, or the `.old` files). What isn't in use is deleted at
@@ -362,30 +386,45 @@ in it open without delete sharing and it isn't any process's working folder.
 **If RetroFE stops part way** (a crash or power cut), the very first thing
 `main()` does on the next start, before configuration, logging, SDL or
 GStreamer, is look for `<root>/retrofe.update.json`:
-- If the new program folder is in place (the commit point was reached), the
-  update is finished.
-- Otherwise every step is undone, last first: a file is only deleted or put
+- *Preparing*: what was being made is deleted, and that's all.
+- *Swapping*, with the new program folder in place (the commit point was
+  reached): the update is finished.
+- *Swapping*, stopped between the two folder renames: `retrofe.old` goes back,
+  or if it can't, `retrofe.new` goes in, and the update is finished.
+- Otherwise every step is undone, last first. A file is only deleted or put
   back if its SHA-256 is what the journal says the update placed or replaced,
-  so a damaged or tampered journal can't delete or swap anything else. If
-  program files were put back, RetroFE starts again at once so they're what
-  runs.
+  so a damaged or tampered journal can't delete or swap anything else. All
+  hashing opens files by their real names, so a RetroFE folder whose name
+  isn't in the system code page works too. If program files were put back,
+  RetroFE starts again at once so they're what runs. If it can't start
+  again, it says so (a message that closes itself after a minute) and exits
+  rather than running a mix.
 - The journal may only name files in the program folder and under `layouts/`,
-  under the names updates use, and its spare folders must be
-  `retrofe.new`/`retrofe.old…`; anything else, or a journal that can't be
-  read, is set aside as `retrofe.update.damaged.json` and the user is told
-  (a message box) where the backup is and what to copy back.
-- It tries at most three starts. After that the journal is set aside the same
-  way, with the same message, and updates work again.
-- Leftovers are only deleted if the journal lists them and they're
-  `retrofe.old…` folders in the root or files named `<name>.old`, `.oldN` or
-  `.failed` in RetroFE's folders.
+  under the names updates use, and its spare folders must be real
+  `retrofe.new`/`retrofe.old…` folders, not links or junctions. Anything else,
+  or a journal that can't be read, is set aside as
+  `retrofe.update.damaged.json` and logged. Since RetroFE did start, nobody
+  is told to restore anything.
+- It tries at most three starts; pressing Install meanwhile doesn't use the
+  tries up. After the third, the journal is set aside the same way, and the
+  message saying where the backup is goes to the log and to the Catalog's
+  **Problems** list (from `retrofe.update.damaged.txt`) until an update
+  works. It isn't a message box at start, which would hold up a cabinet
+  without a keyboard. Updates work again.
+- Leftovers are only deleted if the journal lists them and they're real
+  `retrofe.old…` (or unused `retrofe.new`) folders in the root, or files named
+  `<name>.old`, `.oldN` or `.failed` in RetroFE's folders. Deleting never
+  follows a link or junction.
+- Only `<root>\retrofe\` is ever updated or recovered: a flat install, with
+  the exe in the root, is left alone.
 
 **What a power cut can still do.** With the folder swap, the program folder is
 never a mix of versions: between the two folder renames it's briefly missing
 (`retrofe.old` and `retrofe.new` both exist). Windows has no way to make the
 pair atomic. If the power goes in that instant, `retrofe.exe` isn't where the
 shortcut points, so nothing of RetroFE's can run to fix it. The note in the
-root says what to do: rename `retrofe.old` back to `retrofe`. In the
+root says what to do: rename `retrofe.old` back to `retrofe` (or `retrofe.new`
+to `retrofe`, for the new version). In the
 file-by-file fallback, a cut between a file's two renames leaves that one file
 missing. If it's a DLL `retrofe.exe` loads at start (SDL2, GStreamer and the
 other import-table DLLs), Windows can't start RetroFE, so again only the note

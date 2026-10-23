@@ -326,7 +326,8 @@ namespace
 
     json readJson(const std::string& path)
     {
-        return json::parse(readFile(path), nullptr, false);
+        json document = json::parse(readFile(path), nullptr, false);
+        return document.is_object() ? document : json::object();
     }
 
     std::string generic(const fs::path& path)
@@ -383,6 +384,14 @@ void runSelfUpdateTests()
         checkEqual(parseSha256File(hex + "  RetroFE-1-windows-x64.zip\n"), hex, "sha256sum's format");
         checkEqual(parseSha256File("\n" + hex), hex, "just the hash");
         checkEqual(parseSha256File("not a hash"), "", "anything else");
+        std::string name = "RetroFE-1-windows-x64.zip";
+        std::string other = sha256Of("y");
+        checkEqual(parseSha256File(hex + " *" + name, name), hex, "sha256sum's binary mode");
+        checkEqual(parseSha256File("SHA256 (" + name + ") = " + hex + "\n", name), hex, "BSD's format");
+        checkEqual(parseSha256File(name + " " + hex, name), hex, "name first");
+        checkEqual(parseSha256File("sha256:" + hex, name), hex, "GitHub's digest");
+        checkEqual(parseSha256File(other + "  RetroFE-1-linux-x64.zip\r\n" + hex + "  " + name + "\r\n", name), hex, "the line naming the file");
+        checkEqual(parseSha256File(other + "  a.zip\n" + hex + "  b.zip\n", name), "", "several, none naming it: no answer");
     });
 
     run("release assets are picked by system and architecture", [&] {
@@ -564,11 +573,14 @@ void runSelfUpdateTests()
 
         FakeInstall install = makeInstall("self-update-malformed");
         for (const char* journal : { R"({"state": 5, "steps": "x"})", R"({"state": "swapping", "attempts": "x", "steps": [{"kind": "add", "destination": 5}]})",
-                                     R"([1, 2])", "not json" }) {
+                                     R"([1, 2])", "not json", "" }) {
             writeFile(install.journal, journal);
             StartupRecovery result;
             check(!throws([&] { result = recoverAtStart(install.app.executable); }), std::string("journal ") + journal);
-            check(!result.restart && !result.message.empty() && !fs::exists(install.journal), std::string("set aside, and the user told: ") + journal);
+            check(!result.restart && !fs::exists(install.journal) && fs::exists(install.root + "/retrofe.update.damaged.json"),
+                  std::string("set aside: ") + journal);
+            check(result.message.empty() && !fs::exists(install.root + "/retrofe.update.damaged.txt"),
+                  std::string("RetroFE is running, so no one is told to restore it: ") + journal);
         }
         checkEqual(readFile((install.program / "a.dll").string()), "old a", "nothing touched");
     });
@@ -785,7 +797,8 @@ void runSelfUpdateTests()
         writeFile(install.journal, json{ { "version", "9" }, { "state", "swapping" }, { "steps", outside } }.dump());
         StartupRecovery result = recoverAtStart(install.app.executable);
         checkEqual(readFile(install.root + "/collections/Main/menu.txt"), "Arcade", "the user's file is left alone");
-        check(!result.message.empty() && fs::exists(install.root + "/retrofe.update.damaged.json"), "and the user is told");
+        check(fs::exists(install.root + "/retrofe.update.damaged.json") && !fs::exists(install.journal), "and set aside");
+        check(result.message.empty() && !result.log.empty(), "logged, without telling anyone to restore a working RetroFE");
 
         // Leftovers are only ever files named as updates name them, in RetroFE's folders
         writeFile((install.program / "x.dll.older").string(), "x");
@@ -811,14 +824,32 @@ void runSelfUpdateTests()
             StartupRecovery result = recoverAtStart(install.app.executable);
             check(result.message.empty() && readJson(install.journal).value("attempts", 0) == attempt, "try " + std::to_string(attempt));
         }
+        // Pressing Install meanwhile tries again but doesn't use the tries up
         makeZip(install.root + "/share/up.zip", updateEntries);
-        SelfUpdater blocked(install.catalog, install.app);
-        check(!blocked.apply(appPackage("2.0"), install.root + "/share/up.zip", error) && error.find(backup) != std::string::npos,
-              "updates wait, and say where the backup is: " + error);
-        check(!fs::exists(install.journal) && fs::exists(install.root + "/retrofe.update.damaged.json"), "that was the last try: set aside");
-        check(blocked.message().find(backup) != std::string::npos, "the user is told where the backup is: " + blocked.message());
+        for (int click = 0; click < 5; click++) {
+            SelfUpdater blocked(install.catalog, install.app);
+            check(!blocked.apply(appPackage("2.0"), install.root + "/share/up.zip", error) && error.find("Restart RetroFE") != std::string::npos
+                  && error.find(backup) != std::string::npos, "updates wait, and say where the backup is: " + error);
+        }
+        check(readJson(install.journal).value("attempts", 0) == SelfUpdater::maxRecoveryAttempts, "Install doesn't count as a start");
+
+        StartupRecovery last = recoverAtStart(install.app.executable);
+        check(!fs::exists(install.journal) && fs::exists(install.root + "/retrofe.update.damaged.json"), "the fourth start gives up: set aside");
+        check(last.message.find(backup) != std::string::npos && !last.restart, "the user is told where the backup is: " + last.message);
+        checkEqual(readFile(install.root + "/retrofe.update.damaged.txt"), last.message, "kept for the Catalog's problems list");
         SelfUpdater updater(install.catalog, install.app);
         check(updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error), "updates work again: " + error);
+        check(!fs::exists(install.root + "/retrofe.update.damaged.txt"), "and the problem is cleared once one works");
+    });
+
+    run("a Catalog that gave up on an update shows it as a problem instead of holding up the start", [&] {
+        FakeInstall install = makeInstall("self-update-gave-up-service");
+        writeFile(install.root + "/retrofe.update.damaged.txt", "RetroFE tried 3 times. The files are in X.");
+        Service service(install.catalog, targetsUnder(install.root), nullptr);
+        service.setApp(install.app);
+        service.start();
+        service.waitUntilIdle();
+        check(contains(service.warnings(), "RetroFE tried 3 times"), "listed with the Catalog's problems");
     });
 
     run("only RetroFE for this system is installed, and only into its folders", [&] {
@@ -875,6 +906,240 @@ void runSelfUpdateTests()
               "files 2.0 installed and 3.0 doesn't have go, layouts included");
         checkEqual(readFile(install.catalog + "/backups/retrofe/2.0/retrofe/gone.dll"), "gone", "and backed up");
         check(!fs::exists(install.catalog + "/backups/retrofe/1.0"), "older backups are dropped");
+    });
+
+    run("folder renames that keep failing are retried, and a program folder is always put back", [&] {
+        auto lockedOut = [](const fs::path& from, const fs::path& to) {
+            return from.filename() == "retrofe.new" || (from.filename() == "retrofe.old" && to.filename() == "retrofe");
+        };
+        {
+            // A virus scanner holds the new folder for a moment
+            FakeInstall install = makeInstall("self-update-retry");
+            makeZip(install.root + "/share/up.zip", updateEntries);
+            SelfUpdater updater(install.catalog, install.app);
+            updater.sleep = [](int) {};
+            int refused = 0;
+            updater.renameFile = [&](const fs::path& from, const fs::path& to) {
+                if (from.filename() == "retrofe.new" && refused < 3) {
+                    refused++;
+                    return false;
+                }
+                return plainRename(from, to);
+            };
+            check(updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error) && refused == 3, "in on the fourth try: " + error);
+            checkUpdated(install, "retried");
+        }
+        {
+            // The new folder never goes in; the old one comes back on the third try, then files are swapped one by one
+            FakeInstall install = makeInstall("self-update-retry-restore");
+            makeZip(install.root + "/share/up.zip", updateEntries);
+            SelfUpdater updater(install.catalog, install.app);
+            updater.sleep = [](int) {};
+            int refused = 0;
+            updater.renameFile = [&](const fs::path& from, const fs::path& to) {
+                if (from.filename() == "retrofe.new") return false;
+                if (from.filename() == "retrofe.old" && to.filename() == "retrofe" && refused < 2) {
+                    refused++;
+                    return false;
+                }
+                return plainRename(from, to);
+            };
+            check(updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error), "updated file by file: " + error);
+            checkUpdated(install, "restored, then file by file");
+            check(!fs::exists(install.root + "/retrofe.new") && !fs::exists(install.root + "/retrofe.old"), "no spare folders");
+        }
+        {
+            // Neither goes back while updating: no program folder, until the new one can go in
+            FakeInstall install = makeInstall("self-update-no-folder-forward");
+            makeZip(install.root + "/share/up.zip", updateEntries);
+            SelfUpdater updater(install.catalog, install.app);
+            updater.sleep = [](int) {};
+            updater.renameFile = [&](const fs::path& from, const fs::path& to) { return !lockedOut(from, to) && plainRename(from, to); };
+            check(!updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error)
+                  && error.find("retrofe-UPDATE-INTERRUPTED.txt") != std::string::npos, "says where the instructions are: " + error);
+            check(updater.programFolderMissing() && fs::exists(install.root + "/retrofe-UPDATE-INTERRUPTED.txt"), "no program folder for now");
+            updater.renameFile = [&](const fs::path& from, const fs::path& to) { return from.filename() != "retrofe.old" && plainRename(from, to); };
+            check(updater.repairProgramFolder() && updater.finishedForward(), "the complete new folder goes in");
+            checkUpdated(install, "finished forward");
+            Manifest manifest;
+            check(readManifest(install.catalog + "/installed/retrofe.json", manifest, error) && manifest.version == "2.0", "and it's recorded");
+        }
+        {
+            // ... or until the old one can go back
+            FakeInstall install = makeInstall("self-update-no-folder-back");
+            makeZip(install.root + "/share/up.zip", updateEntries);
+            SelfUpdater updater(install.catalog, install.app);
+            updater.sleep = [](int) {};
+            updater.renameFile = [&](const fs::path& from, const fs::path& to) { return !lockedOut(from, to) && plainRename(from, to); };
+            check(!updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error), "failed");
+            updater.renameFile = plainRename;
+            check(updater.repairProgramFolder() && !updater.finishedForward(), "the old folder goes back first");
+            checkUnchanged(install, "put back");
+        }
+        {
+            // As RetroFE exits: one more try, and if there's nothing to put back, what to tell the user
+            FakeInstall install = makeInstall("self-update-exit-check");
+            json journal = { { "version", "2.0" }, { "state", "swapping" }, { "folder", true },
+                             { "newFolder", generic(fs::path(install.root) / "retrofe.new") },
+                             { "oldFolder", generic(fs::path(install.root) / "retrofe.old") }, { "steps", json::array() } };
+            writeFile(install.journal, journal.dump());
+            fs::rename(install.program, fs::path(install.root) / "retrofe.old");
+            checkEqual(checkProgramFolderAtExit(install.app.executable), "", "put back as RetroFE exits");
+            checkUnchanged(install, "at exit");
+            writeFile(install.journal, journal.dump());
+            fs::remove_all(install.program);
+            std::string message = checkProgramFolderAtExit(install.app.executable);
+            check(message.find("retrofe-UPDATE-INTERRUPTED.txt") != std::string::npos, "nothing to put back: the user is told what to do: " + message);
+        }
+    });
+
+    run("files and folders named .old that updates didn't make are never deleted", [&] {
+        for (bool wholeFolder : { true, false }) {
+            std::string what = wholeFolder ? "folder" : "files";
+            FakeInstall install = makeInstall("self-update-own-old-" + what);
+            writeFile((install.program / "a.dll.old").string(), "my own backup");
+            writeFile(install.root + "/retrofe.old/readme.txt", "my own backup folder");
+            writeFile(install.root + "/layouts/Shipped/layout.xml.old", "mine too");
+            makeZip(install.root + "/share/up.zip", updateEntries);
+            SelfUpdater updater(install.catalog, install.app);
+            updater.folderSwap = wholeFolder;
+            check(updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error), what + ": applied: " + error);
+            checkUpdated(install, what);
+            SelfUpdater next(install.catalog, install.app);
+            next.sleep = [](int) {};
+            next.recover();
+            checkEqual(readFile((install.program / "a.dll.old").string()), "my own backup", what + ": the user's .old file");
+            checkEqual(readFile(install.root + "/retrofe.old/readme.txt"), "my own backup folder", what + ": the user's retrofe.old");
+            checkEqual(readFile(install.root + "/layouts/Shipped/layout.xml.old"), "mine too", what + ": the user's layout .old");
+            check(!fs::exists(install.root + "/retrofe.old2") && !fs::exists(install.program / "a.dll.old2")
+                  && !fs::exists(install.root + "/layouts/Shipped/layout.xml.old2") && !fs::exists(install.journal),
+                  what + ": the update's own set-aside files are gone");
+        }
+    });
+
+    run("an update stopped while preparing leaves nothing behind", [&] {
+        for (bool wholeFolder : { true, false }) {
+            std::string what = wholeFolder ? "folder" : "files";
+            FakeInstall install = makeInstall("self-update-preparing-" + what);
+            writeFile((install.program / "mine.txt").string(), "not in the release");
+            makeZip(install.root + "/share/up.zip", updateEntries);
+            SelfUpdater updater(install.catalog, install.app);
+            updater.folderSwap = wholeFolder;
+            // The power goes off once something of the program has been prepared
+            fs::path prepared = wholeFolder ? fs::path(install.root) / "retrofe.new" / "mine.txt" : install.program / "a.dll.new";
+            updater.shouldStop = [&] {
+                if (fs::exists(prepared)) throw Crash();
+                return false;
+            };
+            check(throws([&] { updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error); }), what + ": stopped");
+            checkEqual(readJson(install.journal).value("state", ""), "preparing", what + ": the journal knew what was being made");
+            StartupRecovery result = recoverAtStart(install.app.executable);
+            check(!result.restart && result.message.empty(), what + ": nothing to restart for or tell anyone");
+            checkUnchanged(install, what + " preparing");
+        }
+
+        // Stopped after the program's new files were moved out of an unused new folder
+        FakeInstall install = makeInstall("self-update-preparing-fallback");
+        makeZip(install.root + "/share/up.zip", updateEntries);
+        SelfUpdater updater(install.catalog, install.app);
+        updater.renameFile = [&](const fs::path& from, const fs::path& to) {
+            return !(fs::is_directory(from) && from.filename() == "retrofe") && plainRename(from, to);
+        };
+        updater.removeFile = [&](const fs::path& file) -> bool {
+            if (file.parent_path().filename() == "retrofe.new") throw Crash();
+            return plainRemove(file);
+        };
+        check(throws([&] { updater.apply(appPackage("2.0"), install.root + "/share/up.zip", error); }), "stopped clearing the new folder");
+        check(fs::exists(install.program / "a.dll.new"), "the program's new files were beside it");
+        check(recoverAtStart(install.app.executable).message.empty(), "recovered");
+        checkUnchanged(install, "after the fallback");
+    });
+
+    run("names outside the system code page are hashed and put back too", [&] {
+        fs::path root = fs::temp_directory_path() / "retrofe_tests" / fs::u8path(u8"self-update-日本-ü");
+        fs::remove_all(root);
+        auto put = [](const fs::path& path, const std::string& text) {
+            fs::create_directories(path.parent_path());
+            std::ofstream(path, std::ios::binary) << text;
+        };
+        auto get = [](const fs::path& path) {
+            std::ifstream in(path, std::ios::binary);
+            return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        };
+        put(root / "retrofe" / "retrofe.exe", "old exe");
+        put(root / "retrofe" / "a.dll", "old a");
+        put(root / "layouts" / "Shipped" / "layout.xml", "old layout");
+        AppInstall app;
+        app.root = root.u8string();
+        app.program = (root / "retrofe").u8string();
+        app.executable = (root / "retrofe" / "retrofe.exe").u8string();
+        app.version = "1.0";
+        std::string catalog = makeRoot("self-update-unicode-catalog");
+        makeZip(catalog + "/up.zip", updateEntries);
+        checkEqual(sha256File(root / "retrofe" / "a.dll"), sha256Of("old a"), "hashed by its real name");
+
+        SelfUpdater crash(catalog, app);
+        crash.folderSwap = false;
+        int calls = 0;
+        crash.renameFile = [&](const fs::path& from, const fs::path& to) {
+            if (++calls == 4) throw Crash();
+            return plainRename(from, to);
+        };
+        check(throws([&] { crash.apply(appPackage("2.0"), catalog + "/up.zip", error); }), "stopped mid-swap");
+        check(recoverAtStart(app.executable).restart, "put back");
+        checkEqual(get(root / "retrofe" / "a.dll"), "old a", "a.dll back");
+        checkEqual(get(root / "layouts" / "Shipped" / "layout.xml"), "old layout", "layout back");
+        check(!fs::exists(root / "retrofe" / "a.dll.old") && !fs::exists(root / "layouts" / "Shipped" / "layout.xml.old")
+              && !fs::exists(root / "retrofe.update.json"), "nothing orphaned");
+
+        SelfUpdater updater(catalog, app);
+        check(updater.apply(appPackage("2.0"), catalog + "/up.zip", error), "updated: " + error);
+        checkEqual(get(root / "retrofe" / "retrofe.exe"), "new exe", "new program");
+        fs::remove_all(root);
+    });
+
+    run("links and junctions are never followed, and only <root>/retrofe is ever touched", [&] {
+        FakeInstall install = makeInstall("self-update-links");
+        // A flat install: the program isn't in a folder called retrofe
+        fs::path bin = fs::path(install.root) / "bin";
+        writeFile((bin / "retrofe.exe").string(), "exe");
+        writeFile((bin / "a.dll").string(), "a");
+        json steps = json::array({ { { "kind", "add" }, { "destination", generic(bin / "a.dll") }, { "prepared", generic(bin / "a.dll.new") },
+                                     { "newSha256", sha256Of("a") } } });
+        writeFile(install.root + "/bin.update.json", json{ { "version", "9" }, { "state", "swapping" }, { "steps", steps } }.dump());
+        recoverAtStart((bin / "retrofe.exe").string());
+        check(fs::exists(bin / "a.dll") && fs::exists(install.root + "/bin.update.json"), "a flat install's journal isn't acted on");
+        AppInstall flat = install.app;
+        flat.program = bin.string();
+        flat.executable = (bin / "retrofe.exe").string();
+        check(!SelfUpdater(install.catalog, flat).problem().empty(), "nor is it updated");
+#ifdef _WIN32
+        fs::path precious = fs::path(install.root) / "precious";
+        writeFile((precious / "keep.txt").string(), "precious");
+        fs::path junction = fs::path(install.root) / "retrofe.old";
+        std::string command = "cmd /c mklink /J \"" + junction.string() + "\" \"" + precious.string() + "\" >nul";
+        if (std::system(command.c_str()) == 0) {
+            // Listed as a leftover: forgotten, never deleted through
+            json leftovers = json::array({ generic(junction) });
+            writeFile(install.journal, json{ { "version", "9" }, { "state", "cleanup" }, { "steps", json::array() }, { "leftovers", leftovers } }.dump());
+            SelfUpdater updater(install.catalog, install.app);
+            updater.sleep = [](int) {};
+            updater.recover();
+            checkEqual(readFile((precious / "keep.txt").string()), "precious", "nothing deleted through a junction");
+            // Named as the update's spare folder: the journal is ignored
+            json journal = { { "version", "9" }, { "state", "swapping" }, { "folder", true }, { "newFolder", generic(fs::path(install.root) / "retrofe.new") },
+                             { "oldFolder", generic(junction) }, { "steps", json::array() } };
+            writeFile(install.journal, journal.dump());
+            recoverAtStart(install.app.executable);
+            check(fs::exists(install.root + "/retrofe.update.damaged.json"), "a journal pointing through a junction is set aside");
+            checkEqual(readFile((precious / "keep.txt").string()), "precious", "still there");
+            check(!fs::exists(junction / "x"), "the junction is left as it is");
+            fs::remove(junction);
+        }
+        else {
+            check(false, "mklink /J is available to test junctions");
+        }
+#endif
     });
 
 #ifdef _WIN32

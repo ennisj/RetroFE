@@ -19,8 +19,12 @@
 #include "Index.h"
 #include "../Utility/Log.h"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <set>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -199,7 +203,9 @@ namespace Catalog
     std::vector<std::string> Service::warnings() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        return warnings_;
+        std::vector<std::string> all = appWarnings_;
+        all.insert(all.end(), warnings_.begin(), warnings_.end());
+        return all;
     }
 
     bool Service::refreshing() const
@@ -439,6 +445,12 @@ namespace Catalog
                 std::lock_guard<std::mutex> lock(mutex_);
                 restartRequested_ = true;
             }
+            // An update recovery gave up on is shown with the Catalog's problems rather than blocking the start
+            std::ifstream damaged(fs::u8path(app.program + ".update.damaged.txt"), std::ios::binary);
+            std::string text((std::istreambuf_iterator<char>(damaged)), std::istreambuf_iterator<char>());
+            std::lock_guard<std::mutex> lock(mutex_);
+            appWarnings_.clear();
+            if (!text.empty()) appWarnings_.push_back("RetroFE update: " + text.substr(0, 2000));
         }
         std::lock_guard<std::mutex> lock(mutex_);
         installed_ = installer_.installed();
@@ -680,7 +692,8 @@ namespace Catalog
             std::string text;
             std::string error;
             if (http_->get(file.sha256Url, text, error)) {
-                file.sha256 = parseSha256File(text.substr(0, 4096));
+                std::string name = file.url.substr(0, file.url.find_first_of("?#"));
+                file.sha256 = parseSha256File(text.substr(0, 65536), name.substr(name.rfind('/') + 1));
             }
             else {
                 LOG_WARNING("Catalog", "Could not read " + file.sha256Url + ": " + error);
@@ -717,6 +730,23 @@ namespace Catalog
         if (!updater.apply(package, result.files[0], error)) {
             LOG_ERROR("Catalog", "RetroFE update: " + error);
             finish(package.id, false, error == "Stopped" ? "Stopped. Install again to continue." : error);
+            // Both folder renames kept failing, leaving no program folder: keep trying while RetroFE runs
+            // (main() tries once more as RetroFE exits, and again when it starts)
+            while (updater.programFolderMissing() && !stopping_) {
+                for (int i = 0; i < 10 && !stopping_; i++) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                if (stopping_) break;
+                if (updater.repairProgramFolder()) {
+                    LOG_NOTICE("Catalog", updater.finishedForward() ? "RetroFE's new program folder is in place after all"
+                                                                     : "RetroFE's program folder is back in place");
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    installed_ = installer_.installed();
+                    if (updater.finishedForward()) {
+                        app_.version = package.version;
+                        restartRequested_ = true;
+                    }
+                    rebuildEntries();
+                }
+            }
             return;
         }
         downloader.discard(package.id);
@@ -725,6 +755,7 @@ namespace Catalog
             installed_ = installer_.installed();
             // What's in place now, so the same update isn't offered again before the restart
             app_.version = package.version;
+            appWarnings_.clear();
             rebuildEntries();
             restartRequested_ = true;
         }
