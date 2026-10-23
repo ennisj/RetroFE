@@ -187,6 +187,49 @@ games and the emulator that runs them, and it reloads with the new system
 under Browse. On a bare install Manage opens by itself and says where to
 start.
 
+### Menus
+
+**Manage → Menus** shows the menus you browse, starting with the one
+**Browse** opens (`firstCollection`; "Change what Browse opens" goes to
+Settings). Each row is indented under the menu that lists it and says what it
+is (menu, merged collection, system) and how many entries or games it has.
+Entries that name no folder, are spelt differently from their folder (RetroFE
+then finds the folder but not its settings) or lead back up (a loop) say so.
+Menus and merged collections no menu reaches are listed below the tree.
+Search shows matches with their path ("Main > Consoles > SNES").
+
+Choosing one shows its details (folder, kind, the menus that list it, the
+systems a merged collection shows, which theme page draws it) and links to:
+
+- **Entries** (menus): the entries in order. Choose one to move it up or
+  down, open it, remove it from the menu (the collection stays), or rewrite a
+  wrongly-cased entry with the folder's spelling. Add any collection that isn't
+  listed yet and wouldn't make a loop. Menus that are a `menu/` folder are
+  sorted by name by RetroFE, so new entries go in name order and can't be
+  moved. `menu_supported.txt` (RetroFE Plus) is kept in step when it's there.
+- **Sources** (merged collections): one `.sub` file per system, with what it
+  shows. Adding a system writes an empty `.sub`, which shows all its games;
+  removing one keeps the file in the backups. Choosing which games of a source
+  it shows will come with the Games screens.
+- **Info and artwork**: title, manufacturer, year and genre (`info.conf`,
+  Save/Undo), and the collection's own artwork in `system_artwork` (logo,
+  marquee, device, LED marquee, video, story and any others there): preview,
+  replace from a file, clear, or put back the original. When the menu that
+  lists it has its own art for the entry, that's what Browse shows, and the
+  screen says so.
+- **Actions**: a new menu or merged collection inside this one, and Delete.
+  Only menus and merged collections that hold nothing but menus, sources,
+  settings and artwork can be deleted, never the menu Browse opens. Their
+  entries move up into the menus that listed them, in their place; a merged
+  collection's games stay in their systems; every file goes to
+  `manage/backups`.
+
+**New menu or merged collection** (on Menus, or a menu's Actions) makes
+`collections/<name>/` with `settings.conf`, `info.conf` and an empty
+`menu.txt`, or a `.sub` showing all of one system's games, and lists it in the
+menu you pick. Changes show in RetroFE once you leave Manage and it reloads.
+Not here yet: changing several at once, playlists on menus, `cyclePlaylist`.
+
 Settings writes each value to the file RetroFE actually reads it from:
 `settings.conf`, `settings1.conf` to `settings15.conf`, or
 `settings_saved.conf`. It only changes that line, keeping comments and
