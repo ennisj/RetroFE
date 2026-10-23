@@ -474,6 +474,23 @@ void runFormsTests()
         checkEqual(nav.current()->form, "sources", "so Back still ends where it started");
     });
 
+    run("a screen can take the place of the one it came from", [&] {
+        Navigator nav;
+        nav.open("manage");
+        Forms::Focus onList;
+        onList.field = 3;
+        nav.push("systems", {}, Forms::Focus{});
+        nav.push("system-add", {}, onList);
+        nav.replace("system", { { "id", "Arcade" } });
+        check(nav.depth() == 3 && nav.current()->form == "system" && nav.current()->params.at("id") == "Arcade",
+              "the new system's screen replaces the add form");
+        check(nav.back() && nav.current()->form == "systems" && nav.current()->focus.field == 3,
+              "Back goes to the list, where the user was");
+        Navigator empty;
+        empty.replace("manage", {});
+        check(empty.depth() == 1 && empty.current()->form == "manage", "with nothing open it just opens");
+    });
+
     run("the Settings key opens, switches to and closes Settings", [&] {
         Navigator nav;
         check(nav.toggle("settings") && nav.depth() == 1 && nav.current()->form == "settings", "opens");
@@ -542,5 +559,24 @@ void runFormsTests()
         check(opened.ok && opened.open == "game-media" && opened.keepParams, "open.<form> works like a link");
         Forms::Model::Result back = model.runAction("back");
         check(back.ok && back.back && back.open.empty(), "back");
+    });
+
+    run("leaving Settings with unsaved changes warns once, then drops them", [&] {
+        std::string root = makeRoot("settings-leaving");
+        writeFile(root + "/settings.conf", "hideMouse = no\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        model.refresh();
+        Manager::Screen settings{ "settings", {} };
+        model.setScreen("settings", {});
+        checkEqual(model.leaving(settings), "", "nothing changed: no warning");
+        model.set("settings:hideMouse", "yes");
+        check(!model.leaving(settings).empty(), "a changed setting warns");
+        checkEqual(model.leaving(Manager::Screen{ "manage", {} }), "", "other screens don't mind");
+        model.discard(settings);
+        checkEqual(model.leaving(settings), "", "dropped");
+        checkEqual(model.get("settings:hideMouse"), "no", "back to the saved value");
+        checkEqual(readFile(root + "/settings.conf"), "hideMouse = no\n", "nothing was written");
     });
 }

@@ -151,6 +151,10 @@ bool ManagerModel::addProvider(std::unique_ptr<Manager::Provider> provider)
 
 std::string ManagerModel::leaving(const Manager::Screen& screen)
 {
+    // Settings keeps its changes until Save: don't drop them without saying so
+    if (screen.form == "settings" && !pendingSettings_.empty()) {
+        return "Your changes aren't saved. Choose Save, or leave again to drop them.";
+    }
     for (auto& [prefix, provider] : providers_) {
         std::string warning = provider->leaving(screen);
         if (!warning.empty()) {
@@ -162,6 +166,9 @@ std::string ManagerModel::leaving(const Manager::Screen& screen)
 
 void ManagerModel::discard(const Manager::Screen& screen)
 {
+    if (screen.form == "settings") {
+        pendingSettings_.clear();
+    }
     for (auto& [prefix, provider] : providers_) {
         provider->discard(screen);
     }

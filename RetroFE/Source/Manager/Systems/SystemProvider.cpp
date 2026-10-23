@@ -369,8 +369,9 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
         }
     }
     if (broken > 0) {
-        add(count(broken, item + " has a launcher", items + " have launchers") + " of its own that isn't installed (collections/"
-            + r.name + "/launchers).");
+        add(count(broken, item + " has a launcher", items + " have launchers")
+            + (broken == 1 ? " of its own that isn't installed" : " of their own that aren't installed")
+            + " (collections/" + r.name + "/launchers).");
     }
 
     // Titles and years (videos seldom have hyperlist metadata, so it's only checked for games)
@@ -864,7 +865,8 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
         for (const auto& [game, name] : r->launcherOverrides) {
             own += name ? 1 : 0;
         }
-        return own == 0 ? "" : count(own, item_ + " has a launcher", items_ + " have launchers") + " of its own; change those in Games.";
+        return own == 0 ? "" : count(own, item_ + " has a launcher of its own; change it", items_ + " have launchers of their own; change those")
+                                   + " in Games.";
     }
     if (key == "launcherProblem") return r->launcher.problem;
     return "";
@@ -2010,6 +2012,7 @@ Forms::Model::Result SystemProvider::create()
     countedKey_ = "\x01";
     result.ok = true;
     result.open = base_;
+    result.replace = true;   // Back from the new system goes to the list, not the filled-in add form
     result.params = { { "id", name } };
     result.message = "Added " + name + " to " + menu + ". " + launcherNote
                    + " RetroFE shows it after it reloads, when you close Manage.";

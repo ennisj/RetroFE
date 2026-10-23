@@ -229,7 +229,10 @@ Things to know:
 - **Navigating after an action**: `Result::open` pushes a screen and
   `Result::back` returns (asking `leaving()` like Back does), after success
   only. The message is shown on the screen you end up on. A form id that
-  doesn't exist shows an error on the current screen instead.
+  doesn't exist shows an error on the current screen instead. Set
+  `Result::replace` with `open` when the screen the action ran on is done
+  with, e.g. an add form opening what it added: the new screen takes its
+  place, so Back goes to the screen before the form, not to the filled-in form.
 - **Reloading**: when RetroFE needs to reload to show a change (a new title,
   a moved game), call `services.requestReload()`: RetroFE reloads after the
   user closes the manager, so they can keep working. `Result::reload`

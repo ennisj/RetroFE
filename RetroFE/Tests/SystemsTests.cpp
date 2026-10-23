@@ -413,7 +413,7 @@ static void runSystemsTests()
         f.model.set("system:addLauncher", "mame");
         checkEqual(f.model.actionProblem("system.create"), "", "ready");
         Forms::Model::Result created = f.model.runAction("system.create");
-        check(created.ok && created.open == "system" && created.params["id"] == "Genesis", "created: " + created.message);
+        check(created.ok && created.open == "system" && created.replace && created.params["id"] == "Genesis", "created, in place of the add form: " + created.message);
         std::string settings = readFile(f.root + "/collections/Genesis/settings.conf");
         check(contains(settings, "list.extensions = md") && contains(settings, "launcher = mame"), "settings: " + settings);
         check(contains(readFile(f.root + "/collections/Consoles/menu.txt"), "Genesis"), "listed under Consoles");

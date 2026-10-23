@@ -725,6 +725,15 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 	std::filesystem::path exePath(executable);
 	if (!exePath.is_absolute()) {
 		exePath = std::filesystem::absolute(exePath);
+		// A bare program name (e.g. cmd.exe) that isn't in RetroFE's folder is
+		// looked up on the system path, as a command prompt would
+		std::error_code ec;
+		if (!std::filesystem::exists(exePath, ec) && !std::filesystem::path(executable).has_parent_path()) {
+			char found[MAX_PATH] = {};
+			if (SearchPathA(nullptr, executable.c_str(), ".exe", MAX_PATH, found, nullptr) > 0) {
+				exePath = found;
+			}
+		}
 	}
 
 	std::filesystem::path currDir(currentDirectory);

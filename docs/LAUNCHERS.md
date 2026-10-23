@@ -32,6 +32,9 @@ RetroFE)
     executable = ../Emulators/Nestopia/nestopia.exe
     arguments  = "%ITEM_FILEPATH%"
 
+On Windows a bare program name such as `cmd.exe` that isn't in RetroFE's
+root folder is looked up on the system path, as a command prompt would.
+
 Launcher variables
 
 | Variable               | Description                 | Translated Example                    |
