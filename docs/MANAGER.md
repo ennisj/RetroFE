@@ -187,10 +187,14 @@ thing you can change:
 The game's screen also has:
 
 - **Start this game**: closes Manage and starts the game the way its system's
-  page does (its own launcher choice included; last played, play count and
-  time played are kept as for any launch). When
-  changes made in Manage are waiting, RetroFE reloads first, so the game
-  starts with them. When the game exits, Manage opens again on the game.
+  page does: its own launcher choice included, and last played (the system's
+  `playlists/lastplayed.txt`), play count and time played kept as for any
+  launch. When changes made in Manage are waiting, RetroFE reloads first, so
+  the game starts with them; while a Catalog install is running it can't
+  reload, so the button says to wait. A missing program is pointed out
+  before starting. When the game exits, Manage opens again on the game,
+  saying why if it couldn't start. With unsaved changes on an open screen,
+  the first press says so and the second leaves them and starts the game.
 - **Hide this game**: adds it to its system's exclude list (`exclude.txt`,
   or the file `list.excludeFile` names), so RetroFE stops listing it. Hidden
   games are found with **Only hidden games** on Games; their screen has

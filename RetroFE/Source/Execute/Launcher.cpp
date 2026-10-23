@@ -487,16 +487,20 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	// Step 2: Retrieve executable, extensions, and directory
 	std::string executablePath, selectedItemsDirectory, selectedItemsPath, extensionstr, matchedExtension, args;
 
+	failure_.clear();
 	if (!launcherExecutable(executablePath, launcherName)) {
 		LOG_ERROR("Launcher", "Launcher executable not found for: " + launcherName);
+		failure_ = "It couldn't start: there's no launcher called " + launcherName + " with a program.";
 		return false;
 	}
 	if (!extensions(extensionstr, collection)) {
 		LOG_ERROR("Launcher", "No file extensions configured for collection: " + collection);
+		failure_ = "It couldn't start: " + collection + " has no list.extensions.";
 		return false;
 	}
 	if (!collectionDirectory(selectedItemsDirectory, collection)) {
 		LOG_ERROR("Launcher", "No valid directory found for collection: " + collection);
+		failure_ = "It couldn't start: " + collection + " has no games folder.";
 		return false;
 	}
 
@@ -537,6 +541,7 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	// Step 6: Execute the command
 	if (!execute(executablePath, args, currentDirectory, true, currentPage, isAttractMode, collectionItem)) {
 		LOG_ERROR("Launcher", "Execution failed for: " + executablePath);
+		failure_ = "It didn't start, or ended with an error: " + executablePath + " (see log.txt).";
 		return false;
 	}
 

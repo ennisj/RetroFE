@@ -103,6 +103,13 @@ bool FormView::inputText(const Field& field, Forms::Model& model, float width)
         float height = ImGui::GetTextLineHeight() * static_cast<float>(std::max(1, field.rows))
                      + ImGui::GetStyle().FramePadding.y * 2.0f;
         changed = ImGui::InputTextMultiline("##value", &text, ImVec2(width, height));
+        if (text.empty() && !field.hint.empty() && !ImGui::IsItemActive()) {
+            // ImGui has no hint for multi-line fields: draw it as InputTextWithHint does
+            ImVec2 at = ImGui::GetItemRectMin();
+            at.x += ImGui::GetStyle().FramePadding.x;
+            at.y += ImGui::GetStyle().FramePadding.y;
+            ImGui::GetWindowDrawList()->AddText(at, ImGui::GetColorU32(ImGuiCol_TextDisabled), field.hint.c_str());
+        }
     }
     else {
         ImGui::SetNextItemWidth(width);

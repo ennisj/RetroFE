@@ -97,9 +97,11 @@ OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
     buttons, joyWays, rating, score.
 - **Where it appears:** `index->mergedCollectionsShowing(game)` and `index->playlistsListing(game)`.
 - **Hidden games** (named by their system's exclude list) aren't `GameRecord`s.
-  They're the system's `index->candidates[c]` whose `basename` is in
-  `CollectionRecord::excludeList` and that `gameByName` doesn't list; the
-  Games provider builds that list once per index.
+  They're what the scan would list without the exclude list and doesn't:
+  with `includeMissingItems`, `includeList` names that `excludeList` has
+  (with or without a file); otherwise, or with no include list, the
+  system's `index->candidates[c]` whose `basename` passes the include list
+  and is in `excludeList`. The Games provider builds that list once per index.
 - **Launcher:** `index->resolveLauncher(game.collection, game.name)` returns a `LauncherResolution`:
   - `name`, the launcher Launcher::run ends with;
   - `via`: Setting, CollectionFile or GameOverride;

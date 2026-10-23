@@ -250,6 +250,8 @@ namespace Manager
 
         // Launcher
         EditBuffer launcher_;
+        std::string launchCheckKey_;                       // game + snapshot the program was checked for
+        std::string launchCheck_;                          // why it won't start, or ""
 
         // Playlists
         std::string playlist_;                             // "<collection>/<playlist>"

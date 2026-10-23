@@ -644,13 +644,19 @@ bool RetroFE::run()
 				// account for when returning from a menu and the previous key was still "stuck"
 				if (lastLaunchReturnTime_ == 0 || (currentTime_ - lastLaunchReturnTime_ > .3))
 				{
+					bool launchedFromManager = false;
 					if (currentPage_->isIdle())
 					{
 						// Manage asked to start a game (after any reload it needed)
 						ManagerUI::LaunchRequest launch;
-						state = manager_.takeLaunchRequest(launch) ? launchFromManager(launch) : processUserInput(currentPage_);
+						launchedFromManager = manager_.takeLaunchRequest(launch);
+						state = launchedFromManager ? launchFromManager(launch) : processUserInput(currentPage_);
 					}
-					lastLaunchReturnTime_ = 0;
+					// launchExit() set it after a game from Manage: keep that pause for held keys
+					if (!launchedFromManager)
+					{
+						lastLaunchReturnTime_ = 0;
+					}
 				}
 			}
 
@@ -3483,7 +3489,8 @@ RetroFE::RETROFE_STATE RetroFE::launchFromManager(const ManagerUI::LaunchRequest
 	{
 		LOG_ERROR("RetroFE", "Manage asked to start " + request.collection + "/" + request.game + ", which isn't in its collection");
 		delete info;
-		manager_.returnFromLaunch(request, false);
+		manager_.returnFromLaunch(request, request.game + " couldn't be started: " + request.collection
+			+ " doesn't list it any more. See log.txt.");
 		return RETROFE_IDLE;
 	}
 	LOG_INFO("RetroFE", "Starting " + request.collection + "/" + request.game + " from Manage");
@@ -3523,7 +3530,7 @@ RetroFE::RETROFE_STATE RetroFE::launchFromManager(const ManagerUI::LaunchRequest
 	launchExit();
 	l.LEDBlinky(4);
 	delete info;
-	manager_.returnFromLaunch(request, true);
+	manager_.returnFromLaunch(request, l.failure());
 	return RETROFE_IDLE;
 }
 

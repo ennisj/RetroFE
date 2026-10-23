@@ -50,6 +50,8 @@ ManagerUI::ManagerUI(Configuration& config)
 
 ManagerUI::~ManagerUI()
 {
+    // RetroFE is going: a game waiting to start goes too, unless it waits for this reload
+    launches_.shutdown();
     deInitialize();
     Setup::setConfiguration(nullptr);
 }
@@ -135,8 +137,12 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.library = library_.get();
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
-        services.requestLaunch = [this](const std::string& collection, const std::string& game) {
-            launchWanted_ = LaunchRequest{ collection, game };   // handleResult closes the manager for it
+        services.requestLaunch = [](const std::string& collection, const std::string& game) {
+            launches_.want({ collection, game });   // handleResult closes the manager for it
+        };
+        services.launchProblem = [this] {
+            bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
+            return Manager::LaunchQueue::problem(reloadDue, catalog_ && catalog_->isBusy());
         };
         Manager::registerProviders(model_, services);
         providersAdded_ = true;
@@ -400,6 +406,7 @@ void ManagerUI::show()
     bool wasOpen = open_;
     status_.clear();
     leaveWarned_ = false;
+    launches_.screenChanged();
     view_.reset();
     focusNext_ = true;
     open_ = true;
@@ -650,10 +657,10 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
                 closeKeyboard();
             }
             // On the on-screen keyboard Enter is Select, which presses the focused key
-            // (Ctrl+Enter still keeps a multi-line text), and the arrows move between keys
+            // (Ctrl+Enter still keeps a multi-line text), and the arrows move between
+            // keys; Home, End and Page Up/Down still move in a multi-line text
             else if (((key == SDLK_RETURN || key == SDLK_KP_ENTER) && !ctrl)
-                     || key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT
-                     || key == SDLK_HOME || key == SDLK_END || key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) {
+                     || key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT) {
                 return false;
             }
         }
@@ -795,17 +802,15 @@ void ManagerUI::handleWidgetResults()
 
 void ManagerUI::handleResult(const Forms::Model::Result& result)
 {
-    // A game to start: close (asking about unsaved changes first, like Close),
-    // and RetroFE starts it once it's reloaded if it has to
-    if (launchWanted_) {
-        LaunchRequest wanted = *launchWanted_;
-        launchWanted_.reset();
-        if (result.ok) {
-            if (requestClose()) {
-                pendingLaunch_ = wanted;
+    // A game to start: close (asking about unsaved changes first, like Close;
+    // asking again leaves them), and RetroFE starts it once it's reloaded if it has to
+    if (launches_.handle(result.ok, [this](bool discard) {
+            if (discard) {
+                leaveWarned_ = true;   // warned last time: this time the changes go
             }
-            return;
-        }
+            return requestClose();
+        })) {
+        return;
     }
     if (result.ok && result.reload) {
         reloadRequested_ = true;
@@ -882,20 +887,20 @@ bool ManagerUI::takeReloadRequest()
         return false;
     }
     reloadRequested_ = false;
+    launches_.reloading();   // a game waiting for this reload starts once RetroFE is back
     return true;
 }
 
 bool ManagerUI::takeLaunchRequest(LaunchRequest& request)
 {
-    if (!pendingLaunch_ || open_ || reloadRequested_) {
-        return false;
+    Manager::LaunchQueue::Take take = launches_.take(open_, reloadRequested_, catalog_ && catalog_->isBusy(), request);
+    if (take == Manager::LaunchQueue::Take::Dropped) {
+        LOG_WARNING("Manager", "Not starting the game Manage asked for: RetroFE can't reload while the Catalog installs");
     }
-    request = *pendingLaunch_;
-    pendingLaunch_.reset();
-    return true;
+    return take == Manager::LaunchQueue::Take::Start;
 }
 
-void ManagerUI::returnFromLaunch(const LaunchRequest& request, bool started)
+void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string& problem)
 {
     if (!context_ || locked_) {
         return;
@@ -906,8 +911,7 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, bool started)
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
     }
-    setStatus(started ? "Back from " + request.game + "." : request.game + " couldn't be started: it isn't in "
-                  + request.collection + " any more. See log.txt.", !started);
+    setStatus(problem.empty() ? "Back from " + request.game + "." : problem, !problem.empty());
 }
 
 void ManagerUI::setLocked(bool locked)

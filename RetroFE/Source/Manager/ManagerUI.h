@@ -17,6 +17,7 @@
 
 #include "FormView.h"
 #include "ImGuiScreen.h"
+#include "LaunchQueue.h"
 #include "ManagerModel.h"
 #include "Navigator.h"
 #include "../Catalog/Service.h"
@@ -120,17 +121,15 @@ public:
     void setLocked(bool locked);
 
     // A game Manage asked to start (Services::requestLaunch, "Start this game")
-    struct LaunchRequest
-    {
-        std::string collection;   // its own system
-        std::string game;
-    };
+    using LaunchRequest = Manager::LaunchQueue::Request;
     // True once, with the request, after the manager closed for it. Not while
     // a reload is due: the request outlives RetroFE's reload (it's kept for
     // the next ManagerUI), so the game starts with the changes made in Manage.
+    // A reload that can't happen (a Catalog install) drops it (LaunchQueue).
     bool takeLaunchRequest(LaunchRequest& request);
-    // After the game: Manage opens again on its screen (Manage > Games > the game)
-    void returnFromLaunch(const LaunchRequest& request, bool started);
+    // After the game: Manage opens again on its screen (Manage > Games > the
+    // game), saying it's back, or problem when it couldn't be started
+    void returnFromLaunch(const LaunchRequest& request, const std::string& problem);
 
     // The page RetroFE draws collections with ("layout", or a randomLayout one
     // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
@@ -201,8 +200,8 @@ private:
     bool reloadWhenClosed_ = false;   // Services::requestReload was called
     bool leaveWarned_ = false;        // a provider objected to leaving; doing it again leaves
     int cursorWasShown_ = SDL_ENABLE;
-    std::optional<LaunchRequest> launchWanted_;                 // asked for by the action being run
-    inline static std::optional<LaunchRequest> pendingLaunch_;  // once closed; kept across a reload
+    // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
+    inline static Manager::LaunchQueue launches_;
 
     std::string status_;
     bool statusIsError_ = false;

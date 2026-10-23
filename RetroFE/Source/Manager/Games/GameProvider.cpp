@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "GameProvider.h"
+#include "../Emulators/Launchers.h"
 #include "../../Library/Edits.h"
 #include "../../Library/Files.h"
 #include "../../Library/Indexer.h"
@@ -23,6 +24,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -234,6 +236,7 @@ void GameProvider::refresh()
     hidden_.clear();
     hiddenSearchKey_ = "\x01";
     hiddenMatches_.clear();
+    launchCheckKey_.clear();   // programs may have been installed meanwhile
     filterParam_ = "\x01";
     filtersIndex_.reset();
     thumbnails_.clear();
@@ -653,13 +656,39 @@ const std::vector<GameProvider::HiddenGame>& GameProvider::hiddenGames(const Ind
         if (!record.is(Library::KindSystem) || record.excludeList.empty()) {
             continue;
         }
+        // What the library's ImportDirectory would list if the exclude list
+        // didn't name it: include.txt's names with includeMissingItems (file
+        // or not), otherwise files matching include.txt (or every file)
         std::set<std::string> excluded(record.excludeList.begin(), record.excludeList.end());
+        std::set<std::string> include(record.includeList.begin(), record.includeList.end());
+        bool showMissing = record.includeMissingItems.value_or(false);
         std::set<std::string> seen;
         size_t first = hidden_.size();
-        for (const Index::Candidate& candidate : idx->candidates[c]) {
-            if (excluded.count(candidate.basename) && !idx->gameByName.count({ static_cast<int>(c), candidate.name })
-                && seen.insert(candidate.name).second) {
-                hidden_.push_back(HiddenGame{ static_cast<int>(c), candidate.name, candidate.file, candidate.directory });
+        auto add = [&](const std::string& name, const Index::Candidate* candidate) {
+            if (!idx->gameByName.count({ static_cast<int>(c), name }) && seen.insert(name).second) {
+                hidden_.push_back(HiddenGame{ static_cast<int>(c), name, candidate ? candidate->file : "",
+                                              candidate ? candidate->directory : "" });
+            }
+        };
+        if (showMissing) {
+            for (const std::string& name : record.includeList) {
+                if (excluded.count(name)) {
+                    const Index::Candidate* found = nullptr;
+                    for (const Index::Candidate& candidate : idx->candidates[c]) {
+                        if (candidate.name == name) {
+                            found = &candidate;
+                            break;
+                        }
+                    }
+                    add(name, found);
+                }
+            }
+        }
+        if (!showMissing || include.empty()) {
+            for (const Index::Candidate& candidate : idx->candidates[c]) {
+                if ((include.empty() || include.count(candidate.basename)) && excluded.count(candidate.basename)) {
+                    add(candidate.name, &candidate);
+                }
             }
         }
         std::sort(hidden_.begin() + static_cast<std::ptrdiff_t>(first), hidden_.end(), [](const HiddenGame& a, const HiddenGame& b) {
@@ -763,8 +792,15 @@ std::string GameProvider::hiddenValue(const std::string& key, const Screen& scre
     const HiddenGame* hidden = idx && !findGame(*idx, screen) ? findHidden(idx, screen) : nullptr;
     if (key == "isHidden") return yesNo(hidden != nullptr);
     if (!hidden) return "";
+    // The list's path from the root when it's inside it (list.excludeFile may point anywhere)
     const Library::CollectionRecord& record = idx->collections[static_cast<size_t>(hidden->collection)];
-    return "Hidden: " + record.excludeFile + " lists it, so RetroFE doesn't show it. Show it again to list it.";
+    std::string list = record.excludeFile;
+    fs::path relative = fs::path(record.excludeFile).lexically_relative(fs::path(idx->options.root));
+    if (!relative.empty() && *relative.begin() != "..") {
+        list = Library::narrow(relative);
+        std::replace(list.begin(), list.end(), '\\', '/');
+    }
+    return "Hidden: " + list + " lists it, so RetroFE doesn't show it. Show it again to list it.";
 }
 
 Forms::Model::Result GameProvider::hideAction(const std::string& action, const Screen& screen)
@@ -2007,7 +2043,19 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
         if (r.launcher < 0) {
             return "It won't start: " + (r.problem.empty() ? std::string("no launcher is set for it or its system.") : r.problem);
         }
-        return "";
+        // Its program, checked on disk once per game and snapshot (a missing
+        // one would leave RetroFE waiting for a window that never comes)
+        std::string checkKey = gameKey(screen) + '\n' + std::to_string(reinterpret_cast<uintptr_t>(idx.get()));
+        if (checkKey != launchCheckKey_) {
+            launchCheckKey_ = checkKey;
+            const Library::LauncherDef& def = idx->launchers[static_cast<size_t>(r.launcher)];
+            Emulators::ExecutableCheck check = Emulators::checkExecutable(*idx, def.executable);
+            launchCheck_ = check.state == Emulators::ExecutableCheck::State::Missing
+                ? "It won't start: " + r.name + "'s program isn't there (" + (check.path.empty() ? def.executable : check.path) + ")."
+                : "";
+        }
+        if (!launchCheck_.empty()) return launchCheck_;
+        return services_.launchProblem ? services_.launchProblem() : "";
     }
 
     if (isUnset) {
@@ -2073,7 +2121,11 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
     }
     if (action == "saveStory" || action == "resetStory") {
         if (!loadStory(screen)) return lookingMessage;
-        return story_.isDirty() ? "" : "No changes to save.";
+        if (!story_.isDirty()) return "No changes to save.";
+        if (action == "saveStory" && story_.get("text").find_first_not_of(" \t\r\n") == std::string::npos) {
+            return "The story is empty. To remove it, use Clear.";
+        }
+        return "";
     }
     if (action == "clearStory" || action == "restoreStory") {
         const MediaSlot* s = slot(screen, "story");

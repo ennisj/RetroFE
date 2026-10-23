@@ -147,5 +147,43 @@ static void runTextEditTests()
         check(Forms::moveCursorVertically(text, lines, 10, 1, measure) == 17, "down to a shorter line: its end");
         check(Forms::moveCursorVertically(text, lines, 17, 1, measure) == 18, "down to the empty last line");
         check(Forms::lineAt(lines, 14) == 0 && Forms::lineAt(lines, 15) == 1, "the newline belongs to the line before it");
+
+        // Multi-byte characters: the cursor only ever lands between whole characters
+        text = "h\xC3\xA9llo w\xC3\xB6rld";   // "héllo wörld"
+        lines = Forms::layoutLines(text, 6, measure);   // [héllo ][wörld]
+        check(lines.size() == 2 && lines[1].start == 7, "wrapped after the space");
+        size_t down = Forms::moveCursorVertically(text, lines, 3, 1, measure);   // after "hé"
+        checkEqual(std::to_string(down), "10", "down to after \"wö\"");
+        checkEqual(std::to_string(Forms::moveCursorVertically(text, lines, down, -1, measure)), "3", "and back up");
+        for (size_t at = 0; at <= text.size(); at = Forms::nextCharacter(text, at)) {
+            for (int direction : { -1, 1 }) {
+                size_t moved = Forms::moveCursorVertically(text, lines, at, direction, measure);
+                check(moved == text.size() || (static_cast<unsigned char>(text[moved]) & 0xC0) != 0x80,
+                      "from " + std::to_string(at) + " lands on a character boundary");
+            }
+            if (at == text.size()) {
+                break;
+            }
+        }
+    });
+
+    run("text editing: a width of one character or less", [] {
+        for (float width : { 1.0f, 0.5f, 0.0f }) {
+            std::string text = "ab c\xC3\xA9";
+            std::vector<Forms::TextLine> lines = Forms::layoutLines(text, width, measure);
+            std::string rebuilt;
+            bool short_ = true;
+            for (const Forms::TextLine& line : lines) {
+                std::string shownLine = text.substr(line.start, line.end - line.start);
+                rebuilt += shownLine;
+                while (shownLine.size() > 1 && shownLine.back() == ' ') {
+                    shownLine.pop_back();   // spaces where a line wraps hang past the edge
+                }
+                short_ &= measure(shownLine) <= 1.0f;
+            }
+            checkEqual(rebuilt, text, "every byte once, width " + std::to_string(width));
+            check(short_, "at most a character a line");
+            check(Forms::moveCursorVertically(text, lines, 1, 1, measure) <= text.size(), "the cursor still moves");
+        }
     });
 }

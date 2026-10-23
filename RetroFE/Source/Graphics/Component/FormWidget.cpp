@@ -1117,17 +1117,60 @@ void FormWidget::draw()
     pageRows_ = std::max(1, static_cast<int>(visible / row) - 1);
     keepFocusVisible(visible);
 
-    // A multi-line field being edited scrolls within its rows to keep the cursor in view
-    if (editingMultiline()) {
+    // A multi-line field being edited scrolls within its rows to keep the cursor
+    // in view, and the form scrolls to keep the cursor's row in view too (on a
+    // short page the field may be taller than what's shown)
+    if (editingMultiline() && focus_ >= 0) {
         const std::vector<Forms::TextLine>& lines = layout(edit_.text, multilineWidth(*focusedField_));
         int cursorLine = static_cast<int>(Forms::lineAt(lines, edit_.cursor));
         int span = std::max(1, focusedField_->rows);
         editTopLine_ = std::clamp(editTopLine_, cursorLine - span + 1, cursorLine);
         editTopLine_ = std::clamp(editTopLine_, 0, std::max(0, static_cast<int>(lines.size()) - span));
+        float caretTop = (focus_ + cursorLine - editTopLine_) * row;
+        if (caretTop < scroll_) {
+            scroll_ = caretTop;
+        }
+        else if (caretTop + row > scroll_ + visible) {
+            scroll_ = caretTop + row - visible;
+        }
     }
 
     const float line = std::max(1.0f, size * 0.04f);   // separators
     const Field* armed = confirm_.armed();
+
+    auto drawHighlight = [&](float y, float h) {
+        if (focusImage_) {
+            ViewInfo& view = focusImage_->baseViewInfo;
+            view.X = left - padding / 2.0f;
+            view.Y = y;
+            view.Width = width + padding;
+            view.Height = h;
+            view.Alpha = baseViewInfo.Alpha;
+            view.Monitor = baseViewInfo.Monitor;
+            view.Layout = baseViewInfo.Layout;
+            focusImage_->draw();
+        }
+        else {
+            painter_.rect(left - padding / 2.0f, y, width + padding, h, style_.focusBackground, style_.focusBackgroundAlpha);
+        }
+    };
+    // The focused multi-line field: one highlight over all its rows, cut to the
+    // rows in view (it may be taller than the page shows)
+    bool groupHighlight = focus_ >= 0 && rows_[focus_].kind == RowKind::Field && isMultiline(rows_[focus_].field);
+    if (groupHighlight) {
+        float from = 1e9f;
+        float to = -1e9f;
+        for (size_t i = static_cast<size_t>(focus_); i < rows_.size() && (i == static_cast<size_t>(focus_) || rows_[i].kind == RowKind::TextLine); i++) {
+            float y = top + i * row - scroll_;
+            if (y >= top - 0.5f && y + row <= top + visible + 0.5f) {   // the rows drawn, as below
+                from = std::min(from, y);
+                to = std::max(to, y + row);
+            }
+        }
+        if (to > from) {
+            drawHighlight(from, to - from);
+        }
+    }
 
     for (size_t i = 0; i < rows_.size(); i++) {
         float y = top + i * row - scroll_;
@@ -1143,28 +1186,13 @@ void FormWidget::draw()
         bool focused = static_cast<int>(i) == focus_;
         bool confirming = focused && armed && r.field == armed;
         float textY = y + textOffset;
-        // A multi-line field's further lines are highlighted with it, as one block
+        // A multi-line field's further lines are highlighted with it (drawn above, as one block)
         bool highlighted = focused || (r.kind == RowKind::TextLine && focus_ >= 0 && rows_[focus_].field == r.field
                                        && rows_[focus_].kind == RowKind::Field);
-        float highlightHeight = row;
-        for (size_t below = i + 1; focused && below < rows_.size() && rows_[below].kind == RowKind::TextLine; below++) {
-            highlightHeight += row;
-        }
 
         if (focused) {
-            if (focusImage_) {
-                ViewInfo& view = focusImage_->baseViewInfo;
-                view.X = left - padding / 2.0f;
-                view.Y = y;
-                view.Width = width + padding;
-                view.Height = highlightHeight;
-                view.Alpha = baseViewInfo.Alpha;
-                view.Monitor = baseViewInfo.Monitor;
-                view.Layout = baseViewInfo.Layout;
-                focusImage_->draw();
-            }
-            else {
-                painter_.rect(left - padding / 2.0f, y, width + padding, highlightHeight, style_.focusBackground, style_.focusBackgroundAlpha);
+            if (!groupHighlight) {
+                drawHighlight(y, row);
             }
             if (confirming && style_.confirmBackgroundAlpha > 0.0f) {
                 painter_.rect(left - padding / 2.0f, y, width + padding, row, style_.confirmBackground, style_.confirmBackgroundAlpha);

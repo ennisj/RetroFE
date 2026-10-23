@@ -29,6 +29,7 @@
 #include "../Source/Library/Media.h"
 #include "../Source/Library/MetadataOverrides.h"
 #include "../Source/Manager/Games/GameProvider.h"
+#include "../Source/Manager/LaunchQueue.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Utility/Utils.h"
 #include <algorithm>
@@ -101,6 +102,7 @@ namespace
             services.requestLaunch = [this](const std::string& collection, const std::string& game) {
                 launched.push_back(collection + "/" + game);
             };
+            services.launchProblem = [this] { return launchProblem; };
             auto owned = std::make_unique<Manager::GameProvider>(services);
             games = owned.get();
             model.addProvider(std::move(owned));
@@ -140,6 +142,7 @@ namespace
         ManagerModel model;
         Manager::GameProvider* games = nullptr;
         std::vector<std::string> launched;   // requestLaunch calls: "<collection>/<game>"
+        std::string launchProblem;           // what launchProblem says
     };
 
     Forms::Params gameParams(const std::string& collection, const std::string& id)
@@ -567,6 +570,16 @@ static void runGamesTests()
         check(pipedSaved.ok, "saved: " + pipedSaved.message);
         checkEqual(Test::readFile(piped), "Pac-Man | Namco\n  1980\nmore\n", "unchanged lines kept byte for byte");
 
+        // A new line typed at the end is an empty last line; an emptied story is Clear's job
+        checkEqual(GameProvider::textToStory("Line one\nLine two\n", "Line one\r\nLine two\r\n"), "Line one\r\nLine two\r\n\r\n",
+                   "a trailing new line adds an empty line, in the file's style");
+        checkEqual(GameProvider::textToStory("", "a\nb\n"), "\n", "empty text is one empty line (Save refuses it)");
+        f.model.set("game:story:text", " \n\n ");
+        check(f.model.actionProblem("game.saveStory").find("Clear") != std::string::npos, "save refuses an emptied story");
+        check(!f.model.runAction("game.saveStory").ok, "not saved");
+        checkEqual(Test::readFile(piped), "Pac-Man | Namco\n  1980\nmore\n", "the file is as it was");
+        f.model.runAction("game.resetStory");
+
         // The form edits it as a multi-line field
         std::string error;
         auto form = Forms::parse(Forms::builtinForm("game-description"), error);
@@ -661,14 +674,137 @@ static void runGamesTests()
         checkEqual(Test::readFile(exclude), "", "exclude.txt untouched");
     });
 
+    run("games: hiding a folder game (emuarc) and a listed game with no file", [] {
+        std::string root = makeInstall("games-hide-more");
+        // Saturn: list.emuarc names each game after its folder; every file of it is a line
+        Test::writeFile(root + "/collections/Saturn/settings.conf", "list.extensions = cue\nlauncher = mame\nlist.emuarc = true\n");
+        Test::writeFile(root + "/collections/Saturn/roms/Panzer/Disc 1.cue", "x");
+        Test::writeFile(root + "/collections/Saturn/roms/Panzer/Disc 2.cue", "x");
+        // NES: include.txt with includeMissingItems lists "ghost", which has no file
+        Test::writeFile(root + "/collections/NES/settings.conf", "list.extensions = nes\nlauncher = mame\nlist.includeMissingItems = true\n");
+        Test::writeFile(root + "/collections/NES/include.txt", "mario\nghost\n");
+        Fixture f(root);
+
+        f.open("game", gameParams("Saturn", "Panzer"));
+        checkEqual(f.model.get("game:isFound"), "yes", "the folder is a game");
+        check(f.model.runAction("game.hide").ok, "hidden");
+        std::string saturnExclude = Test::readFile(root + "/collections/Saturn/exclude.txt");
+        check(saturnExclude.find("Disc 1") != std::string::npos && saturnExclude.find("Disc 2") != std::string::npos,
+              "both files' names: " + saturnExclude);
+        f.settle();
+        checkEqual(f.model.get("game:isHidden"), "yes", "hidden once, as one game");
+        check(f.model.runAction("game.unhide").ok, "shown again");
+        checkEqual(Test::readFile(root + "/collections/Saturn/exclude.txt"), "", "both lines gone");
+        f.settle();
+        checkEqual(f.model.get("game:isFound"), "yes", "listed again");
+
+        f.open("game", gameParams("NES", "ghost"));
+        checkEqual(f.model.get("game:isFound"), "yes", "listed without a file");
+        check(f.model.runAction("game.hide").ok, "hidden");
+        checkEqual(Test::readFile(root + "/collections/NES/exclude.txt"), std::string("ghost") + Library::defaultNewline(), "by its name");
+        f.settle();
+        checkEqual(f.model.get("game:isHidden"), "yes", "found as a hidden game");
+        checkEqual(f.model.get("game:file"), "", "with no file");
+        f.open("games", {});
+        f.model.set("game:onlyHidden", "yes");
+        check(rowIds(f.model.rows("game:search", 100)) == std::vector<std::string>{ "ghost" }, "in the hidden games");
+        f.model.set("game:onlyHidden", "no");
+        f.open("game", gameParams("NES", "ghost"));
+        check(f.model.runAction("game.unhide").ok, "shown again");
+        f.settle();
+        checkEqual(f.model.get("game:isFound"), "yes", "listed again");
+
+        // A file include.txt doesn't name isn't hidden by the exclude list (it wouldn't show anyway)
+        Test::writeFile(root + "/collections/NES/exclude.txt", "zelda\n");
+        f.indexer.rebuild();
+        f.settle();
+        f.open("game", gameParams("NES", "zelda"));
+        checkEqual(f.model.get("game:isHidden"), "no", "not a hidden game");
+    });
+
+    run("games: the launch request between Manage and RetroFE", [] {
+        using Manager::LaunchQueue;
+        using Take = LaunchQueue::Take;
+        LaunchQueue::Request request;
+        auto closes = [](bool result) { return [result](bool) { return result; }; };
+
+        check(LaunchQueue::problem(true, false).empty() && LaunchQueue::problem(false, true).empty()
+              && !LaunchQueue::problem(true, true).empty(), "refused only when a reload is due and the Catalog is busy");
+
+        // Not a launch: handled as usual
+        LaunchQueue q;
+        check(!q.handle(true, closes(true)), "no request: an ordinary result");
+
+        // The manager closes: RetroFE starts it once it's idle and nothing's due
+        q.want({ "Arcade", "a" });
+        check(q.handle(true, closes(true)) && q.hasPending(), "pending once closed");
+        check(q.take(true, false, false, request) == Take::None, "not while the manager is open");
+        check(q.take(false, true, false, request) == Take::None && q.hasPending(), "a reload first");
+        check(q.take(false, false, false, request) == Take::Start && request.game == "a" && !q.hasPending(), "then it starts");
+        check(q.take(false, false, false, request) == Take::None, "once");
+
+        // A failed action asks nothing
+        q.want({ "Arcade", "a" });
+        check(!q.handle(false, closes(true)) && !q.hasPending(), "a failed action: no launch");
+
+        // A screen with unsaved changes stops the close; the same request again leaves them
+        std::vector<bool> discards;
+        auto refuseFirst = [&](bool discard) { discards.push_back(discard); return discard; };
+        q.want({ "Arcade", "a" });
+        check(q.handle(true, refuseFirst) && !q.hasPending(), "refused: nothing pending");
+        q.want({ "Arcade", "a" });
+        check(q.handle(true, refuseFirst) && q.hasPending(), "asked again: it closes");
+        check(discards == std::vector<bool>{ false, true }, "the second close leaves the changes");
+        q.take(false, false, false, request);
+        q.want({ "Arcade", "a" });
+        q.handle(true, refuseFirst);
+        q.screenChanged();
+        q.want({ "Arcade", "a" });
+        discards.clear();
+        q.handle(true, refuseFirst);
+        check(discards == std::vector<bool>{ false }, "after another screen it warns again");
+
+        // A reload that can't happen (the Catalog installs) drops it: no surprise launch later
+        LaunchQueue busy;
+        busy.want({ "Arcade", "a" });
+        busy.handle(true, closes(true));
+        check(busy.take(false, true, true, request) == Take::Dropped && !busy.hasPending(), "dropped");
+        check(busy.take(false, false, false, request) == Take::None, "and never started");
+
+        // Kept across the reload it waits for, dropped by any other shutdown
+        LaunchQueue reload;
+        reload.want({ "Arcade", "a" });
+        reload.handle(true, closes(true));
+        reload.reloading();
+        reload.shutdown();
+        check(reload.hasPending(), "the reload keeps it");
+        reload.shutdown();
+        check(!reload.hasPending(), "a later shutdown doesn't");
+        reload.want({ "Arcade", "a" });
+        reload.handle(true, closes(true));
+        reload.shutdown();
+        check(!reload.hasPending(), "quitting drops it");
+    });
+
     run("games: start a game from its screen", [] {
         std::string root = makeInstall("games-launch");
         Fixture f(root);
+        f.open("game", gameParams("Arcade", "a"));
+        check(f.model.actionProblem("game.launch").find("mame's program isn't there") != std::string::npos,
+              "a missing program is said up front: " + f.model.actionProblem("game.launch"));
+        Test::writeFile(root + "/mame.exe", "program");
+        f.games->refresh();   // the manager opening again re-checks programs
         f.open("game", gameParams("Arcade", "a"));
         checkEqual(f.model.actionProblem("game.launch"), "", "can start");
         Forms::Model::Result started = f.model.runAction("game.launch");
         check(started.ok && started.message.find("Alpha") != std::string::npos, "starting: " + started.message);
         check(f.launched == std::vector<std::string>{ "Arcade/a" }, "asked RetroFE to start it from its own system");
+
+        // RetroFE has to reload first and can't while the Catalog installs: refused, not delayed
+        f.launchProblem = Manager::LaunchQueue::problem(true, true);
+        checkEqual(f.model.actionProblem("game.launch"), f.launchProblem, "the Catalog is installing");
+        check(!f.model.runAction("game.launch").ok && f.launched.size() == 1, "not asked");
+        f.launchProblem.clear();
 
         // A game whose launcher isn't installed can't start
         Test::writeFile(root + "/collections/Arcade/launchers/c.conf", "nosuch\n");

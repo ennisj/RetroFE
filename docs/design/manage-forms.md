@@ -247,12 +247,18 @@ Things to know:
   instead closes the manager and reloads straight away; Settings' Save and
   Add a system use that, because the user expects to see the result at once.
 - **Starting a game**: `services.requestLaunch(system, game)` from an action
-  (Games' `game.launch`). After the action succeeds the manager closes,
-  asking `leaving()` like Close does (if a screen objects, nothing starts);
-  RetroFE reloads first when changes are pending (the request is kept across
-  the reload), launches the game as its system's page would, and opens
-  Manage > Games > that game again afterwards. It's null in tests unless a
-  test sets it.
+  (Games' `game.launch`); check `services.launchProblem()` in
+  `actionProblem` first: it refuses while a reload is due and a Catalog
+  install is running (RetroFE can't reload then, and a game starting minutes
+  later would be a surprise). After the action succeeds the manager closes,
+  asking `leaving()` like Close does: if a screen objects, nothing starts and
+  its warning shows; running the same action again leaves the changes and
+  starts the game. RetroFE reloads first when changes are pending (the
+  request is kept across that reload and dropped by any other shutdown),
+  launches the game as its system's page would, and opens Manage > Games >
+  that game again afterwards, with "Back from ..." or why it couldn't start
+  (`Launcher::failure()`). The rules are `Manager/LaunchQueue.h`, tested in
+  `GamesTests.cpp`. Both are null in tests unless a test sets them.
 - `Manager::Services` (`Provider.h`) is what providers can use: the
   configuration, the Catalog, `requestReload`, `requestLaunch`, and the shared library:
   `library` (one `Library::Indexer` for every section, rebuilt each time the
