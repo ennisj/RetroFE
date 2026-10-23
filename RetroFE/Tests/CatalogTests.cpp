@@ -17,6 +17,7 @@
 // Tests for the Catalog: hashes, versions, index parsing, sources and installing.
 
 #include "TestSupport.h"
+#include "../Source/Catalog/Download.h"
 #include "../Source/Catalog/Hash.h"
 #include "../Source/Catalog/Http.h"
 #include "../Source/Catalog/Index.h"
@@ -25,8 +26,11 @@
 #include "../Source/Catalog/Sources.h"
 #include "minizip/zip.h"
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -72,12 +76,82 @@ namespace
             return true;
         }
 
-        bool download(const std::string&, const std::string&, uint64_t, const Progress&, bool&, std::string& error) override
+        bool download(const std::string&, const std::string&, uint64_t, const Progress&, Transfer& transfer) override
+        {
+            transfer.error = "not used";
+            return false;
+        }
+    };
+
+    // Serves files for download like a web server, with scripted failures
+    class ServingHttp : public Http
+    {
+    public:
+        std::map<std::string, std::string> files;
+        std::vector<size_t> dropAfter;      // for each next request: lose the connection after this many bytes
+        bool ranges = true;                 // whether resuming is supported
+        std::vector<uint64_t> offsets;      // the offset each request asked for
+
+        bool get(const std::string&, std::string&, std::string& error) override
         {
             error = "not used";
             return false;
         }
+
+        bool download(const std::string& url, const std::string& file, uint64_t offset,
+                      const Progress& progress, Transfer& transfer) override
+        {
+            transfer = Transfer();
+            offsets.push_back(offset);
+            auto it = files.find(url);
+            if (it == files.end()) {
+                transfer.error = "The server answered 404";
+                return false;
+            }
+            const std::string& body = it->second;
+            uint64_t start = ranges ? std::min<uint64_t>(offset, body.size()) : 0;
+            transfer.resumed = start > 0;
+            std::string rest = body.substr(start);
+            bool drop = !dropAfter.empty();
+            if (drop) {
+                rest = rest.substr(0, std::min(rest.size(), dropAfter.front()));
+                dropAfter.erase(dropAfter.begin());
+            }
+            std::ofstream out(file, std::ios::binary | (transfer.resumed ? std::ios::app : std::ios::trunc));
+            out << rest;
+            out.close();
+            if (progress && !progress(start + rest.size(), body.size())) {
+                transfer.cancelled = true;
+                transfer.error = "Cancelled";
+                return false;
+            }
+            if (drop) {
+                transfer.retry = true;
+                transfer.error = "The connection was lost";
+                return false;
+            }
+            return true;
+        }
     };
+
+    std::string sha256Of(const std::string& text)
+    {
+        Sha256 hash;
+        hash.update(text.data(), text.size());
+        return hash.hex();
+    }
+
+    // A Downloader that doesn't wait between retries; delays records what it would have waited
+    Downloader testDownloader(Http* http, const std::string& folder, std::vector<int>& delays)
+    {
+        Downloader downloader(http, folder);
+        downloader.sleep = [&delays](int ms) { delays.push_back(ms); };
+        downloader.freeSpace = [](const std::string&, uint64_t& available) {
+            available = 1ull << 40;
+            return true;
+        };
+        return downloader;
+    }
 
     Targets targetsUnder(const std::string& root)
     {
@@ -103,6 +177,15 @@ namespace
         file.target = target;
         file.path = path;
         package.files.push_back(file);
+        return package;
+    }
+
+    // A package of one file to download, with its size and hash
+    Package remotePackage(const std::string& id, const std::string& url, const std::string& content)
+    {
+        Package package = zipPackage(id, "1", url, "root", "");
+        package.files[0].size = content.size();
+        package.files[0].sha256 = sha256Of(content);
         return package;
     }
 }
@@ -406,5 +489,272 @@ void runCatalogTests()
         Package package = zipPackage("one", "1", "https://h.org/files/extra.xml", "layouts", "Blue");
         check(installer.install(package, { root + "/dl/download.tmp" }, error), "installed: " + error);
         checkEqual(readFile(root + "/layouts/Blue/extra.xml"), "<layout/>", "copied under its published name");
+    });
+
+    // --- Downloading -----------------------------------------------------------
+
+    run("partial downloads are continued, kept or started again", [&] {
+        check(planResume(false, 0, 100) == Resume::Fresh, "nothing there");
+        check(planResume(true, 0, 100) == Resume::Fresh, "empty");
+        check(planResume(true, 40, 100) == Resume::Continue, "part of it");
+        check(planResume(true, 100, 100) == Resume::Complete, "all of it");
+        check(planResume(true, 140, 100) == Resume::Discard, "too much");
+        check(planResume(true, 40, 0) == Resume::Continue, "size unknown");
+    });
+
+    run("retries wait 2 s, doubling to 60 s", [&] {
+        check(backoffDelay(1) == 2000 && backoffDelay(2) == 4000 && backoffDelay(5) == 32000, "doubling");
+        check(backoffDelay(6) == 60000 && backoffDelay(20) == 60000, "capped");
+        uint64_t mb = 1024 * 1024;
+        check(spaceNeeded(100 * mb, 0) == 264 * mb, "download, extract and margin");
+        check(spaceNeeded(100 * mb, 40 * mb) == 224 * mb, "less what's downloaded");
+    });
+
+    run("a download is verified and kept for the next try", [&] {
+        std::string root = makeRoot("download");
+        std::string content = "a package's bytes";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = content;
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        Package package = remotePackage("p", "https://h.org/p.zip", content);
+
+        std::vector<std::pair<uint64_t, uint64_t>> reports;
+        Downloader::Result result;
+        check(downloader.fetch(package, [&](uint64_t received, uint64_t total) {
+            reports.push_back({ received, total });
+            return true;
+        }, result), "fetched: " + result.error);
+        check(result.files.size() == 1, "one file");
+        if (result.files.size() == 1) {
+            checkEqual(readFile(result.files[0]), content, "content");
+            check(fs::path(result.files[0]).extension() != ".part", "no longer partial");
+        }
+        check(!reports.empty() && reports.back().first == content.size() && reports.back().second == content.size(), "progress reaches the total");
+
+        Downloader::Result again;
+        check(downloader.fetch(package, nullptr, again) && http.offsets.size() == 1, "not downloaded twice");
+        downloader.discard("p");
+        check(!fs::exists(root + "/downloads/p"), "discarded");
+    });
+
+    run("a dropped connection resumes where it stopped", [&] {
+        std::string root = makeRoot("download-resume");
+        std::string content = "0123456789abcdefghij";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = content;
+        http.dropAfter = { 5, 4 };
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        Downloader::Result result;
+        check(downloader.fetch(remotePackage("p", "https://h.org/p.zip", content), nullptr, result), "fetched: " + result.error);
+        check(http.offsets == std::vector<uint64_t>({ 0, 5, 9 }), "continued from 5, then 9");
+        check(delays == std::vector<int>({ 2000, 4000 }), "waited between tries");
+        check(result.files.size() == 1 && readFile(result.files[0]) == content, "whole file");
+    });
+
+    run("after five tries it gives up, keeping what it has", [&] {
+        std::string root = makeRoot("download-give-up");
+        std::string content = "0123456789";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = content;
+        http.dropAfter = { 1, 1, 1, 1, 1 };
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        Package package = remotePackage("p", "https://h.org/p.zip", content);
+        Downloader::Result result;
+        check(!downloader.fetch(package, nullptr, result), "failed");
+        check(http.offsets.size() == 5 && delays.size() == 4, "five tries");
+        check(result.error.find("connection was lost") != std::string::npos, "says why: " + result.error);
+
+        Downloader::Result later;
+        check(downloader.fetch(package, nullptr, later), "finished later: " + later.error);
+        check(http.offsets.back() == 5, "from where it stopped");
+    });
+
+    run("servers that can't resume start again", [&] {
+        std::string root = makeRoot("download-no-ranges");
+        std::string content = "0123456789";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = content;
+        http.ranges = false;
+        http.dropAfter = { 4 };
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        Downloader::Result result;
+        check(downloader.fetch(remotePackage("p", "https://h.org/p.zip", content), nullptr, result), "fetched: " + result.error);
+        check(result.files.size() == 1 && readFile(result.files[0]) == content, "whole file, not doubled");
+    });
+
+    run("a damaged download is never used", [&] {
+        std::string root = makeRoot("download-damaged");
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = "not what was published";
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        Package package = remotePackage("p", "https://h.org/p.zip", "what was published!!!");
+        package.files[0].size = 0;   // only the hash can tell
+        Downloader::Result result;
+        check(!downloader.fetch(package, nullptr, result), "refused");
+        check(result.error.find("checksum") != std::string::npos, "says why: " + result.error);
+        check(http.offsets.size() == 1, "not retried: a fresh download that's wrong stays wrong");
+        check(fs::is_empty(root + "/downloads/p"), "nothing left behind");
+
+        Package sized = remotePackage("q", "https://h.org/p.zip", "too short");
+        Downloader::Result wrongSize;
+        check(!downloader.fetch(sized, nullptr, wrongSize) && wrongSize.error.find("should be") != std::string::npos,
+              "wrong size: " + wrongSize.error);
+    });
+
+    run("a partial joined to a changed file is downloaded again", [&] {
+        std::string root = makeRoot("download-changed");
+        std::string oldContent = "OLDOLDOLDO";
+        std::string newContent = "new bytes!";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = oldContent;
+        http.dropAfter = { 5 };
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        downloader.tries = 1;
+        Package package = remotePackage("p", "https://h.org/p.zip", newContent);
+        Downloader::Result first;
+        check(!downloader.fetch(package, nullptr, first), "first try dropped");
+
+        http.files["https://h.org/p.zip"] = newContent;
+        downloader.tries = 5;
+        Downloader::Result result;
+        check(downloader.fetch(package, nullptr, result), "fetched: " + result.error);
+        check(http.offsets == std::vector<uint64_t>({ 0, 5, 0 }), "continued, found wrong, started again");
+        check(result.files.size() == 1 && readFile(result.files[0]) == newContent, "the new file");
+    });
+
+    run("downloads check for space and can be stopped", [&] {
+        std::string root = makeRoot("download-space");
+        std::string content = "0123456789";
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = content;
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        downloader.freeSpace = [](const std::string&, uint64_t& available) {
+            available = 1000;
+            return true;
+        };
+        Package package = remotePackage("p", "https://h.org/p.zip", content);
+        Downloader::Result full;
+        check(!downloader.fetch(package, nullptr, full), "refused");
+        check(full.error.find("Not enough free space") != std::string::npos && http.offsets.empty(), "before downloading: " + full.error);
+
+        Downloader stoppable = testDownloader(&http, root + "/downloads", delays);
+        Downloader::Result stopped;
+        check(!stoppable.fetch(package, [](uint64_t, uint64_t) { return false; }, stopped) && stopped.cancelled, "stopped");
+    });
+
+    run("folder source files are used where they are", [&] {
+        std::string root = makeRoot("download-local");
+        writeFile(root + "/share/p.zip", "zip bytes");
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(nullptr, root + "/downloads", delays);
+        Package package = remotePackage("p", root + "/share/p.zip", "zip bytes");
+        Downloader::Result result;
+        check(downloader.fetch(package, nullptr, result), "fetched: " + result.error);
+        check(result.files.size() == 1 && result.files[0] == root + "/share/p.zip", "in place");
+        check(!fs::exists(root + "/downloads/p"), "nothing copied");
+
+        Package missing = remotePackage("m", root + "/share/gone.zip", "x");
+        Downloader::Result gone;
+        check(!downloader.fetch(missing, nullptr, gone) && gone.error.find("Can't find") != std::string::npos, "missing: " + gone.error);
+
+        Package remote = remotePackage("r", "https://h.org/r.zip", "x");
+        Downloader::Result unsupported;
+        check(!downloader.fetch(remote, nullptr, unsupported) && !unsupported.error.empty(), "no HTTP: " + unsupported.error);
+    });
+
+    run("old versions' downloads are cleared out", [&] {
+        std::string root = makeRoot("download-stale");
+        writeFile(root + "/downloads/p/0-oldversion.part", "stale");
+        ServingHttp http;
+        http.files["https://h.org/p.zip"] = "fresh";
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/downloads", delays);
+        Downloader::Result result;
+        check(downloader.fetch(remotePackage("p", "https://h.org/p.zip", "fresh"), nullptr, result), "fetched: " + result.error);
+        check(!fs::exists(root + "/downloads/p/0-oldversion.part"), "stale partial removed");
+    });
+
+    run("downloaded archives install", [&] {
+        std::string root = makeRoot("download-install");
+        makeZip(root + "/server/pack.zip", { { "settings.conf", "list.extensions = zip" } });
+        std::string zip = readFile(root + "/server/pack.zip");
+        ServingHttp http;
+        http.files["https://h.org/packs/pack.zip"] = zip;
+        std::vector<int> delays;
+        Downloader downloader = testDownloader(&http, root + "/catalog/downloads", delays);
+        Package package = remotePackage("pack", "https://h.org/packs/pack.zip", zip);
+        package.files[0].target = "collections";
+        package.files[0].path = "Pack";
+        Downloader::Result result;
+        check(downloader.fetch(package, nullptr, result), "fetched: " + result.error);
+        Installer installer(root + "/catalog", targetsUnder(root));
+        check(installer.install(package, result.files, error), "installed: " + error);
+        checkEqual(readFile(root + "/collections/Pack/settings.conf"), "list.extensions = zip", "installed content");
+    });
+
+    // --- Real HTTP, against a test server ----------------------------------------
+    // Start Tests/test_server.py and set RETROFE_TEST_SERVER to its address
+    // (e.g. http://127.0.0.1:8765) to run these.
+    // The server serves 4 MB at /file.bin, the same cut off once at /drop/,
+    // ignoring ranges at /norange/, after two 503s at /flaky/, and an index at /index.json.
+
+    const char* server = std::getenv("RETROFE_TEST_SERVER");
+    if (!server || !*server) {
+        return;
+    }
+    std::unique_ptr<Http> http = createHttp();
+    check(http != nullptr, "this platform has HTTP");
+    if (!http) return;
+    std::string base = server;
+
+    Package big;
+    run("a real index is read", [&] {
+        std::string root = makeRoot("live-index");
+        SourceConfig source;
+        source.name = "live";
+        source.type = "index";
+        source.url = base + "/index.json";
+        SourceContents contents = readSource(source, root + "/cache", http.get());
+        check(contents.error.empty() && contents.packages.size() == 1, "one package: " + contents.error);
+        if (contents.packages.size() == 1) {
+            big = contents.packages[0];
+            checkEqual(big.files[0].url, base + "/file.bin", "url resolved");
+        }
+        std::string body;
+        check(!http->get(base + "/missing.json", body, error) && error.find("404") != std::string::npos, "404: " + error);
+    });
+    if (big.files.empty()) return;
+
+    auto liveFetch = [&](const std::string& name, const std::string& url, Downloader::Result& result, int& calls) {
+        Package package = big;
+        package.id = name;
+        package.files[0].url = url;
+        Downloader downloader(http.get(), makeRoot(name) + "/downloads");
+        calls = 0;
+        return downloader.fetch(package, [&](uint64_t, uint64_t) { ++calls; return true; }, result);
+    };
+
+    for (const char* path : { "/file.bin", "/drop/file.bin", "/norange/file.bin", "/flaky/file.bin" }) {
+        run(std::string("a real download: ") + path, [&] {
+            Downloader::Result result;
+            int calls = 0;
+            check(liveFetch("live" + std::to_string(std::string(path).size()), base + path, result, calls), "fetched: " + result.error);
+            check(result.files.size() == 1 && sha256File(result.files[0]) == big.files[0].sha256, "verified");
+            check(calls > 1, "progress reported");
+        });
+    }
+
+    run("a real download that isn't there", [&] {
+        Downloader::Result result;
+        int calls = 0;
+        check(!liveFetch("live-missing", base + "/nothing.bin", result, calls), "failed");
+        check(result.error.find("404") != std::string::npos, "not retried, says why: " + result.error);
     });
 }

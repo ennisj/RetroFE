@@ -368,7 +368,9 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Tests/TestsMain.cpp"
 		"${RETROFE_DIR}/Tests/FormsTests.cpp"
 		"${RETROFE_DIR}/Tests/CatalogTests.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Index.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Package.cpp"
@@ -387,7 +389,7 @@ if(RETROFE_BUILD_TESTS)
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
 	# The Catalog tests extract and write zip archives
 	if(WIN32)
-		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES})
+		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES} winhttp)
 		add_custom_command(TARGET retrofe_tests POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZLIB_ROOT}/lib/zlib.dll" "$<TARGET_FILE_DIR:retrofe_tests>")
 	else()

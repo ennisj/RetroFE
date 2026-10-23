@@ -156,10 +156,14 @@ The One Saucier pipeline, which works, moved behind the adapters:
 
 - **Queue** of jobs. One HTTP connection per job; a couple of jobs at a time.
   One Saucier removed segmented downloads, and so do we.
-- **Resume** with HTTP ranges into `catalog/downloads/<id>-<version>.part`,
+- **Resume** with HTTP ranges into `catalog/downloads/<id>/<n>-<key>.part`,
   using One Saucier's `plan_resume` classification (complete / resume / fresh
-  / discard).
-- **Free space check** before starting: archive size plus extracted size.
+  / discard). The key changes with the file's URL, size and hash, so a partial
+  is only continued from the same file. A continued download that fails its
+  hash is downloaded again from the start once.
+- **Free space check** before starting: archive size plus extracted size
+  (estimated as the archive size again) plus 64 MB.
+- **Folder sources** are installed from where they are, not copied first.
 - **Retries** with exponential backoff (2 s doubling to 60 s, 5 tries).
 - **Verify** size always, and the hash whenever the source gives one. A
   mismatch fails the job; it never installs.
@@ -217,9 +221,10 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
 
 ## Libraries
 
-- **HTTP:** libcurl, as One Saucier uses. Windows needs it vendored next to
-  the other DLLs. (GStreamer's bundle has its own HTTP stack, but it isn't
-  meant for this.)
+- **HTTP:** WinHTTP on Windows, which is part of Windows, so nothing extra
+  ships. Linux and macOS will use libcurl, as One Saucier does; until then,
+  folder sources work there and HTTP sources say they aren't supported yet.
+  (GStreamer's bundle has its own HTTP stack, but it isn't meant for this.)
 - **JSON:** nlohmann/json (MIT, single header). Archive.org's metadata is
   JSON anyway, so the `archiveorg` adapter needs a JSON parser regardless of
   the index format.
