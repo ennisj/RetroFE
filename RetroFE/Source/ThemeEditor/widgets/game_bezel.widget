@@ -1,0 +1,20 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# A preset over game_art: fragment, animations and attributes come from it.
+# Changed: no layout_preferred mode (the game's own media), no Transform Video.
+[widget]
+id = game_bezel
+base = game_art
+name = Game Bezel
+category = media
+color = 9A6FCF
+summary = Selected game's bezel art.
+info = game_art preset - type=bezel - the game's own art
+w = 600
+h = 460
+minw = 60
+minh = 60
+layer = 3
+
+[var]
+token = IMAGETYPE
+default = bezel

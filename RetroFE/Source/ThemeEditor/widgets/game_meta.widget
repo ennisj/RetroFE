@@ -1,0 +1,51 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: the Text Type list is ReloadableText's own types. One Saucier's
+# fullTitle, publisher, subGenre, series, region, date and story aren't types
+# here (they only resolve from a game's info file); buttons and joyWays are
+# numberButtons and numberJoyWays.
+[widget]
+id = game_meta
+name = Game Metadata
+category = text
+color = 9B6FE0
+glyph = MD
+summary = Any metadata text slot by type (developer, rating, play count, ...).
+info = reloadableText type=<Text Type>
+w = 240
+h = 54
+minw = 40
+minh = 16
+layer = 12
+
+[var]
+token = TEXTTYPE
+name = Text Type
+type = text
+default = developer
+options = title|year|manufacturer|developer|genre|rating|score|numberPlayers|numberButtons|numberJoyWays|ctrlType|playCount|lastPlayed|timeSpent|playlist|firstLetter|collectionName|collectionIndex|collectionIndexSize|collectionSize|isFavorite|time
+
+[var]
+token = AUTOFIT
+name = Auto Fit Text
+type = bool
+default = true
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[var]
+token = RIGHTALIGN
+name = Anchor Right Edge
+type = bool
+default = false
+
+[fragment]
+<reloadableText id="{{ID}}" type="{{TEXTTYPE}}" {{?RIGHTALIGN}}x="{{X2}}" xOrigin="right" {{/RIGHTALIGN}}{{!RIGHTALIGN}}x="{{X}}" xOrigin="left" {{/RIGHTALIGN}}y="{{CY}}" yOrigin="center" {{?HASFONT}}font="{{FONT}}" {{/HASFONT}}{{?HASFONTCOLOR}}fontColor="{{FONTCOLOR}}" {{/HASFONTCOLOR}}fontSize="{{FS}}" maxHeight="{{H}}" {{?AUTOFIT}}maxWidth="{{W}}" {{/AUTOFIT}}menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableText>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

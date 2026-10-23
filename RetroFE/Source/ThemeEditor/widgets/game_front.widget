@@ -1,0 +1,20 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# A preset over game_art: fragment, animations and attributes come from it.
+# Changed: no layout_preferred mode (the game's own media), no Transform Video.
+[widget]
+id = game_front
+base = game_art
+name = Game Front Artwork
+category = media
+color = E08F8F
+summary = Selected game's front box/flyer art.
+info = game_art preset - type=artwork_front - the game's own art
+w = 492
+h = 472
+minw = 40
+minh = 40
+layer = 9
+
+[var]
+token = IMAGETYPE
+default = artwork_front

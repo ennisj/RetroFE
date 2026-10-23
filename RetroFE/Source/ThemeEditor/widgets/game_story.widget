@@ -1,0 +1,52 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+[widget]
+id = game_story
+name = Game Story
+category = text
+color = B8A06F
+glyph = S
+summary = Selected game's story text, word-wrapped in the box.
+info = type=story - scrolling text
+w = 705
+h = 287
+minw = 100
+minh = 60
+layer = 8
+
+[var]
+token = AUTOSCROLL
+name = Auto Scroll
+type = bool
+default = true
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[var]
+token = STORYFONT
+name = Font Size (px)
+type = text
+default = 28
+numeric = true
+step = 2
+min = 8
+max = 120
+
+[var]
+token = ALIGN
+name = Alignment
+type = text
+default = left
+options = left|center|right
+
+[fragment]
+<reloadableScrollingText id="{{ID}}" type="story" direction="vertical" alignment="{{ALIGN}}" x="{{X}}" y="{{Y}}" width="{{W}}" height="{{H}}" fontSize="{{STORYFONT}}" loadFontSize="{{STORYFONT}}" {{?AUTOSCROLL}}scrollingSpeed="30" startTime="2" {{/AUTOSCROLL}}menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableScrollingText>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

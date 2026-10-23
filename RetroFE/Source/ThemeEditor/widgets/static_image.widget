@@ -1,0 +1,81 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: no Transform Video (this engine has no transform=).
+# The src is written relative to the page's folder ({{PAGEROOT}}), so it
+# resolves first time on collection template pages too.
+[widget]
+id = static_image
+name = Static Image
+category = static
+color = E09A5C
+glyph = IMG
+summary = A fixed image shipped with the theme (backgrounds, frames, badges).
+info = plain <image> - src = the chosen file
+w = 400
+h = 300
+minw = 16
+minh = 16
+layer = 1
+
+[var]
+token = SRC
+name = Image File
+type = file
+filter = image
+default = images/background.png
+
+[var]
+token = ASPECT
+name = Maintain Aspect Ratio
+type = bool
+default = false
+
+[var]
+token = STRETCH
+name = Fill Screen
+type = bool
+default = false
+
+[var]
+token = IDLEFADE
+name = Fade When Idle
+type = bool
+default = false
+
+[var]
+token = IDLEFADETO
+name = Idle Opacity
+type = text
+default = 0
+numeric = true
+step = 0.1
+min = 0
+max = 1
+
+[var]
+token = IDLEREVEAL
+name = Show Only When Idle
+type = bool
+default = false
+
+[var]
+token = REVEALDELAY
+name = Idle Reveal Delay (s)
+type = text
+default = 3
+numeric = true
+step = 0.5
+min = 0
+max = 60
+
+[fragment]
+<image id="{{ID}}" src="{{PAGEROOT}}{{SRC}}" x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" {{?STRETCH}}width="stretch" height="stretch" {{/STRETCH}}{{!STRETCH}}width="{{W}}" {{ASPECT:maxHeight:height}}="{{H}}" {{/STRETCH}}{{?IDLEREVEAL}}alpha="0" {{/IDLEREVEAL}}{{!IDLEREVEAL}}alpha="{{ALPHA}}" {{/IDLEREVEAL}}layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</image>
+
+[animDefaults]
+{{!IDLEREVEAL}}<onEnter><set duration="0.35"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>{{/IDLEREVEAL}}
+{{?IDLEFADE}}<onMenuIdle><set duration="1"><animate type="nop"/></set><set duration="0.1"><animate type="alpha" to="{{IDLEFADETO}}"/></set></onMenuIdle>
+<onMenuScroll><set duration="0.1"><animate type="alpha" to="{{ALPHA}}"/></set></onMenuScroll>{{/IDLEFADE}}
+{{?IDLEREVEAL}}<onMenuIdle><set duration="{{REVEALDELAY}}"><animate type="nop"/></set><set duration="0.1"><animate type="alpha" to="{{ALPHA}}"/></set></onMenuIdle>
+<onMenuScroll><set duration="0.1"><animate type="alpha" to="0"/></set></onMenuScroll>
+<onExit><set duration="0.1"><animate type="alpha" to="0"/></set></onExit>{{/IDLEREVEAL}}
