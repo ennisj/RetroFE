@@ -17,6 +17,7 @@
 #include "PageBuilder.h"
 #include "LayoutPages.h"
 #include "MenuXml.h"
+#include "LayoutNodePath.h"
 #include "Page.h"
 #include "ViewInfo.h"
 #include "Component/Container.h"
@@ -538,6 +539,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 		buildViewInfo(componentXml, c->baseViewInfo);
 		loadTweens(c, componentXml);
 		page->addComponent(c);
+		trace(c, nullptr, componentXml);
 	}
 	for (xml_node<>* componentXml = layout->first_node("image"); componentXml; componentXml = componentXml->next_sibling("image")) {
 		xml_attribute<> const* src = componentXml->first_attribute("src");
@@ -609,6 +611,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 				buildViewInfo(componentXml, c->baseViewInfo);
 				loadTweens(c, componentXml);
 				page->addComponent(c);
+				trace(c, nullptr, componentXml);
 			}
 			else
 			{
@@ -699,6 +702,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 				buildViewInfo(componentXml, c->baseViewInfo);
 				loadTweens(c, componentXml);
 				page->addComponent(c);
+				trace(c, nullptr, componentXml);
 			}
 
 		}
@@ -736,6 +740,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 			buildViewInfo(componentXml, c->baseViewInfo);
 			loadTweens(c, componentXml);
 			page->addComponent(c);
+			trace(c, nullptr, componentXml);
 		}
 	}
 
@@ -755,6 +760,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 		buildViewInfo(componentXml, c->baseViewInfo);
 		loadTweens(c, componentXml);
 		page->addComponent(c);
+		trace(c, nullptr, componentXml);
 		page->setStatusTextComponent(c);
 	}
 
@@ -942,6 +948,7 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 
 			loadTweens(c, componentXml);
 			page->addComponent(c);
+			trace(c, nullptr, componentXml);
 		}
 	}
 }
@@ -1088,6 +1095,7 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		buildViewInfo(componentXml, keyboard->baseViewInfo);
 		loadTweens(keyboard, componentXml);
 		page->addComponent(keyboard);
+		trace(keyboard, nullptr, componentXml);
 		keyboardWidgets_.push_back(keyboard);
 	}
 
@@ -1146,8 +1154,14 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		buildViewInfo(componentXml, form->baseViewInfo);
 		loadTweens(form, componentXml);
 		page->addComponent(form);
+		trace(form, nullptr, componentXml);
 		formWidgets_.push_back(form);
 	}
+}
+
+void PageBuilder::addTrace(Component* c, ViewInfo* slot, const xml_node<>* node)
+{
+	trace_->push_back(TraceEntry{ c, slot, LayoutNodePath::of(node) });
 }
 
 void PageBuilder::loadTweens(Component* c, xml_node<>* componentXml)
@@ -1340,6 +1354,7 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 	}
 
 	menu = new ScrollingList(config_, page, layoutMode, commonMode, playlistType, selectedImage, font, layoutKey, imageType, videoType, useTextureCache);
+	trace(menu, nullptr, menuXml);
 	menu->baseViewInfo.Monitor = cMonitor;
 	menu->baseViewInfo.Layout = page.getCurrentLayout();
 
@@ -1440,6 +1455,7 @@ void PageBuilder::buildCustomMenu(ScrollingList* menu, const rapidxml::xml_node<
 		viewInfo->Additive = menu->baseViewInfo.Additive;
 
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, componentXml);
 		tweenPoints->push_back(createTweenInstance(componentXml));
 
 		if (componentXml->first_attribute("selected")) {
@@ -1501,6 +1517,7 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		auto* viewInfo = createMenuItemInfo(component, itemDefaults, menu->baseViewInfo);
 		viewInfo->Y = menu->baseViewInfo.Y + height;
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, component);
 		tweenPoints->push_back(createTweenInstance(component));
 		height += viewInfo->Height;
 
@@ -1547,6 +1564,7 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 
 		viewInfo->Y = menu->baseViewInfo.Y + height;
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, component);
 		tweenPoints->push_back(createTweenInstance(component));
 		index++;
 		height = nextHeight;
@@ -1558,6 +1576,7 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		auto* viewInfo = createMenuItemInfo(component, itemDefaults, menu->baseViewInfo);
 		viewInfo->Y = menu->baseViewInfo.Y + height;
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, component);
 		tweenPoints->push_back(createTweenInstance(component));
 	}
 

@@ -477,7 +477,7 @@ void ManagerUI::close()
 
 bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
 {
-    if (frame.form != Themes::editorForm) {
+    if (frame.form != Themes::editorForm && frame.form != Themes::layoutEditorForm) {
         return false;
     }
     ThemeEditorScreen::Context context;
@@ -491,8 +491,7 @@ bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
     context.currentCollection = currentCollection_;
     context.requestReload = [this] { reloadWhenClosed_ = true; };
     context.library = library_.get();
-    auto id = frame.params.find("id");
-    screen_ = std::make_unique<ThemeEditorScreen>(context, id != frame.params.end() ? id->second : "");
+    screen_ = Themes::makeEditorScreen(frame.form, context, frame.params);
     SDL_ShowCursor(SDL_ENABLE);
     return true;
 }

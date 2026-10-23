@@ -202,4 +202,98 @@ namespace ThemeEditor
         if (n == "splashbg") return result(s.setSplashBackground(c.rest == "none" ? std::string() : c.rest));
         return CommandResult::NotSession;
     }
+
+    CommandResult runLayoutCommand(LayoutSession& s, const EditorCommand& c, std::string& note)
+    {
+        note.clear();
+        auto result = [](bool ok) { return ok ? CommandResult::Ok : CommandResult::Failed; };
+        auto boxNote = [&s]() {
+            const LayoutElement* e = s.selectedElement();
+            if (!e) return std::string("nothing selected");
+            std::string text = s.label(s.selected()) + " [" + e->path + "]";
+            if (s.hasBox(s.selected())) {
+                DragRect r = s.box(s.selected());
+                text += " at " + std::to_string(r.x) + "," + std::to_string(r.y) + " " + std::to_string(r.w) + "x" + std::to_string(r.h);
+            }
+            return text;
+        };
+        const std::string& n = c.name;
+        const int cw = s.canvasW();
+        const int ch = s.canvasH();
+        const CanvasFit unit = canvasFit(static_cast<float>(cw), static_cast<float>(ch), cw, ch);
+
+        if (n == "select") {
+            int i = -1;
+            std::vector<int> listed = s.listed();
+            if (!integer(c.words, 0, i) || i < 0 || i >= static_cast<int>(listed.size())) return CommandResult::Failed;
+            s.select(listed[i]);
+            note = boxNote();
+            return CommandResult::Ok;
+        }
+        if (n == "selectpath") {
+            bool ok = s.selectPath(c.rest == "-" ? std::string() : c.rest);
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "click") {
+            float x = 0, y = 0;
+            if (!number(c.words, 0, x) || !number(c.words, 1, y)) return CommandResult::Failed;
+            s.pointerDown(unit, x, y, 0.5f);
+            s.pointerUp();
+            note = boxNote();
+            return CommandResult::Ok;
+        }
+        if (n == "move" || n == "resize") {
+            if (!s.editableBox(s.selected())) return CommandResult::Failed;
+            DragRect r = s.box(s.selected());
+            float sx = r.x + r.w * 0.5f, sy = r.y + r.h * 0.5f;
+            size_t first = 0;
+            if (n == "resize") {
+                int handle = c.words.empty() ? CH_NONE : handleFromName(c.words[0]);
+                if (handle == CH_NONE) return CommandResult::Failed;
+                const float x1 = static_cast<float>(r.x), y1 = static_cast<float>(r.y);
+                const float x2 = static_cast<float>(r.x + r.w), y2 = static_cast<float>(r.y + r.h);
+                const float hx[8] = { x1, (x1 + x2) * 0.5f, x2, x1, x2, x1, (x1 + x2) * 0.5f, x2 };
+                const float hy[8] = { y1, y1, y1, (y1 + y2) * 0.5f, (y1 + y2) * 0.5f, y2, y2, y2 };
+                sx = hx[handle];
+                sy = hy[handle];
+                first = 1;
+            }
+            float dx = 0, dy = 0;
+            if (!number(c.words, first, dx) || !number(c.words, first + 1, dy)) return CommandResult::Failed;
+            const unsigned before = s.revision();
+            s.pointerDown(unit, sx, sy, 0.5f);
+            s.pointerMove(unit, sx + dx, sy + dy);
+            s.pointerUp();
+            note = boxNote();
+            return result(s.revision() != before);
+        }
+        if (n == "nudge") {
+            int dx = 0, dy = 0;
+            if (!integer(c.words, 0, dx) || !integer(c.words, 1, dy)) return CommandResult::Failed;
+            s.endCoalesce();
+            bool ok = s.moveBy(dx, dy);
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "attr") {
+            if (c.words.empty()) return CommandResult::Failed;
+            s.endCoalesce();
+            return result(s.setAttribute(c.words[0], c.tail(1)));
+        }
+        if (n == "rmattr") return result(!c.words.empty() && s.removeAttribute(c.words[0]));
+        if (n == "get") {
+            const LayoutElement* e = s.selectedElement();
+            if (!e || c.words.empty()) return CommandResult::Failed;
+            note = c.words[0] + (e->has(c.words[0]) ? "=\"" + e->value(c.words[0]) + "\"" : " not set");
+            return CommandResult::Ok;
+        }
+        if (n == "layer") { int i = 0; s.endCoalesce(); return result(integer(c.words, 0, i) && s.setLayer(i)); }
+        if (n == "duplicate") { bool ok = s.duplicateSelected(); note = boxNote(); return result(ok); }
+        if (n == "delete") return result(s.deleteSelected());
+        if (n == "undo") return result(s.undo());
+        if (n == "redo") return result(s.redo());
+        if (n == "snap") { s.snap = c.rest != "off"; return CommandResult::Ok; }
+        return CommandResult::NotSession;
+    }
 }

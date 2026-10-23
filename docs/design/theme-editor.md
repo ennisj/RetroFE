@@ -3,7 +3,9 @@
 Status: the core is ported (rounds 1–3 of the porting plan: core port,
 widget dialect audit, storage and saving), the first UI round is done (the
 Themes screens and the editor screen, "UI round 1" below) and so is the
-next (templates, files, theme properties, "Editor round 3" below). The core
+next (templates, files, theme properties, "Editor round 3" below), and
+hand-made themes can be edited in place ("Layout-native mode" below,
+decision M10 option 3). The core
 lives in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is
 tested by `RetroFE/Tests/ThemeEditorTests.cpp`; the screens are in
 `RetroFE/Source/Manager/Themes/`, tested by `RetroFE/Tests/ThemesTests.cpp`.
@@ -217,9 +219,11 @@ What a folder is (`probeTheme`):
 | Doesn't exist, empty, or holding only `editor/` and/or `assets/` folders (and no project) | fresh |
 | `layout.xml` starts with the marker (either editor's) | editor-made |
 | No `layout.xml` but a file `editor/project.xml` | editor-made (a save that stopped early) |
-| Anything else | **foreign**: never written to, duplicated or deleted |
+| Anything else | **foreign**: the widget editor never writes to, duplicates or deletes it |
 
-The fork's default Aeon Nox is foreign.
+The fork's default Aeon Nox is foreign. Its pages can be edited in place by
+the layout-native mode (below), which has its own backups and never touches
+an editor-made page.
 
 Inside an editor-made theme, a page somebody wrote by hand (a page position
 without the marker, e.g. `collections/NES/layout/layout.xml`) is guarded
@@ -425,7 +429,7 @@ confirm, Use this theme, and RetroFE running the new theme with its wheel.
 - ~~Ask for a file when placing Static Image / Static Video~~ (round 3).
 - ~~The selected item highlight for text wheels; theme fonts and sounds~~
   (round 3).
-- Hand-made themes (see below).
+- ~~Hand-made themes~~ (layout-native mode, below).
 
 ## Editor round 3: templates, files, theme properties
 
@@ -560,11 +564,11 @@ NES on the Console Look template. `--theme-check` on the result: clean.
 - Previewing a page as one of its member collections from the Pages list
   (the Collections list does it).
 - A template's own font or sounds (they're the theme's).
-- Second-screen pages; hand-made themes (below).
+- Second-screen pages; ~~hand-made themes~~ (layout-native mode, below).
 
-## Open question: hand-made themes
+## Hand-made themes: the options (decided: M10, option 3)
 
-The editor only edits editor-made themes. CoinOPS users mostly have
+Before the layout-native mode the editor only edited editor-made themes. CoinOPS users mostly have
 hand-made layouts, including this fork's default (Aeon Nox), and those are
 foreign: the editor won't touch them. Options:
 
@@ -587,7 +591,153 @@ foreign: the editor won't touch them. Options:
    editable one.
 
 Option 3 probably gives CoinOPS users the most per round; option 2 is the
-most faithful to One Saucier. This needs the user's call.
+most faithful to One Saucier. Option 3 was approved (M10) and is built:
+
+## Layout-native mode
+
+A second editor for hand-made themes: the elements of one page file, edited
+in place. User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#hand-made-themes-the-layout-editor).
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/LayoutText.{h,cpp}` | The page as text. A scanner (not a DOM) that finds every element and attribute and remembers its byte offsets: start tag, name end, attributes (whitespace before, name, value span, quote), end. Element paths (`image[3]`, `menu[0]/item[2]`, the root is `""`). Edits return new text with only those bytes changed: `withAttribute` (replace a value in its own quotes, or add one after the last attribute with the same spacing and quote), `withoutAttribute`, `withoutElement` and `withDuplicate` (whole lines when the element is alone on its lines). Entities decoded for display, encoded on write. Pure. |
+| `Graphics/LayoutNodePath.h` | The same path from a rapidxml node, header-only and SDL-free. |
+| `Graphics/PageBuilder.{h,cpp}` | The hook: `setTrace(std::vector<TraceEntry>*)`. When set, every component built records `{component, slot, path}` in build order; a menu's slots follow it with `slot` = the slot's `ViewInfo` (custom menus: each `<item>`; vertical menus: the node each slot was built from). One inline null check per component when unused. |
+| `ThemeEditor/LayoutSession.{h,cpp}` | The controller, SDL- and ImGui-free: the theme's pages (`themePages`), opening one (refusing paths outside the theme, editor-marked pages and pages rapidxml can't read), the element list, geometry by path (fed by the screen), picking and click-through by layer then build order, the pointer protocol (`EditorCanvas.h`'s moves and resizes), turning a box back into attribute values, attribute edits, duplicate/delete, undo/redo (text snapshots, 100 deep, coalesced typing), dirty = text differs from what's on disk, save and put back the original. |
+| `ThemeEditor/LayoutSession` `pageBoxes` | The pure part of finding the boxes: traced views (path, component, slot, the ViewInfo's numbers) to one box per element plus extra boxes, the guesses, read-only vertical-menu slots, the box around a size-less menu (kept apart from its resolved x / y), and slots built from the empty `<itemDefaults>` a menu without one gets, which count as the menu's. Tested. |
+| `ThemeEditor/EditorScript.{h,cpp}` | `runLayoutCommand`: the session's script commands. |
+| `Manager/Themes/app/LayoutEditorScreen.{h,cpp}` | The ImGui screen (form `theme-layout-editor`): pages and elements, the canvas (preview + boxes + handles), the attribute panel, Save / Put back the original / Unsaved changes / Delete dialogs, the screen's script commands. |
+| `Manager/Themes/ThemeProvider`, `ThemesForms.cpp` | `theme:canOpen`; Edit opens the layout editor for a hand-made theme; the new note. |
+| `ThemeEditorScreen.{h,cpp}` | `Themes::makeEditorScreen` (which editor for which form) and `Themes::takeEditorScript` (one script per session, whichever editor opens first). |
+| `ManagerUI.cpp` | Two lines: the layout editor's form is an ImGui screen too, built by `makeEditorScreen`. |
+
+### How the boxes are found
+
+The preview is built as in the widget editor (`setLayoutXml` with the text
+being edited, the page's own folder for relative paths, `layout` pointed at
+the theme until the screen is left), plus `setTrace`. Right after
+`buildPage`, before anything animates, each traced component's
+`baseViewInfo` (or the slot's `ViewInfo`) is copied: resolved x and y
+("center" is already 960 there), offsets, origins (fractions) and
+`ScaledWidth/Height`. The box is `x + xOffset - xOrigin * w` across, the same
+down. Sizes the engine doesn't know until it draws are guessed and marked
+(text without a width: its font size and value length; art not loaded yet:
+the layout's width/height/max size), and art that loads later (reloadable
+images and videos) gets its real size from the live component's
+`ImageWidth/Height` while the page runs. A custom menu without a size of
+its own gets the box around its items, to select it by. A vertical menu's
+slots are drawn but not dragged (they're generated from its settings).
+
+### Decisions made in this round
+
+- **Edit the text, never re-serialise.** rapidxml drops comments and
+  formatting; a DOM writer that kept them would have to be written and kept
+  exactly compatible. Editing byte ranges in the original keeps everything
+  else identical by construction, and the tests compare bytes. The scanner
+  follows rapidxml's `parse<0>` where they differ from strict XML: an end
+  tag closes the innermost element whatever its name (shipped layouts have
+  `<onMenuScroll>...</onMenuJumpScroll>`), and attributes needn't be
+  separated by spaces. Considered: pugixml (another dependency, and
+  formatting still isn't preserved exactly), rapidxml's printer (loses
+  comments and entities).
+- **Paths, not offsets, join components to text.** `name[index among
+  same-named siblings]` from the root is stable across attribute edits and
+  computed the same way from rapidxml and from the scanner (a test checks
+  every element of every shipped page). Byte offsets would shift with every
+  edit; a document-order index would shift for unrelated element kinds.
+  After a duplicate or delete the paths after it shift, so the boxes are
+  dropped until the next build (`structure()` moves).
+- **Dragging writes numbers, only where the box changed.** A move writes
+  the axes it moved (so a straight-down drag keeps `x="center"`; an axis the
+  pointer moved less than 3 pixels along isn't snapped either); a resize
+  writes the sizes that changed and the x / y that keep the undragged edges
+  in place. Elements positioned by `xOffset` with no `x` of their own (menu
+  items under `<itemDefaults>`) move by `xOffset`. Typing in the panel keeps
+  any value as typed ("center", "50%", "stretch"). Considered: writing
+  `center`/percentages back when the result is centred (guessing what the
+  author meant), and always writing x, y, width and height (loses `stretch`
+  on an untouched axis).
+- **Backups: Library's, not the theme's.** Originals go to
+  `<root>/manage/backups/layouts/<theme>/<page>` through `Library::Backups`,
+  the same store and rules as every Manage screen: the original is taken
+  before the first change only, and putting it back keeps what was there as
+  a numbered copy. The theme folder stays clean (it can be zipped for the
+  Catalog without an `editor/original/` in it). Considered: a copy inside
+  the theme (travels with it, but ships with it too).
+- **Writes stay in the theme.** The page path must be relative with no
+  `..`, and the file must resolve (`weakly_canonical`, so links count)
+  inside `layouts/<theme>`; save checks again. A page that changed on disk
+  since it was read, or went away, isn't written.
+- **Editor-made pages aren't opened here.** The widget editor regenerates
+  them from its project; edits here would be lost on its next save.
+- **Undo is text snapshots.** Pages are tens of KB; a snapshot per step (100
+  deep) is simpler and exact. Putting back the original (confirmed first) is a
+  step too: Undo brings back the text being edited, as unsaved changes. Like
+  save, it's refused when the file changed on disk since it was read.
+- **Moves are exact deltas; resizes solve for the dragged edge.** A move adds
+  the box's movement to the attribute (so a nudge is exactly 1 unit even for a
+  centred box of odd width, whose left edge sits on a half unit); a resize puts
+  a dragged edge where it was dropped and keeps an undragged one exactly where
+  it was. Positions are written with up to two decimals when they aren't whole
+  (`x="1012.5"`), so nothing drifts by rounding.
+- **Pages switch in `update()`.** Choosing another page frees the preview (and
+  the components the boxes were traced from) before the new page is read; the
+  trace itself is dropped as soon as the boxes are made.
+- **Delete asks** (the canvas's Delete key too), though Undo brings it back:
+  it removes the element's whole lines, animations and all.
+- **Duplicate and delete were in scope** (whole-line copies and removals keep
+  the rest of the file); adding new elements is the next step.
+- **Animations are listed, not edited**, with a note when they change the
+  position or size (Aeon Nox's top bar animates `y` from 0 to 50, so its
+  box as the layout says it sits above the page).
+- **One script per session**, shared by both editors (`takeEditorScript`).
+
+### Checked
+
+`retrofe_tests` (`Tests/LayoutEditTests.cpp`): the scanner on a page with a
+BOM, a declaration, CRLF, a comment holding a tag, single and double quotes,
+entities, self-closing tags, attributes one per line and a custom menu;
+broken pages refused with their line; paths equal to rapidxml +
+`LayoutNodePath` on that page and on every page shipped in
+`Package/Environment/Common/layouts`; edits change only the edited bytes
+(values, new attributes in self-closing and open tags and on their own line,
+removal, entities and the other quote); whole-line delete and duplicate;
+opening and refusing (outside the theme, absolute paths, `..` folders,
+unparseable and editor-made pages); drags that keep `center`, numbers after a
+sideways drag, a resize with a centred origin, an item moving by its
+`xOffset`, nudges, layer clamping, the layout check unchanged; typing as one
+undo step, undo back to the exact original, redo, duplicate/delete and
+their undo; saving keeps the original first and only once, refuses a file
+changed or removed elsewhere, and putting back the original restores the
+bytes; script commands. After review: encoded values read back by rapidxml in
+both quotes, exact nudges and on-grid drags for a half-unit box, W and N
+resizes, an element with both `x` and `xOffset`, put back refused after an
+external change and undoable, hidden boxes cleared when paths shift, no write
+when the backup can't be kept (`manage` is a file), a page reached through a
+junction out of the theme refused, and `pageBoxes` on traced views. The Themes
+provider tests cover `canOpen` and Edit opening the layout editor.
+
+GUI check (2026-10-23, private root `E:\Storage\Agents\native`, scripted):
+Aeon Nox's details with the note and Edit, the layout editor on `layout.xml`
+(boxes over the built page), moving and resizing the information wall,
+moving the wheel's selected item, attribute edits with undo/redo, duplicate
+and delete, save, the Put back the original dialog, `_menu`'s page and a
+`forms` page. The saved `layout.xml` differed from the original in exactly
+the edited values (a git word diff), `retrofe --theme-check "Aeon Nox"`
+passed on it, closing the manager reloaded RetroFE, and Put back the original
+restored the file byte for byte.
+
+### Left for later
+
+- Adding elements (an "add image / text / video" with the raw attributes,
+  or the widget library's fragments inserted as text).
+- Editing animations (a list of events, sets and tweens).
+- Showing animated positions (the box where an animation ends).
+- Editing several pages at once (`layout.xml` and `layout 4x3.xml` usually
+  move together).
+- Snapping a centred box of odd width puts its edge, not its centre, on the grid.
 
 ## Other open items
 

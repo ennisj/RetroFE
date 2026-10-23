@@ -24,6 +24,7 @@
 // tested; the screen runs the rest (wait, save, use, show, ...).
 
 #include "EditorSession.h"
+#include "LayoutSession.h"
 #include <string>
 #include <vector>
 
@@ -56,4 +57,11 @@ namespace ThemeEditor
     // distances are theme units. NotSession for anything else. `note` says
     // what happened (the selection, the widget's new rect).
     CommandResult runSessionCommand(EditorSession& session, const EditorCommand& command, std::string& note);
+
+    // The same for the layout-native mode (LayoutSession): select N (in the
+    // element list's order), selectpath PATH ("-" = the page itself), click
+    // X Y, move DX DY, resize HANDLE DX DY, nudge DX DY, attr NAME VALUE...,
+    // rmattr NAME, get NAME (notes the value), layer N, duplicate, delete,
+    // undo, redo, snap on|off. NotSession for anything else.
+    CommandResult runLayoutCommand(LayoutSession& session, const EditorCommand& command, std::string& note);
 }

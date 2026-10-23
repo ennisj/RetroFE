@@ -60,7 +60,23 @@ public:
     const std::vector<FormWidget*>& formWidgets() const { return formWidgets_; }
     const std::vector<KeyboardWidget*>& keyboardWidgets() const { return keyboardWidgets_; }
 
+    // For the theme editor: the element each component was built from, as a
+    // path in the page (Graphics/LayoutNodePath.h), in the order they were
+    // built. A menu's slots come after it, with slot set to the slot's
+    // ViewInfo (owned by the menu). Off (null) unless asked for.
+    struct TraceEntry
+    {
+        Component* component = nullptr;
+        ViewInfo* slot = nullptr;
+        std::string path;
+    };
+    void setTrace(std::vector<TraceEntry>* trace) { trace_ = trace; }
+
 private:
+    std::vector<TraceEntry>* trace_{ nullptr };
+    void trace(Component* c, ViewInfo* slot, const rapidxml::xml_node<>* node) { if (trace_) addTrace(c, slot, node); }
+    void addTrace(Component* c, ViewInfo* slot, const rapidxml::xml_node<>* node);
+
     std::string fixedFile_;
     const char* fixedXml_{ nullptr };
     std::string fixedAssetPath_;

@@ -10,11 +10,15 @@ It's drawn with the mouse in mind and runs inside Manage.
 
 ## What it edits
 
-Only themes made with it. A theme the editor made has its project inside it
-(`layouts/<Theme>/editor/project.xml`) and a marker on the first line of each
-page it wrote. The editor never writes to, duplicates or deletes anything
-else, so hand-made themes, Aeon Nox included, are safe: the Themes screen
-says why it can't open them.
+Two kinds of theme, in two ways:
+
+- **Themes made with it**, as widgets (most of this page). Such a theme has
+  its project inside it (`layouts/<Theme>/editor/project.xml`) and a marker on
+  the first line of each page it wrote.
+- **Hand-made themes**, Aeon Nox included, in the **layout editor**: it
+  changes the elements a page already has, in the page file itself (see
+  [Hand-made themes: the layout editor](#hand-made-themes-the-layout-editor)).
+  It never duplicates or deletes a hand-made theme.
 
 An editor-made theme is an ordinary layout folder. RetroFE runs it without
 the editor, and it can be copied, zipped for the Catalog or deleted like any
@@ -130,10 +134,67 @@ times larger, in *Selected Text Color* if set, and the other names rest at
 60% opacity. Logo wheels show the item's name when it has no art; there the
 selected name is larger too.
 
+## Hand-made themes: the layout editor
+
+**Manage > Themes > (a hand-made theme) > Edit** opens its pages in the
+layout editor. It moves, resizes and changes the attributes of the elements
+a page already has, and can copy (Duplicate) or delete one; it can't add new
+elements yet. Everything you don't change stays exactly as it was: comments,
+spacing, the order of attributes, quotes, line endings, animations.
+
+- **Left: Pages and Elements.** Every page of the theme: `layout.xml` and its
+  variants (`layout 4x3.xml`, `layout - 1.xml`), `splash.xml`, the
+  collections' pages (`collections/<c>/layout/*.xml`, `_menu` included) and
+  the Manage screens' pages (`forms/**`). Under it, the page's elements in
+  file order: the page itself (`<layout>`: its size, font and colour), then
+  each element, with a menu's `<itemDefaults>` and `<item>`s under it.
+  Elements greyed out draw nothing on the page (sounds, for instance).
+- **Middle: the canvas.** The page as RetroFE builds it, from the text being
+  edited, with the collection in *Preview with* (a collection's own page
+  previews with that collection), and every element's box over it (*All
+  boxes* off shows only the selected one and the one under the mouse).
+  Click to select, click again to pick the one underneath; drag to move;
+  drag a handle to resize. Moves snap to a 5-unit grid. Arrow keys nudge
+  (Shift: 10), Delete deletes (it asks), Ctrl+Z / Ctrl+Y / Ctrl+S.
+- **Right: the selected element.** *Position, size and look*: `x`, `y`,
+  `width`, `height`, `xOrigin`, `yOrigin`, `xOffset`, `yOffset`, `alpha`,
+  `layer` (0 is drawn first, 19 on top), `font`, `fontSize`, `fontColor` and
+  `src`, as the text they are, with what RetroFE makes of the position and
+  size beside them (`x = center` shows `= 960`). A menu item shows what it
+  takes from its `<itemDefaults>`. *All attributes* lists every attribute,
+  each editable as text and removable (*x*), and adds new ones. Its
+  animations (`<onEnter>` and the rest) are listed, not changed.
+
+What a drag writes: **numbers**. Dragging an element sideways turns
+`x="center"` into the number it stood for plus the move; dragging it
+straight up or down leaves `x` alone. Resizing writes `width` and/or
+`height` (only the ones that changed) and moves `x` / `y` so the edges you
+didn't drag stay put, whatever the origin. A menu item whose position comes
+from its `<itemDefaults>` (it sets `xOffset` but not `x`, like Aeon Nox's
+wheel) moves by its `xOffset` / `yOffset` instead, so it keeps following the
+defaults. An element whose animations change its position or size says so:
+on screen it moves from where it's placed here. A vertical menu's slots are
+made from its settings, so they're shown but not dragged; boxes of text and
+of art that hasn't loaded are a guess until it draws (the panel says so).
+
+**Save** writes the page, changing only the values you edited. Before the
+first save changes a page, its original is kept in
+`manage/backups/layouts/<Theme>/<page>` (where every Manage screen keeps
+originals), and **Put back the original...** restores it (what's there then is
+kept beside it as `<page> (2).xml`; Undo brings back what you were editing).
+A page changed by another program since it was opened isn't overwritten or
+put back. If the theme is the one in use, RetroFE
+reloads when you close the manager. Undo and Redo cover every change until
+you leave.
+
+A page the widget editor wrote (it has the marker) isn't opened here: edit
+the theme in the widget editor instead.
+
 ## Limits in this version
 
 - No controller driving: the editor needs a mouse and keyboard.
-- Hand-made themes can't be opened (see above).
+- The layout editor changes existing elements only: no new elements yet,
+  and animations are shown but not edited.
 - Second-screen pages (One Saucier's `layout1.xml`) are kept in the project
   but not saved.
 
@@ -162,7 +223,7 @@ retrofe -editorScript <file>
 
 makes the editor run commands from a file, one per frame, the **first** time
 a theme is opened in that session only (not again after a reload or when
-another theme is opened). A banner says a script is running while it does,
+another theme is opened), in whichever editor opens it. A banner says a script is running while it does,
 and the results go to `log.txt` (`[ThemeEditor] script:`). It exists so the
 editor can be checked without a mouse. Coordinates and distances are theme
 units; blank lines and lines starting with `#` are skipped.
@@ -190,3 +251,16 @@ units; blank lines and lines starting with `#` are skipped.
 | `open fonts\|splash\|collections`, `open -fonts` ... | unfolds (or folds) a section of the theme panel |
 
 Collection names in commands can't contain spaces.
+
+In the layout editor the commands are:
+
+| Command | Does |
+|---------|------|
+| `wait N`, `log TEXT`, `status` | as above; `status` notes the status line |
+| `page PATH` | opens another page of the theme (`collections/_menu/layout/layout.xml`); refused with unsaved changes |
+| `select N`, `selectpath PATH` | chooses an element by its place in the list, or by its path (`image[3]`, `menu[0]/item[4]`, `-` for the page) |
+| `click X Y`, `move DX DY`, `resize nw\|n\|ne\|w\|e\|sw\|s\|se DX DY`, `nudge DX DY` | as above, on the element's box |
+| `attr NAME VALUE...`, `rmattr NAME`, `get NAME`, `layer N` | sets, removes or notes an attribute |
+| `duplicate`, `delete`, `undo`, `redo`, `snap on\|off` | |
+| `save`, `restore` (puts back the original), `restoredialog`, `deletedialog`, `closedialogs` | |
+| `boxes on\|off`, `preview COLLECTION`, `rebuild`, `close`, `discard` | |
