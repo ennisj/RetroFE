@@ -15,13 +15,9 @@
  */
 #include "FormWidget.h"
 #include "Image.h"
-#include "Text.h"
-#include "../Font.h"
-#include "../../SDL.h"
 #include "../../Utility/Log.h"
 #include "../../Utility/Utils.h"
 #include <algorithm>
-#include <sstream>
 
 using Forms::Field;
 using Forms::FieldType;
@@ -59,8 +55,7 @@ namespace
 
 FormWidget::FormWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor)
     : Component(p)
-    , font_(font)
-    , focusFont_(focusFont ? focusFont : font)
+    , painter_(p, font, focusFont)
 {
     baseViewInfo.Monitor = monitor;
     baseViewInfo.Layout = page.getCurrentLayout();
@@ -87,14 +82,7 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
 void FormWidget::allocateGraphicsMemory()
 {
     Component::allocateGraphicsMemory();
-
-    if (!solid_) {
-        SDL_Surface* surface = SDL_CreateRGBSurface(0, 4, 4, 32, 0, 0, 0, 0);
-        SDL_FillRect(surface, nullptr, SDL_MapRGB(surface->format, 255, 255, 255));
-        solid_ = SDL_CreateTextureFromSurface(SDL::getRenderer(baseViewInfo.Monitor), surface);
-        SDL_FreeSurface(surface);
-        SDL_SetTextureBlendMode(solid_, SDL_BLENDMODE_BLEND);
-    }
+    painter_.allocateGraphicsMemory(baseViewInfo.Monitor);
     if (!style_.focusImage.empty() && !focusImage_) {
         focusImage_ = std::make_unique<Image>(style_.focusImage, "", page, baseViewInfo.Monitor, false);
         focusImage_->allocateGraphicsMemory();
@@ -104,12 +92,7 @@ void FormWidget::allocateGraphicsMemory()
 void FormWidget::freeGraphicsMemory()
 {
     Component::freeGraphicsMemory();
-    if (solid_) {
-        SDL_LockMutex(SDL::getMutex());
-        SDL_DestroyTexture(solid_);
-        SDL_UnlockMutex(SDL::getMutex());
-        solid_ = nullptr;
-    }
+    painter_.freeGraphicsMemory();
     if (focusImage_) {
         focusImage_->freeGraphicsMemory();
         focusImage_.reset();
@@ -160,42 +143,10 @@ float FormWidget::labelWidth() const
     return style_.labelWidth > 0 ? style_.labelWidth : contentWidth() * 0.4f;
 }
 
-float FormWidget::textWidth(const std::string& text) const
-{
-    if (!font_ || font_->getHeight() <= 0) {
-        return 0.0f;
-    }
-    return static_cast<float>(font_->getWidth(text)) * fontSize() / static_cast<float>(font_->getHeight());
-}
-
-std::vector<std::string> FormWidget::wrap(const std::string& text, float width) const
-{
-    std::vector<std::string> lines;
-    std::istringstream paragraphs(text);
-    std::string paragraph;
-    while (std::getline(paragraphs, paragraph)) {
-        std::istringstream words(paragraph);
-        std::string word;
-        std::string line;
-        while (words >> word) {
-            std::string candidate = line.empty() ? word : line + " " + word;
-            if (!line.empty() && textWidth(candidate) > width) {
-                lines.push_back(line);
-                line = word;
-            }
-            else {
-                line = candidate;
-            }
-        }
-        lines.push_back(line);
-    }
-    return lines;
-}
-
 void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, bool isError)
 {
     float width = indent ? contentWidth() - labelWidth() : contentWidth();
-    for (const std::string& line : wrap(text, width)) {
+    for (const std::string& line : painter_.wrap(text, width, fontSize())) {
         Row row;
         row.kind = kind;
         row.text = line;
@@ -361,7 +312,7 @@ bool FormWidget::navigate(Nav nav)
     if (!form_ || !model_) {
         return nav != Nav::Back;
     }
-    // Typing ends editing; the Enter or Escape that did it isn't also a Select or Back
+    // While editing, the controls drive the on-screen keyboard instead
     if (editing_) {
         return true;
     }
@@ -542,9 +493,13 @@ bool FormWidget::handleTextEvent(const SDL_Event& e)
             text.erase(std::remove_if(text.begin(), text.end(), [](char c) { return c == '\r' || c == '\n'; }), text.end());
             editBuffer_ += text;
         }
+        else {
+            // Arrows and the like belong to the on-screen keyboard
+            return false;
+        }
         return true;
     }
-    return e.type == SDL_KEYUP || e.type == SDL_TEXTEDITING;
+    return e.type == SDL_TEXTEDITING;
 }
 
 // --- Drawing -----------------------------------------------------------------
@@ -553,16 +508,7 @@ std::string FormWidget::valueText(const Field& field, bool focused)
 {
     if (editing_ && focused) {
         // Keep the end in view while typing, e.g. the folder at the end of a long path
-        std::string text = editBuffer_ + "_";
-        float available = contentWidth() - labelWidth();
-        if (textWidth(text) > available) {
-            size_t start = 0;
-            while (start < text.size() && textWidth("..." + text.substr(start)) > available) {
-                start++;
-            }
-            text = "..." + text.substr(start);
-        }
-        return text;
+        return painter_.tail(editBuffer_ + "_", contentWidth() - labelWidth(), fontSize());
     }
     switch (field.type) {
     case FieldType::Toggle:
@@ -618,57 +564,19 @@ std::string FormWidget::hintText() const
     return (hint.empty() ? "" : hint + "   ") + "Back: close";
 }
 
-void FormWidget::drawText(const std::string& text, float x, float y, float maxWidth, bool focused, float alpha, float sizeScale)
-{
-    if (text.empty()) {
-        return;
-    }
-    if (textsUsed_ >= texts_.size()) {
-        texts_.push_back(std::make_unique<Text>("", page, font_, baseViewInfo.Monitor));
-    }
-    Text* component = texts_[textsUsed_++].get();
-    component->setText(text);
-
-    ViewInfo& view = component->baseViewInfo;
-    view.font = focused ? focusFont_ : font_;
-    view.X = x;
-    view.Y = y;
-    view.FontSize = fontSize() * sizeScale;
-    view.MaxWidth = maxWidth;
-    view.Alpha = alpha * baseViewInfo.Alpha;
-    view.Monitor = baseViewInfo.Monitor;
-    view.Layout = baseViewInfo.Layout;
-    view.ContainerX = baseViewInfo.ContainerX;
-    view.ContainerY = baseViewInfo.ContainerY;
-    view.ContainerWidth = baseViewInfo.ContainerWidth;
-    view.ContainerHeight = baseViewInfo.ContainerHeight;
-    component->draw();
-}
-
-void FormWidget::fillRect(float x, float y, float w, float h, SDL_Color color, float alpha)
-{
-    if (!solid_) {
-        return;
-    }
-    SDL_SetTextureColorMod(solid_, color.r, color.g, color.b);
-    SDL_FRect rect{ x, y, w, h };
-    ViewInfo view = baseViewInfo;
-    SDL::renderCopyF(solid_, alpha * baseViewInfo.Alpha, nullptr, &rect, view,
-                     page.getLayoutWidthByMonitor(baseViewInfo.Monitor), page.getLayoutHeightByMonitor(baseViewInfo.Monitor));
-}
-
 void FormWidget::draw()
 {
     Component::draw();
     justFinishedEditing_ = false;
-    if (!form_ || !model_ || !font_ || baseViewInfo.Alpha <= 0.0f) {
+    if (!form_ || !model_ || !painter_.hasFont() || baseViewInfo.Alpha <= 0.0f) {
         return;
     }
 
     buildRows();
-    textsUsed_ = 0;
+    painter_.begin(baseViewInfo);
 
-    const float padding = fontSize() * 0.6f;
+    const float size = fontSize();
+    const float padding = size * 0.6f;
     const float left = baseViewInfo.XRelativeToOrigin() + padding;
     const float top = baseViewInfo.YRelativeToOrigin() + padding;
     const float width = contentWidth();
@@ -677,7 +585,7 @@ void FormWidget::draw()
     const float hintsHeight = style_.showHints ? rowHeight() : 0.0f;
     const float visible = height - hintsHeight;
     const float row = rowHeight();
-    const float textOffset = (row - fontSize()) / 2.0f;
+    const float textOffset = (row - size) / 2.0f;
     const float valueX = left + labelWidth();
     const float valueWidth = width - labelWidth();
 
@@ -705,33 +613,33 @@ void FormWidget::draw()
                 focusImage_->draw();
             }
             else {
-                fillRect(left - padding / 2.0f, y, width + padding, row, style_.focusBackground, style_.focusBackgroundAlpha);
+                painter_.rect(left - padding / 2.0f, y, width + padding, row, style_.focusBackground, style_.focusBackgroundAlpha);
             }
         }
 
         switch (r.kind) {
         case RowKind::Title:
-            drawText(r.text, left, y + (row - fontSize() * 1.3f) / 2.0f, width, false, 1.0f, 1.3f);
+            painter_.text(r.text, left, y + (row - size * 1.3f) / 2.0f, width, size * 1.3f, false, 1.0f);
             break;
         case RowKind::Header:
-            drawText(r.text, left, textY, width, false, 0.7f, 0.85f);
+            painter_.text(r.text, left, textY, width, size * 0.85f, false, 0.7f);
             break;
         case RowKind::Note:
-            drawText(r.text, r.indent ? valueX : left, textY, r.indent ? valueWidth : width, false, style_.noteAlpha, 0.85f);
+            painter_.text(r.text, r.indent ? valueX : left, textY, r.indent ? valueWidth : width, size * 0.85f, false, style_.noteAlpha);
             break;
         case RowKind::Status:
-            drawText((r.isError ? "! " : "") + r.text, left, textY, width, false, 1.0f);
+            painter_.text((r.isError ? "! " : "") + r.text, left, textY, width, size, false, 1.0f);
             break;
         case RowKind::Field: {
             const Field& field = *r.field;
             float alpha = r.enabled ? 1.0f : style_.disabledAlpha;
-            drawText(field.label, left, textY, labelWidth(), focused, alpha);
+            painter_.text(field.label, left, textY, labelWidth(), size, focused, alpha);
             std::string value = valueText(field, focused);
             if (value.empty() && !field.hint.empty() && !(editing_ && focused)) {
-                drawText(field.hint, valueX, textY, valueWidth, false, style_.noteAlpha * alpha);
+                painter_.text(field.hint, valueX, textY, valueWidth, size, false, style_.noteAlpha * alpha);
             }
             else {
-                drawText(value, valueX, textY, valueWidth, focused, alpha);
+                painter_.text(value, valueX, textY, valueWidth, size, focused, alpha);
             }
             break;
         }
@@ -739,6 +647,6 @@ void FormWidget::draw()
     }
 
     if (style_.showHints) {
-        drawText(hintText(), left, top + height - hintsHeight + textOffset, width, false, style_.noteAlpha, 0.85f);
+        painter_.text(hintText(), left, top + height - hintsHeight + textOffset, width, size * 0.85f, false, style_.noteAlpha);
     }
 }

@@ -19,8 +19,9 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 creates. Existing installs don't have it, so they start on `firstCollection`
 as before. Kiosk mode always skips Home.
 
-F10 opens Settings from anywhere; change the key with `manager` in
-`controls.conf`. Back or Escape closes a screen.
+F10 opens Settings from anywhere, switches to it from another screen, and
+closes it again; change the key with `manager` in `controls.conf`. Back or
+Escape closes a screen.
 
 Home is a collection built into RetroFE, so a layout styles it like any other:
 `layouts/<layout>/collections/Home/layout/layout.xml`, with artwork named after
@@ -79,6 +80,40 @@ The page places the form with a `<form>` element:
 
 Set `formsRenderer = imgui` in `settings.conf` to draw the screens with Dear
 ImGui instead, for example while developing.
+
+### The on-screen keyboard
+
+Editing a text, number or path field shows an on-screen keyboard, so you can
+type with a gamepad or arcade controls: the directions move between keys,
+Select presses one, Back cancels. Shift switches to capitals and symbols, and
+number fields get a number pad. Typing on a real keyboard puts the on-screen
+one away for that edit; finish with Enter or cancel with Escape. Set
+`onScreenKeyboard = no` to never show it.
+
+A layout styles it with `layouts/<layout>/forms/keyboard/layout.xml`, a page
+with a `<keyboard>` element; it's drawn over the screen being edited:
+
+```xml
+<layout width="1920" height="1080" font="fonts/standard.ttf" loadFontSize="40">
+  <keyboard x="center" y="1050" xOrigin="center" yOrigin="bottom" width="1400" height="600"
+            fontSize="36" fontColor="c8c8c8" focusColor="ffffff"
+            keyColor="ffffff" keyAlpha="0.07" focusKeyColor="3d6fb6" focusKeyAlpha="0.75"
+            backgroundColor="0d1014" backgroundAlpha="1" layer="1"/>
+</layout>
+```
+
+| Attribute | Meaning |
+|-----------|---------|
+| `x`, `y`, `width`, `height`, `xOrigin`, `yOrigin`, `layer`, `alpha`, `monitor` | As for other components |
+| `font`, `fontSize`, `fontColor`, `loadFontSize` | Text, as for `<text>` |
+| `focusColor` | Text color of the focused key (default `ffffff`) |
+| `keyColor`, `keyAlpha` | Key background (default white at 0.07) |
+| `focusKeyColor`, `focusKeyAlpha` | Focused key background |
+| `keyImage`, `focusKeyImage` | Images drawn for keys instead, relative to the page's folder |
+| `keySpacing` | Gap between keys (default a quarter of `fontSize`) |
+| `backgroundColor`, `backgroundAlpha` | Panel behind the keyboard |
+| `noteAlpha` | Opacity of the field name and hints (default 0.55) |
+| `hints` | `no` hides the controls hint at the bottom |
 
 ### Changing what a screen contains
 

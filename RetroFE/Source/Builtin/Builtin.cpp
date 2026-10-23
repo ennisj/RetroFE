@@ -100,6 +100,16 @@ static const char* const formLayout = R"(
 </layout>
 )";
 
+// The on-screen keyboard when the layout doesn't style it (layouts/<layout>/forms/keyboard/layout.xml)
+static const char* const keyboardLayout = R"(
+<layout width="1280" height="720" loadFontSize="40" fontColor="c8c8c8">
+  <keyboard x="center" y="700" xOrigin="center" yOrigin="bottom" width="940" height="400"
+            fontSize="24" fontColor="c8c8c8" focusColor="ffffff"
+            backgroundColor="0d1014" backgroundAlpha="1"
+            keyColor="ffffff" keyAlpha="0.07" focusKeyColor="3d6fb6" focusKeyAlpha="0.75" layer="1"/>
+</layout>
+)";
+
 const char* layoutXml(const std::string& page, const std::string& collection)
 {
     if (page == "splash") {
@@ -107,6 +117,9 @@ const char* layoutXml(const std::string& page, const std::string& collection)
     }
     if (page == "form") {
         return formLayout;
+    }
+    if (page == "keyboard") {
+        return keyboardLayout;
     }
     if (page == "layout") {
         return collection == Home::collectionName ? homeLayout : mainLayout;

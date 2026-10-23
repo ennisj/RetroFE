@@ -241,8 +241,80 @@ bool ManagerUI::buildPage()
     return true;
 }
 
+void ManagerUI::syncKeyboard()
+{
+    bool editing = widget_ && widget_->isEditing();
+    if (editing && !wasEditing_) {
+        typedOnKeyboard_ = false;   // a new edit
+    }
+    wasEditing_ = editing;
+
+    if (!editing) {
+        closeKeyboard();
+        return;
+    }
+    std::string enabled = "yes";
+    config_.getProperty("onScreenKeyboard", enabled);
+    if (!keyboardPage_ && !typedOnKeyboard_ && Forms::isTruthy(enabled)) {
+        openKeyboard();
+    }
+}
+
+bool ManagerUI::openKeyboard()
+{
+    std::string layoutName;
+    config_.getProperty(OPTION_LAYOUT, layoutName);
+    std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
+    std::string file = Utils::combinePath(formsPath, "keyboard", "layout.xml");
+
+    PageBuilder builder(layoutName, "layout", config_, fontCache_);
+    if (!layoutName.empty() && std::filesystem::exists(file)) {
+        builder.setLayoutFile(file);
+    }
+    else {
+        builder.setLayoutXml(Builtin::layoutXml("keyboard"), formsPath);
+    }
+
+    Page* page = builder.buildPage();
+    if (!page || builder.keyboardWidgets().empty()) {
+        LOG_ERROR("Manager", "The keyboard page has no <keyboard>");
+        if (page) {
+            page->deInitialize();
+            delete page;
+        }
+        typedOnKeyboard_ = true;   // don't try again for this edit
+        return false;
+    }
+
+    const Forms::Field* field = widget_->editingField();
+    keyboard_ = builder.keyboardWidgets().front();
+    keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number);
+    keyboardPage_ = page;
+    keyboardPage_->allocateGraphicsMemory();
+    keyboardPage_->start();
+
+    // Controls still held from starting the edit must be released first
+    navHeld_.fill(true);
+    return true;
+}
+
+void ManagerUI::closeKeyboard()
+{
+    if (!keyboardPage_) {
+        return;
+    }
+    keyboard_->detach();
+    keyboardPage_->stop();
+    keyboardPage_->deInitialize();
+    delete keyboardPage_;
+    keyboardPage_ = nullptr;
+    keyboard_ = nullptr;
+}
+
 void ManagerUI::destroyPage()
 {
+    closeKeyboard();
+    wasEditing_ = false;
     if (!page_) {
         return;
     }
@@ -259,8 +331,9 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
         return false;
     }
     if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_) {
+        // Opens Settings, or closes it; from another screen it switches to Settings
         if (!e.key.repeat) {
-            open_ ? close() : open(Screen::Settings);
+            open_ && screen_ == Screen::Settings ? close() : open(Screen::Settings);
         }
         return true;
     }
@@ -269,6 +342,20 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     }
 
     if (page_) {
+        // Typing on a real keyboard puts the on-screen one away for this edit, so keys
+        // that are also mapped controls (e.g. back = B) just type
+        if (keyboardPage_) {
+            SDL_Keycode key = e.type == SDL_KEYDOWN ? e.key.keysym.sym : 0;
+            bool printable = key >= 32 && key < 127 && !(e.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI));
+            if (printable || e.type == SDL_TEXTINPUT) {
+                typedOnKeyboard_ = true;
+                closeKeyboard();
+            }
+            // On the on-screen keyboard Enter is Select, which presses the focused key
+            else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+                return false;
+            }
+        }
         // Typing goes to the field being edited; everything else is left for RetroFE's controls
         if (widget_->handleTextEvent(e)) {
             return true;
@@ -303,6 +390,7 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
     const float repeatDelay = 0.4f;
     const float repeatInterval = 0.09f;
 
+    syncKeyboard();
     for (size_t i = 0; i < held.size() && widget_; i++) {
         bool repeats = i < 4;  // up/down/left/right
         bool act = false;
@@ -315,9 +403,24 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
             navRepeatAt_[i] = now + repeatInterval;
         }
         navHeld_[i] = held[i];
+        if (!act) {
+            continue;
+        }
 
-        if (act && !widget_->navigate(navs[i])) {
+        // While a field is edited the controls type on the on-screen keyboard
+        if (keyboard_) {
+            KeyboardWidget::Result result = keyboard_->navigate(navs[i]);
+            if (result != KeyboardWidget::Result::None) {
+                widget_->finishEditing(result == KeyboardWidget::Result::Done);
+                syncKeyboard();
+            }
+            continue;
+        }
+        if (!widget_->navigate(navs[i])) {
             close();
+        }
+        else {
+            syncKeyboard();   // a Select may have started editing
         }
     }
 }
@@ -329,7 +432,13 @@ void ManagerUI::update(float dt)
     }
     if (page_) {
         page_->update(dt);
+        if (keyboardPage_) {
+            keyboardPage_->update(dt);
+        }
         handleWidgetResults();
+        if (widget_) {
+            syncKeyboard();
+        }
     }
     else {
         view_.update(window_, model_);
@@ -360,6 +469,9 @@ void ManagerUI::drawPage()
 {
     if (open_ && page_) {
         page_->draw();
+        if (keyboardPage_) {
+            keyboardPage_->draw();
+        }
     }
 }
 

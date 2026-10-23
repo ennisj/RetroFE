@@ -31,6 +31,7 @@
 static const int MENU_INDEX_HIGH = 16;
 
 class FormWidget;
+class KeyboardWidget;
 class ScrollingList;
 class Page;
 class ViewInfo;
@@ -51,14 +52,16 @@ public:
     // The same, from XML text; relative asset paths resolve against assetPath
     void setLayoutXml(const char* xml, const std::string& assetPath) { fixedXml_ = xml; fixedAssetPath_ = assetPath; }
 
-    // The <form> components created by buildPage
+    // The <form> and <keyboard> components created by buildPage
     const std::vector<FormWidget*>& formWidgets() const { return formWidgets_; }
+    const std::vector<KeyboardWidget*>& keyboardWidgets() const { return keyboardWidgets_; }
 
 private:
     std::string fixedFile_;
     const char* fixedXml_{ nullptr };
     std::string fixedAssetPath_;
     std::vector<FormWidget*> formWidgets_;
+    std::vector<KeyboardWidget*> keyboardWidgets_;
 
     std::string layoutKey;
     std::string layoutPage;

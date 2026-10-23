@@ -19,6 +19,7 @@
 #include "ManagerModel.h"
 #include "../Forms/Form.h"
 #include "../Graphics/Component/FormWidget.h"
+#include "../Graphics/Component/KeyboardWidget.h"
 #include <SDL2/SDL.h>
 #include <array>
 #include <map>
@@ -35,6 +36,9 @@ struct ImGuiContext;
 // <form> element, styled by layouts/<layout>/forms/<id>/layout.xml or
 // forms/layout.xml, or the built-in form page, and driven by RetroFE's
 // controls. formsRenderer = imgui draws the forms with Dear ImGui instead.
+// While a text field is edited an on-screen keyboard page is shown
+// (forms/keyboard/layout.xml or the built-in one) unless onScreenKeyboard = no;
+// typing on a real keyboard puts it away.
 // While a screen is open it takes all input.
 class ManagerUI
 {
@@ -82,10 +86,17 @@ private:
     bool buildPage();
     void destroyPage();
     void handleWidgetResults();
+    void syncKeyboard();
+    bool openKeyboard();
+    void closeKeyboard();
 
     FontCache* fontCache_ = nullptr;
     Page* page_ = nullptr;             // the page-based screen, when open
     FormWidget* widget_ = nullptr;     // owned by page_
+    Page* keyboardPage_ = nullptr;     // the on-screen keyboard, while a field is edited
+    KeyboardWidget* keyboard_ = nullptr;
+    bool wasEditing_ = false;
+    bool typedOnKeyboard_ = false;     // this edit uses a real keyboard, so no on-screen one
     std::array<bool, 6> navHeld_{};
     std::array<float, 6> navRepeatAt_{};
 

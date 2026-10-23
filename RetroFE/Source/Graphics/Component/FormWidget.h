@@ -16,6 +16,7 @@
 #pragma once
 
 #include "Component.h"
+#include "WidgetPainter.h"
 #include "../../Forms/Form.h"
 #include <SDL2/SDL.h>
 #include <memory>
@@ -25,7 +26,6 @@
 
 class FontManager;
 class Image;
-class Text;
 
 // The <form> layout element: draws a Forms::Form as rows the user moves
 // through with RetroFE's controls. Its look comes from the layout:
@@ -82,7 +82,12 @@ public:
 
     // Keyboard typing while a text field is being edited; returns true if used
     bool handleTextEvent(const SDL_Event& e);
+
+    // The text field being edited, for an on-screen keyboard to type into
     bool isEditing() const { return editing_; }
+    const Forms::Field* editingField() const { return editing_ ? focusedField_ : nullptr; }
+    std::string& editText() { return editBuffer_; }
+    void finishEditing(bool keep);
 
     void setStatus(const std::string& message, bool isError);
     std::optional<Browse> takeBrowse();
@@ -108,25 +113,19 @@ private:
     void buildRows();
     void addFields(const std::vector<Forms::Field>& fields);
     void addWrapped(RowKind kind, const std::string& text, bool indent, bool isError = false);
-    std::string hintText() const;
-    float contentWidth() const;
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
     void activate(const Forms::Field& field);
     void change(const Forms::Field& field, int direction);
     void startEditing(const Forms::Field& field);
-    void finishEditing(bool keep);
     std::string valueText(const Forms::Field& field, bool focused);
-    float textWidth(const std::string& text) const;
-    std::vector<std::string> wrap(const std::string& text, float width) const;
-    void drawText(const std::string& text, float x, float y, float maxWidth, bool focused, float alpha, float sizeScale = 1.0f);
-    void fillRect(float x, float y, float w, float h, SDL_Color color, float alpha);
+    std::string hintText() const;
+    float contentWidth() const;
     float rowHeight() const;
     float labelWidth() const;
     float fontSize() const;
 
-    FontManager* font_;
-    FontManager* focusFont_;
+    WidgetPainter painter_;
     Style style_;
     const Forms::Form* form_ = nullptr;
     Forms::Model* model_ = nullptr;
@@ -147,8 +146,5 @@ private:
     std::optional<Browse> browse_;
     std::optional<Forms::Model::Result> result_;
 
-    SDL_Texture* solid_ = nullptr;
     std::unique_ptr<Image> focusImage_;
-    std::vector<std::unique_ptr<Text>> texts_;
-    size_t textsUsed_ = 0;
 };
