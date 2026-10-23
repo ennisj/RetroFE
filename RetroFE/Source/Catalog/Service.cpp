@@ -15,6 +15,7 @@
  */
 #include "Service.h"
 #include "Download.h"
+#include "GitHub.h"
 #include "Index.h"
 #include "../Utility/Log.h"
 #include <algorithm>
@@ -82,6 +83,18 @@ namespace Catalog
         }
     }
 
+    void Service::setApp(const AppInstall& app)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        app_ = app;
+    }
+
+    AppInstall Service::app() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return app_;
+    }
+
     void Service::start()
     {
         if (worker_.joinable()) {
@@ -112,7 +125,15 @@ namespace Catalog
             Entry entry;
             entry.package = package;
             auto installed = installed_.find(package.id);
-            if (installed != installed_.end()) {
+            if (package.kind == "app") {
+                // RetroFE itself: what's installed is what's running. Any GitHub
+                // source may update it, since it can't be removed to switch.
+                entry.installedVersion = !app_.version.empty() ? app_.version
+                                       : installed != installed_.end() ? installed->second.version : "";
+                entry.installedSource = installed != installed_.end() ? installed->second.source : "";
+                entry.updateAvailable = !entry.installedVersion.empty() && compareVersions(package.version, entry.installedVersion) > 0;
+            }
+            else if (installed != installed_.end()) {
                 entry.installedVersion = installed->second.version;
                 entry.installedSource = installed->second.source;
                 // Only the source it came from can update it
@@ -325,6 +346,16 @@ namespace Catalog
         return true;
     }
 
+    bool Service::takeRestartRequest()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!restartRequested_ || active_ || std::any_of(jobs_.begin(), jobs_.end(), [](const Job& job) { return job.isPackageJob(); })) {
+            return false;
+        }
+        restartRequested_ = false;
+        return true;
+    }
+
     void Service::waitUntilIdle()
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -354,12 +385,32 @@ namespace Catalog
             }
             lock.unlock();
 
-            switch (job.kind) {
-            case Job::Kind::Recover: doRecover(); break;
-            case Job::Kind::Refresh: doRefresh(); break;
-            case Job::Kind::Install: doInstall(job.id); break;
-            case Job::Kind::Remove:  doRemove(job.id); break;
-            case Job::Kind::Artwork: doArtwork(); break;
+            // Nothing a source or a damaged file holds may take RetroFE down
+            std::string failure;
+            try {
+                switch (job.kind) {
+                case Job::Kind::Recover: doRecover(); break;
+                case Job::Kind::Refresh: doRefresh(); break;
+                case Job::Kind::Install: doInstall(job.id); break;
+                case Job::Kind::Remove:  doRemove(job.id); break;
+                case Job::Kind::Artwork: doArtwork(); break;
+                }
+            }
+            catch (const std::exception& e) {
+                failure = e.what();
+            }
+            catch (...) {
+                failure = "unknown error";
+            }
+            if (!failure.empty()) {
+                LOG_ERROR("Catalog", "A Catalog job failed: " + failure);
+                if (job.isPackageJob()) {
+                    finish(job.id, false, "Something went wrong: " + failure);
+                }
+                else if (job.kind == Job::Kind::Refresh) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    warnings_.push_back("Reading the sources failed: " + failure);
+                }
             }
 
             lock.lock();
@@ -376,6 +427,19 @@ namespace Catalog
     void Service::doRecover()
     {
         installer_.recover();
+        AppInstall app;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            app = app_;
+        }
+        if (!app.program.empty()) {
+            // Undoing an unfinished update of RetroFE needs a restart to run the version put back
+            SelfUpdater updater(folder_, app);
+            if (updater.recover()) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                restartRequested_ = true;
+            }
+        }
         std::lock_guard<std::mutex> lock(mutex_);
         installed_ = installer_.installed();
         rebuildEntries();
@@ -474,6 +538,10 @@ namespace Catalog
             return;
         }
         const Package& package = entry.package;
+        if (package.kind == "app" || package.id == appPackageId) {
+            doUpdateApp(package);
+            return;
+        }
 
         Manifest previous;
         bool updating = false;
@@ -564,18 +632,124 @@ namespace Catalog
         finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + ".");
     }
 
+    void Service::doUpdateApp(const Package& original)
+    {
+        Package package = original;
+        // Only a GitHub source the user added may replace RetroFE's program: its
+        // official repository, or one the user allowed with app = yes
+        AppInstall app;
+        const SourceConfig* source = nullptr;
+        SourceConfig config;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            app = app_;
+            for (const SourceConfig& s : sources_) {
+                if (s.name == package.source && s.type == "github") {
+                    config = s;
+                    source = &config;
+                }
+            }
+        }
+        if (package.kind != "app" || package.id != appPackageId || !source) {
+            finish(package.id, false, "Updates of RetroFE itself only come from GitHub sources.");
+            return;
+        }
+        if (!isOfficialRepository(source->repo) && !source->app) {
+            finish(package.id, false, source->repo + " isn't RetroFE's own repository, and its source doesn't say app = yes.");
+            return;
+        }
+        // Never back to the same or an older version
+        if (!app.version.empty() && compareVersions(package.version, app.version) <= 0) {
+            finish(package.id, false, "RetroFE " + app.version + " is already this version or newer.");
+            return;
+        }
+        SelfUpdater updater(folder_, app);
+        std::string problem = updater.problem();
+        if (!problem.empty()) {
+            finish(package.id, false, problem);
+            return;
+        }
+        if (package.files.size() != 1) {
+            finish(package.id, false, "An update of RetroFE is a single archive.");
+            return;
+        }
+
+        // A program is only installed when it can be checked
+        PackageFile& file = package.files[0];
+        if (file.sha256.empty() && !file.sha256Url.empty() && http_ && isAllowedLocation(file.sha256Url)) {
+            std::string text;
+            std::string error;
+            if (http_->get(file.sha256Url, text, error)) {
+                file.sha256 = parseSha256File(text.substr(0, 4096));
+            }
+            else {
+                LOG_WARNING("Catalog", "Could not read " + file.sha256Url + ": " + error);
+            }
+        }
+        if (file.sha256.empty()) {
+            finish(package.id, false, "This release has no checksum, so RetroFE won't install it.");
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            activity_.name = package.name;
+            activity_.total = package.totalSize();
+        }
+        LOG_NOTICE("Catalog", "Updating RetroFE to " + package.version + " from " + package.source);
+        Downloader downloader(http_.get(), (fs::path(folder_) / "downloads").string());
+        Downloader::Result result;
+        bool fetched = downloader.fetch(package, [&](uint64_t received, uint64_t total) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            activity_.received = received;
+            if (total) activity_.total = total;
+            return !cancelRequested_ && !stopping_;
+        }, result);
+        if (!fetched) {
+            LOG_WARNING("Catalog", package.id + ": " + result.error);
+            finish(package.id, false, result.cancelled ? "Stopped. Install again to continue where it left off." : result.error);
+            return;
+        }
+
+        // Stop and leaving RetroFE give up until files start moving
+        updater.shouldStop = [this] { return stopping_ || cancelRequested_; };
+        std::string error;
+        if (!updater.apply(package, result.files[0], error)) {
+            LOG_ERROR("Catalog", "RetroFE update: " + error);
+            finish(package.id, false, error == "Stopped" ? "Stopped. Install again to continue." : error);
+            return;
+        }
+        downloader.discard(package.id);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            installed_ = installer_.installed();
+            // What's in place now, so the same update isn't offered again before the restart
+            app_.version = package.version;
+            rebuildEntries();
+            restartRequested_ = true;
+        }
+        finish(package.id, true, "Updated RetroFE to " + package.version + ". Restarting...");
+    }
+
     void Service::doRemove(const std::string& id)
     {
         std::string name = id;
         std::set<std::string> collections;
+        bool isApp = id == appPackageId;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto installed = installed_.find(id);
             if (installed != installed_.end()) {
                 if (!installed->second.name.empty()) name = installed->second.name;
                 collections = collectionsOf(installed->second);
+                isApp = isApp || installed->second.kind == "app";
             }
             activity_.name = name;
+        }
+        // Its files are the running program
+        if (isApp) {
+            finish(id, false, "RetroFE can't remove itself.");
+            return;
         }
         Installer::Removal removal;
         std::string error;

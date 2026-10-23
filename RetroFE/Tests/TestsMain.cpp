@@ -25,6 +25,7 @@ int main()
     runFormsTests();
     runCatalogTests();
     runThemeEditorTests();
+    runSelfUpdateTests();
 
     auto& suites = Test::suites();
     std::sort(suites.begin(), suites.end(), [](const auto& a, const auto& b) { return a.first < b.first; });

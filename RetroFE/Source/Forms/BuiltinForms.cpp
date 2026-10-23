@@ -88,6 +88,12 @@ const char* const sourcesForm = R"(
   <list label="Sources" bind="info:sources"
         empty="The Catalog lists packages from sources you add here: an index file on the web or on disk, or a folder of package archives, e.g. on a USB stick or a NAS."/>
   <list label="Problems" bind="info:catalogWarnings"/>
+  <section label="RetroFE updates" visibleWhen="!info:hasRetroFESource">
+    <note bind="info:retrofeSourceNote"/>
+    <toggle label="I trust this source" bind="draft:retrofeTrusted" default="no"
+            help="RetroFE doesn't check what sources offer. Only add sources you trust."/>
+    <button label="Add RetroFE from GitHub" action="source.addRetroFE"/>
+  </section>
   <section label="Add a source">
     <text label="Name" bind="draft:sourceName" hint="e.g. community"/>
     <choice label="Type" bind="draft:sourceType" options="sourceTypes" default="index"/>
@@ -111,6 +117,7 @@ const char* const sourcesForm = R"(
 const char* const packageForm = R"(
 <form id="package" title="Package" bind="package:name">
   <note bind="package:summary"/>
+  <note bind="package:notice"/>
   <note bind="package:description"/>
   <note bind="package:installedStatus"/>
   <note bind="package:requires"/>

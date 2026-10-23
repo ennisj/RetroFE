@@ -80,6 +80,10 @@ public:
     // collections they installed to the Main menu: RetroFE should reload
     bool takeCatalogChanges();
 
+    // True once after RetroFE updated itself: RetroFE should exit, and main()
+    // starts the new version (Catalog::takeRelaunch)
+    bool takeRestartRequest();
+
     // Returns true if the UI used the event, including the key that opens Settings.
     // Unused events should go to RetroFE's input so navigate() gets them.
     bool handleEvent(const SDL_Event& e);

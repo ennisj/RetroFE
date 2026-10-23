@@ -14,12 +14,14 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Sources.h"
+#include "GitHub.h"
 #include "Http.h"
 #include "Index.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -170,6 +172,10 @@ namespace
                     contents.warnings.push_back(archive.filename().string() + ": can't make a package id from its name");
                     continue;
                 }
+                if (package.id == Catalog::appPackageId) {
+                    contents.warnings.push_back(archive.filename().string() + ": RetroFE itself only installs from a GitHub source");
+                    continue;
+                }
                 package.source = source.name;
                 package.kind = "other";
                 Catalog::PackageFile file;
@@ -291,6 +297,15 @@ bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, st
         if (setting == "type") it->type = lower(value);
         else if (setting == "url") it->url = value;
         else if (setting == "path") it->path = value;
+        else if (setting == "repo") it->repo = value;
+        else if (setting == "prerelease") {
+            std::string v = lower(value);
+            it->prerelease = v == "yes" || v == "true" || v == "on" || v == "1";
+        }
+        else if (setting == "app") {
+            std::string v = lower(value);
+            it->app = v == "yes" || v == "true" || v == "on" || v == "1";
+        }
         else if (setting == "enabled") {
             std::string v = lower(value);
             it->enabled = !(v == "no" || v == "false" || v == "off" || v == "0");
@@ -312,6 +327,15 @@ bool saveSources(const std::string& file, const std::vector<SourceConfig>& sourc
         }
         if (!source.path.empty()) {
             out << "sources." << source.name << ".path = " << source.path << "\n";
+        }
+        if (!source.repo.empty()) {
+            out << "sources." << source.name << ".repo = " << source.repo << "\n";
+        }
+        if (source.prerelease) {
+            out << "sources." << source.name << ".prerelease = yes\n";
+        }
+        if (source.app) {
+            out << "sources." << source.name << ".app = yes\n";
         }
         out << "sources." << source.name << ".enabled = " << (source.enabled ? "yes" : "no") << "\n";
     }
@@ -364,6 +388,20 @@ std::string validateSource(const SourceConfig& source, const std::vector<SourceC
         }
         return "";
     }
+    if (source.type == "github") {
+        if (!isValidRepository(source.repo)) {
+            return std::string("Enter the repository as owner/name, e.g. ") + retrofeRepository + ".";
+        }
+        if (!source.url.empty() && (!isUrl(source.url) || !isAllowedLocation(source.url))) {
+            return "Use an https:// address for the releases.";
+        }
+        for (const SourceConfig& other : existing) {
+            if (other.type == "github" && lower(other.repo) == lower(source.repo)) {
+                return "There's already a source for " + other.repo + ": " + other.name + ".";
+            }
+        }
+        return "";
+    }
     return "Choose what kind of source it is.";
 }
 
@@ -375,6 +413,9 @@ SourceContents readSource(const SourceConfig& source, const std::string& cacheFo
     }
     else if (source.type == "index") {
         readIndex(source, cacheFolder, http, contents);
+    }
+    else if (source.type == "github") {
+        readGitHub(source, cacheFolder, http, static_cast<int64_t>(std::time(nullptr)), contents);
     }
     else {
         contents.error = "Unknown source type \"" + source.type + "\"";

@@ -18,6 +18,7 @@
 #ifdef WIN32
 #include <Windows.h>
 #include <winhttp.h>
+#include <cctype>
 #include <fstream>
 #include <vector>
 
@@ -97,6 +98,40 @@ namespace
                 body.append(data, size);
                 return true;
             }, error, failedReading);
+        }
+
+        bool request(const std::string& url, const std::vector<std::string>& headers, Response& response) override
+        {
+            response = Response();
+            std::string header;
+            for (const std::string& line : headers) {
+                // A header can't carry another one with it
+                if (line.find_first_of("\r\n") != std::string::npos) continue;
+                header += (header.empty() ? "" : "\r\n") + line;
+            }
+            DWORD status = 0;
+            uint64_t length = 0;
+            Handle connection;
+            Handle request;
+            if (!open(url, header, connection, request, status, length, response.error)) {
+                return false;
+            }
+            response.status = static_cast<int>(status);
+            response.headers = this->headers(request);
+            const size_t limit = 64 * 1024 * 1024;
+            bool failedReading = false;
+            bool ok = read(request, [&](const char* data, size_t size) {
+                if (response.body.size() + size > limit) {
+                    response.error = "The answer is too large";
+                    return false;
+                }
+                response.body.append(data, size);
+                return true;
+            }, response.error, failedReading);
+            if (!ok) {
+                response.status = 0;
+            }
+            return ok;
         }
 
         bool download(const std::string& url, const std::string& file, uint64_t offset,
@@ -262,6 +297,45 @@ namespace
                 }
             }
             return "";
+        }
+
+        // Every response header, names in lower case; ASCII only
+        static std::map<std::string, std::string> headers(HINTERNET request)
+        {
+            std::map<std::string, std::string> result;
+            DWORD size = 0;
+            WinHttpQueryHeaders(request, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, WINHTTP_NO_OUTPUT_BUFFER, &size, WINHTTP_NO_HEADER_INDEX);
+            if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || size == 0) {
+                return result;
+            }
+            std::wstring raw(size / sizeof(wchar_t) + 1, L'\0');
+            if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, raw.data(), &size, WINHTTP_NO_HEADER_INDEX)) {
+                return result;
+            }
+            raw.resize(size / sizeof(wchar_t));
+            size_t start = 0;
+            while (start < raw.size()) {
+                size_t end = raw.find(L"\r\n", start);
+                if (end == std::wstring::npos) end = raw.size();
+                std::wstring line = raw.substr(start, end - start);
+                start = end + 2;
+                size_t colon = line.find(L':');
+                if (colon == std::wstring::npos) continue;   // the status line
+                std::string name;
+                std::string value;
+                bool ascii = true;
+                for (size_t i = 0; i < line.size(); i++) {
+                    wchar_t c = line[i];
+                    if (c > 0x7e) { ascii = false; break; }
+                    if (i < colon) name += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    else if (i > colon) value += static_cast<char>(c);
+                }
+                if (!ascii) continue;
+                size_t first = value.find_first_not_of(" \t");
+                value = first == std::string::npos ? "" : value.substr(first);
+                result[name] = value;
+            }
+            return result;
         }
 
         // Network failures other than a bad address or certificate may clear up

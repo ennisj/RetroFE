@@ -14,7 +14,7 @@ list(APPEND CMAKE_MODULE_PATH "${RETROFE_DIR}/CMake")
 # Ensure versioning.h is generated before compiling
 add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/autogen/versioning.h"
-    COMMAND ${CMAKE_COMMAND} -P "${RETROFE_DIR}/CMake/Versioning.cmake"
+    COMMAND ${CMAKE_COMMAND} "-DRETROFE_RELEASE_VERSION=${RETROFE_RELEASE_VERSION}" -P "${RETROFE_DIR}/CMake/Versioning.cmake"
     COMMENT "Generating versioning.h"
 )
 # Create a custom target to generate versioning.h
@@ -336,11 +336,13 @@ set(RETROFE_SOURCES
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+	"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Http.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Index.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+	"${RETROFE_DIR}/Source/Catalog/SelfUpdate.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Service.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 	"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"
@@ -446,11 +448,13 @@ if(RETROFE_BUILD_TESTS)
 	set(RETROFE_TEST_ALL_SOURCES
 		${RETROFE_TEST_SOURCES}
 		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+		"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Index.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+		"${RETROFE_DIR}/Source/Catalog/SelfUpdate.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Service.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"

@@ -56,7 +56,8 @@ index format, is in [design/catalog-sources.md](design/catalog-sources.md).
 What a package may install: content, such as collection settings, launchers,
 artwork, layouts and ROMs, under its targets. Programs and scripts (`.exe`,
 `.dll`, `.bat`, `.ps1`, `.sh` and the like) are refused, as is anything in the
-catalog folder or RetroFE's program folder. File names Windows treats as
+catalog folder or RetroFE's program folder (RetroFE's own updates, below, are
+the one exception). File names Windows treats as
 devices (`CON`, `NUL`, `COM1`…) or that end in a dot or space are refused too.
 
 Everything the Catalog keeps is in one folder, `catalogPath` in
@@ -84,6 +85,56 @@ as `genre`, its source as `manufacturer` and its version as `year`.
 HTTP sources need Windows for now; on Linux and macOS folder sources and
 index files on disk work.
 
+### Updating RetroFE itself
+
+**Sources → Add RetroFE from GitHub** (after confirming you trust it) adds a
+source for this fork's releases (`ennisj/RetroFE`). The Catalog then lists
+**RetroFE from ennisj/RetroFE**, with **Update** when a release is newer than
+the running version. Any other repository can be added with the type "GitHub
+releases" and `owner/name` (or its github.com address) as the address. Only
+the official repository offers RetroFE by default: for any other, add
+`sources.<name>.app = yes` to `catalog/sources.conf`. `prerelease = yes` there
+offers pre-releases too.
+
+Installing it updates RetroFE and restarts it:
+
+- The download must have a SHA-256 (GitHub's digest for the release file, or a
+  `.sha256` file beside it) and match it; a release without one isn't
+  installed. Only versions newer than the running one are installed.
+- Only the program folder (`retrofe\`) and the layouts the release ships are
+  touched; collections, settings, controls, launchers and the catalog never
+  are.
+- The files it replaces are copied to `catalog/backups/retrofe/<old version>/`
+  first.
+- Windows can't overwrite a running program, so the new program folder is
+  prepared as `retrofe.new` beside the old one, then swapped in with two
+  renames (`retrofe` → `retrofe.old`, `retrofe.new` → `retrofe`). If another
+  program has a file in `retrofe\` open, the changed files are swapped one by
+  one instead (`<file>` → `<file>.old`, `<file>.new` → `<file>`). If anything
+  fails, everything is put back and nothing changes.
+- RetroFE then restarts itself (without running `exit.bat`) and deletes what
+  it set aside once the old process has closed.
+- If RetroFE is stopped part way through (a crash or power cut), the next
+  start finishes or undoes the update before anything else, and restarts if
+  it put files back. It gives up after three tries and shows a message saying
+  where the backup is. The file `retrofe-UPDATE-INTERRUPTED.txt` in the
+  RetroFE folder exists only while an update is under way. If it's still
+  there and RetroFE won't start, follow it: rename `retrofe.old` back to
+  `retrofe`, or copy the backup folder over the RetroFE folder.
+- RetroFE can't be removed from Manage. GitHub sources only offer RetroFE
+  itself; index and folder sources can't.
+- GitHub allows 60 checks an hour without an account. RetroFE checks at most
+  once a minute and only asks whether anything changed; if the limit is
+  reached it shows the last list, says when it will check again, and waits
+  until then.
+
+Releases are made by pushing a tag such as `v2504.3`
+(`.github/workflows/release-windows.yml`), which attaches
+`RetroFE-2504.3-windows-x64.zip` (`retrofe\` plus `RetroFE.lnk`) and its
+`.sha256` to the release. Tags with a `-` (e.g. `v2504.3-beta.1`) become
+pre-releases. A release build reports its tag's version; other builds report
+the version in `RetroFE/CMake/Versioning.cmake` (2504.2), so tag releases above
+it, or raise it, so that development builds aren't offered older releases.
 ## Settings and Manage screens
 
 Each screen is a **form**: fields bound to settings or other values. Up and

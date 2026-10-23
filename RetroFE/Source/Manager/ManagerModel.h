@@ -38,16 +38,20 @@ namespace Catalog { class Service; }
 //   info:sources, info:installed, info:catalogWarnings   Catalog lists
 //   info:catalogStatus     what the Catalog is doing, or how many packages it has
 //   info:hasSources, info:hasInstalled, info:sourceIsFolder   for visibleWhen
+//                          (hasInstalled: packages that can be removed, so not RetroFE itself)
 //   info:removalStatus     how the last package.removeInstalled went
 //   package:<key>          the package param:id names: name, summary,
 //                          description, installedStatus, requires, checksum, progress,
+//                          notice (installing RetroFE itself restarts it),
 //                          and canInstall, canUpdate, canRemove, isBusy for visibleWhen
 //   draft:source*          the Sources form's input
+//   info:hasRetroFESource, info:retrofeSourceNote, draft:retrofeTrusted
+//                          adding this fork's GitHub releases in one step
 //   <prefix>:<key>         a registered provider's (see Provider.h)
 // Actions: settings.save, collection.create, package.install, package.remove,
 // package.cancel, package.removeInstalled (draft:removePackage), source.add,
-// source.remove, catalog.refresh, open.<form> (opens that form), back, and
-// <prefix>.<name> for providers.
+// source.addRetroFE (draft:retrofeTrusted), source.remove, catalog.refresh,
+// open.<form> (opens that form), back, and <prefix>.<name> for providers.
 class ManagerModel : public Forms::Model
 {
 public:

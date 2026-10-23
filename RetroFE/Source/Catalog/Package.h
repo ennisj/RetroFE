@@ -29,6 +29,7 @@ namespace Catalog
         uint64_t size = 0;     // 0 if unknown
         std::string sha256;    // lowercase hex, or ""
         std::string md5;       // lowercase hex, or ""
+        std::string sha256Url; // where the SHA-256 can be fetched when it isn't known yet (GitHub's <asset>.sha256)
         std::string target;    // root, collections, items, media, layouts or meta
         std::string path;      // folder under the target, "" for the target itself
     };

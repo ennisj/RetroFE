@@ -16,6 +16,7 @@
 
 #include "Video/GStreamerVideo.h"
 #include "Builtin/Builtin.h"
+#include "Catalog/SelfUpdate.h"
 #include "Database/Configuration.h"
 #include "Database/DB.h"
 #include "Database/GlobalOpts.h"
@@ -114,6 +115,22 @@ static void sendEnterKey() {
 
 int main(int argc, char** argv)
 {
+    // An interrupted update of RetroFE itself is finished or undone before anything else
+    // (catalog-sources.md, "Updating RetroFE in place"); if it put the old files back,
+    // start again so they're what runs
+    std::string executable = Catalog::currentExecutable();
+    Catalog::StartupRecovery recovery = Catalog::recoverAtStart(executable);
+    if (recovery.restart) {
+        std::string error;
+        if (Catalog::relaunch(executable, argv, error)) {
+            return 0;
+        }
+        recovery.log.emplace_back("error", error);
+    }
+    if (!recovery.message.empty()) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "RetroFE update", recovery.message.c_str(), NULL);
+    }
+
     Configuration::initialize();
     Configuration config;
     std::string dbPath = Utils::combinePath(Configuration::absolutePath, "meta.db");
@@ -340,6 +357,13 @@ int main(int argc, char** argv)
                 }
                 exit(EXIT_FAILURE);
             }
+            // What the update check at start found, now that there's a log
+            for (const auto& [level, text] : recovery.log) {
+                if (level == "error") LOG_ERROR("Catalog", text);
+                else if (level == "warning") LOG_WARNING("Catalog", text);
+                else LOG_NOTICE("Catalog", text);
+            }
+            recovery.log.clear();
             RetroFE p(config);
             if (p.run()) // Check if we need to reboot after running
                 config.clearProperties();
@@ -349,6 +373,20 @@ int main(int argc, char** argv)
     }
     catch (std::exception& e) {
         LOG_ERROR("EXCEPTION", e.what());
+    }
+
+    // RetroFE updated itself: everything is shut down, so start the new version
+    std::string relaunchExecutable;
+    if (Catalog::takeRelaunch(relaunchExecutable)) {
+        std::string error;
+        if (Catalog::relaunch(relaunchExecutable, argv, error)) {
+            LOG_NOTICE("RetroFE", "Starting the updated RetroFE");
+        }
+        else {
+            LOG_ERROR("RetroFE", error);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "RetroFE was updated",
+                                     ("RetroFE was updated, but couldn't start again by itself. Please start it again.\n" + error).c_str(), NULL);
+        }
     }
 
     Logger::deInitialize();
