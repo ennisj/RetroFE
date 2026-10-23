@@ -61,10 +61,18 @@ public:
 private:
     struct Entry
     {
-        int launcher = -1;
+        int launcher = -1;        // index into the snapshot's launchers; -1 for one created since
+        Library::LauncherScope scope = Library::LauncherScope::Global;
         Forms::Row row;
         std::string searchText;   // lower case
     };
+    static Entry makeEntry(int launcher, const std::string& id, const std::string& name, Library::LauncherScope scope,
+                           const std::string& collection, const std::string& executable,
+                           Emulators::ExecutableCheck::State state, const std::string& users);
+    void sortEntries();
+    // After a write, before the library has a snapshot with it: show it in the list now
+    void patchCreated(const std::string& name, const std::string& executable);
+    void patchDeleted(Library::LauncherScope scope, const std::string& id);
 
     // One launcher's screen, worked out when it or the snapshot changes
     struct Details
@@ -76,6 +84,7 @@ private:
         Emulators::ExecutableCheck executable;
         Emulators::Users users;
         std::vector<std::string> fileLines;
+        bool genericFileBehind = false;   // a collection's launcher.<os>.conf with a launcher.conf beside it
     };
 
     // The latest snapshot; rebuilds the list when it changed. nullptr while there's none yet.
@@ -102,6 +111,11 @@ private:
     std::string searched_ = "\x01";
     const Library::Index* searchedIn_ = nullptr;
     std::vector<size_t> matches_;
+
+    // A write was made and the list was patched for it; the library is still
+    // building the snapshot that includes it
+    bool updating_ = false;
+    unsigned patches_ = 0;   // bumps generation() when the list is patched
 
     Details details_;
     Manager::EditBuffer draft_;

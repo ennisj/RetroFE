@@ -20,6 +20,8 @@
 #include "../../Utility/Utils.h"
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
+#include <system_error>
 
 using Library::LauncherScope;
 
@@ -27,6 +29,7 @@ namespace
 {
     const char* const unsavedWarning =
         "The launcher hasn't been created yet. Create it, or leave again to discard it.";
+    const char* const updatingText = "Updating the list...";
 
     // The last part of a path, either separator
     std::string fileName(const std::string& path)
@@ -70,11 +73,45 @@ void EmulatorProvider::refresh()
     searchedIn_ = nullptr;
     details_ = Details();
     checkedExecutable_ = "\x01";
+    updating_ = false;
 }
 
 unsigned EmulatorProvider::generation() const
 {
-    return services_.library ? services_.library->status().generation : 0;
+    return (services_.library ? services_.library->status().generation : 0) + patches_;
+}
+
+void EmulatorProvider::patchCreated(const std::string& name, const std::string& executable)
+{
+    current();
+    bool listed = std::any_of(entries_.begin(), entries_.end(), [&](const Entry& entry) {
+        return entry.scope == LauncherScope::Global && Library::iequals(entry.row.id, name);
+    });
+    if (!listed) {
+        std::string users = "Unused";
+        for (auto it = unresolved_.begin(); it != unresolved_.end(); ++it) {
+            if (it->name == name) {
+                users = it->users.shortSummary();
+                unresolved_.erase(it);
+                break;
+            }
+        }
+        entries_.push_back(makeEntry(-1, name, name, LauncherScope::Global, "", executable, executableCheck_.state, users));
+        sortEntries();
+    }
+    updating_ = true;
+    patches_++;
+}
+
+void EmulatorProvider::patchDeleted(LauncherScope scope, const std::string& id)
+{
+    current();
+    entries_.erase(std::remove_if(entries_.begin(), entries_.end(), [&](const Entry& entry) {
+        return entry.scope == scope && entry.row.id == id;
+    }), entries_.end());
+    searchedIn_ = nullptr;
+    updating_ = true;
+    patches_++;
 }
 
 std::string EmulatorProvider::waitingText() const
@@ -103,6 +140,7 @@ const Library::Index* EmulatorProvider::current()
     unresolved_.clear();
     searchedIn_ = nullptr;
     checkedExecutable_ = "\x01";
+    updating_ = false;   // a new snapshot includes every write made so far
     if (!index) {
         return nullptr;
     }
@@ -112,35 +150,53 @@ const Library::Index* EmulatorProvider::current()
     for (size_t i = 0; i < index->launchers.size(); i++) {
         const Library::LauncherDef& def = index->launchers[i];
         Emulators::ExecutableCheck check = Emulators::checkExecutable(*index, def.executable);
-        std::string program = def.executable.empty() ? "no program" : fileName(def.executable);
-        if (check.state == Emulators::ExecutableCheck::State::Missing) {
-            program += " (missing)";
-        }
-        // Short: details share a row with the name
-        std::string where = def.scope == LauncherScope::Global ? "Global"
-            : def.scope == LauncherScope::Collection ? def.collection + "'s own file"
-            : def.collection + ", local";
-
-        Entry entry;
-        entry.launcher = static_cast<int>(i);
-        entry.row.id = def.id;
-        entry.row.label = def.scope == LauncherScope::Local ? def.name : def.id;
-        entry.row.detail = where + ", " + program + ", " + users[i].shortSummary();
-        entry.row.params = { { "scope", Emulators::scopeKey(def.scope) } };
-        entry.searchText = Library::toLower(def.id + "\n" + def.name + "\n" + def.collection + "\n" + program + "\n" + where);
-        entries_.push_back(std::move(entry));
+        entries_.push_back(makeEntry(static_cast<int>(i), def.id, def.name, def.scope, def.collection,
+                                     def.executable, check.state, users[i].shortSummary()));
     }
-    std::stable_sort(entries_.begin(), entries_.end(), [&](const Entry& a, const Entry& b) {
+    sortEntries();
+    unresolved_ = Emulators::unresolvedLaunchers(*index);
+    return snapshot_.get();
+}
+
+EmulatorProvider::Entry EmulatorProvider::makeEntry(int launcher, const std::string& id, const std::string& name,
+                                                    LauncherScope scope, const std::string& collection,
+                                                    const std::string& executable, Emulators::ExecutableCheck::State state,
+                                                    const std::string& users)
+{
+    std::string program = executable.empty() ? "no program" : fileName(executable);
+    if (state == Emulators::ExecutableCheck::State::Missing) {
+        program += " (missing)";
+    }
+    else if (state == Emulators::ExecutableCheck::State::WindowsOnly) {
+        program += " (Windows only)";
+    }
+    // Short: details share a row with the name
+    std::string where = scope == LauncherScope::Global ? "Global"
+        : scope == LauncherScope::Collection ? collection + "'s own file"
+        : collection + ", local";
+
+    Entry entry;
+    entry.launcher = launcher;
+    entry.scope = scope;
+    entry.row.id = id;
+    entry.row.label = scope == LauncherScope::Local ? name : id;
+    entry.row.detail = where + ", " + program + ", " + users;
+    entry.row.params = { { "scope", Emulators::scopeKey(scope) } };
+    entry.searchText = Library::toLower(id + "\n" + name + "\n" + collection + "\n" + program + "\n" + where);
+    return entry;
+}
+
+void EmulatorProvider::sortEntries()
+{
+    std::stable_sort(entries_.begin(), entries_.end(), [](const Entry& a, const Entry& b) {
         std::string la = Library::toLower(a.row.label);
         std::string lb = Library::toLower(b.row.label);
         if (la != lb) {
             return la < lb;
         }
-        return scopeOrder(index->launchers[static_cast<size_t>(a.launcher)].scope)
-            < scopeOrder(index->launchers[static_cast<size_t>(b.launcher)].scope);
+        return scopeOrder(a.scope) < scopeOrder(b.scope);
     });
-    unresolved_ = Emulators::unresolvedLaunchers(*index);
-    return snapshot_.get();
+    searchedIn_ = nullptr;   // matches_ are positions in entries_
 }
 
 const Library::LauncherDef* EmulatorProvider::launcher(const Manager::Screen& screen)
@@ -181,6 +237,11 @@ const EmulatorProvider::Details* EmulatorProvider::details(const Manager::Screen
                 details_.fileLines.push_back(line.text);
             }
         }
+        if (def.scope == LauncherScope::Collection && !Library::iequals(fileName(def.file), "launcher.conf")) {
+            std::error_code ec;
+            details_.genericFileBehind = std::filesystem::is_regular_file(
+                Utils::combinePath(Utils::getDirectory(def.file), "launcher.conf"), ec);
+        }
     }
     return &details_;
 }
@@ -213,7 +274,10 @@ std::string EmulatorProvider::get(const std::string& key, const Manager::Screen&
         return query_;
     }
     if (key == "status") {
-        return current() ? "" : waitingText();
+        if (!current()) {
+            return waitingText();
+        }
+        return updating_ ? updatingText : "";
     }
     if (key == "hasUnresolved") {
         return current() && !unresolved_.empty() ? "yes" : "no";
@@ -283,7 +347,10 @@ std::string EmulatorProvider::detailValue(const std::string& key, const Manager:
         if (!found) {
             return waitingText();
         }
-        return def ? "" : "There's no launcher called \"" + screen.param("id") + "\" any more.";
+        if (def) {
+            return "";
+        }
+        return updating_ ? updatingText : "There's no launcher called \"" + screen.param("id") + "\" any more.";
     }
     if (!def) {
         return "";
@@ -322,11 +389,20 @@ std::string EmulatorProvider::detailValue(const std::string& key, const Manager:
     if (key == "arguments") {
         return def->arguments.empty() ? "None" : def->arguments;
     }
+    // Launcher::run reads currentDirectory and reboot as launchers.<name>.*
+    // only, so a collection or local launcher's own values are never used
+    bool global = def->scope == LauncherScope::Global;
     if (key == "workingFolder") {
-        return def->currentDirectory.empty() ? "The program's folder" : def->currentDirectory;
+        if (def->currentDirectory.empty()) {
+            return "The program's folder";
+        }
+        return global ? def->currentDirectory : def->currentDirectory + " (ignored for this launcher: the program's folder is used)";
     }
     if (key == "reboot") {
-        return def->reboot ? "Yes" : "";
+        if (!def->reboot) {
+            return "";
+        }
+        return global ? "Yes" : "Yes (ignored for this launcher)";
     }
     if (key == "usersSummary") {
         return found->users.summary();
@@ -471,11 +547,7 @@ std::map<std::string, std::string> EmulatorProvider::draftDefaults(const Manager
     }
     const Library::LauncherDef& def = index->launchers[static_cast<size_t>(found)];
     // A name that's free: "<name> copy", "<name> copy 2", ...
-    auto taken = [&](const std::string& name) {
-        return std::any_of(index->launchers.begin(), index->launchers.end(), [&](const Library::LauncherDef& other) {
-            return other.scope == LauncherScope::Global && Library::iequals(other.name, name);
-        });
-    };
+    auto taken = [&](const std::string& name) { return !Library::Editor::checkNewLauncherName(*index, name).empty(); };
     std::string name = def.name + " copy";
     for (int n = 2; taken(name) && n < 1000; n++) {
         name = def.name + " copy " + std::to_string(n);
@@ -522,13 +594,14 @@ std::string EmulatorProvider::createProblem()
     if (name.empty()) {
         return "Give the launcher a name.";
     }
-    std::string problem = Library::Editor::checkLauncherName(name);
+    std::string problem = Library::Editor::checkNewLauncherName(*index, name);
     if (!problem.empty()) {
         return problem;
     }
-    for (const Library::LauncherDef& def : index->launchers) {
-        if (def.scope == LauncherScope::Global && Library::iequals(def.name, name)) {
-            return "There's already a launcher called \"" + def.name + "\".";
+    // Created since this snapshot, and not in it yet
+    for (const Entry& entry : entries_) {
+        if (entry.launcher < 0 && Library::iequals(entry.row.id, name)) {
+            return "There's already a launcher called \"" + entry.row.id + "\".";
         }
     }
     std::string executable = draftExecutable();
@@ -573,6 +646,7 @@ Forms::Model::Result EmulatorProvider::create()
     if (!edit.ok) {
         return result;
     }
+    patchCreated(launcher.name, launcher.executable);
     services_.library->changed("launcher " + launcher.name);
     draft_.load("", {});   // created: the next visit starts afresh
     result.ok = true;
@@ -602,6 +676,11 @@ std::string EmulatorProvider::actionProblem(const std::string& action, const Man
             if (!found->users.empty()) {
                 return "It's still used. " + found->users.summary() + " Give them another launcher first.";
             }
+            if (found->genericFileBehind) {
+                const Library::LauncherDef& def = found->index->launchers[static_cast<size_t>(found->launcher)];
+                return def.collection + " also has launcher.conf, which RetroFE would use in its place, so deleting "
+                    + fileName(def.file) + " wouldn't remove " + def.collection + "'s launcher.";
+            }
         }
         return "";
     }
@@ -626,11 +705,14 @@ Forms::Model::Result EmulatorProvider::runAction(const std::string& action, cons
         return result;
     }
     if (action == "delete") {
-        std::shared_ptr<const Library::Index> index = details_.index;
-        Library::EditResult edit = services_.editor->removeLauncher(*index, def->scope, def->id);
+        std::shared_ptr<const Library::Index> index = details_.index;   // keeps def alive
+        LauncherScope scope = def->scope;
+        std::string id = def->id;
+        Library::EditResult edit = services_.editor->removeLauncher(*index, scope, id);
         result.message = edit.message;
         if (edit.ok) {
-            services_.library->changed("launcher " + def->id);
+            patchDeleted(scope, id);
+            services_.library->changed("launcher " + id);
             result.ok = true;
             result.back = true;
         }

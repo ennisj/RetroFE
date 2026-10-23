@@ -123,8 +123,14 @@ namespace Library
             std::string arguments;          // may be empty
             std::string currentDirectory;   // empty: RetroFE uses the executable's folder
         };
-        // Empty when name can be a new launcher's name, otherwise why not
+        // Empty when name can be a new launcher's name, otherwise why not:
+        // the rules for the name itself (a plain-ASCII file name, no = , ; %,
+        // not a Windows device name such as con or aux.v2) ...
         static std::string checkLauncherName(const std::string& name);
+        // ... and no clash, ignoring case, with any launcher's id in any scope
+        // (a collection or local launcher of that name would be found first)
+        // or with a "<collection>.<x>" local launcher name
+        static std::string checkNewLauncherName(const Index& index, const std::string& name);
         EditResult addLauncher(const Index& index, const NewLauncher& launcher);
         // Removes a launcher's file, only when no system (default or
         // alternative) and no game uses it. The original is kept in the backups.

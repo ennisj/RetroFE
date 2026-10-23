@@ -1108,11 +1108,56 @@ std::string Editor::checkLauncherName(const std::string& name)
     if (name.back() == '.') {
         return "A launcher name can't end with a dot.";
     }
+    // Plain ASCII: RetroFE reads launcher file names in the ANSI code page while
+    // settings are UTF-8, so other names wouldn't match reliably
+    for (unsigned char c : name) {
+        if (c < 0x20 || c > 0x7e) {
+            return "A launcher name can only use plain letters, digits, spaces and punctuation (no accents).";
+        }
+    }
+    // Windows keeps device names for itself, whatever follows the first dot (con.txt, aux.v2)
     static const std::vector<std::string> reserved = { "con", "prn", "aux", "nul",
         "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
         "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
-    if (std::find(reserved.begin(), reserved.end(), toLower(name)) != reserved.end()) {
-        return "\"" + name + "\" is a name Windows keeps for itself.";
+    std::string stem = toLower(Utils::trimEnds(name.substr(0, name.find('.'))));
+    if (std::find(reserved.begin(), reserved.end(), stem) != reserved.end()) {
+        return "\"" + name + "\" starts with a name Windows keeps for itself (" + stem + ").";
+    }
+    return "";
+}
+
+std::string Editor::checkNewLauncherName(const Index& index, const std::string& name)
+{
+    std::string problem = checkLauncherName(name);
+    if (!problem.empty()) {
+        return problem;
+    }
+    // Launcher::launcherExecutable looks for localLaunchers.<name>, then
+    // collectionLaunchers.<name>, then launchers.<name>: a global launcher
+    // with another launcher's id would never run
+    for (const LauncherDef& def : index.launchers) {
+        if (!iequals(def.id, name)) {
+            continue;
+        }
+        switch (def.scope) {
+        case LauncherScope::Global:
+            return "There's already a launcher called \"" + def.id + "\".";
+        case LauncherScope::Collection:
+            return def.collection + " has its own launcher file, which RetroFE looks up by the name \"" + def.id
+                + "\" before global launchers, so a launcher with that name would never run.";
+        case LauncherScope::Local:
+            return "\"" + def.id + "\" is a local launcher of " + def.collection
+                + ", which RetroFE looks up before global launchers, so a launcher with that name would never run.";
+        }
+    }
+    size_t dot = name.find('.');
+    if (dot != std::string::npos) {
+        int collection = index.findCollection(name.substr(0, dot));
+        if (collection >= 0) {
+            const std::string& owner = index.collections[static_cast<size_t>(collection)].name;
+            return "Names like \"" + owner + ".<name>\" belong to " + owner
+                + "'s local launchers, which RetroFE looks up first. Choose a name without \"" + owner + ".\" in front.";
+        }
     }
     return "";
 }
@@ -1120,14 +1165,9 @@ std::string Editor::checkLauncherName(const std::string& name)
 EditResult Editor::addLauncher(const Index& index, const NewLauncher& launcher)
 {
     const std::string& name = launcher.name;
-    std::string problem = checkLauncherName(name);
+    std::string problem = checkNewLauncherName(index, name);
     if (!problem.empty()) {
         return EditResult::fail(problem);
-    }
-    for (const LauncherDef& def : index.launchers) {
-        if (def.scope == LauncherScope::Global && iequals(def.name, name)) {
-            return EditResult::fail("There's already a launcher called \"" + def.name + "\".");
-        }
     }
     std::string executable = Utils::trimEnds(launcher.executable);
     std::string arguments = Utils::trimEnds(launcher.arguments);
@@ -1190,6 +1230,15 @@ EditResult Editor::removeLauncher(const Index& index, LauncherScope scope, const
     }
     if (!isInside(def.file, root_)) {
         return EditResult::fail(def.file + " isn't in RetroFE's folder, so it's left alone.");
+    }
+    if (def.scope == LauncherScope::Collection) {
+        // launcher.<os>.conf hides launcher.conf: deleting it would let that one take over under the same name
+        std::string generic = Utils::combinePath(Utils::getDirectory(def.file), "launcher.conf");
+        std::error_code ec;
+        if (!iequals(normalPath(def.file), normalPath(generic)) && fs::is_regular_file(generic, ec)) {
+            return EditResult::fail(def.collection + " also has launcher.conf, which RetroFE would use in its place, "
+                "so deleting " + Utils::getFileName(def.file) + " wouldn't remove " + def.collection + "'s launcher.");
+        }
     }
     std::string error;
     if (!backups_.removeKeepingOriginal(def.file, error)) {

@@ -39,7 +39,9 @@ namespace Emulators
     // screen or snapshot changes, not every frame.
     struct ExecutableCheck
     {
-        enum class State { Found, OnPath, Missing, Unchecked };
+        // WindowsOnly: a relative path with a folder in a Linux or macOS launcher,
+        // which RetroFE resolves against the working folder there, not its own
+        enum class State { Found, OnPath, Missing, WindowsOnly, Unchecked };
         State state = State::Unchecked;
         std::string path;       // the file looked for, variables replaced
         std::string sentence;   // for the screen

@@ -87,12 +87,12 @@ const char* const emulatorNewForm = R"(
   <note bind="emulator:newIntro"/>
   <text label="Name" bind="emulator:newName" hint="e.g. RetroArch SNES"
         help="Systems and games ask for it by this name, spelt exactly."/>
-  <file label="Program" bind="emulator:newExecutable" filter="Programs" pattern="*.exe;*.bat;*.cmd" hint="Not chosen yet"/>
+  <file label="Program" bind="emulator:newExecutable" hint="Not chosen yet"/>
   <choice label="Arguments" bind="emulator:newPreset" options="emulator:presets"/>
   <file label="Core" bind="emulator:newCore" filter="RetroArch cores" pattern="*.dll;*.so;*.dylib" hint="Not chosen yet"
         visibleWhen="emulator:needsCore"/>
   <text label="Custom arguments" bind="emulator:newArguments" hint="e.g. &quot;%ITEM_FILEPATH%&quot;" visibleWhen="emulator:isCustom"
-        help="%ITEM_FILEPATH% is the game's file, %ITEM_NAME% its name, %ITEM_DIRECTORY% its folder."/>
+        help="%ITEM_FILEPATH% is the game's file, %ITEM_NAME% its name, %ITEM_DIRECTORY% its folder (ending in a separator: in quotes, write &quot;%ITEM_DIRECTORY%.&quot;)."/>
   <folder label="Working folder" bind="emulator:newWorkingFolder" hint="The program's folder"/>
   <value label="Runs" bind="emulator:newCommand"/>
   <button label="Create launcher" action="emulator.create"/>

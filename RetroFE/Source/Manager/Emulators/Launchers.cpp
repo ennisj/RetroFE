@@ -144,6 +144,17 @@ ExecutableCheck checkExecutable(const Library::Index& index, const std::string& 
         check.sentence = "It depends on the game, so it isn't checked.";
         return check;
     }
+    // On Linux and macOS RetroFE changes to the working folder and runs the
+    // program from there, so a relative path with a folder isn't found from
+    // RetroFE's folder as it is on Windows
+    std::string os = index.options.os.empty() ? Utils::getOSType() : index.options.os;
+    bool absolute = value[0] == '/' || value[0] == '\\' || (value.size() > 1 && value[1] == ':');
+    if (os != "windows" && !absolute && value.find_first_of("/\\") != std::string::npos) {
+        check.state = ExecutableCheck::State::WindowsOnly;
+        check.sentence = "A relative program path works on Windows only: on " + os
+            + " RetroFE runs it from the working folder. Use %RETROFE_PATH%/" + value + " instead.";
+        return check;
+    }
     if (!index.options.os.empty() && index.options.os != Utils::getOSType()) {
         check.sentence = "This is a " + index.options.os + " launcher, so it isn't checked here.";
         return check;
@@ -333,7 +344,9 @@ std::string presetArguments(const std::string& preset, const std::string& core)
         return "-L \"" + core + "\" \"%ITEM_FILEPATH%\"";
     }
     if (preset == "mame") {
-        return "%ITEM_NAME% -rompath \"%ITEM_DIRECTORY%\"";
+        // RetroFE ends %ITEM_DIRECTORY% with a separator: on Windows "C:\roms\"
+        // would escape the closing quote, so point at "." inside the folder
+        return "%ITEM_NAME% -rompath \"%ITEM_DIRECTORY%.\"";
     }
     return "";
 }

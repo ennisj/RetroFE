@@ -20,11 +20,13 @@
 #include "TestSupport.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Library/Edits.h"
+#include "../Source/Library/Files.h"
 #include "../Source/Library/Indexer.h"
 #include "../Source/Manager/Emulators/EmulatorProvider.h"
 #include "../Source/Manager/Emulators/Launchers.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Utility/Utils.h"
+#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -39,8 +41,10 @@ namespace
     // An install with every way to define and use a launcher:
     //   launchers.<os>: retro (program present), notepad (program missing), spare (unused)
     //   Arcade: launcher = retro, notepad, nowhere; a.zip picks notepad, b.zip picks "lost"
-    //   NES:    its own launcher.conf (beats launcher = retro); local launcher "special" picked by mario
+    //   NES:    its own launcher.conf (beats launcher = retro); local launcher "special" picked by mario,
+    //           local launcher "unused"
     //   SNES:   launcher = missingone
+    //   Tools:  only a launcher.conf; Both: launcher.<os>.conf and launcher.conf (both unused)
     std::string makeInstall(const std::string& name)
     {
         std::string root = makeRoot(name);
@@ -60,7 +64,13 @@ namespace
 
         writeFile(root + "/collections/NES/settings.conf", "list.extensions = nes\nlauncher = retro\n");
         writeFile(root + "/collections/NES/launcher.conf", "executable = emu/retroarch.exe\n");
-        writeFile(root + "/collections/NES/launchers.local/special.conf", "executable = emu/retroarch.exe\n");
+        writeFile(root + "/collections/NES/launchers.local/special.conf",
+                  "executable = emu/retroarch.exe\ncurrentDirectory = emu\nreboot = yes\n");
+        writeFile(root + "/collections/NES/launchers.local/unused.conf", "executable = emu/tool.exe\n");
+        // Collections with launcher files and no games: nothing uses their launchers
+        writeFile(root + "/collections/Tools/launcher.conf", "executable = emu/tool.exe\n");
+        writeFile(root + "/collections/Both/launcher." + os() + ".conf", "executable = emu/tool.exe\n");
+        writeFile(root + "/collections/Both/launcher.conf", "executable = emu/tool.exe\n");
         writeFile(root + "/collections/NES/launchers/mario.conf", "special\n");
         writeFile(root + "/collections/NES/roms/mario.nes", "x");
 
@@ -125,7 +135,7 @@ static Test::Suite emulators("emulators", [] {
         f.model->setScreen("emulators", {});
         checkEqual(f.model->get("emulator:status"), "", "nothing to wait for once the index is built");
         Forms::Rows all = f.model->rows("emulator:search", 200);
-        check(all.total == 5, "retro, notepad, spare, NES's own and NES's local launcher: " + std::to_string(all.total));
+        check(all.total == 8, "retro, notepad, spare, NES's own and two local launchers, Tools', Both's: " + std::to_string(all.total));
 
         const Forms::Row* retro = f.row("emulator:search", "retro", "global");
         check(retro && contains(retro->detail, "Global") && contains(retro->detail, "retroarch.exe")
@@ -145,7 +155,7 @@ static Test::Suite emulators("emulators", [] {
         f.model->set("emulator:query", "RETROARCH");
         check(f.model->rows("emulator:search", 200).total == 4, "search matches the program's name, ignoring case");
         f.model->set("emulator:query", "nes");
-        check(f.model->rows("emulator:search", 200).total == 2, "and the collection");
+        check(f.model->rows("emulator:search", 200).total == 3, "and the collection");
 
         checkEqual(f.model->get("emulator:hasUnresolved"), "yes", "some names are used but not defined");
         Forms::Rows unresolved = f.model->rows("emulator:unresolved", 200);
@@ -231,6 +241,8 @@ static Test::Suite emulators("emulators", [] {
         check(fs::exists(root + "/manage/backups/launchers." + os() + "/SNES9x.conf.absent"), "recorded as new in the backups");
         check(f.indexer.changesPending(), "RetroFE reloads when the manager closes");
         checkEqual(f.model->leaving(f.model->screen()), "", "nothing left to lose");
+        f.model->setScreen("emulators", {});
+        check(f.row("emulator:search", "SNES9x", "global") != nullptr, "listed straight away, before the index is rebuilt");
 
         f.indexer.wait(10000);
         f.model->setScreen("emulators", {});
@@ -305,6 +317,11 @@ static Test::Suite emulators("emulators", [] {
         std::string file = root + "/launchers." + os() + "/spare.conf";
         check(result.ok && result.back && !fs::exists(file), "deleted, and back: " + result.message);
         check(fs::exists(root + "/manage/backups/launchers." + os() + "/spare.conf"), "kept in the backups");
+        f.model->setScreen("emulators", {});
+        std::string status = f.model->get("emulator:status");
+        check(status == "Updating the list..." || f.indexer.index() != index, "says it's updating until the new index is in: " + status);
+        check(f.row("emulator:search", "spare") == nullptr, "gone from the list straight away");
+        check(f.row("emulator:search", "notepad") != nullptr, "the others stay");
         f.indexer.wait(10000);
         f.model->setScreen("emulators", {});
         check(f.row("emulator:search", "spare") == nullptr, "gone from the list");
@@ -328,10 +345,115 @@ static Test::Suite emulators("emulators", [] {
         checkEqual(readFile(root + "/launchers." + os() + "/Fresh.conf"), "executable = x.exe\n", "left alone");
     });
 
+    run("emulators: the MAME preset as written", [] {
+        std::string root = makeInstall("emu-mame");
+        Fixture f(root);
+        f.model->setScreen("emulator-new", {});
+        f.model->set("emulator:newName", "MAME");
+        f.model->set("emulator:newExecutable", root + "/emu/retroarch.exe");
+        f.model->set("emulator:newPreset", "mame");
+        Forms::Model::Result result = f.model->runAction("emulator.create");
+        check(result.ok, "created: " + result.message);
+        std::string content = readFile(root + "/launchers." + os() + "/MAME.conf");
+        check(contains(content, "arguments = %ITEM_NAME% -rompath \"%ITEM_DIRECTORY%.\"" + std::string(Library::defaultNewline())),
+              "the rom path stays one argument: " + content);
+    });
+
+    run("emulators: a new launcher can't be hidden by a collection or local launcher", [] {
+        std::string root = makeInstall("emu-shadow");
+        Fixture f(root);
+        auto index = f.indexer.index();
+        check(contains(Library::Editor::checkNewLauncherName(*index, "nes"), "own launcher file"),
+              "NES's launcher.conf answers to \"NES\" first, in any case");
+        check(contains(Library::Editor::checkNewLauncherName(*index, "nes.SPECIAL"), "local launcher of NES"),
+              "a local launcher's id");
+        check(contains(Library::Editor::checkNewLauncherName(*index, "NES.other"), "NES's local launchers"),
+              "<collection>.<name> is kept for local launchers");
+        checkEqual(Library::Editor::checkNewLauncherName(*index, "Arcade"), "",
+                   "a collection's name is fine when it has no launcher file");
+        checkEqual(Library::Editor::checkNewLauncherName(*index, "v1.2"), "", "a dot is fine when it names no collection");
+
+        Library::Editor::NewLauncher shadowed;
+        shadowed.name = "Tools";
+        shadowed.executable = "x.exe";
+        Library::EditResult refused = f.editor.addLauncher(*index, shadowed);
+        check(!refused.ok && !fs::exists(root + "/launchers." + os() + "/Tools.conf"), "the library refuses it: " + refused.message);
+
+        f.model->setScreen("emulator-new", {});
+        f.model->set("emulator:newName", "NES");
+        check(contains(f.model->actionProblem("emulator.create"), "never run"), "and the form says why");
+    });
+
+    run("emulators: deleting collection and local launchers", [] {
+        std::string root = makeInstall("emu-delete-scopes");
+        Fixture f(root);
+        auto index = f.indexer.index();
+        Library::EditResult used = f.editor.removeLauncher(*index, Library::LauncherScope::Collection, "NES");
+        check(!used.ok && fs::exists(root + "/collections/NES/launcher.conf"), "NES's own launcher runs its games: " + used.message);
+
+        f.model->setScreen("emulator", { { "id", "Both" }, { "scope", "collection" } });
+        check(contains(f.model->actionProblem("emulator.delete"), "also has launcher.conf"), "launcher.conf would take over");
+        Library::EditResult both = f.editor.removeLauncher(*index, Library::LauncherScope::Collection, "Both");
+        check(!both.ok && fs::exists(root + "/collections/Both/launcher." + os() + ".conf"), "refused: " + both.message);
+
+        f.model->setScreen("emulator", { { "id", "Tools" }, { "scope", "collection" } });
+        checkEqual(f.model->actionProblem("emulator.delete"), "", "Tools' launcher is unused");
+        Forms::Model::Result tools = f.model->runAction("emulator.delete");
+        check(tools.ok && !fs::exists(root + "/collections/Tools/launcher.conf"), "a collection launcher file: " + tools.message);
+
+        f.model->setScreen("emulator", { { "id", "NES.unused" }, { "scope", "local" } });
+        Forms::Model::Result local = f.model->runAction("emulator.delete");
+        check(local.ok && !fs::exists(root + "/collections/NES/launchers.local/unused.conf"), "a local launcher: " + local.message);
+        check(fs::exists(root + "/manage/backups/collections/NES/launchers.local/unused.conf"), "kept in the backups");
+
+        f.model->setScreen("emulators", {});
+        check(!f.row("emulator:search", "Tools", "collection") && !f.row("emulator:search", "NES.unused", "local"),
+              "both gone from the list at once");
+    });
+
+    run("emulators: restoring the original of a created or deleted launcher", [] {
+        std::string root = makeInstall("emu-restore");
+        Fixture f(root);
+        auto index = f.indexer.index();
+        Library::Editor::NewLauncher made;
+        made.name = "made";
+        made.executable = "x.exe";
+        Library::EditResult created = f.editor.addLauncher(*index, made);
+        std::string file = root + "/launchers." + os() + "/made.conf";
+        check(created.ok && fs::exists(file), "created");
+        check(f.editor.restoreOriginal(file).ok && !fs::exists(file), "restoring a created launcher deletes it");
+
+        std::string spare = root + "/launchers." + os() + "/spare.conf";
+        std::string original = readFile(spare);
+        check(f.editor.removeLauncher(*index, Library::LauncherScope::Global, "spare").ok && !fs::exists(spare), "deleted");
+        check(f.editor.restoreOriginal(spare).ok, "restored");
+        checkEqual(readFile(spare), original, "restoring a deleted launcher brings it back as it was");
+    });
+
+    run("emulators: launcher names Windows or RetroFE can't use", [] {
+        for (const char* name : { "con", "con.txt", "AUX.v2", "com1", "Lpt9.conf", "nul .x" }) {
+            check(!Library::Editor::checkLauncherName(name).empty(), std::string("a device name: ") + name);
+        }
+        for (const char* name : { "console", "auxiliary", "com10", "prn2" }) {
+            checkEqual(Library::Editor::checkLauncherName(name), "", std::string("not a device name: ") + name);
+        }
+        check(!Library::Editor::checkLauncherName("Caf\xc3\xa9").empty(), "plain ASCII only");
+    });
+
+    run("emulators: settings RetroFE ignores for collection and local launchers", [] {
+        Fixture f(makeInstall("emu-ignored"));
+        f.model->setScreen("emulator", { { "id", "NES.special" }, { "scope", "local" } });
+        check(contains(f.model->get("emulator:workingFolder"), "ignored for this launcher"), "currentDirectory");
+        checkEqual(f.model->get("emulator:reboot"), "Yes (ignored for this launcher)", "reboot");
+        f.model->setScreen("emulator", { { "id", "notepad" }, { "scope", "global" } });
+        checkEqual(f.model->get("emulator:reboot"), "Yes", "a global launcher's are used");
+    });
+
     run("emulators: presets, portable paths and program checks", [] {
         checkEqual(Emulators::presetArguments("file", ""), "\"%ITEM_FILEPATH%\"", "file preset");
         checkEqual(Emulators::presetArguments("retroarch", "c.dll"), "-L \"c.dll\" \"%ITEM_FILEPATH%\"", "RetroArch preset");
-        checkEqual(Emulators::presetArguments("mame", ""), "%ITEM_NAME% -rompath \"%ITEM_DIRECTORY%\"", "MAME preset");
+        checkEqual(Emulators::presetArguments("mame", ""), "%ITEM_NAME% -rompath \"%ITEM_DIRECTORY%.\"",
+                   "MAME preset: the folder ends in a separator, which mustn't escape the closing quote");
         std::string root = makeRoot("emu-paths");
         checkEqual(Emulators::portablePath(root, root + "/emu/a.exe", "linux"), "%RETROFE_PATH%/emu/a.exe", "inside the root");
         checkEqual(Emulators::portablePath(root, "emu/a.exe", "windows"), "%RETROFE_PATH%\\emu\\a.exe", "relative to the root");
@@ -339,6 +461,14 @@ static Test::Suite emulators("emulators", [] {
         checkEqual(Emulators::portablePath(root, "%RETROFE_PATH%/x", "windows"), "%RETROFE_PATH%/x", "already portable");
         check(!contains(Emulators::portablePath(root, root + "-other/a.exe", "linux"), "%RETROFE_PATH%"),
               "a sibling folder with the same prefix isn't inside");
+        checkEqual(Emulators::portablePath(root, root + "/my emus/Retro Arch.exe", "linux"),
+                   "%RETROFE_PATH%/my emus/Retro Arch.exe", "spaces are kept");
+#ifdef _WIN32
+        std::string lowerDrive = root;
+        lowerDrive[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(lowerDrive[0])));
+        checkEqual(Emulators::portablePath(root, lowerDrive + "\\my emus\\a.exe", "windows"),
+                   "%RETROFE_PATH%\\my emus\\a.exe", "the drive letter's case doesn't matter on Windows");
+#endif
 
         Library::Index index;
         index.options.root = root;
@@ -346,6 +476,23 @@ static Test::Suite emulators("emulators", [] {
         check(Emulators::checkExecutable(index, "%ITEM_DIRECTORY%/run.exe").state == Emulators::ExecutableCheck::State::Unchecked,
               "per-game programs aren't checked");
         check(Emulators::checkExecutable(index, "").state == Emulators::ExecutableCheck::State::Missing, "no program");
+#ifdef _WIN32
+        const char* onPath = "cmd.exe";
+#else
+        const char* onPath = "sh";
+#endif
+        Emulators::ExecutableCheck bare = Emulators::checkExecutable(index, onPath);
+        check(bare.state == Emulators::ExecutableCheck::State::OnPath && contains(bare.sentence, "system path"),
+              std::string("a bare program name is found on the system path: ") + bare.sentence);
+        check(Emulators::checkExecutable(index, "no-such-program-here").state == Emulators::ExecutableCheck::State::Missing,
+              "a bare name that's nowhere is missing");
+        Library::Index cabinet;
+        cabinet.options.root = root;
+        cabinet.options.os = "linux";
+        check(Emulators::checkExecutable(cabinet, "emu/retroarch").state == Emulators::ExecutableCheck::State::WindowsOnly,
+              "a relative program path in a Linux launcher works on Windows only");
+        check(Emulators::checkExecutable(cabinet, "/usr/bin/retroarch").state != Emulators::ExecutableCheck::State::WindowsOnly,
+              "an absolute one is fine");
         index.options.os = os() == "linux" ? "windows" : "linux";
         check(Emulators::checkExecutable(index, "/bin/x").state == Emulators::ExecutableCheck::State::Unchecked,
               "another platform's launchers aren't checked here");
