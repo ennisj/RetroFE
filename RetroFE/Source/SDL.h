@@ -29,6 +29,9 @@ class SDL
 {
 public:
     static bool initialize( Configuration &config );
+    // Windows are created hidden (and the mouse left alone), for checks that
+    // build pages without showing them (retrofe --theme-check). Before initialize().
+    static void setHiddenWindows( bool hidden ) { hiddenWindows_ = hidden; }
     static bool deInitialize( );
     static SDL_Renderer *getRenderer( int index );
     static std::string getRendererBackend(int index);
@@ -85,4 +88,6 @@ private:
     static int                         numDisplays_;
 	static int                         screenCount_;
     static std::vector<SDL_Texture*>   renderTargets_;
+    static bool                        hiddenWindows_;
+    static bool                        leaveMouse_;   // hidden, or shown without activation: never warp the pointer
 };

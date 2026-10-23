@@ -29,6 +29,24 @@ std::streambuf* Logger::cerrStream_ = nullptr;
 std::streambuf* Logger::coutStream_ = nullptr;
 std::mutex Logger::writeMutex_;
 Configuration* Logger::config_ = nullptr;
+Logger::Tap Logger::tap_;
+std::atomic<bool> Logger::tapActive_{ false };
+std::thread::id Logger::tapThread_;
+
+Logger::TapScope::TapScope(Tap tap)
+{
+    std::scoped_lock lock(writeMutex_);
+    tap_ = std::move(tap);
+    tapThread_ = std::this_thread::get_id();
+    tapActive_ = true;
+}
+
+Logger::TapScope::~TapScope()
+{
+    std::scoped_lock lock(writeMutex_);
+    tapActive_ = false;
+    tap_ = nullptr;
+}
 
 bool Logger::initialize(std::string file, Configuration* config)
 {
@@ -65,6 +83,14 @@ void Logger::write(Zone zone, const std::string& component, const std::string& m
     std::scoped_lock lock(writeMutex_); // Ensures thread safety
 
     std::string zoneStr(zoneToString(zone)); // Explicit conversion from string_view to string
+    if (tapActive_ && tap_ && std::this_thread::get_id() == tapThread_ &&
+        (zone == ZONE_WARNING || zone == ZONE_ERROR)) {
+        tap_(zone, component, message);
+    }
+    // A line that got here only for the tap stays out of the log file
+    if (!levelEnabled(zoneStr, component)) {
+        return;
+    }
 
     std::time_t rawtime = std::time(NULL);
     struct tm const* timeinfo = std::localtime(&rawtime);
@@ -79,6 +105,14 @@ void Logger::write(Zone zone, const std::string& component, const std::string& m
 }
 
 bool Logger::isLevelEnabled(const std::string& zone, const std::string& component) {
+    // A tap on this thread sees warnings and errors whatever the setting says
+    if (tapActive_ && (zone == "WARNING" || zone == "ERROR") && std::this_thread::get_id() == tapThread_) {
+        return true;
+    }
+    return levelEnabled(zone, component);
+}
+
+bool Logger::levelEnabled(const std::string& zone, const std::string& component) {
     static std::once_flag initFlag;
     static std::unordered_map<std::string, bool> globalFilters;
     static std::unordered_map<std::string, std::unordered_set<std::string>> categoryFilters;

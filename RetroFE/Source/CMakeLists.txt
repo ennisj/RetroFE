@@ -282,6 +282,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Manager/FileDialog.h"
 	"${RETROFE_DIR}/Source/Manager/FormView.h"
 	"${RETROFE_DIR}/Source/Manager/Home.h"
+	"${RETROFE_DIR}/Source/Manager/ImGuiScreen.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerModel.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.h"
 	"${RETROFE_DIR}/Source/Manager/Navigator.h"
@@ -440,6 +441,10 @@ add_custom_command(
 add_library(retrofe_theme_editor STATIC
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorCanvas.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorNav.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorScript.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorScript.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorSession.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorSession.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.cpp"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/LetterTiles.cpp"

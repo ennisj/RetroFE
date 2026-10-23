@@ -1,9 +1,12 @@
 # Design: the theme editor
 
 Status: the core is ported (rounds 1–3 of the porting plan: core port,
-widget dialect audit, storage and saving). There's no UI yet. The code lives
-in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is tested by
-`RetroFE/Tests/ThemeEditorTests.cpp`.
+widget dialect audit, storage and saving), and the first UI round is done:
+the Themes screens and the editor screen (see "UI round 1" below). The core
+lives in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is
+tested by `RetroFE/Tests/ThemeEditorTests.cpp`; the screens are in
+`RetroFE/Source/Manager/Themes/`, tested by `RetroFE/Tests/ThemesTests.cpp`.
+User-facing: [../THEME_EDITOR.md](../THEME_EDITOR.md).
 
 The editor is ported from One Saucier's theme editor. One Saucier stays a
 separate project: code was copied over and adapted, nothing links to it or
@@ -111,6 +114,7 @@ missing required attribute logs an error and drops the component.
 | `textFormat` on reloadableImage | Not read | Text Format removed from Game Art's text fallback. |
 | `value` on `<statusText>` | Not read | Removed, with the Sample Text var. |
 | `pauseTime` on scrolling text | Not read | Pause removed from Text File Scroller. |
+| Text fallback in menus | Drawn only with a `fontSize` (`Text` scales by it; unset is -1) | Logo wheels write a `fontSize` from their slot pitch unless Text Size is set. |
 | Menu `mode` | Only `layout`, `common`, `commonlayout` | Wheel and strip modes limited to those; default none (collection items already fall back to system art). The ghost wheel writes no mode unless it's one of those. |
 | reloadableText types | Its own list | Game Metadata offers the types ReloadableText has (`numberButtons`, `numberJoyWays`, `playCount`, `lastPlayed`, `timeSpent`, `isFavorite`, ...). One Saucier's `fullTitle`, `publisher`, `subGenre`, `series`, `region`, `date`, `story` only resolve from an info file, so they're gone. Scrolling Text likewise (`story` stays: scrolling text reads it from the media folder). |
 | `src=` on collection pages | Resolved against the page's own folder first | Theme files are written `src="{{PAGEROOT}}{{SRC}}"` (`../../../` on `collections/<c>/layout/layout.xml`), so they resolve first time instead of logging an error and falling back. Sounds too. |
@@ -175,7 +179,8 @@ is split:
    "1942". A headless run isn't possible yet: SDL's dummy video driver fails
    because `SDL.cpp` always asks for an OpenGL window, so the run used a
    small window with `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1` (no focus taken)
-   and `videoEnable = no`. The UI rounds should add `--theme-check`.
+   and `videoEnable = no`. `retrofe --theme-check <layout>` (UI round 1)
+   now does this in a hidden window and reports what PageBuilder logs.
 
 ## Storage
 
@@ -268,45 +273,157 @@ Not done: `fsync` (std::filesystem has none; tmp + rename protects against a
 failed write, not power loss), and a save-in-progress marker (`project.xml` is
 written first, so an interrupted save is repaired by the next one).
 
-## What remains for the UI rounds
+## UI round 1: the Themes screens and the editor screen
 
-- **Themes form** in Manage (a normal form): `layouts/` subfolders from
-  `listThemes`, editor-made ones marked; actions `theme.edit`, `theme.new`
-  (name and orientation), `theme.duplicate`, `theme.use` (set `layout`),
-  `theme.delete` (editor-made only).
-- **ThemeEditor screen** inside ManagerUI, drawn with ImGui whatever
-  `formsRenderer` says: theme tile, canvas, properties column. The canvas
-  draws the preview page letterboxed (`canvasFit`) with a wireframe overlay
-  from the project model (never from engine queries), selection, handles and
-  guides.
-- **Preview**: build a `Page` with
-  `PageBuilder(<theme folder>, "layout", config, fontCache)` and
-  `setLayoutXml(generatedXml, <the page's folder>)` (the theme folder for
-  Default, `collections/<c>/layout` for templates, so `{{PAGEROOT}}` paths
-  resolve). Fonts resolve through the layout key and reloadable art through
-  the configured `layout`, so set `layout` to the theme while the editor is
-  open and restore it on close. Use `GenOptions::canvasPreview` and the Show
-  toggles. Show the render target with `ImGui::Image`.
-- **Never rebuild a page or free textures inside the ImGui render pass.**
-  Record the action and run it after the frame, in `ManagerUI::update()`,
-  outside `SDL::getMutex()`. One Saucier had three use-after-free bugs from
-  breaking this rule.
-- **Editing**: overlay-led drags (`canvasMove`/`canvasResize`, snap 5) that
-  commit on release and regenerate; Add Widget dialog
-  (`canvasPlaceCenter`, `nextIdentity`); a properties panel driven by
-  `WidgetVar` (bool, dropdown, stepper, text, file via `importAsset`); undo
-  snapshots per page; templates (`createNamed`, `reassign`,
-  `deleteTemplateTo`, `effectiveCover` for the preview collection).
-- **Save** shows `SaveReport` warnings **and `report.removed`**: the user
-  must see which pages a save deleted. The first save of a theme One Saucier
-  exported removes its `layout1.xml` second-screen pages, for example (they
-  carry the marker, and second screens aren't saved yet). It renders the
-  letter tiles each time (only written when they change), so run it off the
-  render pass too. A save refused because of a hand-made page should say
-  which file, as the error does.
-  `EditorNav.h` is ready for controller editing.
-- **`--theme-check <layout>`**: load, generate, build the page, report and
-  exit, for automated checks against the real engine.
+### Where things are
+
+| File | What |
+|------|------|
+| `Manager/Themes/ThemeProvider.{h,cpp}` | The `theme` provider: the list (`listThemes` plus facts read from each folder: size from the `<layout>` root, other main pages, splash, collection pages, whether the `layout` setting names it), the details, and the actions `theme.use`, `theme.edit`, `theme.create`, `theme.duplicate`, `theme.delete`. Built into the tests. |
+| `Manager/Themes/ThemesForms.cpp` | Forms `themes`, `theme`, `theme-new`, and `theme-editor` (a placeholder: the editor draws that screen itself). |
+| `ThemeEditor/EditorSession.{h,cpp}` | The editor's controller, SDL- and ImGui-free: open (editor-made only), pages, selection, the pointer protocol (press / move / release, click-through, handles), property setters with clamping, coalesced undo steps, undo/redo (whole-project snapshots, 100 deep), dirty tracking by revision (undoing back to the saved state is clean), the preview XML and save. |
+| `Manager/ImGuiScreen.h` | The interface ManagerUI uses for a screen that draws itself (update / drawTargets / draw / escape / askToLeave / leaving / discard / retire / shutdown). |
+| `Manager/Themes/app/ThemeEditorScreen.{h,cpp}` | The ImGui screen: three regions, the preview page and its texture, the Add widget, Saved and Unsaved changes dialogs, and the `-editorScript` runner (parsing and the session commands are in `ThemeEditor/EditorScript.{h,cpp}`, tested). |
+| `Manager/Themes/app/ThemeCheck.cpp`, `ThemesApp.{h,cpp}` | `--theme-check`, the bundled font, the provider factory. |
+
+Shared hooks, kept small: `ManagerUI` (an `ImGuiScreen` slot: shown instead
+of a form for `theme-editor`, updated in `update()`, drawn in `render()`
+whatever `formsRenderer` says, asked on leaving, retired and freed from
+`update()`), `ManagerUI::setCollectionSource` set by `RetroFE.cpp` (the
+preview loads collections the way RetroFE does), `Logger::TapScope` (collects
+the warnings and errors a page build logs on this thread, whatever the `log`
+setting; lines it lets through only for the tap stay out of the log file),
+`SDL::setHiddenWindows` (for `--theme-check`: hidden, never fullscreen, no
+controllers; it also leaves the mouse alone at start and exit, as does
+`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN`),
+the `--theme-check` branch in `Main.cpp`, and the Themes slots in
+`Providers.cpp`.
+
+### How the preview works
+
+- The page is built in `update()`, never in the render pass: after an edit
+  the session's revision moves, and once it has been still for 0.25 s (and
+  no drag is in progress) the page is regenerated with
+  `GenOptions::canvasPreview` and the Show toggles. If the XML is the same as
+  last time (a widget renamed), nothing is rebuilt.
+- `PageBuilder(<folder>, "layout", config, fontCache)` with
+  `setLayoutXml(xml, <page folder>)`. While the editor is open the `layout`
+  setting points at the theme; `retire()` puts it back the moment the screen
+  is left (before the next form is built), `shutdown()` frees the page and
+  texture on the next `update()`.
+- The collection: RetroFE's own `getCollection(name)` once per collection
+  (the one being browsed, else `firstCollection` when on Home), and a copy of
+  its first 60 items for each page built, because a page deletes its
+  collections with it. A template page previews with its own collection.
+- The page draws into a texture the size of the window (RetroFE scales pages
+  to the window), inside `drawTargets()` under the mutex; the canvas shows it
+  with the theme's own aspect (`canvasFit`), so a portrait theme on a
+  landscape screen comes out the right shape.
+- A page with no components isn't built: `Page::draw` logs an error every
+  frame for one.
+- What PageBuilder logs while building (warnings and errors) is shown under
+  the canvas, as are the generator's warnings.
+
+### Decisions made in this round
+
+- **New theme's fields are the provider's**, `theme:newName` and
+  `theme:newOrientation`, not `draft:` keys: providers can't read the model's
+  drafts, and the provider needs them for `theme.create`.
+- **Use this theme writes `layout` through `SettingsFile`** (to the file that
+  sets it) and asks for a reload when the manager closes, like the other
+  Manage edits. For an editor-made theme it's refused while the main page has
+  no `<menu>`: RetroFE would start on a page with nothing to browse with.
+- **Delete refuses the theme in use.**
+- **Every save writes a `splash.xml`.** RetroFE shows a message box and stops
+  when a layout has none (found in the GUI check: a new theme put in use
+  wouldn't start). A project without a splash page gets one showing the
+  theme's name; a hand-made `splash.xml` in the folder is left alone.
+- **Logo wheels get a `fontSize`.** This engine's `Text` scales by
+  `fontSize` and leaves it at -1 when unset, so a wheel's text fallback (an
+  item without art) drew nothing, and the page never went idle, so it didn't
+  take input either. The generator now writes a size from the slot pitch
+  unless the wheel sets one (found in the GUI check too).
+- **Templates are editable but not managed**: pages a theme already has can
+  be selected and edited; adding, removing and reassigning templates is the
+  next round.
+- **Leaving asks** (Save / Don't save / Cancel), whether by Close, Escape or
+  the Settings key (`ImGuiScreen::askToLeave`), instead of the forms'
+  "leave again to discard": that warning stays armed until something resets
+  it, and nothing does while an ImGui screen is shown, so a second Escape
+  much later would have discarded the work. After answering, the editor goes
+  back one screen (the Settings key then has to be pressed again).
+- **Use this theme refuses a theme without `splash.xml`**, hand-made ones
+  too: RetroFE stops at start-up on such a layout, and then can't be switched
+  back from the UI.
+- **Engine issues don't depend on the log level**: a `Logger::TapScope` sees
+  warnings and errors on its own thread whatever `log` says, and lines from
+  collection, database and high-score loading are left out
+  (`Themes::pageBuildComponent`), as is anything from other threads (videos
+  playing on the page behind).
+- **ImGui's keyboard navigation is off while the editor is shown**: the arrow
+  keys nudge the selection instead of also moving ImGui's focus. Tab still
+  moves between fields. A pause of 0.6 s ends a run of nudges as one undo
+  step. So the dialogs still answer from the keyboard: Unsaved changes takes
+  Enter (Save), D (Don't save) and Escape (Cancel), Saved takes Enter, and
+  Enter in Add widget's search adds the first match. (Posted key messages
+  only reach ImGui when SDL thinks its window has keyboard focus, so the GUI
+  check couldn't press D; Escape is handled by ManagerUI and was checked.)
+- **ImGui can't be driven by posted input**: posted keys reach it, but the
+  SDL backend replaces the mouse position with the real cursor's whenever
+  SDL thinks its window has focus, so posted clicks land wherever the user's
+  pointer is. Hence editor scripts: `retrofe -editorScript <file>` (any
+  path), commands in theme units, run one per frame from `update()` the first
+  time a theme is opened in that session only, with a banner while running
+  and results in the log. (It started as an environment variable, which
+  stayed live in release builds and re-ran save/use every time a theme was
+  opened.) The GUI check drives the form screens with posted keys and the
+  editor with a script.
+
+### Known costs and limits
+
+- **The page behind still reads `layout`.** While the editor overrides the
+  `layout` setting, the page RetroFE was showing (and anything else that
+  reads `OPTION_LAYOUT`, such as its reloadable art when its item changes)
+  sees the edited theme's name. Nothing behind the editor changes item while
+  it's open, so it doesn't show, but the proper fix is to pass the layout
+  name to PageBuilder and the components explicitly instead of through the
+  configuration.
+- **Every committed change rebuilds the whole preview page** (after the
+  0.25 s pause): a drag, a nudge run, a property edit. Building loads the
+  page's textures and starts its videos, so a heavy page takes a noticeable
+  moment. Updating the changed component in place would be faster, but a
+  widget's box maps onto different attributes per widget (see
+  `EditorCanvas.h`), so it stays a rebuild for now.
+- **The first preview loads its collection in full** (`getCollection`,
+  metadata injected), which stalls the first build on a big collection;
+  only 60 items are used. Capping the list before `injectMetadata` would
+  need a hook in `CollectionInfoBuilder`.
+
+### Checked
+
+`retrofe_tests` covers the provider on temporary roots (facts, flags, every
+action and refusal, settings written, reload requested) and the session
+(pointer drags, snapping, canvas clamps, minimum sizes, click-through, undo
+and redo, coalescing, clamps, var types, the preview's filters, saving, the
+hand-made splash guard, templates). `--theme-check` on Aeon Nox (hand-made)
+reports nothing; on an editor theme without a splash page it reports that.
+The GUI check (2026-10-23, private test root) went Themes list, Aeon Nox's
+details, New theme, Edit, scripted editing, the Add widget, Saved and
+Unsaved changes dialogs, the leaving warning, Duplicate, Delete with
+confirm, Use this theme, and RetroFE running the new theme with its wheel.
+
+### Next round
+
+- Templates: add (`createNamed`), reassign, delete (`deleteTemplateTo`),
+  preview cover with `effectiveCover`.
+- Controller editing (`EditorNav.h` is ready) and an on-screen keyboard for
+  the text fields.
+- Guides and alignment snapping between widgets; multi-select.
+- Ask for a file when placing Static Image / Static Video (their defaults
+  don't exist in a new theme).
+- The wheel's selected item highlight for text wheels; theme fonts and
+  sounds in the theme panel.
+- Hand-made themes (see below).
 
 ## Open question: hand-made themes
 
