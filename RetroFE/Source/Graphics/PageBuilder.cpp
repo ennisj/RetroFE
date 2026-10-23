@@ -18,6 +18,7 @@
 #include "Page.h"
 #include "ViewInfo.h"
 #include "Component/Container.h"
+#include "Component/FormWidget.h"
 #include "Component/Image.h"
 #include "Component/Text.h"
 #include "Component/ReloadableText.h"
@@ -108,8 +109,15 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		layoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
 	}
 
+	// A fixed file or XML replaces the layout's own pages entirely
+	bool fixedSource = fixedXml_ || !fixedFile_.empty();
+	if (fixedSource) {
+		layoutPath = fixedXml_ ? fixedAssetPath_ : fs::path(fixedFile_).parent_path().string();
+	}
+	formWidgets_.clear();
+
 	// Fall back to the layout compiled into RetroFE when the configured one isn't installed
-	bool useBuiltinLayout = !isMenu_ && (layoutName.empty() || !fs::is_directory(layoutPathDefault));
+	bool useBuiltinLayout = !fixedSource && !isMenu_ && (layoutName.empty() || !fs::is_directory(layoutPathDefault));
 	if (useBuiltinLayout) {
 		LOG_NOTICE("Layout", "Layout \"" + layoutName + "\" is not installed, using the built-in layout");
 	}
@@ -117,7 +125,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 	std::vector<std::string> layouts;
 	layouts.push_back(layoutPage);
 	// Add "layout - #.xml" files
-	for (int i = 0; i < Page::MAX_LAYOUTS; i++) {
+	for (int i = 0; i < Page::MAX_LAYOUTS && !fixedSource; i++) {
 		layouts.push_back("layout - " + std::to_string(i));
 	}
 
@@ -151,8 +159,15 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			}
 			layoutFile = "built-in " + currentLayoutName + " layout";
 		}
+		if (fixedXml_) {
+			builtinXml = fixedXml_;
+			layoutFile = "built-in " + layoutPage + " page";
+		}
+		else if (!fixedFile_.empty()) {
+			layoutFile = fixedFile_;
+		}
 
-		if (!builtinXml && fixedResLayouts) {
+		if (!builtinXml && !fixedSource && fixedResLayouts) {
 			// Use fixed resolution layout, e.g., layout1920x1080.xml
 			if (!fixedResLayoutsInitialized) {
 				LOG_INFO("Layout", "Fixed resolution layouts have been enabled");
@@ -173,6 +188,10 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		// Check if the layout file exists
 		if (builtinXml || fs::exists(layoutFile)) {
 			LOG_INFO("Layout", "Attempting to initialize layout: " + layoutFile);
+		}
+		else if (fixedSource) {
+			LOG_ERROR("Layout", "Layout file does not exist: " + layoutFile);
+			continue;
 		}
 		else {
 			// Handle special cases when layout file does not exist
@@ -691,6 +710,8 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 
 	}
 
+	buildForms(layout, page, layoutMonitor);
+
 	for (xml_node<>* componentXml = layout->first_node("text"); componentXml; componentXml = componentXml->next_sibling("text")) {
 		xml_attribute<> const* value = componentXml->first_attribute("value");
 		xml_attribute<> const* idXml = componentXml->first_attribute("id");
@@ -930,7 +951,7 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 	}
 }
 
-FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>* defaults, int monitor)
+FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>* defaults, int monitor, const SDL_Color* colorOverride)
 {
 	xml_attribute<> const* fontXml = component->first_attribute("font");
 	xml_attribute<> const* fontColorXml = component->first_attribute("fontColor");
@@ -979,9 +1000,74 @@ FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>*
 	if (fontSizeXml) {
 		fontSize = Utils::convertInt(fontSizeXml->value());
 	}
+	if (colorOverride) {
+		fontColor = *colorOverride;
+	}
 
 	fontCache_->loadFont(fontName, fontSize, fontColor, monitor);
 	return fontCache_->getFont(fontName, fontSize, fontColor, monitor);
+}
+
+// <form> elements: a Forms::Form drawn as rows, bound by whoever shows the page
+void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
+{
+	auto color = [](const xml_node<>* node, const char* name, SDL_Color fallback) {
+		if (const xml_attribute<>* attr = node->first_attribute(name)) {
+			int value = 0;
+			std::stringstream ss;
+			ss << std::hex << attr->value();
+			ss >> value;
+			return SDL_Color{ static_cast<Uint8>((value >> 16) & 0xFF), static_cast<Uint8>((value >> 8) & 0xFF), static_cast<Uint8>(value & 0xFF), 255 };
+		}
+		return fallback;
+	};
+	auto number = [](const xml_node<>* node, const char* name, float fallback) {
+		const xml_attribute<>* attr = node->first_attribute(name);
+		return attr ? Utils::convertFloat(attr->value()) : fallback;
+	};
+	auto text = [](const xml_node<>* node, const char* name, const std::string& fallback) {
+		const xml_attribute<>* attr = node->first_attribute(name);
+		return attr ? std::string(attr->value()) : fallback;
+	};
+	auto flag = [](const xml_node<>* node, const char* name, bool fallback) {
+		const xml_attribute<>* attr = node->first_attribute(name);
+		return attr ? Utils::toLower(attr->value()) == "yes" || Utils::toLower(attr->value()) == "true" : fallback;
+	};
+
+	for (xml_node<>* componentXml = layout->first_node("form"); componentXml; componentXml = componentXml->next_sibling("form")) {
+		const xml_attribute<>* monitorXml = componentXml->first_attribute("monitor");
+		int formMonitor = monitorXml ? Utils::convertInt(monitorXml->value()) : monitor;
+		if (formMonitor + 1 > SDL::getScreenCount()) {
+			LOG_WARNING("Layout", "Skipping form due to non-existent monitor index: " + std::to_string(formMonitor));
+			continue;
+		}
+
+		SDL_Color focusColor = color(componentXml, "focusColor", SDL_Color{ 255, 255, 255, 255 });
+		FontManager* font = addFont(componentXml, nullptr, formMonitor);
+		FontManager* focusFont = addFont(componentXml, nullptr, formMonitor, &focusColor);
+
+		FormWidget::Style style;
+		style.rowHeight = number(componentXml, "rowHeight", 0.0f);
+		style.labelWidth = number(componentXml, "labelWidth", 0.0f);
+		style.focusBackground = color(componentXml, "focusBackgroundColor", style.focusBackground);
+		style.focusBackgroundAlpha = number(componentXml, "focusBackgroundAlpha", style.focusBackgroundAlpha);
+		style.noteAlpha = number(componentXml, "noteAlpha", style.noteAlpha);
+		style.disabledAlpha = number(componentXml, "disabledAlpha", style.disabledAlpha);
+		style.onText = text(componentXml, "onText", style.onText);
+		style.offText = text(componentXml, "offText", style.offText);
+		style.showTitle = flag(componentXml, "title", style.showTitle);
+		style.showHints = flag(componentXml, "hints", style.showHints);
+		if (const xml_attribute<>* image = componentXml->first_attribute("focusImage")) {
+			style.focusImage = Configuration::convertToAbsolutePath(layoutPath, image->value());
+		}
+
+		auto* form = new FormWidget(*page, font, focusFont, formMonitor);
+		form->setStyle(style);
+		buildViewInfo(componentXml, form->baseViewInfo);
+		loadTweens(form, componentXml);
+		page->addComponent(form);
+		formWidgets_.push_back(form);
+	}
 }
 
 void PageBuilder::loadTweens(Component* c, xml_node<>* componentXml)
@@ -1547,9 +1633,10 @@ void PageBuilder::buildViewInfo(xml_node<>* componentXml, ViewInfo& info, xml_no
 		int green = (num / 0x100) % 0x100;
 		int blue = num % 0x100;
 
-		info.BackgroundRed = static_cast<float>(red / 255);
-		info.BackgroundGreen = static_cast<float>(green / 255);
-		info.BackgroundBlue = static_cast<float>(blue / 255);
+		// Divide as floats: integer division made every color except white black
+		info.BackgroundRed = static_cast<float>(red) / 255.0f;
+		info.BackgroundGreen = static_cast<float>(green) / 255.0f;
+		info.BackgroundBlue = static_cast<float>(blue) / 255.0f;
 	}
 
 	if (backgroundAlpha) {

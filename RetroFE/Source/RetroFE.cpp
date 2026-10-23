@@ -135,6 +135,7 @@ void RetroFE::render()
 	{
 		currentPage_->draw();  // Draws onto the currently set render targets (textures)
 	}
+	manager_.drawPage();  // a management screen over the page, styled by the layout
 
 	// Step 3: Present the rendered content on each screen
 	for (int i = 0; i < SDL::getScreenCount(); ++i)
@@ -310,7 +311,7 @@ void RetroFE::allocateGraphicsMemory()
 	{
 		SDL::initialize(config_);
 		currentPage_->initializeFonts();
-		manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0));
+		manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0), &fontcache_);
 	}
 
 	// Allocate textures
@@ -388,7 +389,7 @@ bool RetroFE::run()
 		return false;
 	if (!fontcache_.initialize())
 		return false;
-	manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0));
+	manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0), &fontcache_);
 	SDL_RestoreWindow(SDL::getWindow(0));
 	SDL_RaiseWindow(SDL::getWindow(0));
 	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
@@ -602,7 +603,19 @@ bool RetroFE::run()
 			SDL_Event e;
 			while (SDL_PollEvent(&e))
 			{
-				manager_.handleEvent(e);
+				// What the manager doesn't use directly reaches it through the controls below
+				if (!manager_.handleEvent(e))
+				{
+					input_.update(e);
+				}
+			}
+			if (manager_.wantsNavigation())
+			{
+				// Layout-drawn screens are driven by the user's mapped controls, gamepads included
+				input_.updateKeystate();
+				manager_.navigate({ input_.keystate(UserInput::KeyCodeUp), input_.keystate(UserInput::KeyCodeDown),
+					input_.keystate(UserInput::KeyCodeLeft), input_.keystate(UserInput::KeyCodeRight),
+					input_.keystate(UserInput::KeyCodeSelect), input_.keystate(UserInput::KeyCodeBack) }, currentTime_);
 			}
 			if (!manager_.isOpen())
 			{
@@ -2404,7 +2417,7 @@ bool RetroFE::run()
 			}
 
 			// File dialogs block, so they run here rather than while rendering
-			manager_.update();
+			manager_.update(deltaTime);
 			if (manager_.takeReloadRequest())
 			{
 				// Reload everything so the changes show up

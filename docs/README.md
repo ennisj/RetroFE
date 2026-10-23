@@ -20,6 +20,7 @@ additional artwork like video, box art, screenshots, etc.
     -   [Global Settings](GLOBAL_SETTINGS.md)
     -   [. Command Line Interface](CLI.md)
     -   [. Controls (Keyboard/Gamepad)](CONTROLS.md)
+    -   [. Home Menu, Settings and Manage](MANAGER.md)
 - Collections
     -   [. Collections](COLLECTIONS.md)
     -   [. Collection Settings](SETTINGS.md)

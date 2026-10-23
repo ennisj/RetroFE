@@ -57,9 +57,9 @@ const char* const manageForm = R"(
         empty="Welcome! Nothing is set up yet. Add your first collection below: point RetroFE at a folder of games and the emulator that runs them, and it will reload with the collection under Browse."/>
   <section label="Add a collection">
     <text label="Name" bind="draft:name" hint="e.g. Arcade"/>
-    <folder label="Games folder" bind="draft:romPath" status="info:romCount"/>
+    <folder label="Games folder" bind="draft:romPath" hint="Not chosen yet" status="info:romCount"/>
     <text label="File extensions" bind="draft:extensions" hint="e.g. zip,7z" default="zip"/>
-    <file label="Emulator" bind="draft:executable" filter="Programs" pattern="*.exe;*.bat;*.cmd"/>
+    <file label="Emulator" bind="draft:executable" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd"/>
     <text label="Arguments" bind="draft:arguments" default="&quot;%ITEM_FILEPATH%&quot;" help="%ITEM_FILEPATH% is replaced with the game's file"/>
     <button label="Create collection" action="collection.create"/>
   </section>

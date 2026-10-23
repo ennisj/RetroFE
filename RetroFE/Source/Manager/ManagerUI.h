@@ -18,41 +18,59 @@
 #include "FormView.h"
 #include "ManagerModel.h"
 #include "../Forms/Form.h"
+#include "../Graphics/Component/FormWidget.h"
 #include <SDL2/SDL.h>
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
 
 class Configuration;
+class FontCache;
+class Page;
 struct ImGuiContext;
 
-// In-app management panels (Settings, Manage, Catalog), drawn with Dear ImGui
-// on top of the current page on screen 0. Each panel is a form (see Forms/Form.h).
-// While a panel is open it takes all input.
+// The management screens (Settings, Manage, Catalog), shown over the current page.
+// Each screen is a form (see Forms/Form.h). It's drawn as a RetroFE page with a
+// <form> element, styled by layouts/<layout>/forms/<id>/layout.xml or
+// forms/layout.xml, or the built-in form page, and driven by RetroFE's
+// controls. formsRenderer = imgui draws the forms with Dear ImGui instead.
+// While a screen is open it takes all input.
 class ManagerUI
 {
 public:
-    // The panels opened from the Home menu
+    // The screens opened from the Home menu
     enum class Screen { Settings, Manage, Catalog };
 
     explicit ManagerUI(Configuration& config);
     ~ManagerUI();
 
-    bool initialize(SDL_Window* window, SDL_Renderer* renderer);
+    bool initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache* fontCache);
     void deInitialize();
 
     bool isOpen() const { return open_; }
     void open(Screen screen);
     void close();
 
-    // Returns true if the UI used the event, including the key that opens it
+    // Returns true if the UI used the event, including the key that opens Settings.
+    // Unused events should go to RetroFE's input so navigate() gets them.
     bool handleEvent(const SDL_Event& e);
+
+    // Whether the open screen is driven by RetroFE's controls through navigate()
+    bool wantsNavigation() const { return open_ && page_; }
+
+    // RetroFE's up, down, left, right, select and back controls, as currently held.
+    // Presses act once, and up/down/left/right repeat while held.
+    void navigate(const std::array<bool, 6>& held, float now);
 
     // Work that can't happen while rendering, such as native file dialogs.
     // Call once per frame, outside SDL::getMutex().
-    void update();
+    void update(float dt);
 
-    // Draws the UI onto the window's render target. Call while holding SDL::getMutex().
+    // Draws a page-based screen onto the main screen's render target, after the current page
+    void drawPage();
+
+    // Draws an ImGui screen onto the window. Call while holding SDL::getMutex().
     void render();
 
     // True once after changes were saved that RetroFE has to reload to show
@@ -61,6 +79,15 @@ public:
 private:
     void drawWindow();
     void loadForms();
+    bool buildPage();
+    void destroyPage();
+    void handleWidgetResults();
+
+    FontCache* fontCache_ = nullptr;
+    Page* page_ = nullptr;             // the page-based screen, when open
+    FormWidget* widget_ = nullptr;     // owned by page_
+    std::array<bool, 6> navHeld_{};
+    std::array<float, 6> navRepeatAt_{};
 
     Configuration& config_;
     ManagerModel model_;

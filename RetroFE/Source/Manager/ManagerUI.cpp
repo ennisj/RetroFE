@@ -14,9 +14,12 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ManagerUI.h"
+#include "FileDialog.h"
 #include "../Builtin/Builtin.h"
 #include "../Database/Configuration.h"
 #include "../Database/GlobalOpts.h"
+#include "../Graphics/Page.h"
+#include "../Graphics/PageBuilder.h"
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 #include "imgui.h"
@@ -24,6 +27,7 @@
 #include "imgui_impl_sdlrenderer2.h"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 namespace
 {
@@ -49,7 +53,7 @@ ManagerUI::~ManagerUI()
     deInitialize();
 }
 
-bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer)
+bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache* fontCache)
 {
     if (context_) {
         return true;
@@ -59,6 +63,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer)
     }
     window_ = window;
     renderer_ = renderer;
+    fontCache_ = fontCache;
 
     // controls.manager picks the key that opens Settings; the first keyboard key listed is used
     std::string toggle;
@@ -142,6 +147,7 @@ void ManagerUI::deInitialize()
     if (open_) {
         close();
     }
+    destroyPage();
     ImGui::SetCurrentContext(context_);
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
@@ -156,20 +162,29 @@ void ManagerUI::open(Screen screen)
     if (!context_) {
         return;
     }
+    bool wasOpen = open_;
     screen_ = screen;
     status_.clear();
     focusNext_ = true;
+    open_ = true;
+    if (!wasOpen) {
+        model_.refresh();
+        cursorWasShown_ = SDL_ShowCursor(SDL_QUERY);
+    }
     if (forms_[screen_]) {
         Forms::applyDefaults(*forms_[screen_], model_);
     }
-    if (open_) {
-        return;
-    }
-    open_ = true;
-    model_.refresh();
 
-    cursorWasShown_ = SDL_ShowCursor(SDL_QUERY);
-    SDL_ShowCursor(SDL_ENABLE);
+    // Draw it as a layout page unless asked for ImGui, or the page can't be built
+    std::string renderer;
+    config_.getProperty("formsRenderer", renderer);
+    destroyPage();
+    if (Utils::toLower(renderer) == "imgui" || !buildPage()) {
+        SDL_ShowCursor(SDL_ENABLE);
+    }
+
+    // Controls held while opening (e.g. the Select that chose it) must be released first
+    navHeld_.fill(true);
 }
 
 void ManagerUI::close()
@@ -178,7 +193,64 @@ void ManagerUI::close()
         return;
     }
     open_ = false;
+    destroyPage();
     SDL_ShowCursor(cursorWasShown_);
+}
+
+bool ManagerUI::buildPage()
+{
+    const Forms::Form* form = forms_[screen_].get();
+    if (!form || !fontCache_) {
+        return false;
+    }
+
+    // The layout styles a screen with forms/<id>/layout.xml, or all of them with forms/layout.xml
+    std::string layoutName;
+    config_.getProperty(OPTION_LAYOUT, layoutName);
+    std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
+    std::string screenFile = Utils::combinePath(formsPath, formId(screen_), "layout.xml");
+    std::string sharedFile = Utils::combinePath(formsPath, "layout.xml");
+
+    PageBuilder builder(layoutName, "layout", config_, fontCache_);
+    if (!layoutName.empty() && std::filesystem::exists(screenFile)) {
+        builder.setLayoutFile(screenFile);
+    }
+    else if (!layoutName.empty() && std::filesystem::exists(sharedFile)) {
+        builder.setLayoutFile(sharedFile);
+    }
+    else {
+        builder.setLayoutXml(Builtin::layoutXml("form"), formsPath);
+    }
+
+    Page* page = builder.buildPage();
+    if (!page || builder.formWidgets().empty()) {
+        LOG_ERROR("Manager", "The " + std::string(formId(screen_)) + " page has no <form>, using ImGui instead");
+        if (page) {
+            page->deInitialize();
+            delete page;
+        }
+        return false;
+    }
+
+    widget_ = builder.formWidgets().front();
+    widget_->bind(form, &model_);
+    widget_->setCanBrowse(FileDialog::isSupported());
+    page_ = page;
+    page_->allocateGraphicsMemory();
+    page_->start();
+    return true;
+}
+
+void ManagerUI::destroyPage()
+{
+    if (!page_) {
+        return;
+    }
+    page_->stop();
+    page_->deInitialize();
+    delete page_;
+    page_ = nullptr;
+    widget_ = nullptr;
 }
 
 bool ManagerUI::handleEvent(const SDL_Event& e)
@@ -195,6 +267,22 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     if (!open_) {
         return false;
     }
+
+    if (page_) {
+        // Typing goes to the field being edited; everything else is left for RetroFE's controls
+        if (widget_->handleTextEvent(e)) {
+            return true;
+        }
+        // Escape always leaves, whatever the controls say
+        if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) {
+            if (!widget_->navigate(FormWidget::Nav::Back)) {
+                close();
+            }
+            return true;
+        }
+        return false;
+    }
+
     ImGui::SetCurrentContext(context_);
 
     // Escape closes the panel, unless it's being used to leave a text field
@@ -206,16 +294,78 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     return true;
 }
 
-void ManagerUI::update()
+void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
 {
-    if (open_) {
+    static constexpr FormWidget::Nav navs[] = {
+        FormWidget::Nav::Up, FormWidget::Nav::Down, FormWidget::Nav::Left,
+        FormWidget::Nav::Right, FormWidget::Nav::Select, FormWidget::Nav::Back
+    };
+    const float repeatDelay = 0.4f;
+    const float repeatInterval = 0.09f;
+
+    for (size_t i = 0; i < held.size() && widget_; i++) {
+        bool repeats = i < 4;  // up/down/left/right
+        bool act = false;
+        if (held[i] && !navHeld_[i]) {
+            act = true;
+            navRepeatAt_[i] = now + repeatDelay;
+        }
+        else if (held[i] && repeats && now >= navRepeatAt_[i]) {
+            act = true;
+            navRepeatAt_[i] = now + repeatInterval;
+        }
+        navHeld_[i] = held[i];
+
+        if (act && !widget_->navigate(navs[i])) {
+            close();
+        }
+    }
+}
+
+void ManagerUI::update(float dt)
+{
+    if (!open_) {
+        return;
+    }
+    if (page_) {
+        page_->update(dt);
+        handleWidgetResults();
+    }
+    else {
         view_.update(window_, model_);
+    }
+}
+
+void ManagerUI::handleWidgetResults()
+{
+    if (auto browse = widget_->takeBrowse()) {
+        std::string path = model_.get(browse->bind);
+        bool chosen = browse->folder
+            ? FileDialog::pickFolder(window_, browse->title, path)
+            : FileDialog::pickFile(window_, browse->title, browse->filterName, browse->pattern, path);
+        if (chosen) {
+            model_.set(browse->bind, path);
+        }
+    }
+    if (auto result = widget_->takeResult()) {
+        widget_->setStatus(result->message, !result->ok);
+        if (result->ok && result->reload) {
+            reloadRequested_ = true;
+            close();
+        }
+    }
+}
+
+void ManagerUI::drawPage()
+{
+    if (open_ && page_) {
+        page_->draw();
     }
 }
 
 void ManagerUI::render()
 {
-    if (!context_ || !open_) {
+    if (!context_ || !open_ || page_) {
         return;
     }
     ImGui::SetCurrentContext(context_);

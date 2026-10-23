@@ -30,6 +30,7 @@
 
 static const int MENU_INDEX_HIGH = 16;
 
+class FormWidget;
 class ScrollingList;
 class Page;
 class ViewInfo;
@@ -43,7 +44,22 @@ public:
     virtual ~PageBuilder();
     Page *buildPage( const std::string& collectionName = "", bool defaultToCurrentLayout = false);
 
+    // Build from exactly this file rather than the layout's own files:
+    // no "layout - N" variants and no falling back to the layout's main page
+    void setLayoutFile(const std::string& file) { fixedFile_ = file; }
+
+    // The same, from XML text; relative asset paths resolve against assetPath
+    void setLayoutXml(const char* xml, const std::string& assetPath) { fixedXml_ = xml; fixedAssetPath_ = assetPath; }
+
+    // The <form> components created by buildPage
+    const std::vector<FormWidget*>& formWidgets() const { return formWidgets_; }
+
 private:
+    std::string fixedFile_;
+    const char* fixedXml_{ nullptr };
+    std::string fixedAssetPath_;
+    std::vector<FormWidget*> formWidgets_;
+
     std::string layoutKey;
     std::string layoutPage;
     std::string layoutPath;
@@ -59,7 +75,8 @@ private:
     FontCache *fontCache_;
     bool isMenu_;
 
-    FontManager *addFont(const rapidxml::xml_node<> *component, const rapidxml::xml_node<> *defaults, int monitor);
+    FontManager *addFont(const rapidxml::xml_node<> *component, const rapidxml::xml_node<> *defaults, int monitor, const SDL_Color *colorOverride = nullptr);
+    void buildForms(rapidxml::xml_node<> *layout, Page *page, int monitor);
     void loadReloadableImages(const rapidxml::xml_node<> *layout, const std::string& tagName, Page *page);
     float getVerticalAlignment(const rapidxml::xml_attribute<> *attribute, float valueIfNull) const;
     float getHorizontalAlignment(const rapidxml::xml_attribute<> *attribute, float valueIfNull) const;
