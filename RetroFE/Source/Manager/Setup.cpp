@@ -199,44 +199,6 @@ std::string validate(const NewCollection& collection)
     return "";
 }
 
-bool writeSettings(const DisplaySettings& display, std::string& error)
-{
-    std::string content =
-        "# Created by RetroFE setup.\n"
-        "# Run \"retrofe -createconfig\" to get a reference of every setting.\n"
-        "\n"
-        "log = ERROR,WARNING,NOTICE\n"
-        "numScreens = 1\n"
-        "firstCollection = Main\n"
-        "homeMenu = yes\n"
-        "\n";
-    if (display.fullscreen) {
-        content +=
-            "fullscreen = yes\n"
-            "horizontal = stretch\n"
-            "vertical = stretch\n"
-            "hideMouse = yes\n";
-    }
-    else {
-        content +=
-            "fullscreen = no\n"
-            "horizontal = " + std::to_string(display.width) + "\n"
-            "vertical = " + std::to_string(display.height) + "\n"
-            "windowBorder = true\n"
-            "windowResize = true\n"
-            "hideMouse = no\n";
-    }
-
-    try {
-        fs::create_directories(Configuration::absolutePath);
-    }
-    catch (const fs::filesystem_error& e) {
-        error = e.what();
-        return false;
-    }
-    return writeFile(Utils::combinePath(Configuration::absolutePath, "settings.conf"), content, error);
-}
-
 bool createCollection(const NewCollection& collection, std::string& error)
 {
     error = validate(collection);

@@ -15,15 +15,20 @@
  */
 #pragma once
 
+#include "FormView.h"
+#include "ManagerModel.h"
+#include "../Forms/Form.h"
 #include <SDL2/SDL.h>
+#include <map>
+#include <memory>
 #include <string>
-#include <vector>
 
 class Configuration;
 struct ImGuiContext;
 
-// In-app management UI, drawn with Dear ImGui on top of the current page on screen 0.
-// While it's open it takes all input.
+// In-app management panels (Settings, Manage, Catalog), drawn with Dear ImGui
+// on top of the current page on screen 0. Each panel is a form (see Forms/Form.h).
+// While a panel is open it takes all input.
 class ManagerUI
 {
 public:
@@ -54,46 +59,25 @@ public:
     bool takeReloadRequest();
 
 private:
-    enum class Browse { None, RomFolder, Executable };
-
     void drawWindow();
-    void drawSettings();
-    void drawManage();
-    void drawCatalog();
-    void drawAddCollection();
-    void refreshCollections();
-    void createCollection();
-    void setStatus(const std::string& message, bool isError);
+    void loadForms();
 
     Configuration& config_;
+    ManagerModel model_;
+    FormView view_;
+    std::map<Screen, std::unique_ptr<Forms::Form>> forms_;
+
     ImGuiContext* context_ = nullptr;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     SDL_Scancode toggleKey_ = SDL_SCANCODE_F10;
     float scale_ = 1.0f;
     bool open_ = false;
+    bool focusNext_ = false;   // give the panel keyboard/gamepad focus on the next frame
     Screen screen_ = Screen::Settings;
     bool reloadRequested_ = false;
     int cursorWasShown_ = SDL_ENABLE;
-    Browse browse_ = Browse::None;
 
-    // Add collection form
-    char name_[128] = "";
-    char romPath_[1024] = "";
-    char extensions_[128] = "zip";
-    char executable_[1024] = "";
-    char arguments_[1024] = "\"%ITEM_FILEPATH%\"";
-    std::string countedPath_;
-    std::string countedExtensions_;
-    int romCount_ = -1;
-
-    // Display; only editable while settings.conf doesn't exist, otherwise shows what's configured
-    bool fullscreen_ = false;
-    int width_ = 1280;
-    int height_ = 720;
-
-    bool hasSettingsFile_ = false;
-    std::vector<std::string> collections_;
     std::string status_;
     bool statusIsError_ = false;
 };

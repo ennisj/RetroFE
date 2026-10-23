@@ -255,8 +255,12 @@ set(RETROFE_HEADERS
     "${RETROFE_DIR}/Source/Video/VideoPool.h"
    	"${RETROFE_DIR}/Source/Graphics/ComponentItemBindingBuilder.h"
 	"${RETROFE_DIR}/Source/Graphics/ViewInfo.h"
+	"${RETROFE_DIR}/Source/Forms/Form.h"
+	"${RETROFE_DIR}/Source/Forms/SettingsFile.h"
 	"${RETROFE_DIR}/Source/Manager/FileDialog.h"
+	"${RETROFE_DIR}/Source/Manager/FormView.h"
 	"${RETROFE_DIR}/Source/Manager/Home.h"
+	"${RETROFE_DIR}/Source/Manager/ManagerModel.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.h"
 	"${RETROFE_DIR}/Source/Manager/Setup.h"
 	"${RETROFE_DIR}/Source/RetroFE.h"
@@ -316,7 +320,12 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Video/VideoFactory.cpp"
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
+	"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"
+	"${RETROFE_DIR}/Source/Forms/Form.cpp"
+	"${RETROFE_DIR}/Source/Forms/SettingsFile.cpp"
 	"${RETROFE_DIR}/Source/Manager/FileDialog.cpp"
+	"${RETROFE_DIR}/Source/Manager/FormView.cpp"
+	"${RETROFE_DIR}/Source/Manager/ManagerModel.cpp"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.cpp"
 	"${RETROFE_DIR}/Source/Manager/Setup.cpp"
 	"${RETROFE_DIR}/Source/RetroFE.cpp"
@@ -335,11 +344,34 @@ list(APPEND RETROFE_SOURCES
 	"${IMGUI_ROOT}/imgui_draw.cpp"
 	"${IMGUI_ROOT}/imgui_tables.cpp"
 	"${IMGUI_ROOT}/imgui_widgets.cpp"
+	"${IMGUI_ROOT}/misc/cpp/imgui_stdlib.cpp"
 	${IMGUI_BACKEND_SOURCES}
 )
 # The backends include <SDL.h> rather than <SDL2/SDL.h>
 if(MSVC)
 	set_source_files_properties(${IMGUI_BACKEND_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${SDL2_ROOT}/include/SDL2")
+endif()
+
+##############################################################
+# Unit tests for code that doesn't need SDL: cmake -DRETROFE_BUILD_TESTS=ON, then run retrofe_tests
+option(RETROFE_BUILD_TESTS "Build the retrofe_tests unit tests" OFF)
+if(RETROFE_BUILD_TESTS)
+	add_executable(retrofe_tests
+		"${RETROFE_DIR}/Tests/FormsTests.cpp"
+		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
+		"${RETROFE_DIR}/Source/Database/Configuration.cpp"
+		"${RETROFE_DIR}/Source/Database/GlobalOpts.cpp"
+		"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"
+		"${RETROFE_DIR}/Source/Forms/Form.cpp"
+		"${RETROFE_DIR}/Source/Forms/SettingsFile.cpp"
+		"${RETROFE_DIR}/Source/Manager/ManagerModel.cpp"
+		"${RETROFE_DIR}/Source/Manager/Setup.cpp"
+		"${RETROFE_DIR}/Source/Utility/Log.cpp"
+		"${RETROFE_DIR}/Source/Utility/Utils.cpp"
+	)
+	add_dependencies(retrofe_tests GenerateVersioningHeader)
+	enable_testing()
+	add_test(NAME forms COMMAND retrofe_tests)
 endif()
 
 set(EXECUTABLE_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORCE)

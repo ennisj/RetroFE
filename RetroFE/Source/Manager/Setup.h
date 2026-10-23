@@ -22,13 +22,6 @@
 // Everything is written under Configuration::absolutePath.
 namespace Setup
 {
-    struct DisplaySettings
-    {
-        bool fullscreen = false;
-        int width = 1280;
-        int height = 720;
-    };
-
     struct NewCollection
     {
         std::string name;
@@ -49,9 +42,6 @@ namespace Setup
 
     // Returns an empty string when valid, otherwise what's wrong
     std::string validate(const NewCollection& collection);
-
-    // Writes settings.conf. Only used when it doesn't exist yet.
-    bool writeSettings(const DisplaySettings& display, std::string& error);
 
     // Creates collections/<name> with its settings and launcher, and adds it to the Main menu
     bool createCollection(const NewCollection& collection, std::string& error);

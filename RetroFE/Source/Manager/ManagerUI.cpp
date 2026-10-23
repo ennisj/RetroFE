@@ -14,10 +14,9 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ManagerUI.h"
-#include "FileDialog.h"
-#include "Setup.h"
 #include "../Builtin/Builtin.h"
 #include "../Database/Configuration.h"
+#include "../Database/GlobalOpts.h"
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 #include "imgui.h"
@@ -28,15 +27,20 @@
 
 namespace
 {
-    template <size_t N>
-    void copyTo(char (&buffer)[N], const std::string& value)
+    const char* formId(ManagerUI::Screen screen)
     {
-        SDL_strlcpy(buffer, value.c_str(), N);
+        switch (screen) {
+        case ManagerUI::Screen::Settings: return "settings";
+        case ManagerUI::Screen::Manage:   return "manage";
+        case ManagerUI::Screen::Catalog:  return "catalog";
+        }
+        return "";
     }
 }
 
 ManagerUI::ManagerUI(Configuration& config)
     : config_(config)
+    , model_(config)
 {
 }
 
@@ -56,7 +60,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer)
     window_ = window;
     renderer_ = renderer;
 
-    // controls.manager picks the key that opens the UI; the first keyboard key listed is used
+    // controls.manager picks the key that opens Settings; the first keyboard key listed is used
     std::string toggle;
     if (config_.getProperty("controls.manager", toggle)) {
         std::vector<std::string> keys;
@@ -83,6 +87,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer)
     int outputHeight = 0;
     SDL_GetRendererOutputSize(renderer_, nullptr, &outputHeight);
     scale_ = std::max(1.0f, static_cast<float>(outputHeight) / 720.0f);
+    view_.setScale(scale_);
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -114,8 +119,19 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer)
         return false;
     }
 
-    LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open the manager");
+    loadForms();
+    LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open Settings");
     return true;
+}
+
+void ManagerUI::loadForms()
+{
+    // A layout can provide its own versions in layouts/<layout>/forms/
+    std::string layoutName;
+    config_.getProperty(OPTION_LAYOUT, layoutName);
+    for (Screen screen : { Screen::Settings, Screen::Manage, Screen::Catalog }) {
+        forms_[screen] = Forms::load(formId(screen), layoutName);
+    }
 }
 
 void ManagerUI::deInitialize()
@@ -142,25 +158,15 @@ void ManagerUI::open(Screen screen)
     }
     screen_ = screen;
     status_.clear();
+    focusNext_ = true;
+    if (forms_[screen_]) {
+        Forms::applyDefaults(*forms_[screen_], model_);
+    }
     if (open_) {
         return;
     }
     open_ = true;
-    hasSettingsFile_ = Setup::hasSettingsFile();
-    refreshCollections();
-
-    // With settings.conf in place, show what it configures
-    if (hasSettingsFile_) {
-        std::string horizontal;
-        std::string vertical;
-        config_.getProperty("fullscreen", fullscreen_);
-        if (config_.getProperty("horizontal", horizontal) && horizontal != "stretch") {
-            width_ = Utils::convertInt(horizontal);
-        }
-        if (config_.getProperty("vertical", vertical) && vertical != "stretch") {
-            height_ = Utils::convertInt(vertical);
-        }
-    }
+    model_.refresh();
 
     cursorWasShown_ = SDL_ShowCursor(SDL_QUERY);
     SDL_ShowCursor(SDL_ENABLE);
@@ -202,23 +208,8 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
 void ManagerUI::update()
 {
-    if (browse_ == Browse::None) {
-        return;
-    }
-    Browse browse = browse_;
-    browse_ = Browse::None;
-
-    if (browse == Browse::RomFolder) {
-        std::string path = romPath_;
-        if (FileDialog::pickFolder(window_, "Choose the folder your games are in", path)) {
-            copyTo(romPath_, path);
-        }
-    }
-    else if (browse == Browse::Executable) {
-        std::string path = executable_;
-        if (FileDialog::pickFile(window_, "Choose the emulator that runs these games", "Programs", "*.exe;*.bat;*.cmd", path)) {
-            copyTo(executable_, path);
-        }
+    if (open_) {
+        view_.update(window_, model_);
     }
 }
 
@@ -248,6 +239,7 @@ bool ManagerUI::takeReloadRequest()
 void ManagerUI::drawWindow()
 {
     ImGuiIO& io = ImGui::GetIO();
+    const Forms::Form* form = forms_[screen_].get();
 
     // Dim the page behind the window
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 150));
@@ -257,17 +249,29 @@ void ManagerUI::drawWindow()
     ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, io.DisplaySize.y - 40.0f * scale_));
 
-    // "###manager" keeps one window while the title changes with the screen
-    const char* title = screen_ == Screen::Settings ? "Settings###manager"
-                      : screen_ == Screen::Manage   ? "Manage###manager"
-                      : "Catalog###manager";
+    // "###manager" keeps one window while the title changes with the form
+    std::string title = (form ? form->title : std::string(formId(screen_))) + "###manager";
+    if (focusNext_) {
+        ImGui::SetNextWindowFocus();
+        focusNext_ = false;
+    }
     bool keepOpen = true;
-    ImGui::Begin(title, &keepOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::Begin(title.c_str(), &keepOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
-    switch (screen_) {
-    case Screen::Settings: drawSettings(); break;
-    case Screen::Manage:   drawManage();   break;
-    case Screen::Catalog:  drawCatalog();  break;
+    if (form) {
+        view_.draw(*form, model_);
+    }
+    else {
+        ImGui::TextWrapped("This form couldn't be loaded. Check the log for details.");
+    }
+
+    if (auto result = view_.takeResult()) {
+        status_ = result->message;
+        statusIsError_ = !result->ok;
+        if (result->ok && result->reload) {
+            reloadRequested_ = true;
+            keepOpen = false;
+        }
     }
 
     if (!status_.empty()) {
@@ -292,194 +296,4 @@ void ManagerUI::drawWindow()
     if (!keepOpen) {
         close();
     }
-}
-
-void ManagerUI::drawManage()
-{
-    if (collections_.empty()) {
-        ImGui::TextWrapped("Welcome! Nothing is set up yet. Add your first collection below: "
-                           "point RetroFE at a folder of games and the emulator that runs them, "
-                           "and it will reload with the collection under Browse.");
-    }
-    else {
-        // Real installs can have well over a hundred collections, so keep the list compact
-        std::string heading = std::to_string(collections_.size()) + (collections_.size() == 1 ? " collection" : " collections");
-        if (ImGui::TreeNode("collections", "%s", heading.c_str())) {
-            float rows = static_cast<float>(std::min<size_t>(collections_.size(), 6));
-            ImGui::BeginChild("##collectionList", ImVec2(0.0f, rows * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_None);
-            for (const std::string& name : collections_) {
-                ImGui::TextUnformatted(name.c_str());
-            }
-            ImGui::EndChild();
-            ImGui::TreePop();
-        }
-    }
-
-    drawAddCollection();
-}
-
-void ManagerUI::drawCatalog()
-{
-    ImGui::TextWrapped("The catalog isn't built yet. It will list content you can download "
-                       "from sources you configure, and install it into your collections.");
-}
-
-void ManagerUI::drawAddCollection()
-{
-    ImGui::SeparatorText("Add a collection");
-
-    const float labelWidth = 150.0f * scale_;
-    const char* browseLabel = "Browse...";
-    const float browseWidth = ImGui::CalcTextSize(browseLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    const bool canBrowse = FileDialog::isSupported();
-
-    auto label = [&](const char* text) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(text);
-        ImGui::SameLine(labelWidth);
-    };
-    auto fieldWidth = [&](bool withBrowse) {
-        ImGui::SetNextItemWidth(withBrowse && canBrowse ? -(browseWidth + ImGui::GetStyle().ItemSpacing.x) : -FLT_MIN);
-    };
-    auto hint = [&](const std::string& text) {
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth);
-        ImGui::TextDisabled("%s", text.c_str());
-    };
-
-    label("Name");
-    fieldWidth(false);
-    ImGui::InputTextWithHint("##name", "e.g. Arcade", name_, sizeof(name_));
-
-    label("Games folder");
-    fieldWidth(true);
-    ImGui::InputText("##roms", romPath_, sizeof(romPath_));
-    if (canBrowse) {
-        ImGui::SameLine();
-        if (ImGui::Button("Browse...##roms")) {
-            browse_ = Browse::RomFolder;
-        }
-    }
-
-    // Recount only when the folder or extensions change
-    if (countedPath_ != romPath_ || countedExtensions_ != extensions_) {
-        countedPath_ = romPath_;
-        countedExtensions_ = extensions_;
-        romCount_ = Setup::countRoms(countedPath_, countedExtensions_);
-    }
-    if (romPath_[0] != '\0') {
-        hint(romCount_ < 0 ? "Folder not found" : std::to_string(romCount_) + (romCount_ == 1 ? " matching file" : " matching files"));
-    }
-
-    label("File extensions");
-    fieldWidth(false);
-    ImGui::InputTextWithHint("##extensions", "e.g. zip,7z", extensions_, sizeof(extensions_));
-
-    label("Emulator");
-    fieldWidth(true);
-    ImGui::InputText("##executable", executable_, sizeof(executable_));
-    if (canBrowse) {
-        ImGui::SameLine();
-        if (ImGui::Button("Browse...##executable")) {
-            browse_ = Browse::Executable;
-        }
-    }
-
-    label("Arguments");
-    fieldWidth(false);
-    ImGui::InputText("##arguments", arguments_, sizeof(arguments_));
-    hint("%ITEM_FILEPATH% is replaced with the game's file");
-
-    Setup::NewCollection collection{ name_, romPath_, extensions_, executable_, arguments_ };
-    std::string problem = Setup::validate(collection);
-
-    ImGui::Spacing();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth);
-    ImGui::BeginDisabled(!problem.empty());
-    if (ImGui::Button("Create collection")) {
-        createCollection();
-    }
-    ImGui::EndDisabled();
-    if (!problem.empty()) {
-        ImGui::SameLine();
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%s", problem.c_str());
-    }
-}
-
-void ManagerUI::drawSettings()
-{
-    ImGui::SeparatorText("Display");
-
-    // Editing an existing settings.conf isn't supported yet, so only show it
-    ImGui::BeginDisabled(hasSettingsFile_);
-    ImGui::Checkbox("Fullscreen", &fullscreen_);
-    if (!fullscreen_) {
-        ImGui::SameLine(0.0f, 24.0f * scale_);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Window size");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(90.0f * scale_);
-        ImGui::InputInt("##width", &width_, 0);
-        ImGui::SameLine();
-        ImGui::TextUnformatted("x");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(90.0f * scale_);
-        ImGui::InputInt("##height", &height_, 0);
-        width_ = std::clamp(width_, 320, 7680);
-        height_ = std::clamp(height_, 240, 4320);
-    }
-    ImGui::EndDisabled();
-
-    if (hasSettingsFile_) {
-        ImGui::TextDisabled("From settings.conf. Changing it from here is coming next.");
-        return;
-    }
-
-    ImGui::TextDisabled("Takes effect the next time RetroFE starts.");
-    if (ImGui::Button("Save")) {
-        std::string error;
-        if (Setup::writeSettings(Setup::DisplaySettings{ fullscreen_, width_, height_ }, error)) {
-            hasSettingsFile_ = true;
-            setStatus("Saved to settings.conf. Restart RetroFE to apply it.", false);
-        }
-        else {
-            setStatus(error, true);
-        }
-    }
-}
-
-void ManagerUI::refreshCollections()
-{
-    collections_ = Setup::listCollections();
-}
-
-void ManagerUI::createCollection()
-{
-    Setup::NewCollection collection{ name_, romPath_, extensions_, executable_, arguments_ };
-    std::string error;
-
-    if (!hasSettingsFile_) {
-        Setup::DisplaySettings display{ fullscreen_, width_, height_ };
-        if (!Setup::writeSettings(display, error)) {
-            setStatus(error, true);
-            return;
-        }
-        hasSettingsFile_ = true;
-    }
-
-    if (!Setup::createCollection(collection, error)) {
-        setStatus(error, true);
-        return;
-    }
-
-    LOG_NOTICE("Manager", "Created collection " + Utils::trimEnds(collection.name));
-    copyTo(name_, "");
-    reloadRequested_ = true;
-    close();
-}
-
-void ManagerUI::setStatus(const std::string& message, bool isError)
-{
-    status_ = message;
-    statusIsError_ = isError;
 }
