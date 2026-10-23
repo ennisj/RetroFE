@@ -98,6 +98,17 @@ namespace Library
         EditResult removeFromPlaylist(const Index& index, const std::string& collection, const std::string& playlist,
                                       const std::string& gameCollection, const std::string& game);
 
+        // Whole playlists of a collection. Names RetroFE gives a meaning (all,
+        // favorites/favourites, lastplayed) are refused. The folder is read
+        // afresh, so a playlist made since the index was built counts. A rename
+        // may change only the case; a deleted or renamed file's original is
+        // kept in the backups.
+        static bool isReservedPlaylist(const std::string& name);
+        EditResult createPlaylist(const Index& index, const std::string& collection, const std::string& playlist);
+        EditResult renamePlaylist(const Index& index, const std::string& collection, const std::string& playlist,
+                                  const std::string& newName);
+        EditResult deletePlaylist(const Index& index, const std::string& collection, const std::string& playlist);
+
         // A merged collection's <source>.sub. An empty .sub shows every game of the
         // source, so adding to it is refused, and removing the last entry removes the file.
         EditResult addToSub(const Index& index, const std::string& merged, const std::string& source, const std::string& game);

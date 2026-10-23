@@ -14,22 +14,14 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../../Forms/BuiltinForms.h"
+#include "../Systems/SystemForms.h"
 
-// The Videos screens, opened from Manage. A placeholder for now.
-namespace
-{
-
-const char* const videosForm = R"(
-<form id="videos" title="Videos">
-  <note value="Coming soon: see which games have videos and find the ones that are missing."/>
-</form>
-)";
-
-}
-
+// The Videos screens, opened from Manage. A video collection is a system
+// whose files are videos and whose launcher is a video player, marked with
+// "type = videos" in its info.conf (DECISIONS M7), so these are the Systems
+// screens worded for videos: "videos", "video" and "video-...", served by a
+// second SystemProvider with prefix "video".
 Forms::BuiltinTable Forms::videosForms()
 {
-    return {
-        { "videos", videosForm },
-    };
+    return Manager::systemForms(true);
 }

@@ -32,8 +32,9 @@
 // menus
 
 // systems
+#include "Systems/SystemProvider.h"
 
-// videos
+// videos (the Systems provider, worded and filtered for video collections)
 
 // emulators
 
@@ -49,8 +50,10 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     // menus
 
     // systems
+    model.addProvider(std::make_unique<SystemProvider>(services, false));
 
     // videos
+    model.addProvider(std::make_unique<SystemProvider>(services, true));
 
     // emulators
 

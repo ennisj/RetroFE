@@ -878,6 +878,146 @@ EditResult Editor::removeFromPlaylist(const Index& index, const std::string& col
     return EditResult{ true, "Removed " + game + " from " + playlist + ".", { info->file } };
 }
 
+namespace
+{
+    // playlists/<name>.txt as it is on disk now, matching the name ignoring
+    // case (the exact spelling wins); "" when there's none
+    std::string findPlaylistFile(const std::string& folder, const std::string& name)
+    {
+        std::error_code ec;
+        std::string directory = Utils::combinePath(folder, "playlists");
+        std::string found;
+        for (const auto& entry : fs::directory_iterator(directory, ec)) {
+            std::string file;
+            if (!entry.is_regular_file(ec) || !narrowName(entry.path().filename(), file) || file.size() <= 4
+                || file.compare(file.size() - 4, 4, ".txt") != 0) {
+                continue;
+            }
+            std::string stem = file.substr(0, file.size() - 4);
+            if (stem == name) {
+                return Utils::combinePath(directory, file);
+            }
+            if (found.empty() && iequals(stem, name)) {
+                found = Utils::combinePath(directory, file);
+            }
+        }
+        return found;
+    }
+}
+
+bool Editor::isReservedPlaylist(const std::string& name)
+{
+    return iequals(name, "all") || iequals(name, "favorites") || iequals(name, "favourites") || iequals(name, "lastplayed");
+}
+
+EditResult Editor::createPlaylist(const Index& index, const std::string& collection, const std::string& playlist)
+{
+    int c;
+    const CollectionRecord* record = findRecord(index, collection, c);
+    if (!record) {
+        return EditResult::fail("There's no collection called \"" + collection + "\".");
+    }
+    std::string problem = checkFileName(playlist, "playlist");
+    if (!problem.empty()) {
+        return EditResult::fail(problem);
+    }
+    if (isReservedPlaylist(playlist)) {
+        return EditResult::fail("\"" + playlist + "\" is a list RetroFE keeps itself. Pick another name.");
+    }
+    if (!findPlaylistFile(record->folder, playlist).empty()) {
+        return EditResult::fail(record->name + " already has a playlist called \"" + playlist + "\".");
+    }
+    std::string file = Utils::combinePath(record->folder, "playlists", playlist + ".txt");
+    std::string error;
+    if (!backups_.beforeChange(file, error) || !writeFileAtomic(file, "", error)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, "Created the playlist " + playlist + ".", { file } };
+}
+
+EditResult Editor::renamePlaylist(const Index& index, const std::string& collection, const std::string& playlist,
+                                  const std::string& newName)
+{
+    int c;
+    const CollectionRecord* record = findRecord(index, collection, c);
+    if (!record) {
+        return EditResult::fail("There's no collection called \"" + collection + "\".");
+    }
+    if (isReservedPlaylist(playlist)) {
+        return EditResult::fail("\"" + playlist + "\" is a list RetroFE keeps itself, so it can't be renamed.");
+    }
+    std::string problem = checkFileName(newName, "playlist");
+    if (!problem.empty()) {
+        return EditResult::fail(problem);
+    }
+    if (isReservedPlaylist(newName)) {
+        return EditResult::fail("\"" + newName + "\" is a list RetroFE keeps itself. Pick another name.");
+    }
+    std::string from = findPlaylistFile(record->folder, playlist);
+    if (from.empty()) {
+        return EditResult::fail(record->name + " has no playlist called \"" + playlist + "\".");
+    }
+    std::string fromName = Utils::getFileName(from);
+    fromName = fromName.substr(0, fromName.size() - 4);
+    if (fromName == newName) {
+        return EditResult::fail("It's called " + newName + " already.");
+    }
+    std::string to = Utils::combinePath(record->folder, "playlists", newName + ".txt");
+    bool caseOnly = iequals(fromName, newName);
+    if (!caseOnly && !findPlaylistFile(record->folder, newName).empty()) {
+        return EditResult::fail(record->name + " already has a playlist called \"" + newName + "\".");
+    }
+    std::string error;
+    std::error_code ec;
+    if (caseOnly) {
+        // The same file on a case-insensitive disk: rename it in two steps
+        std::string step = from + ".rename";
+        if (!backups_.beforeChange(from, error)) {
+            return EditResult::fail(error);
+        }
+        fs::rename(from, step, ec);
+        if (!ec) {
+            fs::rename(step, to, ec);
+        }
+        if (ec) {
+            return EditResult::fail("Could not rename " + from + ": " + ec.message());
+        }
+        return EditResult{ true, "Renamed " + fromName + " to " + newName + ".", { from, to } };
+    }
+    std::string content;
+    if (!readFile(from, content)) {
+        return EditResult::fail("Could not read " + from + ".");
+    }
+    if (!backups_.beforeChange(to, error) || !writeFileAtomic(to, content, error)
+        || !backups_.removeKeepingOriginal(from, error)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, "Renamed " + fromName + " to " + newName + ".", { from, to } };
+}
+
+EditResult Editor::deletePlaylist(const Index& index, const std::string& collection, const std::string& playlist)
+{
+    int c;
+    const CollectionRecord* record = findRecord(index, collection, c);
+    if (!record) {
+        return EditResult::fail("There's no collection called \"" + collection + "\".");
+    }
+    if (isReservedPlaylist(playlist)) {
+        return EditResult::fail("\"" + playlist + "\" is a list RetroFE keeps itself, so it can't be deleted.");
+    }
+    std::string file = findPlaylistFile(record->folder, playlist);
+    if (file.empty()) {
+        return EditResult::fail(record->name + " has no playlist called \"" + playlist + "\".");
+    }
+    std::string error;
+    if (!backups_.removeKeepingOriginal(file, error)) {
+        return EditResult::fail(error);
+    }
+    std::error_code ec;
+    fs::remove(Utils::combinePath(record->folder, "playlists"), ec);   // only when it's empty now
+    return EditResult{ true, "Deleted the playlist " + playlist + ". A copy is kept in manage/backups.", { file } };
+}
+
 EditResult Editor::addToSub(const Index& index, const std::string& merged, const std::string& sourceName, const std::string& game)
 {
     int m;
