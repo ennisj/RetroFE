@@ -35,6 +35,16 @@ void Navigator::push(const std::string& form, const Forms::Params& params, const
     frames_.push_back(Frame{ form, params, {} });
 }
 
+void Navigator::replace(const std::string& form, const Forms::Params& params)
+{
+    if (frames_.empty()) {
+        open(form, params);
+        return;
+    }
+    // The screen below keeps where the user was on it
+    frames_.back() = Frame{ form, params, {} };
+}
+
 bool Navigator::back()
 {
     if (!frames_.empty()) {

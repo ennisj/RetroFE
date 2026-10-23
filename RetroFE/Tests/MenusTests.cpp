@@ -321,7 +321,7 @@ static void runMenusTests()
         check(!rig.problem("create").empty(), "a name is needed");
         rig.set("newName", "Retro");
         Forms::Model::Result made = rig.run("create");
-        check(made.ok && made.open == "menu" && made.params["id"] == "Retro", "made: " + made.message);
+        check(made.ok && made.open == "menu" && made.replace && made.params["id"] == "Retro", "made, in place of the add form: " + made.message);
         check(rig.exists("collections/Retro/menu.txt") && rig.file("collections/Retro/menu.txt").empty(), "an empty menu.txt");
         check(contains(rig.file("collections/Retro/info.conf"), "title = Retro"), "an info.conf");
         check(rig.exists("collections/Retro/settings.conf"), "a settings.conf, so RetroFE reads its settings");

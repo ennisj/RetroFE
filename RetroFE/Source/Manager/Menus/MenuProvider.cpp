@@ -977,7 +977,8 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
         if (!r->children.empty()) {
             note += parents.empty()
                 ? ". Its " + count(r->children.size(), "entry", "entries") + " won't be in any menu, but the collections stay"
-                : ", and its " + count(r->children.size(), "entry", "entries") + " move up into " + join(parents, ", ") + " in its place";
+                : ", and its " + count(r->children.size(), "entry", "entries") + (r->children.size() == 1 ? " moves" : " move")
+                  + " up into " + join(parents, ", ") + " in its place";
         }
         if (r->is(KindMerged)) {
             note += ". The games it shows stay in their systems";
@@ -1380,6 +1381,7 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
         result = finish(edit, "menus");
         if (result.ok) {
             result.open = "menu";
+            result.replace = true;   // Back from the new menu skips the add form
             result.params["id"] = newName_;
             newName_.clear();
         }

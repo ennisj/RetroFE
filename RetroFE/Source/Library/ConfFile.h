@@ -66,7 +66,8 @@ namespace Library
         bool remove(const std::string& key);
 
         // Writes the file if it changed (or doesn't exist yet). With backups,
-        // the original is kept before the first change.
+        // the original is kept before the first change. A file that was
+        // missing when loaded but exists now is never overwritten (an error).
         bool save(std::string& error, Backups* backups = nullptr);
 
         // RetroFE's parsing of one line, without the line ending
@@ -117,7 +118,8 @@ namespace Library
         const std::string& fileName(size_t index) const { return names_[index]; }
         int indexOf(const std::string& fileName) const;
 
-        // Creates file index from initialContent if it doesn't exist yet
+        // Creates file index from initialContent if it doesn't exist yet; if
+        // something else created it since load(), reads it instead
         bool ensureExists(size_t index, const std::string& initialContent, std::string& error, Backups* backups = nullptr);
 
         // Writes key where its effective value comes from; when no file sets it,

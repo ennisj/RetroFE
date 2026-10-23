@@ -228,8 +228,9 @@ systems a merged collection shows, which theme page draws it) and links to:
   moved. `menu_supported.txt` (RetroFE Plus) is kept in step when it's there.
 - **Sources** (merged collections): one `.sub` file per system, with what it
   shows. Adding a system writes an empty `.sub`, which shows all its games;
-  removing one keeps the file in the backups. Choosing which games of a source
-  it shows will come with the Games screens.
+  removing one keeps the file in the backups. To show only some of a system's
+  games, take games out on each game's **Playlists and collections** screen
+  in Games.
 - **Info and artwork**: title, manufacturer, year and genre (`info.conf`,
   Save/Undo), and the collection's own artwork in `system_artwork` (logo,
   marquee, device, LED marquee, video, story and any others there): preview,

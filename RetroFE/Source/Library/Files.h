@@ -61,6 +61,19 @@ namespace Library
     // True when path is folder or inside it (lexically, after normalising)
     bool isInside(const std::string& path, const std::string& folder);
 
+    // Where the system finds a program given by a bare name (no folder), as a
+    // command prompt does: on Windows SearchPath's order (the running
+    // program's folder, the system folders, the current folder, PATH) with
+    // .exe added when the name has no extension; elsewhere PATH. "" if not found.
+    std::string findProgram(const std::string& name);
+
+    // Arguments for cmd.exe, made safe from its /c rule: with more than two
+    // quotes after /c (or /k), cmd drops the first and the last, so
+    // `/c "a.bat" "b"` runs `a.bat" "b`. Such a command is wrapped in one more
+    // pair of quotes; anything else (one quoted path, already wrapped, /s,
+    // not /c or /k) is returned unchanged.
+    std::string cmdArguments(const std::string& arguments);
+
     // A file's lines, each with the ending it had ("\r\n", "\n", or "" for a
     // last line without one). join() gives back the exact bytes.
     struct Line

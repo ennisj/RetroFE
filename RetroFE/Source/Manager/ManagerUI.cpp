@@ -465,6 +465,13 @@ void ManagerUI::close()
     if (reloadWhenClosed_) {
         reloadWhenClosed_ = false;
         reloadRequested_ = true;
+        // A bare install that's now set up (e.g. its first system added in
+        // Systems) keeps its built-in defaults in a settings.conf, as after a
+        // Catalog install; without one, RetroFE would open Manage at every start
+        std::string error;
+        if (!model_.ensureSettingsFile(error)) {
+            LOG_ERROR("Manager", error);
+        }
     }
 }
 
@@ -822,6 +829,13 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         if (!requestBack()) {
             return;   // it says why
         }
+    }
+    else if (result.ok && result.replace && !result.open.empty() && this->form(result.open)) {
+        // The screen the action ran on is done with (e.g. an add form): the
+        // result takes its place, so Back goes to the screen before it
+        const Navigator::Frame* frame = nav_.current();
+        nav_.replace(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result));
+        show();
     }
     else if (result.ok && !result.open.empty()) {
         const Navigator::Frame* frame = nav_.current();

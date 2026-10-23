@@ -1930,6 +1930,9 @@ EditResult Editor::addLauncher(const Index& index, const NewLauncher& launcher)
     if (!directory.empty()) {
         content += "currentDirectory = " + directory + newline;
     }
+    if (launcher.reboot) {
+        content += "reboot = yes" + newline;
+    }
     std::string error;
     if (!backups_.beforeChange(file, error) || !writeFileAtomic(file, content, error)) {
         return EditResult::fail(error);

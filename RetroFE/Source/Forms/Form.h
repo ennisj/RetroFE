@@ -176,10 +176,13 @@ namespace Forms
             // back returns to the previous screen. The message is shown on
             // the screen it ends up on. A link opens with keepParams, a
             // results row without it, so a row always opens its own record.
+            // replace with open shows that form in place of the current
+            // screen (e.g. what an add form added), so Back skips the form.
             std::string open;
             Params params;
             bool keepParams = false;
             bool back = false;
+            bool replace = false;
         };
         virtual Result runAction(const std::string& action) = 0;
     };

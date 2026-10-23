@@ -177,6 +177,7 @@ namespace Library
             std::string executable;
             std::string arguments;          // may be empty
             std::string currentDirectory;   // empty: RetroFE uses the executable's folder
+            bool reboot = false;            // reboot = yes: RetroFE restarts after the program exits
         };
         // Empty when name can be a new launcher's name, otherwise why not:
         // the rules for the name itself (a plain-ASCII file name, no = , ; %,
