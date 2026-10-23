@@ -48,6 +48,12 @@ namespace Manager
         // cancelling a drag); otherwise the manager goes back
         virtual bool escape() { return false; }
 
+        // The user asked to leave (Back, Escape, the Settings key): true if
+        // the screen asks them itself (e.g. Save / Don't save / Cancel) and
+        // will go back by itself once they've answered (takeBack). Asked
+        // before leaving(), so there's no "leave again to discard".
+        virtual bool askToLeave() { return false; }
+
         // As Provider::leaving / discard
         virtual std::string leaving() { return ""; }
         virtual void discard() {}

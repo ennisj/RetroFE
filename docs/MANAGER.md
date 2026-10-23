@@ -302,7 +302,7 @@ collections). Choosing one shows the details and what you can do with it:
 
 | Button | What it does |
 |--------|--------------|
-| Use this theme | Sets `layout` in your settings; RetroFE switches to it when you close the manager. A theme made with the editor needs a wheel first. |
+| Use this theme | Sets `layout` in your settings; RetroFE switches to it when you close the manager. Not for a theme without `splash.xml` (RetroFE wouldn't start); a theme made with the editor needs a wheel too. |
 | Edit | Opens the [theme editor](THEME_EDITOR.md). Editor-made themes only. |
 | Duplicate | Copies the theme as "*name* Copy". Editor-made themes only. |
 | Delete | Deletes the theme's folder, after a second Select. Editor-made themes only, and not the one in use. |

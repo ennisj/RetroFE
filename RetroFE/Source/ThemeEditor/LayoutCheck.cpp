@@ -316,6 +316,26 @@ namespace ThemeEditor
         return doc.first_node("layout") ? std::string() : std::string("no <layout> root");
     }
 
+    std::string layoutBuildBlocker(const std::string& xml)
+    {
+        std::vector<char> buffer(xml.begin(), xml.end());
+        buffer.push_back('\0');
+        rapidxml::xml_document<> doc;
+        try {
+            doc.parse<0>(buffer.data());
+        }
+        catch (const rapidxml::parse_error& e) {
+            return std::string("not valid XML: ") + e.what();
+        }
+        const Node* layout = doc.first_node("layout");
+        if (!layout) return "no <layout> root";
+        for (const Node* menu = layout->first_node("menu"); menu; menu = menu->next_sibling("menu")) {
+            // PageBuilder::buildMenu reads through it unchecked: building would crash RetroFE
+            if (!menu->first_node("itemDefaults")) return "a <menu> without <itemDefaults> would crash the page builder";
+        }
+        return "";
+    }
+
     std::vector<std::string> checkLayoutXml(const std::string& xml)
     {
         Checker check;

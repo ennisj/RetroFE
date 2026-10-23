@@ -16,6 +16,7 @@
 #pragma once
 
 #include "../../ImGuiScreen.h"
+#include "../../../ThemeEditor/EditorScript.h"
 #include "../../../ThemeEditor/EditorSession.h"
 #include <SDL2/SDL.h>
 #include <functional>
@@ -42,8 +43,10 @@ class Page;
 // While it's open the `layout` setting points at the theme, so its fonts and
 // art resolve as they will when it's used; closing puts it back.
 //
-// RETROFE_EDITOR_SCRIPT=<file> runs editor commands from a file, one per
-// frame, so the editor can be checked without a mouse (see runScript()).
+// retrofe -editorScript <file> runs editor commands from a file, one per
+// frame, the first time a theme is opened in that session, with a banner
+// while it runs, so the editor can be checked without a mouse
+// (ThemeEditor/EditorScript.h).
 class ThemeEditorScreen : public Manager::ImGuiScreen
 {
 public:
@@ -69,6 +72,7 @@ public:
     void drawTargets() override;
     void draw() override;
     bool escape() override;
+    bool askToLeave() override;
     std::string leaving() override;
     void discard() override;
     void setStatus(const std::string& message, bool isError) override;
@@ -88,7 +92,7 @@ private:
     void use();
     void pickFile();
     void runScript();
-    bool runCommand(const std::string& line);
+    bool runCommand(const ThemeEditor::EditorCommand& command, std::string& note);
 
     void drawToolbar();
     void drawThemePanel();
@@ -145,9 +149,13 @@ private:
     bool back_ = false;
     bool leaveWithoutSaving_ = false;
     bool retired_ = false;   // left: nothing more is built
+    bool navFlagsSaved_ = false, savedNavKeyboard_ = false;   // ImGui keyboard navigation, off while shown
+    bool nudging_ = false;   // arrow-key nudges since the last pause
+    float sinceNudge_ = 0.0f;
 
-    // RETROFE_EDITOR_SCRIPT
-    std::vector<std::string> script_;
+    // -editorScript
+    std::vector<ThemeEditor::EditorCommand> script_;
+    std::string scriptPath_;
     size_t scriptAt_ = 0;
     int scriptWait_ = 0;
 };

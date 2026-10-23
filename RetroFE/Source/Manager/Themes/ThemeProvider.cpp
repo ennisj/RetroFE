@@ -126,6 +126,18 @@ namespace Themes
         return width > 0 && height > 0;
     }
 
+    bool pageBuildComponent(const std::string& component)
+    {
+        static const char* const elsewhere[] = {
+            "Collections", "CollectionInfoBuilder", "Menu", "MetadataDatabase", "Database", "HiScores",
+            "Catalog", "Configuration", "Manager", "ThemeEditor", "Input"
+        };
+        for (const char* name : elsewhere) {
+            if (component == name) return false;
+        }
+        return true;
+    }
+
     std::string mainPageProblem(const std::string& layoutXml)
     {
         size_t at = 0;
@@ -397,6 +409,12 @@ namespace Themes
         if (action == "use") {
             if (!t->hasLayout) return "This theme has no layout.xml yet.";
             if (t->active) return "RetroFE already uses this theme.";
+            if (!t->hasSplash) {
+                // RetroFE stops at start-up on a layout without one, and then nothing can switch back
+                return editor ? "This theme has no splash page yet, and RetroFE won't start without one. "
+                                "Edit it and save: saving writes one."
+                              : "This theme has no splash.xml, and RetroFE won't start without one.";
+            }
             return t->mainProblem;
         }
         if (action == "edit" || action == "duplicate") {

@@ -326,6 +326,11 @@ bool ManagerUI::mayLeave(bool everything)
             break;
         }
     }
+    // A screen with its own dialog for unsaved changes asks there
+    if (screen_ && screen_->askToLeave()) {
+        leaveWarned_ = false;
+        return false;
+    }
     std::string warning;
     for (const Manager::Screen& screen : leaving) {
         // leaving[0] is the current screen, the only one that can draw itself

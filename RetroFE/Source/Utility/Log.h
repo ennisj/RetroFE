@@ -16,8 +16,10 @@
 #pragma once
 
 #include <string>
+#include <atomic>
 #include <fstream>
 #include <functional>
+#include <thread>
 #include <sstream>
 #include <streambuf>
 #include <iostream>
@@ -42,13 +44,27 @@ public:
     static constexpr std::string_view zoneToString(Zone zone);
     static void deInitialize();
 
-    // Sees every line written while it's set, e.g. to collect what a page
-    // build logged (the theme editor's preview, --theme-check). Called under
-    // the log's lock, so it mustn't log itself. Empty to remove it.
+    // Sees the warnings and errors logged on one thread while it's in scope,
+    // e.g. what a page build logs (the theme editor's preview,
+    // --theme-check). They reach it whatever the `log` setting says; lines
+    // the setting filters out still don't go to the log file. Lines from
+    // other threads (videos playing on the page behind) never reach it. The
+    // callback runs under the log's lock, so it mustn't log itself. One tap
+    // at a time.
     using Tap = std::function<void(Zone zone, const std::string& component, const std::string& message)>;
-    static void setTap(Tap tap);
+    class TapScope
+    {
+    public:
+        explicit TapScope(Tap tap);
+        ~TapScope();
+        TapScope(const TapScope&) = delete;
+        TapScope& operator=(const TapScope&) = delete;
+    };
 private:
+    static bool levelEnabled(const std::string& zone, const std::string& component);
     static Tap tap_;
+    static std::atomic<bool> tapActive_;
+    static std::thread::id tapThread_;
     static std::streambuf* cerrStream_;
     static std::streambuf* coutStream_;
     static std::ofstream writeFileStream_;

@@ -188,15 +188,22 @@ int Themes::runThemeCheck(Configuration& config, const std::string& layout, cons
         config.getProperty(OPTION_LAYOUT, previousLayout);
         config.setProperty(OPTION_LAYOUT, layout);
         for (const CheckPage& page : pages) {
+            std::string blocker = layoutBuildBlocker(page.xml);
+            if (!blocker.empty()) {
+                problem(page.label + ": not built: " + blocker);
+                continue;
+            }
             std::vector<std::string> logged;
-            Logger::setTap([&logged](Logger::Zone zone, const std::string& component, const std::string& message) {
-                if (zone == Logger::ZONE_ERROR || zone == Logger::ZONE_WARNING) logged.push_back("[" + component + "] " + message);
-            });
-            PageBuilder builder(layout, "layout", config, &fontCache);
-            if (!page.file.empty()) builder.setLayoutFile(page.file);
-            else builder.setLayoutXml(page.xml.c_str(), page.folder);
-            Page* built = builder.buildPage();
-            Logger::setTap(nullptr);
+            Page* built = nullptr;
+            {
+                Logger::TapScope tap([&logged](Logger::Zone, const std::string& component, const std::string& message) {
+                    if (pageBuildComponent(component)) logged.push_back("[" + component + "] " + message);
+                });
+                PageBuilder builder(layout, "layout", config, &fontCache);
+                if (!page.file.empty()) builder.setLayoutFile(page.file);
+                else builder.setLayoutXml(page.xml.c_str(), page.folder);
+                built = builder.buildPage();
+            }
             if (!built) problem(page.label + ": PageBuilder couldn't build it");
             for (const std::string& line : logged) problem(page.label + ": engine: " + line);
             if (built) {

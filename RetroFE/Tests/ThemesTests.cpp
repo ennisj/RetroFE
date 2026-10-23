@@ -22,7 +22,11 @@
 #include "../Source/Database/Configuration.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Themes/ThemeProvider.h"
+#include "../Source/ThemeEditor/EditorScript.h"
 #include "../Source/ThemeEditor/EditorSession.h"
+#include "../Source/ThemeEditor/LayoutCheck.h"
+#include "../Source/Utility/Log.h"
+#include <thread>
 #include "../Source/ThemeEditor/ThemeStore.h"
 #include <filesystem>
 #include <memory>
@@ -113,6 +117,101 @@ static Test::Suite themes("themes", [] {
         check(!Themes::layoutSize("", w, h), "no root");
         check(Themes::mainPageProblem("<layout><menu id=\"a\"/></layout>").empty(), "a page with a menu is fine");
         check(!Themes::mainPageProblem("<layout><menus/><text/></layout>").empty(), "one without isn't");
+        check(layoutBuildBlocker("<layout><menu><itemDefaults/><item/></menu></layout>").empty(), "a menu with item defaults builds");
+        check(layoutBuildBlocker("<layout><menu><item/></menu></layout>").find("itemDefaults") != std::string::npos,
+              "one without would crash PageBuilder, so it isn't built");
+        check(!layoutBuildBlocker("<layout><text>").empty() && !layoutBuildBlocker("<page/>").empty(), "nor is broken XML");
+    });
+
+    Test::run("a theme without splash.xml can't be used (RetroFE wouldn't start)", [] {
+        std::string root = makeThemesRoot("themes_nosplash");
+        writeFile(root + "/layouts/NoSplash/layout.xml", "<layout width=\"1280\" height=\"720\"><menu/></layout>");
+        Fixture f(root);
+        f.model->setScreen("theme", { { "id", "NoSplash" } });
+        std::string problem = f.model->actionProblem("theme.use");
+        check(problem.find("splash.xml") != std::string::npos, "a hand-made one is refused: " + problem);
+        Forms::Model::Result used = f.model->runAction("theme.use");
+        check(!used.ok && Themes::configuredLayout(root) == "Hand" && !f.reloadRequested, "and nothing is written");
+
+        // An editor-made one whose splash page went missing: saving puts it back
+        f.model->setScreen("theme-new", {});
+        f.model->set("theme:newName", "Wheel");
+        check(f.model->runAction("theme.create").ok, "created");
+        {
+            EditorSession s;
+            std::string error;
+            SaveInputs inputs;
+            inputs.fontBytes = fontBytes();
+            SaveReport report;
+            check(s.open(root + "/layouts", "Wheel", Themes::widgetLibrary(), error) && s.addWidget("wheel_vertical") &&
+                  s.save(inputs, report, error), "a wheel: " + error);
+        }
+        fs::remove(root + "/layouts/Wheel/splash.xml");
+        f.model->setScreen("theme", { { "id", "Wheel" } });
+        check(f.model->actionProblem("theme.use").find("saving writes one") != std::string::npos,
+              "the editor-made one says saving fixes it: " + f.model->actionProblem("theme.use"));
+    });
+
+    Test::run("a log tap sees this thread's warnings and errors whatever the log level", [] {
+        std::vector<std::string> seen;
+        {
+            Logger::TapScope tap([&seen](Logger::Zone zone, const std::string& component, const std::string& message) {
+                seen.push_back(std::string(zone == Logger::ZONE_ERROR ? "E" : "W") + component + ":" + message);
+            });
+            // The logger isn't initialised in the tests, like log = NONE: nothing would be written
+            LOG_WARNING("Layout", "one");
+            LOG_ERROR("Image", "two");
+            LOG_INFO("Layout", "not a problem");
+            std::thread other([] { LOG_ERROR("VideoPool", "another thread"); });
+            other.join();
+        }
+        LOG_ERROR("Layout", "after the scope");
+        check(seen.size() == 2 && seen[0] == "WLayout:one" && seen[1] == "EImage:two",
+              "only this thread's warnings and errors, while in scope: " + std::to_string(seen.size()));
+        check(Themes::pageBuildComponent("Layout") && Themes::pageBuildComponent("Video") &&
+              !Themes::pageBuildComponent("CollectionInfoBuilder") && !Themes::pageBuildComponent("HiScores"),
+              "lines from collection and database loading aren't the page's");
+    });
+
+    Test::run("editor scripts parse, and session commands run", [] {
+        EditorCommand c = parseEditorCommand("  var VALUE  Hello   there  ");
+        check(c.name == "var" && c.words.size() == 3 && c.words[0] == "VALUE" && c.tail(1) == "Hello   there" &&
+              c.rest == "VALUE  Hello   there", "words, rest and tail");
+        check(parseEditorCommand("# a comment").name.empty() && parseEditorCommand("   ").name.empty(), "comments and blanks");
+        std::vector<EditorCommand> script = parseEditorScript("wait 3\r\n# note\r\nadd static_text\r\n\r\nmove 100 0\r\n");
+        check(script.size() == 3 && script[0].name == "wait" && script[2].words.size() == 2, "a script, CRLF and all");
+
+        std::string root = makeThemesRoot("session_script");
+        EditorSession s;
+        std::string folder, note;
+        check(openNew(root, "Scripted", s, folder), "opened");
+        check(runSessionCommand(s, parseEditorCommand("add static_text"), note) == CommandResult::Ok, "add: " + note);
+        check(runSessionCommand(s, parseEditorCommand("move 100 -20"), note) == CommandResult::Ok &&
+              s.selectedWidget()->x == 960 && s.selectedWidget()->y == 490, "move in theme units: " + note);
+        check(runSessionCommand(s, parseEditorCommand("resize se 40 40"), note) == CommandResult::Ok &&
+              s.selectedWidget()->w == 240 && s.selectedWidget()->h == 100, "resize: " + note);
+        check(runSessionCommand(s, parseEditorCommand("move ten 0"), note) == CommandResult::Failed, "a bad number fails");
+        check(runSessionCommand(s, parseEditorCommand("resize middle 1 1"), note) == CommandResult::Failed, "a bad handle fails");
+        check(runSessionCommand(s, parseEditorCommand("var VALUE Two words"), note) == CommandResult::Ok &&
+              s.selectedWidget()->varValue("VALUE", "") == "Two words", "var takes the rest of the line");
+        check(runSessionCommand(s, parseEditorCommand("layer 30"), note) == CommandResult::Ok && s.selectedWidget()->layer == 19, "layer");
+        check(runSessionCommand(s, parseEditorCommand("select -1"), note) == CommandResult::Ok && s.selected() == -1, "deselect");
+        check(runSessionCommand(s, parseEditorCommand("click 1000 530"), note) == CommandResult::Ok && s.selected() == 0, "click: " + note);
+        check(runSessionCommand(s, parseEditorCommand("save"), note) == CommandResult::NotSession, "save is the screen's");
+        check(runSessionCommand(s, parseEditorCommand("undo"), note) == CommandResult::Ok, "undo");
+    });
+
+    Test::run("separate nudges are separate undo steps", [] {
+        std::string root = makeThemesRoot("session_nudge");
+        EditorSession s;
+        std::string folder;
+        check(openNew(root, "Nudged", s, folder) && s.addWidget("static_text"), "a widget");
+        s.moveBy(1, 0);
+        s.moveBy(1, 0);
+        s.endCoalesce();   // the screen does this after a pause
+        s.moveBy(1, 0);
+        check(s.undo() && s.selectedWidget()->x == 862, "the last nudge undoes alone");
+        check(s.undo() && s.selectedWidget()->x == 860, "the first run undoes together");
     });
 
     Test::run("a hand-made splash.xml inside an editor theme is kept", [] {

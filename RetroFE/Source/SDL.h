@@ -89,4 +89,5 @@ private:
 	static int                         screenCount_;
     static std::vector<SDL_Texture*>   renderTargets_;
     static bool                        hiddenWindows_;
+    static bool                        leaveMouse_;   // hidden, or shown without activation: never warp the pointer
 };

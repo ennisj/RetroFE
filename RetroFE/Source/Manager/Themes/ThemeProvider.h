@@ -69,6 +69,11 @@ namespace Themes
     // The <layout> root's width and height in a layout file's text; false when it has none
     bool layoutSize(const std::string& xml, int& width, int& height);
 
+    // Whether a log line from this component, logged while a page was being
+    // built, is about the page: not the collection, database or high-score
+    // loading that can happen on the same thread
+    bool pageBuildComponent(const std::string& component);
+
     // Why RetroFE can't run on an editor-made theme whose main page is this, or "":
     // without a menu (a wheel) there's nothing to browse with
     std::string mainPageProblem(const std::string& layoutXml);

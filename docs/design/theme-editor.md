@@ -282,17 +282,20 @@ written first, so an interrupted save is repaired by the next one).
 | `Manager/Themes/ThemeProvider.{h,cpp}` | The `theme` provider: the list (`listThemes` plus facts read from each folder: size from the `<layout>` root, other main pages, splash, collection pages, whether the `layout` setting names it), the details, and the actions `theme.use`, `theme.edit`, `theme.create`, `theme.duplicate`, `theme.delete`. Built into the tests. |
 | `Manager/Themes/ThemesForms.cpp` | Forms `themes`, `theme`, `theme-new`, and `theme-editor` (a placeholder: the editor draws that screen itself). |
 | `ThemeEditor/EditorSession.{h,cpp}` | The editor's controller, SDL- and ImGui-free: open (editor-made only), pages, selection, the pointer protocol (press / move / release, click-through, handles), property setters with clamping, coalesced undo steps, undo/redo (whole-project snapshots, 100 deep), dirty tracking by revision (undoing back to the saved state is clean), the preview XML and save. |
-| `Manager/ImGuiScreen.h` | The interface ManagerUI uses for a screen that draws itself (update / drawTargets / draw / escape / leaving / discard / retire / shutdown). |
-| `Manager/Themes/app/ThemeEditorScreen.{h,cpp}` | The ImGui screen: three regions, the preview page and its texture, the Add widget, Saved and Unsaved changes dialogs, and the `RETROFE_EDITOR_SCRIPT` runner. |
+| `Manager/ImGuiScreen.h` | The interface ManagerUI uses for a screen that draws itself (update / drawTargets / draw / escape / askToLeave / leaving / discard / retire / shutdown). |
+| `Manager/Themes/app/ThemeEditorScreen.{h,cpp}` | The ImGui screen: three regions, the preview page and its texture, the Add widget, Saved and Unsaved changes dialogs, and the `-editorScript` runner (parsing and the session commands are in `ThemeEditor/EditorScript.{h,cpp}`, tested). |
 | `Manager/Themes/app/ThemeCheck.cpp`, `ThemesApp.{h,cpp}` | `--theme-check`, the bundled font, the provider factory. |
 
 Shared hooks, kept small: `ManagerUI` (an `ImGuiScreen` slot: shown instead
 of a form for `theme-editor`, updated in `update()`, drawn in `render()`
 whatever `formsRenderer` says, asked on leaving, retired and freed from
 `update()`), `ManagerUI::setCollectionSource` set by `RetroFE.cpp` (the
-preview loads collections the way RetroFE does), `Logger::setTap` (collects
-what a page build logs), `SDL::setHiddenWindows` (for `--theme-check`; it
-also leaves the mouse alone, as does `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN`),
+preview loads collections the way RetroFE does), `Logger::TapScope` (collects
+the warnings and errors a page build logs on this thread, whatever the `log`
+setting; lines it lets through only for the tap stay out of the log file),
+`SDL::setHiddenWindows` (for `--theme-check`: hidden, never fullscreen, no
+controllers; it also leaves the mouse alone at start and exit, as does
+`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN`),
 the `--theme-check` branch in `Main.cpp`, and the Themes slots in
 `Providers.cpp`.
 
@@ -343,14 +346,58 @@ the `--theme-check` branch in `Main.cpp`, and the Themes slots in
 - **Templates are editable but not managed**: pages a theme already has can
   be selected and edited; adding, removing and reassigning templates is the
   next round.
-- **Close asks** (Save / Don't save / Cancel); Escape and F10 use the usual
-  leave-twice warning.
+- **Leaving asks** (Save / Don't save / Cancel), whether by Close, Escape or
+  the Settings key (`ImGuiScreen::askToLeave`), instead of the forms'
+  "leave again to discard": that warning stays armed until something resets
+  it, and nothing does while an ImGui screen is shown, so a second Escape
+  much later would have discarded the work. After answering, the editor goes
+  back one screen (the Settings key then has to be pressed again).
+- **Use this theme refuses a theme without `splash.xml`**, hand-made ones
+  too: RetroFE stops at start-up on such a layout, and then can't be switched
+  back from the UI.
+- **Engine issues don't depend on the log level**: a `Logger::TapScope` sees
+  warnings and errors on its own thread whatever `log` says, and lines from
+  collection, database and high-score loading are left out
+  (`Themes::pageBuildComponent`), as is anything from other threads (videos
+  playing on the page behind).
+- **ImGui's keyboard navigation is off while the editor is shown**: the arrow
+  keys nudge the selection instead of also moving ImGui's focus. Tab still
+  moves between fields. A pause of 0.6 s ends a run of nudges as one undo
+  step. So the dialogs still answer from the keyboard: Unsaved changes takes
+  Enter (Save), D (Don't save) and Escape (Cancel), Saved takes Enter, and
+  Enter in Add widget's search adds the first match. (Posted key messages
+  only reach ImGui when SDL thinks its window has keyboard focus, so the GUI
+  check couldn't press D; Escape is handled by ManagerUI and was checked.)
 - **ImGui can't be driven by posted input**: posted keys reach it, but the
   SDL backend replaces the mouse position with the real cursor's whenever
   SDL thinks its window has focus, so posted clicks land wherever the user's
-  pointer is. Hence `RETROFE_EDITOR_SCRIPT` (commands in theme units, run one
-  per frame from `update()`, results in the log); the GUI check drives the
-  form screens with posted keys and the editor with a script.
+  pointer is. Hence editor scripts: `retrofe -editorScript <file>` (any
+  path), commands in theme units, run one per frame from `update()` the first
+  time a theme is opened in that session only, with a banner while running
+  and results in the log. (It started as an environment variable, which
+  stayed live in release builds and re-ran save/use every time a theme was
+  opened.) The GUI check drives the form screens with posted keys and the
+  editor with a script.
+
+### Known costs and limits
+
+- **The page behind still reads `layout`.** While the editor overrides the
+  `layout` setting, the page RetroFE was showing (and anything else that
+  reads `OPTION_LAYOUT`, such as its reloadable art when its item changes)
+  sees the edited theme's name. Nothing behind the editor changes item while
+  it's open, so it doesn't show, but the proper fix is to pass the layout
+  name to PageBuilder and the components explicitly instead of through the
+  configuration.
+- **Every committed change rebuilds the whole preview page** (after the
+  0.25 s pause): a drag, a nudge run, a property edit. Building loads the
+  page's textures and starts its videos, so a heavy page takes a noticeable
+  moment. Updating the changed component in place would be faster, but a
+  widget's box maps onto different attributes per widget (see
+  `EditorCanvas.h`), so it stays a rebuild for now.
+- **The first preview loads its collection in full** (`getCollection`,
+  metadata injected), which stalls the first build on a big collection;
+  only 60 items are used. Capping the list before `injectMetadata` would
+  need a hook in `CollectionInfoBuilder`.
 
 ### Checked
 

@@ -39,7 +39,8 @@ layouts/<Theme>/fonts/Roboto-Regular.ttf            the bundled font and its lic
 
 A theme needs a wheel before it can be used: without one there's nothing to
 browse with. Save always writes a splash page too (the theme's name), since
-RetroFE won't start on a theme without one.
+RetroFE won't start on a theme without one; Use this theme refuses any theme,
+hand-made ones included, that has no `splash.xml`.
 
 ## The screen
 
@@ -66,8 +67,9 @@ RetroFE won't start on a theme without one.
 
 Save shows what it did when there's something to know: warnings, and **pages
 it removed** (a page an earlier save wrote that the theme no longer has).
-Leaving with unsaved changes asks first: Close offers Save / Don't save /
-Cancel; Escape warns once and leaves on the second press.
+Leaving with unsaved changes (Close, Escape or the Settings key) asks first:
+Save (Enter) / Don't save (D) / Cancel (Escape). In Add widget, type to
+search and press Enter to add the first match.
 
 ## Limits in this version
 
@@ -97,10 +99,16 @@ report goes to the console and, if given, the report file.
 
 ## For testing: scripted editing
 
-`RETROFE_EDITOR_SCRIPT=<file>` makes the editor run commands from a file,
-one per frame, when it opens; results go to `log.txt` (`[ThemeEditor] script:`).
-It exists so the editor can be checked without a mouse. Coordinates and
-distances are theme units.
+```
+retrofe -editorScript <file>
+```
+
+makes the editor run commands from a file, one per frame, the **first** time
+a theme is opened in that session only (not again after a reload or when
+another theme is opened). A banner says a script is running while it does,
+and the results go to `log.txt` (`[ThemeEditor] script:`). It exists so the
+editor can be checked without a mouse. Coordinates and distances are theme
+units; blank lines and lines starting with `#` are skipped.
 
 | Command | Does |
 |---------|------|

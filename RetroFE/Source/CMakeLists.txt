@@ -441,6 +441,8 @@ add_custom_command(
 add_library(retrofe_theme_editor STATIC
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorCanvas.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorNav.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorScript.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorScript.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorSession.cpp"
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorSession.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.cpp"

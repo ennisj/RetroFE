@@ -257,12 +257,7 @@ int main(int argc, char** argv)
                 std::cout << std::endl << "The configuration doesn't load" << std::endl;
                 return 2;
             }
-            // The check reads what PageBuilder logs, so logging has to be on
-            std::string logLevel;
-            if (!config.getProperty(OPTION_LOG, logLevel) || logLevel.empty()) {
-                config.setProperty(OPTION_LOG, "ERROR,WARNING,NOTICE");
-                config.StartLogging(&config);
-            }
+            // What PageBuilder logs reaches the check whatever the log setting is (Logger::TapScope)
             int status = Themes::runThemeCheck(config, argv[2], argc > 3 ? argv[3] : "");
             Logger::deInitialize();
             return status;

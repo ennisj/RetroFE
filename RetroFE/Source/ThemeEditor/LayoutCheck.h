@@ -53,6 +53,11 @@ namespace ThemeEditor
     // there's no <layout> root); "" when it can
     std::string layoutParseError(const std::string& xml);
 
+    // Why this page mustn't be handed to PageBuilder at all: it doesn't
+    // parse, or something in it makes PageBuilder crash (a <menu> without
+    // <itemDefaults>). "" when it's safe to build.
+    std::string layoutBuildBlocker(const std::string& xml);
+
     // The names the check accepts, for the drift test
     struct LayoutVocabulary
     {

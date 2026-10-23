@@ -326,7 +326,7 @@ namespace ThemeEditor
         canvasHitRect(*w, start.x, start.y, start.w, start.h);
         DragRect r = canvasMove(start, static_cast<float>(dx), static_cast<float>(dy), 1, project_.canvasW(), project_.canvasH());
         if (r.x == start.x && r.y == start.y) return false;
-        beginChange(coalesce_.empty() ? "nudge" : coalesce_);
+        beginChange("nudge");   // a run of nudges is one step, until endCoalesce()
         WidgetInstance* m = selectedMutable();
         const int mx = r.x - start.x, my = r.y - start.y;
         if (m->warp) {

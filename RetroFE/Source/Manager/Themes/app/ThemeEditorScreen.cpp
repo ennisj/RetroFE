@@ -25,6 +25,7 @@
 #include "../../../Database/GlobalOpts.h"
 #include "../../../Graphics/Page.h"
 #include "../../../Graphics/PageBuilder.h"
+#include "../../../ThemeEditor/LayoutCheck.h"
 #include "../../../SDL.h"
 #include "../../../Utility/Log.h"
 #include "../../../Utility/Utils.h"
@@ -73,15 +74,6 @@ namespace
         return buffer;
     }
 
-    int handleFromName(const std::string& name)
-    {
-        static const char* names[] = { "nw", "n", "ne", "w", "e", "sw", "s", "se" };
-        for (int i = 0; i < 8; ++i) {
-            if (name == names[i]) return i;
-        }
-        return CH_NONE;
-    }
-
     // Where a handle sits on a rect, in theme units
     void handlePoint(const DragRect& r, int handle, float& x, float& y)
     {
@@ -124,18 +116,22 @@ ThemeEditorScreen::ThemeEditorScreen(const Context& context, const std::string& 
         if (ctx_.config) ctx_.config->getProperty(OPTION_FIRSTCOLLECTION, previewName_);
     }
 
-    // RETROFE_EDITOR_SCRIPT: commands to run, one per frame
-    if (const char* scriptPath = std::getenv("RETROFE_EDITOR_SCRIPT")) {
-        std::ifstream in(scriptPath);
-        std::string line;
-        while (std::getline(in, line)) {
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            std::string trimmed = Utils::trimEnds(line);
-            if (!trimmed.empty() && trimmed[0] != '#') script_.push_back(trimmed);
-        }
-        if (!script_.empty()) LOG_NOTICE("ThemeEditor", "Running " + std::to_string(script_.size()) + " script commands from " + scriptPath);
-    }
-}
+    // The layout RetroFE uses now: what the setting goes back to, and what "Use this theme" compares with
+    if (ctx_.config) ctx_.config->getProperty(OPTION_LAYOUT, originalLayout_);
+
+    // retrofe -editorScript <file>: commands to run, one per frame, the
+    // first time a theme is opened in this session only
+    static bool scriptUsed = false;
+    std::string scriptPath;
+    if (!scriptUsed && ctx_.config && ctx_.config->getProperty("editorScript", scriptPath) && !scriptPath.empty()) {
+        scriptUsed = true;
+        std::ifstream in(scriptPath, std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        script_ = parseEditorScript(text);
+        scriptPath_ = scriptPath;
+        if (!in) LOG_ERROR("ThemeEditor", "Can't read the editor script " + scriptPath);
+        else LOG_NOTICE("ThemeEditor", "Running " + std::to_string(script_.size()) + " script commands from " + scriptPath);
+    }}
 
 ThemeEditorScreen::~ThemeEditorScreen()
 {
@@ -149,6 +145,10 @@ void ThemeEditorScreen::retire()
     if (layoutOverridden_ && ctx_.config) {
         ctx_.config->setProperty(OPTION_LAYOUT, originalLayout_);
         layoutOverridden_ = false;
+    }
+    if (navFlagsSaved_ && ImGui::GetCurrentContext()) {
+        if (savedNavKeyboard_) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        navFlagsSaved_ = false;
     }
     retired_ = true;
 }
@@ -174,6 +174,15 @@ void ThemeEditorScreen::update(float dt)
 
     runScript();
     runJob();
+
+    // Arrow-key nudges with a pause between them are separate undo steps
+    if (nudging_) {
+        sinceNudge_ += dt;
+        if (sinceNudge_ > 0.6f) {
+            session_.endCoalesce();
+            nudging_ = false;
+        }
+    }
 
     // Rebuild once the project has been still for a moment, and never mid-drag
     if (session_.revision() != seenRevision_) {
@@ -214,13 +223,17 @@ void ThemeEditorScreen::rebuildPreview()
     // A page without components can't be drawn (Page::draw complains every
     // frame), and there's nothing to see: the canvas shows an empty page
     if (gen.xml.find(" layer=\"") == std::string::npos) return;
+    // A widget file of the user's own can make a page PageBuilder would crash on
+    std::string blocker = layoutBuildBlocker(gen.xml);
+    if (!blocker.empty()) {
+        engineIssues_.push_back("Not previewed: " + blocker);
+        return;
+    }
     if (!ensureTarget()) return;
 
     // Fonts and art resolve through the layout setting
-    if (!layoutOverridden_ && ctx_.config) {
-        ctx_.config->getProperty(OPTION_LAYOUT, originalLayout_);
-        layoutOverridden_ = true;
-    }
+    layoutOverridden_ = true;
+
     ctx_.config->setProperty(OPTION_LAYOUT, folder_);
 
     std::string themeDir = Utils::combinePath(ctx_.root, "layouts", folder_);
@@ -230,23 +243,25 @@ void ThemeEditorScreen::rebuildPreview()
     CollectionInfo* collection = previewCollection();
 
     std::vector<std::string> issues;
-    Logger::setTap([&issues](Logger::Zone zone, const std::string& component, const std::string& message) {
-        if (zone == Logger::ZONE_ERROR || zone == Logger::ZONE_WARNING) issues.push_back("[" + component + "] " + message);
-    });
-    PageBuilder builder(folder_, "layout", *ctx_.config, ctx_.fontCache);
-    builder.setLayoutXml(builtXml_.c_str(), pageDir);
-    Page* page = builder.buildPage();
-    if (!page) {
-        delete collection;
+    Page* page = nullptr;
+    {
+        Logger::TapScope tap([&issues](Logger::Zone, const std::string& component, const std::string& message) {
+            if (Themes::pageBuildComponent(component)) issues.push_back("[" + component + "] " + message);
+        });
+        PageBuilder builder(folder_, "layout", *ctx_.config, ctx_.fontCache);
+        builder.setLayoutXml(builtXml_.c_str(), pageDir);
+        page = builder.buildPage();
+        if (!page) {
+            delete collection;
+        }
+        else {
+            page->pushCollection(collection);
+            page->onNewItemSelected();
+            page->reallocateMenuSpritePoints();
+            page->allocateGraphicsMemory();
+            page->start();
+        }
     }
-    else {
-        page->pushCollection(collection);
-        page->onNewItemSelected();
-        page->reallocateMenuSpritePoints();
-        page->allocateGraphicsMemory();
-        page->start();
-    }
-    Logger::setTap(nullptr);
 
     engineIssues_ = issues;
     if (!page) engineIssues_.push_back("PageBuilder couldn't build this page");
@@ -364,6 +379,10 @@ void ThemeEditorScreen::use()
         saved.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
     std::string problem = Themes::mainPageProblem(saved);
+    std::error_code ec;
+    if (problem.empty() && !fs::is_regular_file(fs::path(session_.layoutsRoot()) / folder_ / "splash.xml", ec)) {
+        problem = "This theme has no splash page, and RetroFE won't start without one. Save it to write one.";
+    }
     if (!problem.empty()) {
         setStatus(problem, true);
         return;
@@ -398,7 +417,7 @@ void ThemeEditorScreen::pickFile()
     session_.setVar(var->token, rel);
 }
 
-// ---- RETROFE_EDITOR_SCRIPT --------------------------------------------------
+// ---- the editor script (-editorScript) --------------------------------------
 
 void ThemeEditorScreen::runScript()
 {
@@ -407,95 +426,42 @@ void ThemeEditorScreen::runScript()
         scriptWait_--;
         return;
     }
-    // Don't act while the preview still has to catch up, unless told to wait anyway
-    const std::string line = script_[scriptAt_++];
-    bool ok = runCommand(line);
-    LOG_NOTICE("ThemeEditor", "script: " + line + (ok ? " -> ok" : " -> failed"));
+    const EditorCommand& command = script_[scriptAt_++];
+    std::string note;
+    bool ok = runCommand(command, note);
+    LOG_NOTICE("ThemeEditor", "script: " + command.name + (command.rest.empty() ? "" : " " + command.rest) +
+               (ok ? " -> ok" : " -> failed") + (note.empty() ? "" : " (" + note + ")"));
 }
 
-bool ThemeEditorScreen::runCommand(const std::string& line)
+bool ThemeEditorScreen::runCommand(const EditorCommand& command, std::string& note)
 {
-    std::istringstream in(line);
-    std::string command;
-    in >> command;
-    auto rest = [&in]() {
-        std::string text;
-        std::getline(in, text);
-        return Utils::trimEnds(text);
-    };
-    const int cw = session_.project().canvasW();
-    const int ch = session_.project().canvasH();
-    // The script works in theme units: a canvas drawn at 1:1
-    const CanvasFit unit = canvasFit(static_cast<float>(cw), static_cast<float>(ch), cw, ch);
+    CommandResult result = runSessionCommand(session_, command, note);
+    if (result != CommandResult::NotSession) return result == CommandResult::Ok;
 
-    if (command == "wait") { in >> scriptWait_; return true; }
-    if (command == "log") { LOG_NOTICE("ThemeEditor", "script says: " + rest()); return true; }
-    if (command == "page") { int n = -1; in >> n; session_.setPage(n); return session_.pageIndex() == n; }
-    if (command == "select") { int n = -1; in >> n; session_.select(n); return session_.selected() == n; }
-    if (command == "selectid") { return session_.selectId(rest()); }
-    if (command == "add") { std::string id; in >> id; return session_.addWidget(id); }
-    if (command == "click") {
-        float x = 0, y = 0;
-        in >> x >> y;
-        session_.pointerDown(unit, x, y, 0.5f);
-        session_.pointerUp();
-        LOG_NOTICE("ThemeEditor", "script: selected " + std::to_string(session_.selected()));
-        return true;
-    }
-    if (command == "move" || command == "resize") {
-        const WidgetInstance* w = session_.selectedWidget();
-        if (!w) return false;
-        DragRect r;
-        canvasHitRect(*w, r.x, r.y, r.w, r.h);
-        float sx = r.x + r.w * 0.5f, sy = r.y + r.h * 0.5f;
-        if (command == "resize") {
-            std::string name;
-            in >> name;
-            int handle = handleFromName(name);
-            if (handle == CH_NONE) return false;
-            handlePoint(r, handle, sx, sy);
-        }
-        float dx = 0, dy = 0;
-        in >> dx >> dy;
-        session_.pointerDown(unit, sx, sy, 0.5f);
-        session_.pointerMove(unit, sx + dx, sy + dy);
-        session_.pointerUp();
-        w = session_.selectedWidget();
-        if (w) LOG_NOTICE("ThemeEditor", "script: " + w->id + " now " + std::to_string(w->x) + "," + std::to_string(w->y) +
-                          " " + std::to_string(w->w) + "x" + std::to_string(w->h));
-        return true;
-    }
-    if (command == "nudge") { int dx = 0, dy = 0; in >> dx >> dy; return session_.moveBy(dx, dy); }
-    if (command == "name") { return session_.setName(rest()); }
-    if (command == "layer") { int n = 0; in >> n; return session_.setLayer(n); }
-    if (command == "alpha") { int n = 0; in >> n; return session_.setAlpha(n); }
-    if (command == "colour" || command == "color") { return session_.setFontColor(rest()); }
-    if (command == "var") { std::string token; in >> token; return session_.setVar(token, rest()); }
-    if (command == "delete") { return session_.removeSelected(); }
-    if (command == "undo") { return session_.undo(); }
-    if (command == "redo") { return session_.redo(); }
-    if (command == "show") {
-        std::string what, onOff;
-        in >> what >> onOff;
-        bool on = onOff != "off";
-        if (what == "media") show_.includeMedia = on;
-        else if (what == "text") show_.includeText = on;
-        else if (what == "anims") show_.includeAnims = on;
+    const std::string& n = command.name;
+    const std::vector<std::string>& words = command.words;
+    if (n == "wait") { scriptWait_ = words.empty() ? 0 : std::atoi(words[0].c_str()); return true; }
+    if (n == "log") { note = command.rest; return true; }
+    if (n == "show") {
+        if (words.size() < 2) return false;
+        bool on = words[1] != "off";
+        if (words[0] == "media") show_.includeMedia = on;
+        else if (words[0] == "text") show_.includeText = on;
+        else if (words[0] == "anims") show_.includeAnims = on;
         else return false;
         previewDirty_ = true;
         return true;
     }
-    if (command == "preview") { previewName_ = rest(); previewDirty_ = true; return true; }
-    if (command == "rebuild") { builtXml_.clear(); previewDirty_ = true; return true; }
-    if (command == "save") { return save(); }
-    if (command == "use") { use(); return !statusIsError_; }
-    if (command == "addDialog") { showAdd_ = true; return true; }
-    if (command == "report") { showReport_ = true; return true; }
-    if (command == "close") { requestClose(); return true; }
-    if (command == "discard") { leaveWithoutSaving_ = true; back_ = true; return true; }
+    if (n == "preview") { previewName_ = command.rest; previewDirty_ = true; return true; }
+    if (n == "rebuild") { builtXml_.clear(); previewDirty_ = true; return true; }
+    if (n == "save") { return save(); }
+    if (n == "use") { use(); return !statusIsError_; }
+    if (n == "addDialog") { showAdd_ = true; return true; }
+    if (n == "report") { showReport_ = true; return true; }
+    if (n == "close") { requestClose(); return true; }
+    if (n == "discard") { leaveWithoutSaving_ = true; back_ = true; return true; }
     return false;
 }
-
 // ---- ManagerUI hooks ----------------------------------------------------------
 
 void ThemeEditorScreen::drawTargets()
@@ -517,6 +483,16 @@ bool ThemeEditorScreen::escape()
     }
     if (session_.dragging()) {
         session_.cancelDrag();
+        return true;
+    }
+    return false;
+}
+
+bool ThemeEditorScreen::askToLeave()
+{
+    // Unsaved changes: Save / Don't save / Cancel, rather than "leave again to discard"
+    if (session_.isOpen() && session_.dirty() && !leaveWithoutSaving_) {
+        showClose_ = true;
         return true;
     }
     return false;
@@ -563,6 +539,13 @@ void ThemeEditorScreen::requestClose()
 void ThemeEditorScreen::draw()
 {
     ImGuiIO& io = ImGui::GetIO();
+    // The arrow keys nudge widgets here, so ImGui's keyboard navigation is
+    // off while the editor is shown (Tab still moves between fields); retire() restores it
+    if (!navFlagsSaved_) {
+        savedNavKeyboard_ = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
+        navFlagsSaved_ = true;
+    }
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
     const float s = ctx_.scale;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
@@ -587,6 +570,18 @@ void ThemeEditorScreen::draw()
     }
 
     drawToolbar();
+
+    // Nobody should wonder why the theme is changing by itself
+    if (scriptAt_ < script_.size()) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.55f, 0.35f, 0.05f, 1.0f));
+        ImGui::BeginChild("##scriptBanner", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 1.4f), ImGuiChildFlags_None);
+        std::string file = fs::u8path(scriptPath_).filename().u8string();
+        ImGui::Text("Running the editor script %s from -editorScript: %d of %d commands done",
+                    file.c_str(), static_cast<int>(scriptAt_), static_cast<int>(script_.size()));
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", scriptPath_.c_str());
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
 
     const float sideW = 270.0f * s;
     const float propsW = 330.0f * s;
@@ -658,7 +653,7 @@ void ThemeEditorScreen::drawToolbar()
     ImGui::SameLine();
     if (ImGui::Button("Save")) job_ = Job::Save;
     ImGui::SameLine();
-    bool inUse = Utils::toLower(originalLayout_) == Utils::toLower(folder_) && layoutOverridden_;
+    bool inUse = Utils::toLower(originalLayout_) == Utils::toLower(folder_);
     ImGui::BeginDisabled(session_.dirty() || inUse);
     if (ImGui::Button("Use this theme")) job_ = Job::Use;
     ImGui::EndDisabled();
@@ -794,10 +789,16 @@ void ThemeEditorScreen::drawCanvas()
     ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsWindowFocused() && !io.WantTextInput) {
         int step = io.KeyShift ? 10 : 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) session_.moveBy(-step, 0);
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) session_.moveBy(step, 0);
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) session_.moveBy(0, -step);
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) session_.moveBy(0, step);
+        int dx = 0, dy = 0;
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) dx -= step;
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) dx += step;
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) dy -= step;
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) dy += step;
+        if (dx || dy) {
+            session_.moveBy(dx, dy);
+            sinceNudge_ = 0.0f;   // a pause ends this run of nudges as one undo step (update())
+            nudging_ = true;
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_Delete)) session_.removeSelected();
     }
     if (!io.WantTextInput && io.KeyCtrl) {
@@ -1058,7 +1059,9 @@ void ThemeEditorScreen::drawAddWidget()
     }
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-    ImGui::InputTextWithHint("##filter", "Search widgets", &addFilter_);
+    // Enter adds the first widget the search finds, so it works from the keyboard
+    bool addFirst = ImGui::InputTextWithHint("##filter", "Search widgets, Enter adds the first", &addFilter_,
+                                             ImGuiInputTextFlags_EnterReturnsTrue);
     std::string filter = Utils::toLower(addFilter_);
 
     ImGui::BeginChild("##defs", ImVec2(0, 0), ImGuiChildFlags_None);
@@ -1083,7 +1086,8 @@ void ThemeEditorScreen::drawAddWidget()
             ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + box, pos.y + box), colourOf(def.color, 255), 3.0f);
             ImGui::Dummy(ImVec2(box, box));
             ImGui::SameLine();
-            if (ImGui::Selectable(def.name.c_str())) {
+            if (ImGui::Selectable(def.name.c_str()) || addFirst) {
+                addFirst = false;
                 session_.addWidget(def.id);
                 showAdd_ = false;
                 ImGui::CloseCurrentPopup();
@@ -1120,7 +1124,7 @@ void ThemeEditorScreen::drawPopups()
                 ImGui::TextWrapped("%s", warning.c_str());
             }
         }
-        if (ImGui::Button("OK")) {
+        if (ImGui::Button("OK (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
             showReport_ = false;
             ImGui::CloseCurrentPopup();
         }
@@ -1132,20 +1136,21 @@ void ThemeEditorScreen::drawPopups()
     if (ImGui::BeginPopupModal("Unsaved changes", &showClose_, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!showClose_) ImGui::CloseCurrentPopup();
         ImGui::Text("Save the changes to %s?", session_.project().name.c_str());
-        if (ImGui::Button("Save")) {
+        // Keyboard answers too: ImGui's keyboard navigation is off in the editor
+        if (ImGui::Button("Save (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
             job_ = Job::SaveAndClose;
             showClose_ = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Don't save")) {
+        if (ImGui::Button("Don't save (D)") || ImGui::IsKeyPressed(ImGuiKey_D, false)) {
             leaveWithoutSaving_ = true;
             back_ = true;
             showClose_ = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
+        if (ImGui::Button("Cancel (Esc)")) {
             showClose_ = false;
             ImGui::CloseCurrentPopup();
         }

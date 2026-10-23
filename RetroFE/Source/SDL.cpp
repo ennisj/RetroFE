@@ -43,6 +43,7 @@ int                         SDL::numScreens_ = 1;
 int                         SDL::numDisplays_ = 1;
 int                         SDL::screenCount_;
 bool                        SDL::hiddenWindows_ = false;
+bool                        SDL::leaveMouse_ = false;
 
 // Initialize SDL
 bool SDL::initialize(Configuration& config)
@@ -61,7 +62,13 @@ bool SDL::initialize(Configuration& config)
 #endif
 
 	LOG_INFO("SDL", "Initializing");
-	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0)
+	// Hidden windows are for checks: no controllers (audio stays, pages load their sounds)
+	Uint32 subsystems = SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_EVENTS;
+	if (!hiddenWindows_)
+		subsystems |= SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC | SDL_INIT_GAMECONTROLLER;
+	// A window shown without taking focus (or not shown at all) leaves the user's mouse alone
+	leaveMouse_ = hiddenWindows_ || SDL_GetHintBoolean(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, SDL_FALSE);
+	if (SDL_Init(subsystems) != 0)
 	{
 		std::string error = SDL_GetError();
 		LOG_ERROR("SDL", "Initialize failed: " + error);
@@ -218,7 +225,7 @@ bool SDL::initialize(Configuration& config)
 		}
 		fullscreen_.push_back(fullscreen);
 
-		if (fullscreen_[screenNum])
+		if (fullscreen_[screenNum] && !hiddenWindows_)
 		{
 #ifdef WIN32
 			windowFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -287,9 +294,7 @@ bool SDL::initialize(Configuration& config)
 		}
 		else
 		{
-			// A window shown without taking focus (or not shown at all) leaves the user's mouse alone
-			bool leaveMouse = hiddenWindows_ || SDL_GetHintBoolean(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, SDL_FALSE);
-			if (screenNum == mainScreen && !leaveMouse)
+			if (screenNum == mainScreen && !leaveMouse_)
 			{
 #ifndef __APPLE__
 				// If not MacOS, warp cursor top right
@@ -417,7 +422,11 @@ bool SDL::deInitialize()
 	std::string error = SDL_GetError();
 	LOG_INFO("SDL", "DeInitializing");
 
-	if (window_[0] != NULL)
+	if (leaveMouse_)
+	{
+		// Never had the mouse, so it isn't put anywhere
+	}
+	else if (!window_.empty() && window_[0] != NULL)
 	{
 		// If on MacOS disable relative mouse mode
 #ifdef __APPLE__
