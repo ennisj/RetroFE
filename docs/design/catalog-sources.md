@@ -1,6 +1,7 @@
 # Catalog: content sources, download and install
 
-**Status:** draft for review, 2026-10-22. Nothing here is built yet.
+**Status:** draft, 2026-10-22. Reviewed; see [Decisions](#decisions). One
+question is still open. Nothing here is built yet.
 
 The Catalog is the Home menu's place for getting content: browse what's
 available, install it, and keep it up to date. This document proposes how
@@ -45,10 +46,19 @@ the limits its own docs call out.
 - **Manifest:** written for every installed package. Lists the files it put
   where, so nothing has to be guessed later.
 
+## The catalog folder
+
+Everything the Catalog keeps (sources, caches, downloads, staging, backups,
+manifests) lives in one folder, set by `catalogPath` in `settings.conf`. It
+defaults to `catalog` under the RetroFE root; relative paths are resolved
+against the root like other paths. Point it at a bigger drive to keep
+downloads off the install's drive. Paths below starting with `catalog/` mean
+this folder.
+
 ## Sources
 
-Sources live in `catalog/sources.conf` under the RetroFE root, using the same
-`key = value` style as the other `.conf` files:
+Sources live in `catalog/sources.conf`, using the same `key = value` style as
+the other `.conf` files:
 
 ```ini
 # One block per source: sources.<name>.<setting>
@@ -73,7 +83,7 @@ sources, so nobody has to edit this file by hand.
 |--------|-------|-------|
 | `index` | A catalog index file (below) over HTTP(S) or from disk | The native format. Everything else maps to it. |
 | `folder` | A folder of package archives, each with a sidecar `<file>.package.json`, or just archives | With no sidecars, packages are guessed from file names (as `archiveorg` does). Good for LAN or USB. |
-| `archiveorg` | `https://archive.org/metadata/<item>` file lists | The One Saucier logic as an adapter: file name → stem/version via a `naming` rule, size and MD5 from the metadata, downloads from `/download/<item>/<file>`. |
+| `archiveorg` | `https://archive.org/metadata/<item>` file lists | The One Saucier logic as an adapter: file name → stem/version via a `naming` rule, size and MD5 from the metadata, downloads from `/download/<item>/<file>`. With `naming = onesauce` it also writes the OnesaUCE `version.txt` markers on install, so One Saucier recognises the content on the same drive. |
 | `github` (later) | Release assets of a repository | Same idea; release notes become descriptions. |
 
 Each adapter caches what it read in `catalog/cache/<source>/`, keeping
@@ -116,7 +126,7 @@ A JSON document (the format web hosting and archive.org already speak):
 |-------|---------|
 | `id` | Stable identifier, unique within the source. The install key (One Saucier's `stem`). |
 | `name`, `description` | Shown in the Catalog. |
-| `kind` | `collection`, `layout`, `media`, `emulator`, `bundle`, `other`. Groups the Catalog and picks sensible targets. |
+| `kind` | `collection`, `layout`, `media`, `bundle`, `other`; `emulator` is reserved for later. Groups the Catalog and picks sensible targets. |
 | `version` | Compared to the installed one to offer updates. Semantic versions, plus the OnesaUCE `v2.0b13` style via the adapter. |
 | `artwork` | Image URLs, relative to the index. Shown like collection artwork. |
 | `requires` | Other packages, by `id` and optional version range. Offered together when installing. |
@@ -173,7 +183,7 @@ The One Saucier pipeline, which works, moved behind the adapters:
 - **Then reload** RetroFE, as Manage already does after creating a collection.
 
 Formats: ZIP (including ZIP64) through the minizip already in the tree.
-7-Zip would need another library; see the open questions.
+7-Zip is left out for now; it would need another library.
 
 Updates, uninstall and repair all come from the manifest: replace the files
 it lists, delete them, or re-check their hashes. Files a user changed after
@@ -236,21 +246,64 @@ Copied deliberately, with One Saucier itself unchanged:
 3. **Updates, uninstall, repair, and requires** in Manage.
 4. Later: GitHub releases, more archive formats, multiple downloads at once.
 
-## Open questions
+## Decisions
 
-1. **Index format: JSON or XML?** JSON is proposed because it's what the web
-   and archive.org use. XML would match RetroFE's layouts and wouldn't need a
-   new parser for the native format (the archive.org adapter still needs JSON).
-2. **Where is the `catalog/` folder?** Under the RetroFE root as proposed, or
-   somewhere configurable (`catalogPath`), e.g. on a bigger drive than the
-   install?
-3. **7-Zip support in phase 1?** Many retro packs are `.7z`. It needs another
-   library (libarchive or the 7-Zip SDK).
-4. **Should a source be able to recommend other sources** (a "featured"
-   list), or should every source be added by hand?
-5. **Emulators as packages:** do we want `emulator` packages in phase 1, or
-   start with collections and layouts and point at emulators the user
-   already has?
-6. **Should OnesaUCE content keep its `version.txt` markers** when installed
-   through the `archiveorg` adapter, so One Saucier still recognises it on the
-   same drive?
+1. **The index format is JSON.**
+2. **The catalog folder is configurable** with `catalogPath`, defaulting to
+   `catalog/` under the root.
+3. **No 7-Zip for now.** ZIP only.
+4. *Open:* whether sources can suggest other sources. See below.
+5. **No emulator packages yet.** Phase 1 covers collections, layouts and
+   media; emulators come later.
+6. **OnesaUCE content keeps its `version.txt` markers** when installed
+   through the `archiveorg` adapter.
+
+## Open question: can a source suggest other sources?
+
+**The problem it solves.** Every source has to be added before the Catalog
+shows anything, and on a cabinet that means typing a URL on the on-screen
+keyboard. Letting a source point at others means a user types one URL and can add
+the rest with a single press each.
+
+**How it would work.** An index can list other sources next to its
+packages:
+
+```json
+"sources": [
+  {
+    "name": "OnesaUCE packs",
+    "type": "archiveorg",
+    "items": ["onesaucev2system-game-packs"],
+    "naming": "onesauce",
+    "description": "Game packs for the OnesaUCE build."
+  },
+  {
+    "name": "Theme makers",
+    "type": "index",
+    "url": "https://example.org/themes/catalog.json"
+  }
+]
+```
+
+The options:
+
+| | Option | What happens | Trade-off |
+|-|--------|--------------|-----------|
+| A | **None** | Every source is added by hand. | Simplest and most explicit, but a lot of typing on a controller. |
+| B | **Suggestions** (proposed) | Manage → Sources lists them under "Suggested by Community packs", each with an Add button that asks for the same confirmation as adding any source. Nothing is added or loaded on its own. | One deliberate press per source, and the user sees who suggested it. |
+| C | **Follow automatically** | Suggested sources are loaded as if the user had added them. | No extra step, but trust becomes transitive: one source, or someone who takes it over, could quietly bring in others, and suggestion loops have to be handled. |
+
+**Proposed: B,** with these rules:
+
+- Suggestions are shown, never acted on. Adding one goes through the normal
+  confirmation and it becomes an ordinary source the user can remove.
+- Each suggestion shows which source suggested it.
+- A suggestion can't change a source that's already added (e.g. repoint its
+  URL); a matching suggestion just shows as "Added".
+- Once added, a suggested source's own suggestions show too. Every step is a
+  user's choice, so there's no automatic chain.
+
+**A related way to avoid typing,** independent of the above: when a USB
+stick or folder has a `sources.conf` (or an index file) at its top level,
+Manage → Sources could offer "Add sources from E:\". That works without any
+network and without suggestions.
