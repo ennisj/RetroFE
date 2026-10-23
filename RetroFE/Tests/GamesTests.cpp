@@ -29,6 +29,7 @@
 #include "../Source/Library/Media.h"
 #include "../Source/Library/MetadataOverrides.h"
 #include "../Source/Manager/Games/GameProvider.h"
+#include "../Source/Manager/LaunchQueue.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Utility/Utils.h"
 #include <algorithm>
@@ -98,6 +99,10 @@ namespace
             Manager::Services services{ config, nullptr };
             services.library = &indexer;
             services.editor = &editor;
+            services.requestLaunch = [this](const std::string& collection, const std::string& game) {
+                launched.push_back(collection + "/" + game);
+            };
+            services.launchProblem = [this] { return launchProblem; };
             auto owned = std::make_unique<Manager::GameProvider>(services);
             games = owned.get();
             model.addProvider(std::move(owned));
@@ -136,6 +141,8 @@ namespace
         Library::Editor editor;
         ManagerModel model;
         Manager::GameProvider* games = nullptr;
+        std::vector<std::string> launched;   // requestLaunch calls: "<collection>/<game>"
+        std::string launchProblem;           // what launchProblem says
     };
 
     Forms::Params gameParams(const std::string& collection, const std::string& id)
@@ -515,24 +522,25 @@ static void runGamesTests()
     });
 
     run("games: story text", [] {
-        checkEqual(Manager::GameProvider::storyToLine("Line one\r\nLine two\r\n"), "Line one | Line two", "lines joined");
-        checkEqual(Manager::GameProvider::lineToStory("One|Two | Three", "a\r\nb\r\n"), "One\r\nTwo\r\nThree\r\n", "file's CRLF kept");
-        checkEqual(Manager::GameProvider::lineToStory("One | Two", "a\nb"), "One\nTwo", "no final break kept");
+        using Manager::GameProvider;
+        checkEqual(GameProvider::storyToText("Line one\r\nLine two\r\n"), "Line one\nLine two", "lines, without their endings");
+        checkEqual(GameProvider::textToStory("One\nTwo\nThree", "a\r\nb\r\n"), "One\r\nTwo\r\nThree\r\n", "file's CRLF kept");
+        checkEqual(GameProvider::textToStory("One\nTwo", "a\nb"), "One\nTwo", "no final break kept");
         for (const std::string& text : { std::string("a\n\nb\n"), std::string("a\r\n  indented\r\n\r\nlast"),
-                                         std::string("trailing space \nmixed\r\nends\n\n") }) {
-            checkEqual(Manager::GameProvider::lineToStory(Manager::GameProvider::storyToLine(text), text), text,
+                                         std::string("trailing space \nmixed\r\nends\n\n"), std::string("Pac-Man | Namco\n  1980\n") }) {
+            checkEqual(GameProvider::textToStory(GameProvider::storyToText(text), text), text,
                        "unchanged text survives a round trip byte for byte");
         }
-        checkEqual(Manager::GameProvider::lineToStory("a |   indented |  | changed", "a\r\n  indented\r\n\r\nlast"),
-                   "a\r\n  indented\r\n\r\nchanged", "one paragraph changed, the others as they were");
-        check(!Manager::GameProvider::storyIsEditable("Pac-Man | Namco\n"), "a text with | of its own isn't editable");
+        checkEqual(GameProvider::textToStory("a\n  indented\n\nchanged", "a\r\n  indented\r\n\r\nlast"),
+                   "a\r\n  indented\r\n\r\nchanged", "one line changed, the others as they were");
+        checkEqual(GameProvider::textToStory("a\nnew\nb", "a\r\nb\r\n"), "a\r\nnew\r\nb\r\n", "a new line gets the file's ending");
 
         std::string root = makeInstall("games-story");
         Fixture f(root);
         Manager::Screen screen{ "game-description", gameParams("Arcade", "a") };
         f.open(screen.form, screen.params);
-        checkEqual(f.model.get("game:story:text"), "Line one | Line two", "current text");
-        f.model.set("game:story:text", "New one | New two");
+        checkEqual(f.model.get("game:story:text"), "Line one\nLine two", "current text, one line each");
+        f.model.set("game:story:text", "New one\nNew two");
         check(!f.model.leaving(screen).empty(), "unsaved text warns");
         Forms::Model::Result saved = f.model.runAction("game.saveStory");
         check(saved.ok, "saved: " + saved.message);
@@ -540,7 +548,7 @@ static void runGamesTests()
         checkEqual(f.model.get("game:story:hasOriginal"), "yes", "original kept");
         check(f.model.runAction("game.restoreStory").ok, "put back");
         checkEqual(Test::readFile(root + "/collections/Arcade/medium_artwork/story/a.txt"), "Line one\r\nLine two\r\n", "original text");
-        checkEqual(f.model.get("game:story:text"), "Line one | Line two", "field shows it again");
+        checkEqual(f.model.get("game:story:text"), "Line one\nLine two", "field shows it again");
 
         // A game without a story gets its own file
         f.open("game-description", gameParams("Arcade", "b"));
@@ -551,17 +559,35 @@ static void runGamesTests()
         Forms::Model::Result open = f.model.runAction("game.replaceStory");
         check(open.ok && open.open == "game-media-slot" && open.params["type"] == "story" && open.keepParams, "replace opens the slot");
 
-        // A story with a | of its own can't be edited on one line: Save is refused, the file is untouched
+        // A story with a | of its own is edited like any other (the one-line field used | between paragraphs)
         std::string piped = root + "/collections/Arcade/medium_artwork/story/c.txt";
         Test::writeFile(piped, "Pac-Man | Namco\n  1980\n");
         f.open("game-description", gameParams("Arcade", "c"));
-        checkEqual(f.model.get("game:story:canEdit"), "no", "not editable here");
-        check(!f.model.get("game:story:note").empty(), "says why");
-        f.model.set("game:story:text", "Pac-Man | Namco |   1980 | more");
-        check(!f.model.actionProblem("game.saveStory").empty(), "save refused");
+        checkEqual(f.model.get("game:story:canEdit"), "yes", "editable");
+        checkEqual(f.model.get("game:story:text"), "Pac-Man | Namco\n  1980", "shown as it is");
+        f.model.set("game:story:text", "Pac-Man | Namco\n  1980\nmore");
+        Forms::Model::Result pipedSaved = f.model.runAction("game.saveStory");
+        check(pipedSaved.ok, "saved: " + pipedSaved.message);
+        checkEqual(Test::readFile(piped), "Pac-Man | Namco\n  1980\nmore\n", "unchanged lines kept byte for byte");
+
+        // A new line typed at the end is an empty last line; an emptied story is Clear's job
+        checkEqual(GameProvider::textToStory("Line one\nLine two\n", "Line one\r\nLine two\r\n"), "Line one\r\nLine two\r\n\r\n",
+                   "a trailing new line adds an empty line, in the file's style");
+        checkEqual(GameProvider::textToStory("", "a\nb\n"), "\n", "empty text is one empty line (Save refuses it)");
+        f.model.set("game:story:text", " \n\n ");
+        check(f.model.actionProblem("game.saveStory").find("Clear") != std::string::npos, "save refuses an emptied story");
         check(!f.model.runAction("game.saveStory").ok, "not saved");
-        checkEqual(Test::readFile(piped), "Pac-Man | Namco\n  1980\n", "the file is as it was");
+        checkEqual(Test::readFile(piped), "Pac-Man | Namco\n  1980\nmore\n", "the file is as it was");
         f.model.runAction("game.resetStory");
+
+        // The form edits it as a multi-line field
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("game-description"), error);
+        bool multiline = false;
+        for (const Forms::Field& field : form ? form->fields : std::vector<Forms::Field>()) {
+            multiline |= field.bind == "game:story:text" && field.multiline && field.rows > 1;
+        }
+        check(multiline, "the story is a multi-line field");
 
         // The library refuses text in an image slot, and empty text
         Library::MediaSlot logo;
@@ -578,5 +604,238 @@ static void runGamesTests()
         check(!f.editor.writeMediaText(story, "  ").ok, "empty text refused");
         check(f.editor.writeMediaText(story, "C\n").ok && Test::readFile(story.directory + "/d.txt") == "C\n", "written as given");
         check(f.editor.backups().hasOriginal(story.directory + "/d.txt"), "a new file is recorded, so a reset removes it");
+    });
+
+    run("games: hide a game and show it again", [] {
+        std::string root = makeInstall("games-hide");
+        Test::writeFile(root + "/collections/Arcade/roms/Dk.zip", "x");
+        Fixture f(root);
+        std::string exclude = root + "/collections/Arcade/exclude.txt";
+
+        f.open("game", gameParams("Arcade", "Dk"));
+        checkEqual(f.model.get("game:isHidden"), "no", "shown");
+        checkEqual(f.model.actionProblem("game.unhide"), "It isn't hidden.", "nothing to show again");
+        checkEqual(f.model.actionProblem("game.hide"), "", "can be hidden");
+        Forms::Model::Result hid = f.model.runAction("game.hide");
+        check(hid.ok, "hidden: " + hid.message);
+        checkEqual(Test::readFile(exclude), std::string("Dk") + Library::defaultNewline(), "exclude.txt names its file, case as on disk");
+        check(f.editor.backups().hasOriginal(exclude), "the original (none) is recorded");
+
+        // Still findable: the game screen and the search
+        f.settle();
+        checkEqual(f.model.get("game:isFound"), "no", "not in RetroFE's list");
+        checkEqual(f.model.get("game:isHidden"), "yes", "but hidden");
+        checkEqual(f.model.get("game:notFound"), "", "not reported as gone");
+        check(f.model.get("game:hiddenNote").find("exclude.txt") != std::string::npos, "says which list hides it");
+        checkEqual(f.model.get("game:system"), "Arcade", "its system");
+        checkEqual(f.model.get("game:file"), "Dk.zip", "its file");
+        checkEqual(f.model.actionProblem("game.launch"), "This game isn't in the library any more.", "can't be started");
+
+        f.open("games", {});
+        check(rowIds(f.model.rows("game:search", 100)).size() == 5, "the search leaves it out");
+        f.model.set("game:onlyHidden", "yes");
+        Forms::Rows hidden = f.model.rows("game:search", 100);
+        check(rowIds(hidden) == std::vector<std::string>{ "Dk" }, "only hidden games: it");
+        if (hidden.items.size() == 1) {
+            checkEqual(hidden.items[0].params["collection"], "Arcade", "opens its own system's game");
+        }
+        f.model.set("game:filter", "Consoles");
+        check(f.model.rows("game:search", 100).items.empty(), "not under Consoles");
+        f.model.set("game:filter", "Main");
+        check(rowIds(f.model.rows("game:search", 100)) == std::vector<std::string>{ "Dk" }, "a menu covers it");
+        f.model.set("game:filter", "All");
+        check(rowIds(f.model.rows("game:search", 100)) == std::vector<std::string>{ "Dk" }, "a merged collection covers its sources");
+        f.model.set("game:query", "zzz");
+        check(f.model.rows("game:search", 100).items.empty(), "the text filters them too");
+
+        f.open("game", gameParams("Arcade", "Dk"));
+        Forms::Model::Result shown = f.model.runAction("game.unhide");
+        check(shown.ok, "shown again: " + shown.message);
+        checkEqual(Test::readFile(exclude), "", "out of exclude.txt");
+        f.settle();
+        checkEqual(f.model.get("game:isFound"), "yes", "listed again");
+
+        // The editor's checks
+        auto idx = f.scan();
+        check(!f.editor.setGameHidden(*idx, "Arcade", "nope", true).ok, "an unknown game can't be hidden");
+        check(!f.editor.setGameHidden(*idx, "Main", "a", true).ok, "only a system's games");
+        check(!f.editor.setGameHidden(*idx, "Arcade", "a", false).ok, "a game that isn't hidden can't be shown again");
+
+        // list.excludeFile (LB12) is the list when it's set
+        Test::writeFile(root + "/collections/Arcade/settings.conf", "list.extensions = zip\nlauncher = mame\nlist.excludeFile = lists/arcade.txt\n");
+        Test::writeFile(root + "/lists/arcade.txt", "# hidden here\r\nc\r\n");
+        f.indexer.rebuild();
+        f.settle();
+        f.open("game", gameParams("Arcade", "c"));
+        checkEqual(f.model.get("game:isHidden"), "yes", "hidden by list.excludeFile's list");
+        f.open("game", gameParams("Arcade", "b"));
+        check(f.model.runAction("game.hide").ok, "hidden");
+        checkEqual(Test::readFile(root + "/lists/arcade.txt"), "# hidden here\r\nc\r\nb\r\n", "written to that list, in its style");
+        checkEqual(Test::readFile(exclude), "", "exclude.txt untouched");
+    });
+
+    run("games: hiding a folder game (emuarc) and a listed game with no file", [] {
+        std::string root = makeInstall("games-hide-more");
+        // Saturn: list.emuarc names each game after its folder; every file of it is a line
+        Test::writeFile(root + "/collections/Saturn/settings.conf", "list.extensions = cue\nlauncher = mame\nlist.emuarc = true\n");
+        Test::writeFile(root + "/collections/Saturn/roms/Panzer/Disc 1.cue", "x");
+        Test::writeFile(root + "/collections/Saturn/roms/Panzer/Disc 2.cue", "x");
+        // NES: include.txt with includeMissingItems lists "ghost", which has no file
+        Test::writeFile(root + "/collections/NES/settings.conf", "list.extensions = nes\nlauncher = mame\nlist.includeMissingItems = true\n");
+        Test::writeFile(root + "/collections/NES/include.txt", "mario\nghost\n");
+        Fixture f(root);
+
+        f.open("game", gameParams("Saturn", "Panzer"));
+        checkEqual(f.model.get("game:isFound"), "yes", "the folder is a game");
+        check(f.model.runAction("game.hide").ok, "hidden");
+        std::string saturnExclude = Test::readFile(root + "/collections/Saturn/exclude.txt");
+        check(saturnExclude.find("Disc 1") != std::string::npos && saturnExclude.find("Disc 2") != std::string::npos,
+              "both files' names: " + saturnExclude);
+        f.settle();
+        checkEqual(f.model.get("game:isHidden"), "yes", "hidden once, as one game");
+        check(f.model.runAction("game.unhide").ok, "shown again");
+        checkEqual(Test::readFile(root + "/collections/Saturn/exclude.txt"), "", "both lines gone");
+        f.settle();
+        checkEqual(f.model.get("game:isFound"), "yes", "listed again");
+
+        f.open("game", gameParams("NES", "ghost"));
+        checkEqual(f.model.get("game:isFound"), "yes", "listed without a file");
+        check(f.model.runAction("game.hide").ok, "hidden");
+        checkEqual(Test::readFile(root + "/collections/NES/exclude.txt"), std::string("ghost") + Library::defaultNewline(), "by its name");
+        f.settle();
+        checkEqual(f.model.get("game:isHidden"), "yes", "found as a hidden game");
+        checkEqual(f.model.get("game:file"), "", "with no file");
+        f.open("games", {});
+        f.model.set("game:onlyHidden", "yes");
+        check(rowIds(f.model.rows("game:search", 100)) == std::vector<std::string>{ "ghost" }, "in the hidden games");
+        f.model.set("game:onlyHidden", "no");
+        f.open("game", gameParams("NES", "ghost"));
+        check(f.model.runAction("game.unhide").ok, "shown again");
+        f.settle();
+        checkEqual(f.model.get("game:isFound"), "yes", "listed again");
+
+        // A file include.txt doesn't name isn't hidden by the exclude list (it wouldn't show anyway)
+        Test::writeFile(root + "/collections/NES/exclude.txt", "zelda\n");
+        f.indexer.rebuild();
+        f.settle();
+        f.open("game", gameParams("NES", "zelda"));
+        checkEqual(f.model.get("game:isHidden"), "no", "not a hidden game");
+    });
+
+    run("games: the launch request between Manage and RetroFE", [] {
+        using Manager::LaunchQueue;
+        using Take = LaunchQueue::Take;
+        LaunchQueue::Request request;
+        auto closes = [](bool result) { return [result](bool) { return result; }; };
+
+        check(LaunchQueue::problem(true, false).empty() && LaunchQueue::problem(false, true).empty()
+              && !LaunchQueue::problem(true, true).empty(), "refused only when a reload is due and the Catalog is busy");
+
+        // Not a launch: handled as usual
+        LaunchQueue q;
+        check(!q.handle(true, closes(true)), "no request: an ordinary result");
+
+        // The manager closes: RetroFE starts it once it's idle and nothing's due
+        q.want({ "Arcade", "a" });
+        check(q.handle(true, closes(true)) && q.hasPending(), "pending once closed");
+        check(q.take(true, false, false, request) == Take::None, "not while the manager is open");
+        check(q.take(false, true, false, request) == Take::None && q.hasPending(), "a reload first");
+        check(q.take(false, false, false, request) == Take::Start && request.game == "a" && !q.hasPending(), "then it starts");
+        check(q.take(false, false, false, request) == Take::None, "once");
+
+        // A failed action asks nothing
+        q.want({ "Arcade", "a" });
+        check(!q.handle(false, closes(true)) && !q.hasPending(), "a failed action: no launch");
+
+        // A screen with unsaved changes stops the close; the same request again leaves them
+        std::vector<bool> discards;
+        auto refuseFirst = [&](bool discard) { discards.push_back(discard); return discard; };
+        q.want({ "Arcade", "a" });
+        check(q.handle(true, refuseFirst) && !q.hasPending(), "refused: nothing pending");
+        q.want({ "Arcade", "a" });
+        check(q.handle(true, refuseFirst) && q.hasPending(), "asked again: it closes");
+        check(discards == std::vector<bool>{ false, true }, "the second close leaves the changes");
+        q.take(false, false, false, request);
+        q.want({ "Arcade", "a" });
+        q.handle(true, refuseFirst);
+        q.screenChanged();
+        q.want({ "Arcade", "a" });
+        discards.clear();
+        q.handle(true, refuseFirst);
+        check(discards == std::vector<bool>{ false }, "after another screen it warns again");
+
+        // A reload that can't happen (the Catalog installs) drops it: no surprise launch later
+        LaunchQueue busy;
+        busy.want({ "Arcade", "a" });
+        busy.handle(true, closes(true));
+        check(busy.take(false, true, true, request) == Take::Dropped && !busy.hasPending(), "dropped");
+        check(busy.take(false, false, false, request) == Take::None, "and never started");
+
+        // Kept across the reload it waits for, dropped by any other shutdown
+        LaunchQueue reload;
+        reload.want({ "Arcade", "a" });
+        reload.handle(true, closes(true));
+        reload.reloading();
+        reload.shutdown();
+        check(reload.hasPending(), "the reload keeps it");
+        reload.shutdown();
+        check(!reload.hasPending(), "a later shutdown doesn't");
+        reload.want({ "Arcade", "a" });
+        reload.handle(true, closes(true));
+        reload.shutdown();
+        check(!reload.hasPending(), "quitting drops it");
+    });
+
+    run("games: start a game from its screen", [] {
+        std::string root = makeInstall("games-launch");
+        Fixture f(root);
+        f.open("game", gameParams("Arcade", "a"));
+        check(f.model.actionProblem("game.launch").find("mame's program isn't there") != std::string::npos,
+              "a missing program is said up front: " + f.model.actionProblem("game.launch"));
+        Test::writeFile(root + "/mame.exe", "program");
+        f.games->refresh();   // the manager opening again re-checks programs
+        f.open("game", gameParams("Arcade", "a"));
+        checkEqual(f.model.actionProblem("game.launch"), "", "can start");
+        Forms::Model::Result started = f.model.runAction("game.launch");
+        check(started.ok && started.message.find("Alpha") != std::string::npos, "starting: " + started.message);
+        check(f.launched == std::vector<std::string>{ "Arcade/a" }, "asked RetroFE to start it from its own system");
+
+        // RetroFE has to reload first and can't while the Catalog installs: refused, not delayed
+        f.launchProblem = Manager::LaunchQueue::problem(true, true);
+        checkEqual(f.model.actionProblem("game.launch"), f.launchProblem, "the Catalog is installing");
+        check(!f.model.runAction("game.launch").ok && f.launched.size() == 1, "not asked");
+        f.launchProblem.clear();
+
+        // A game whose launcher isn't installed can't start
+        Test::writeFile(root + "/collections/Arcade/launchers/c.conf", "nosuch\n");
+        f.indexer.rebuild();
+        f.settle();
+        f.open("game", gameParams("Arcade", "c"));
+        check(f.model.actionProblem("game.launch").find("It won't start") == 0, "says why: " + f.model.actionProblem("game.launch"));
+        check(!f.model.runAction("game.launch").ok && f.launched.size() == 1, "not started");
+    });
+
+    run("games: play count and time played", [] {
+        using Manager::GameProvider;
+        std::string root = makeInstall("games-plays");
+        Test::writeFile(root + "/collections/playCount.txt", "a;1;1700000000\n_Arcade:a;3;1700000000\n_NES:mario;1;\n# comment\n");
+        Test::writeFile(root + "/collections/timeSpent.txt", "_Arcade:a;4380\n_Arcade:b;oops\n");
+        GameProvider::PlayStats a = GameProvider::readPlayStats(root, "Arcade", "a");
+        check(a.count == 3 && a.lastPlayed == "1700000000" && a.seconds == 4380, "the _<system>:<game> line wins");
+        check(GameProvider::readPlayStats(root, "NES", "mario").count == 1, "no time: still counted");
+        check(GameProvider::readPlayStats(root, "Arcade", "b").count == 0, "never played");
+        checkEqual(GameProvider::describeTime(42), "42 s", "seconds");
+        checkEqual(GameProvider::describeTime(600), "10 min", "minutes");
+        checkEqual(GameProvider::describeTime(4380), "1 h 13 min", "hours");
+
+        Fixture f(root);
+        f.open("game", gameParams("Arcade", "a"));
+        check(f.model.get("game:played").rfind("3 times, last on 20", 0) == 0, "played: " + f.model.get("game:played"));
+        checkEqual(f.model.get("game:timePlayed"), "1 h 13 min", "time played");
+        f.open("game", gameParams("NES", "mario"));
+        checkEqual(f.model.get("game:played"), "Once", "once, no date");
+        f.open("game", gameParams("Arcade", "b"));
+        checkEqual(f.model.get("game:played"), "Never", "never");
+        checkEqual(f.model.get("game:timePlayed"), "", "no time");
     });
 }

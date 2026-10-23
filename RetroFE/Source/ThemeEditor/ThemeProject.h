@@ -235,4 +235,18 @@ namespace ThemeEditor
 
     // Deletes a template, moving its collections to replacementPrimary ("" = Default)
     bool deleteTemplateTo(ThemeProject& p, const std::string& primary, const std::string& replacementPrimary);
+
+    // The template RetroFE uses for every menu of collections that has no
+    // page of its own: this fork's PageBuilder reads collections/_menu/layout
+    // for those (Graphics/LayoutPages.h)
+    static const char* const MENUS_TEMPLATE = "_menu";
+
+    // Which page this fork's RetroFE shows for a collection. Unlike One
+    // Saucier's engine, a collection never inherits its parent menu's page
+    // here: entering a collection always builds a page from
+    // collections/<c>/layout, else (for a menu of collections)
+    // collections/_menu/layout, else the theme's own layout.xml.
+    enum class PageVia { Own, Member, Menus, Default };
+    const ThemePage& pageShownFor(const ThemeProject& p, const std::string& collection, bool isMenu,
+                                  PageVia* via = nullptr);
 }

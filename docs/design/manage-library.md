@@ -96,6 +96,12 @@ OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
   - `meta`: year, manufacturer, developer, genre, cloneOf, players, ctrlType,
     buttons, joyWays, rating, score.
 - **Where it appears:** `index->mergedCollectionsShowing(game)` and `index->playlistsListing(game)`.
+- **Hidden games** (named by their system's exclude list) aren't `GameRecord`s.
+  They're what the scan would list without the exclude list and doesn't:
+  with `includeMissingItems`, `includeList` names that `excludeList` has
+  (with or without a file); otherwise, or with no include list, the
+  system's `index->candidates[c]` whose `basename` passes the include list
+  and is in `excludeList`. The Games provider builds that list once per index.
 - **Launcher:** `index->resolveLauncher(game.collection, game.name)` returns a `LauncherResolution`:
   - `name`, the launcher Launcher::run ends with;
   - `via`: Setting, CollectionFile or GameOverride;
@@ -238,6 +244,7 @@ After a successful write, call `indexer.changed("what")`.
 | Call | Writes | Rules |
 |------|--------|-------|
 | `setGameLauncher(index, collection, game, launcher)` | `collections/<c>/launchers/<game>.conf`, first line only, always ending in `\n` | The launcher must exist for that collection. Naming the collection's default, or passing "", removes the file, because Launcher::run treats them the same. `collection` is the game's own (source) collection. |
+| `setGameHidden(index, collection, game, hidden)` | The system's exclude list: `CollectionRecord::excludeFile`, i.e. `exclude.txt` or the file `list.excludeFile` names (LB12) | `collection` must be a system. Lines name the game's files without their extension, exactly as spelt on disk (`Candidate::basename`, what ImportDirectory matches; with `list.emuarc` every file of the game's folder), or the name itself for a listed game with no file. Hiding needs a game the index lists and adds the lines that aren't there yet, in the file's own line-ending style; hiding a game that's hidden already is a no-op. Showing removes every line naming it and is refused when there's none. |
 | `setMetadata(index, collection, game, field, value)` / `clearMetadata` | `manage/metadata/<metadata.type>.xml`, then meta.db straight away | A field from `MetadataOverrides::fields()`. One line, at most 200 bytes. A title can't be blank. Clearing puts back what RetroFE's import would give (see below). |
 | `setCollectionSetting(index, collection, key, value)` / `removeCollectionSetting` | The settings*.conf or info.conf the effective value comes from. Otherwise settings.conf, or info.conf for info keys. | Settings keys: `list.extensions`, `list.menuSort`, `list.includeMissingItems`, `list.sortType`, `launcher`, `metadata.type`, `layout`, `cyclePlaylist`. Info keys: `title`, `manufacturer`, `developer`, `year`, `genre`, `type` (`videos` or empty: a video collection). A local launcher is `<collection>.<name>` here; the bare name only works in a game override. Each value is checked: extensions, yes/no, sort types, an existing launcher or layout. Setting `launcher` on an `a, b, c` list moves the pick to the front and keeps the rest. Remove takes the key out of every file. |
 | `addMenuChild(index, menu, child, position)` / `removeMenuChild` / `moveMenuChild` | `menu.txt`. For a menu-folder menu with no menu.txt: `menu/<child>.txt`. Plus `menu_supported.txt` if present. | The child must be an existing collection; its folder spelling is used. Refused: Home or Catalog, the menu itself, a loop, a menu that `checkMenuParent` refuses (menu.xml, collectionLaunchers, a collection with games), reordering a folder menu, and removing a child that isn't listed. For a folder menu, the message says the position didn't apply. `MenuFiles::add` never writes a menu.txt beside a lone menu.xml (it would hide it). |

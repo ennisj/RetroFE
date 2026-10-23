@@ -20,12 +20,14 @@
 
 #include "TestSupport.h"
 #include "../Source/Database/Configuration.h"
+#include "../Source/Graphics/MenuXml.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Themes/ThemeProvider.h"
 #include "../Source/ThemeEditor/EditorScript.h"
 #include "../Source/ThemeEditor/EditorSession.h"
 #include "../Source/ThemeEditor/LayoutCheck.h"
 #include "../Source/Utility/Log.h"
+#include <algorithm>
 #include <thread>
 #include "../Source/ThemeEditor/ThemeStore.h"
 #include <filesystem>
@@ -118,9 +120,45 @@ static Test::Suite themes("themes", [] {
         check(Themes::mainPageProblem("<layout><menu id=\"a\"/></layout>").empty(), "a page with a menu is fine");
         check(!Themes::mainPageProblem("<layout><menus/><text/></layout>").empty(), "one without isn't");
         check(layoutBuildBlocker("<layout><menu><itemDefaults/><item/></menu></layout>").empty(), "a menu with item defaults builds");
-        check(layoutBuildBlocker("<layout><menu><item/></menu></layout>").find("itemDefaults") != std::string::npos,
-              "one without would crash PageBuilder, so it isn't built");
-        check(!layoutBuildBlocker("<layout><text>").empty() && !layoutBuildBlocker("<page/>").empty(), "nor is broken XML");
+        check(layoutBuildBlocker("<layout><menu><item/></menu></layout>").empty(),
+              "so does one without, now PageBuilder gives it empty defaults");
+        check(!layoutBuildBlocker("<layout><text>").empty() && !layoutBuildBlocker("<page/>").empty(), "broken XML isn't built");
+    });
+
+    Test::run("PageBuilder: a menu without <itemDefaults> gets empty ones, and a vertical menu always ends", [] {
+        // What PageBuilder::buildMenu runs first (Graphics/MenuXml.h); without
+        // it a hand-made <menu> with no <itemDefaults> crashed RetroFE
+        std::string xml = "<layout><menu type=\"vertical\" height=\"500\"><item index=\"0\" selected=\"true\"/></menu>"
+                          "<menu><itemDefaults x=\"5\"/></menu></layout>";
+        std::vector<char> buffer(xml.begin(), xml.end());
+        buffer.push_back('\0');
+        rapidxml::xml_document<> doc;
+        doc.parse<0>(buffer.data());
+        rapidxml::xml_node<>* first = doc.first_node("layout")->first_node("menu");
+        bool added = false;
+        rapidxml::xml_node<>* defaults = MenuXml::itemDefaults(first, &added);
+        check(added && defaults && first->first_node("itemDefaults") == defaults && !defaults->first_attribute(),
+              "the first menu gets an empty <itemDefaults>, in the menu");
+        check(MenuXml::itemDefaults(first, &added) == defaults && !added, "asking again finds that one");
+        check(first->first_node("item") != nullptr, "its items are kept");
+        rapidxml::xml_node<>* second = first->next_sibling("menu");
+        rapidxml::xml_node<>* own = MenuXml::itemDefaults(second, &added);
+        check(!added && own && own->first_attribute("x"), "a menu with its own keeps them");
+        check(MenuXml::itemDefaults(nullptr) == nullptr, "no menu, nothing");
+
+        // A slot of height 50 in a 120-high menu: two fit, the third ends it
+        check(!MenuXml::verticalMenuFull(0, 50, 120, true, 1) && !MenuXml::verticalMenuFull(50, 100, 120, true, 2) &&
+              MenuXml::verticalMenuFull(100, 150, 120, true, 3), "slots are added until the menu is full");
+        // Default items with no height (-1, as buildViewInfo leaves them) never fill it
+        check(MenuXml::verticalMenuFull(0, -1, 500, true, 1) && MenuXml::verticalMenuFull(0, 0, 500, true, 1),
+              "a default slot that adds no height ends the menu instead of looping forever");
+        // ...but an overridden slot of height 0, or one with negative spacing, is the layout's choice
+        check(!MenuXml::verticalMenuFull(100, 100, 500, false, 3) && !MenuXml::verticalMenuFull(100, 80, 500, false, 3),
+              "an <item index=> slot of height 0 or negative spacing doesn't end the menu");
+        check(!MenuXml::verticalMenuFull(100, 150, 500, false, 3), "and the slots after it carry on");
+        check(MenuXml::verticalMenuFull(100, 100, 500, false, MenuXml::MAX_VERTICAL_SLOTS),
+              "whatever the sizes, a menu stops at MAX_VERTICAL_SLOTS slots");
+        check(MenuXml::verticalMenuFull(0, 40, -1, true, 1), "a menu with no height of its own gets one slot, as before");
     });
 
     Test::run("a theme without splash.xml can't be used (RetroFE wouldn't start)", [] {
@@ -566,5 +604,222 @@ static Test::Suite themes("themes", [] {
         check(s.page().widgets.empty(), "undo is per change, on the page it was made");
         s.setPage(0);
         checkEqual(s.pageFolder(), "", "the Default page's folder is the theme's");
+    });
+
+    Test::run("the editor session: templates are made, copied, assigned and deleted", [] {
+        std::string root = makeThemesRoot("session_templates");
+        EditorSession s;
+        std::string folder, error;
+        check(openNew(root, "Tpl", s, folder), "opened");
+        s.addWidget("wheel_vertical");
+
+        // New, based on the Default page
+        check(!s.templateProblem("", "X").empty() && !s.templateProblem("NES", " ").empty() &&
+              !s.templateProblem("bad:name", "X").empty() && !s.templateProblem("NES.", "X").empty(),
+              "a collection, a name and a safe folder name are needed");
+        check(s.newTemplate("Arcade", "Arcade Look", ""), "a new template");
+        check(s.pageCount() == 2 && s.page().collection == "Arcade" && s.page().widgets.size() == 1,
+              "it's a copy of the Default page, and it's the page being edited");
+        check(!s.templateProblem("NES", "arcade look").empty(), "names are unique, ignoring case");
+
+        // A blank one, and a copy of the first
+        check(s.newTemplate("SNES", "Plain", EditorSession::BLANK) && s.page().widgets.empty(), "a blank template");
+        check(s.newTemplate("Genesis", "Arcade Copy", "Arcade") && s.page().widgets.size() == 1, "a copy of a template");
+        check(s.templates().size() == 3, "three templates");
+
+        // Assigning: NES joins Arcade Look; it's written as Arcade Look's page
+        check(s.assignTemplate("NES", "Arcade") && s.project().page("Arcade")->covers("NES"), "NES joins a template");
+        check(!s.assignTemplate("NES", "Arcade"), "joining the same one again isn't a change");
+        check(!s.assignTemplate("NES", "Nope"), "a template that doesn't exist is refused");
+        checkEqual(s.removesTemplate("NES"), "", "NES is a member, so moving it removes nothing");
+        checkEqual(s.removesTemplate("SNES"), "Plain", "SNES is Plain's only collection");
+
+        // Moving a template's primary off it keeps the template for its members
+        s.setPage(1);
+        check(s.page().collection == "Arcade", "editing Arcade Look");
+        check(s.assignTemplate("Arcade", "") && !s.project().coveredBy("Arcade"), "Arcade goes back to Default");
+        check(s.project().page("NES") && s.project().page("NES")->displayName() == "Arcade Look",
+              "Arcade Look carries on, for NES");
+        check(s.page().collection == "NES", "and it's still the page being edited");
+
+        // Moving its only collection deletes a template (undo brings it back)
+        size_t pages = s.project().pages.size();
+        check(s.assignTemplate("SNES", "") && s.project().pages.size() == pages - 1 && !s.project().page("SNES"), "Plain is gone");
+        check(s.undo() && s.project().page("SNES"), "undo brings it back");
+
+        // Rename and delete with a replacement
+        check(s.renameTemplate("Genesis", "Sega") && s.project().page("Genesis")->displayName() == "Sega", "renamed");
+        check(!s.renameTemplate("Genesis", "  "), "an empty name is refused");
+        check(s.deleteTemplate("NES", "Genesis"), "deleted, its collections moving to Sega");
+        check(!s.project().page("NES") && s.project().page("Genesis")->covers("NES"), "NES now uses Sega");
+        check(!s.deleteTemplate("Genesis", "Genesis") && !s.deleteTemplate("", ""), "not onto itself, never the Default page");
+
+        // The splash page stays last whatever is added
+        check(s.setSplashText("Starting...") && ThemeProject::isSplashPage(s.project().pages.back().collection), "a splash page");
+        check(s.newTemplate("MAME", "Mame", "") && ThemeProject::isSplashPage(s.project().pages.back().collection),
+              "a template added later goes before it");
+
+        // Which page RetroFE shows: no inheritance down the menu tree here
+        ThemeProject p = s.project();
+        PageVia via;
+        check(&pageShownFor(p, "NES", false, &via) == p.page("Genesis") && via == PageVia::Member, "a member uses its template");
+        check(&pageShownFor(p, "MAME", false, &via) == p.page("MAME") && via == PageVia::Own, "a template's own collection");
+        check(&pageShownFor(p, "Arcade", false, &via) == &p.pages[0] && via == PageVia::Default, "anything else the Default page");
+        check(&pageShownFor(p, "Consoles", true, &via) == &p.pages[0], "so is a menu, while there's no _menu template");
+        createTemplate(p, MENUS_TEMPLATE);
+        check(&pageShownFor(p, "Consoles", true, &via) == p.page(MENUS_TEMPLATE) && via == PageVia::Menus, "then menus use that");
+        check(&pageShownFor(p, "Arcade", false, &via) == &p.pages[0], "but not a system");
+
+        // Saved: one page per covered collection, member pages included
+        SaveInputs inputs;
+        inputs.fontBytes = fontBytes();
+        SaveReport report;
+        check(s.save(inputs, report, error), "saved: " + error);
+        const std::string dir = root + "/layouts/" + folder;
+        check(fs::exists(dir + "/collections/Genesis/layout/layout.xml") && fs::exists(dir + "/collections/NES/layout/layout.xml") &&
+              fs::exists(dir + "/collections/SNES/layout/layout.xml") && !fs::exists(dir + "/collections/Arcade/layout/layout.xml"),
+              "Sega's pages for Genesis and NES, Plain's for SNES, none for Arcade");
+
+        // A page written by hand is never taken over
+        writeFile(dir + "/collections/Atari/layout/layout.xml", "<layout width=\"1920\" height=\"1080\"></layout>");
+        check(s.handMadePage("Atari") && !s.handMadePage("NES"), "a hand-made page is recognised");
+        check(s.templateProblem("Atari", "Atari Look").find("by hand") != std::string::npos, "no template for it");
+        check(!s.assignTemplate("Atari", "MAME"), "and it can't join one");
+        check(s.assignTemplate("Atari", "") == false, "it's on the Default page already");
+
+        // Scripts drive the same
+        check(runSessionCommand(s, parseEditorCommand("tplnew Lynx blank Handheld"), error) == CommandResult::Ok &&
+              s.page().collection == "Lynx", "tplnew: " + error);
+        check(runSessionCommand(s, parseEditorCommand("tplassign GBA Lynx"), error) == CommandResult::Ok &&
+              s.project().page("Lynx")->covers("GBA"), "tplassign");
+        check(runSessionCommand(s, parseEditorCommand("tplrename Lynx Pocket Size"), error) == CommandResult::Ok &&
+              s.project().page("Lynx")->displayName() == "Pocket Size", "tplrename keeps the spaces");
+        check(runSessionCommand(s, parseEditorCommand("tpldelete Lynx default"), error) == CommandResult::Ok &&
+              !s.project().page("Lynx") && !s.project().page("GBA"), "tpldelete");
+    });
+
+    Test::run("the editor session: cascades, case, renames, stale pages and the page being edited", [] {
+        std::string root = makeThemesRoot("session_templates2");
+        EditorSession s;
+        std::string folder, error;
+        check(openNew(root, "Tpl2", s, folder), "opened");
+        const std::string dir = root + "/layouts/" + folder;
+        writeFile(dir + "/collections/Atari/layout/layout.xml", "<layout width=\"1920\" height=\"1080\"></layout>");
+
+        // A cascade skips the collection whose page was written by hand, and says so
+        check(s.newTemplate("Consoles", "Consoles Look", "", { "NES", "Atari", "SNES" }), "a new template for a menu and what's under it");
+        const ThemePage* consoles = s.project().page("Consoles");
+        check(consoles && consoles->covers("NES") && consoles->covers("SNES") && !consoles->covers("Atari"),
+              "newTemplate(alsoFor) takes NES and SNES, not the hand-made Atari");
+        check(s.newTemplate("Arcade", "Arcade Look", EditorSession::BLANK), "another template");
+        int skipped = 0;
+        check(s.assignTemplate(std::vector<std::string>{ "MAME", "Atari", "FBNeo" }, "Arcade", &skipped) && skipped == 1,
+              "assignTemplate(many) skips Atari: " + std::to_string(skipped));
+        check(s.project().page("Arcade")->covers("MAME") && s.project().page("Arcade")->covers("FBNeo") &&
+              !s.project().page("Arcade")->covers("Atari"), "and takes the rest");
+
+        // Names that differ only in case are one folder on Windows
+        check(s.templateProblem("nes", "Lower").find("only in case") != std::string::npos, "a template for nes while NES has one");
+        check(!s.assignTemplate("mame", "Consoles"), "nor can mame join one while MAME is on another");
+        check(!s.renameTemplate("Arcade", "consoles look"), "renaming to another template's name is refused, ignoring case");
+        check(s.renameTemplate("Arcade", "Arcade LOOK") && s.project().page("Arcade")->displayName() == "Arcade LOOK",
+              "changing the case of its own name is fine");
+
+        // Erasing a template before the one being edited keeps editing that one
+        check(s.newTemplate("GBA", "Handheld", EditorSession::BLANK), "a third template, now being edited");
+        check(s.newTemplate("Lynx", "Lynx Only", EditorSession::BLANK), "and a fourth");
+        s.setPage(s.pageCount() - 2);   // Handheld (the splash page isn't there yet)
+        check(s.page().collection == "GBA", "editing Handheld");
+        check(s.assignTemplate(std::vector<std::string>{ "MAME", "FBNeo", "Arcade" }, ""), "Arcade Look loses all its collections");
+        check(!s.project().page("Arcade") && s.page().collection == "GBA", "it's gone, and Handheld is still the page being edited");
+
+        // Saving after a template went: its pages go too
+        SaveInputs inputs;
+        inputs.fontBytes = fontBytes();
+        SaveReport report;
+        check(s.save(inputs, report, error), "saved: " + error);
+        check(fs::exists(dir + "/collections/Lynx/layout/layout.xml") && fs::exists(dir + "/collections/NES/layout/layout.xml"),
+              "the templates' pages are written");
+        check(s.deleteTemplate("Lynx", "") && s.assignTemplate("NES", ""), "Lynx Only deleted, NES back on Default");
+        check(s.save(inputs, report, error), "saved again: " + error);
+        bool removedLynx = false, removedNes = false;
+        for (const std::string& r : report.removed) {
+            removedLynx |= r == "collections/Lynx/layout/layout.xml";
+            removedNes |= r == "collections/NES/layout/layout.xml";
+        }
+        check(removedLynx && removedNes && !fs::exists(dir + "/collections/Lynx") && !fs::exists(dir + "/collections/NES/layout/layout.xml"),
+              "the pages they no longer have are removed");
+        check(fs::exists(dir + "/collections/Atari/layout/layout.xml") && fs::exists(dir + "/collections/SNES/layout/layout.xml"),
+              "the hand-made page and the ones still covered stay");
+
+        // Only real fonts go into fonts/
+        writeFile(root + "_src/fake.ttf", "not a font at all");
+        writeFile(root + "_src/font.txt", fontBytes());
+        writeFile(root + "_src/Real.ttf", fontBytes());
+        writeFile(root + "_src/Open.otf", std::string("OTTO") + std::string(60, '\0'));
+        check(!fontFileProblem(root + "_src/fake.ttf").empty() && !fontFileProblem(root + "_src/font.txt").empty(),
+              "a .ttf that isn't one, and a font that isn't called .ttf/.otf, are refused");
+        check(fontFileProblem(root + "_src/Real.ttf").empty() && fontFileProblem(root + "_src/Open.otf").empty(),
+              "TrueType and OpenType headers pass");
+        std::error_code ec;
+        fs::remove_all(root + "_src", ec);
+    });
+
+    Test::run("the editor session: theme font, sounds, splash and files to ask for", [] {
+        std::string root = makeThemesRoot("session_theme_props");
+        EditorSession s;
+        std::string folder, error;
+        check(openNew(root, "Props", s, folder), "opened");
+        const std::string layouts = root + "/layouts";
+        const std::string dir = layouts + "/" + folder;
+
+        // Fonts: imported into fonts/, listed from there
+        writeFile(root + "_src/Fancy.ttf", fontBytes());
+        std::string rel;
+        check(importFile(layouts, folder, root + "_src/Fancy.ttf", "fonts", rel, error) && rel == "fonts/Fancy.ttf", "a font goes into fonts/: " + rel);
+        std::vector<std::string> fonts = themeFiles(layouts, folder, "fonts", { ".ttf", ".otf" });
+        check(std::find(fonts.begin(), fonts.end(), "fonts/Fancy.ttf") != fonts.end() &&
+              std::find(fonts.begin(), fonts.end(), "fonts/Roboto-Regular.ttf") != fonts.end(), "and listed with the bundled one");
+        check(importFile(layouts, folder, dir + "/fonts/Fancy.ttf", "assets", rel, error) && rel == "fonts/Fancy.ttf",
+              "a file already in the theme isn't copied");
+        check(s.setThemeFont("fonts/Fancy.ttf") && s.project().font == "fonts/Fancy.ttf", "the theme font");
+        check(s.setThemeFont(BUNDLED_FONT) && s.project().font.empty(), "choosing the bundled one clears it");
+
+        // Sounds
+        check(s.setSound("select", "assets/click.wav") && s.sound("select") == "assets/click.wav", "a sound");
+        check(!s.setSound("boom", "assets/x.wav"), "only load, unload, highlight and select");
+        check(s.previewXml(GenOptions()).xml.find("<sound type=\"select\" src=\"assets/click.wav\"/>") != std::string::npos,
+              "the page plays it");
+        check(s.setSound("select", "") && s.sound("select").empty(), "and it can be taken off");
+
+        // Splash: none until it's given text or a background
+        check(!s.hasSplashPage() && s.splashText() == "Props", "without a page the splash shows the name");
+        check(s.setSplashText("Loading Props") && s.hasSplashPage() && s.splashText() == "Loading Props", "text makes a page");
+        check(s.setSplashBackground("assets/intro.mp4"), "a video background");
+        const ThemePage* splash = s.project().page(ThemeProject::splashPage());
+        check(splash && splash->widgets.size() == 2 && splash->widgets[0].def == "static_video" &&
+              splash->widgets[0].w == 1920 && splash->widgets[0].varValue("STRETCH", "") == "true", "it fills the page, under the text");
+        check(s.setSplashBackground("assets/intro.png") && s.project().page(ThemeProject::splashPage())->widgets[0].def == "static_image" &&
+              s.project().page(ThemeProject::splashPage())->widgets.size() == 2, "an image replaces it");
+        check(s.splashBackground() == "assets/intro.png", "the background is reported");
+        check(s.setSplashBackground("") && s.splashBackground().empty() && s.project().page(ThemeProject::splashPage())->widgets.size() == 1,
+              "and removed");
+        check(s.undo() && s.splashBackground() == "assets/intro.png", "undo puts it back");
+
+        // A Static Image's default file isn't in a new theme: ask for one
+        check(s.addWidget("static_image"), "a static image");
+        std::vector<std::string> missing = s.missingFiles();
+        check(missing.size() == 1 && missing[0] == "SRC", "its file is missing");
+        writeFile(root + "_src/bg.png", "PNG");
+        check(importAsset(layouts, folder, root + "_src/bg.png", rel, error) && s.setVar("SRC", rel), "a file is chosen");
+        check(s.missingFiles().empty(), "nothing is missing then");
+        check(s.addWidget("game_title") && s.missingFiles().empty(), "widgets without files never ask");
+
+        // Scripts
+        check(runSessionCommand(s, parseEditorCommand("font fonts/Fancy.ttf"), error) == CommandResult::Ok && s.project().font == "fonts/Fancy.ttf", "font");
+        check(runSessionCommand(s, parseEditorCommand("sound load assets/a b.wav"), error) == CommandResult::Ok && s.sound("load") == "assets/a b.wav", "sound");
+        check(runSessionCommand(s, parseEditorCommand("splashbg none"), error) == CommandResult::Ok && s.splashBackground().empty(), "splashbg none");
+        std::error_code ec;
+        fs::remove_all(root + "_src", ec);
     });
 });

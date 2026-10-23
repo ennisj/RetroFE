@@ -75,12 +75,25 @@ namespace Manager
         // "Front art" for artwork_front, ...
         static std::string mediaLabel(const std::string& type);
 
-        // The story text as a one-line field shows it (lines joined with " | ")
-        // and back. Paragraphs that weren't changed keep their exact bytes and
-        // line endings. A text that has '|' of its own can't be edited this way.
-        static std::string storyToLine(const std::string& text);
-        static std::string lineToStory(const std::string& line, const std::string& original);
-        static bool storyIsEditable(const std::string& text);
+        // The story text as the multi-line field shows it (lines joined with
+        // "\n") and back. Lines keep the ending the original's line in their
+        // place had (new ones get the file's own) and the final line break is
+        // kept as it was, so lines that weren't changed keep their exact bytes.
+        static std::string storyToText(const std::string& story);
+        static std::string textToStory(const std::string& text, const std::string& original);
+
+        // collections/playCount.txt ("<key>;<count>;<epoch>") and timeSpent.txt
+        // ("<key>;<seconds>"), key "_<system>:<game>" (playCount.txt also has
+        // plain "<game>" lines from older versions), read as RetroFE does
+        struct PlayStats
+        {
+            int count = 0;
+            std::string lastPlayed;    // seconds since 1970, as written
+            double seconds = 0;
+        };
+        static PlayStats readPlayStats(const std::string& root, const std::string& system, const std::string& game);
+        static std::string describePlays(const PlayStats& stats);   // "3 times, last on 2026-10-01 14:03"
+        static std::string describeTime(double seconds);             // "1 h 12 min"
 
         // Tests: waits for the media worker and does whatever it still has to do
         void finishPendingWork();
@@ -92,6 +105,21 @@ namespace Manager
         static std::string gameKey(const Screen& screen);
         // The game a screen is about (its own collection + name), or nullptr
         const Library::GameRecord* findGame(const Library::Index& index, const Screen& screen, int* position = nullptr) const;
+
+        // --- hidden games: files of a system its exclude list keeps RetroFE from listing
+        struct HiddenGame
+        {
+            int collection = -1;
+            std::string name;
+            std::string file;
+            std::string directory;
+        };
+        const std::vector<HiddenGame>& hiddenGames(const IndexPtr& index);   // once per index
+        const HiddenGame* findHidden(const IndexPtr& index, const Screen& screen);
+        std::vector<char> systemsUnder(const Library::Index& index, const std::string& filter) const;
+        Forms::Rows hiddenRows(size_t limit);
+        std::string hiddenValue(const std::string& key, const Screen& screen);
+        Forms::Model::Result hideAction(const std::string& action, const Screen& screen);
 
         // --- search
         std::string searchStatus() const;
@@ -177,6 +205,11 @@ namespace Manager
         std::string filter_;
         std::string filterParam_ = "\x01";   // the param:collection the filter was last set from
         bool onlyNoMetadata_ = false;
+        bool onlyHidden_ = false;
+        IndexPtr hiddenIndex_;
+        std::vector<HiddenGame> hidden_;
+        std::string hiddenSearchKey_ = "\x01";             // query + filter the rows below are for
+        std::vector<const HiddenGame*> hiddenMatches_;
         Library::Search search_;
         IndexPtr filtersIndex_;
         std::vector<std::pair<std::string, std::string>> filters_;
@@ -187,6 +220,8 @@ namespace Manager
         // Details
         std::string detailsKey_;
         std::string size_;
+        std::string played_;                               // play count and last played
+        std::string timePlayed_;
         std::map<std::string, std::string> overrides_;     // this game's metadata changes (element -> value)
         std::string globalFavouritesKey_;
         bool inGlobalFavourites_ = false;
@@ -215,6 +250,8 @@ namespace Manager
 
         // Launcher
         EditBuffer launcher_;
+        std::string launchCheckKey_;                       // game + snapshot the program was checked for
+        std::string launchCheck_;                          // why it won't start, or ""
 
         // Playlists
         std::string playlist_;                             // "<collection>/<playlist>"

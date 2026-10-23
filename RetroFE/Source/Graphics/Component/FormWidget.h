@@ -47,6 +47,12 @@ class Image;
 // Up/Down move between fields; Left/Right change a toggle, number or choice,
 // or page through a results list; Select edits text, picks a folder or file,
 // presses a button, or opens a link or result; Back leaves.
+//
+// A multi-line text field (<text multiline="yes" rows="N">) shows N wrapped
+// lines. While it's edited on a real keyboard, Enter starts a new line,
+// Ctrl+Enter keeps the text, Escape cancels, and the arrows, Home, End, Page
+// Up/Down and Delete move and delete in the text; the on-screen keyboard has
+// keys for a new line and the cursor instead.
 class FormWidget : public Component
 {
 public:
@@ -124,8 +130,11 @@ public:
     // The text field being edited, for an on-screen keyboard to type into
     bool isEditing() const { return editing_; }
     const Forms::Field* editingField() const { return editing_ ? focusedField_ : nullptr; }
-    std::string& editText() { return editBuffer_; }
+    Forms::TextEdit& editText() { return edit_; }
     void finishEditing(bool keep);
+
+    // A multi-line field being edited: the cursor up (-1) or down (+1) a line as drawn
+    void moveEditLine(int direction);
 
     // A live field's model gets the text being edited; call after the
     // on-screen keyboard changed it (typed text does this itself)
@@ -157,7 +166,8 @@ private:
         Item,     // a row of a Results field
         Value,    // a Value field, or a further line of its value
         Image,    // an Image field, spanning `span` rows
-        Spacer    // the rest of an image's rows
+        Spacer,   // the rest of an image's rows
+        TextLine  // a further line of a multi-line text field (`line` of it)
     };
     struct Row
     {
@@ -170,6 +180,7 @@ private:
         std::string image;      // Item: thumbnail; Image: the picture
         Forms::Params params;   // Item: what choosing it opens its form with
         int span = 1;           // Image: rows it covers
+        int line = 0;           // Field, TextLine of a multi-line text: which of its rows
         bool thumbnail = false; // Item: leave room for thumbnails in this list
         bool focusable = false;
         bool enabled = true;
@@ -184,6 +195,10 @@ private:
     void addImage(const Forms::Field& field);
     void addWrapped(RowKind kind, const std::string& text, bool indent, bool isError = false);
     const std::vector<std::string>& wrap(const std::string& text, float width);
+    const std::vector<Forms::TextLine>& layout(const std::string& text, float width);
+    bool editingMultiline() const;
+    float multilineWidth(const Forms::Field& field) const;
+    void drawTextLine(const Row& row, float x, float textY, bool highlighted, float alpha);
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
     void pageResults(int direction);
@@ -216,6 +231,7 @@ private:
     uint32_t builtAt_ = 0;        // SDL ticks
     unsigned generation_ = 0;     // the model's, when built
     std::unordered_map<std::string, std::vector<std::string>> wrapped_;   // by width and text
+    std::unordered_map<std::string, std::vector<Forms::TextLine>> layouts_;   // multi-line fields', likewise
     int focus_ = -1;              // index into rows_
     bool focusGuarded_ = false;   // focus landed on a file or folder field because rows went away:
                                   // Select there waits for the user to move first (it opens a picker)
@@ -230,7 +246,8 @@ private:
     bool editing_ = false;
     bool justFinishedEditing_ = false;  // the Enter/Esc that ended editing isn't also Select/Back
     bool textInputWasActive_ = false;
-    std::string editBuffer_;
+    Forms::TextEdit edit_;
+    int editTopLine_ = 0;         // a multi-line field being edited: the first line shown
     std::string editOriginal_;    // live fields: what to put back if the edit is cancelled
     std::string liveSent_;        // live fields: what the model was last given
 

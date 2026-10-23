@@ -87,7 +87,8 @@ namespace
         writeFile(root + "/collections/NES/settings.conf", "list.extensions = nes\nlauncher = mame\n");
         writeFile(root + "/collections/NES/launcher.conf", "executable = nestopia.exe\n");
         writeFile(root + "/collections/NES/launchers.local/special.conf", "executable = special.exe\n");
-        writeFile(root + "/collections/NES/launchers/mario.conf", "special\r\n");
+        // LF: a CRLF override only resolves on Windows (see the launcher resolution test)
+        writeFile(root + "/collections/NES/launchers/mario.conf", "special\n");
         writeFile(root + "/collections/NES/roms/mario.nes", "x");
         writeFile(root + "/collections/NES/roms/zelda.nes", "x");
 
@@ -252,7 +253,10 @@ static void runLibraryTests()
         check(record.caseMismatchCount == 1 && record.caseMismatches[0] == "c.ZIP", "the case-only mismatch is flagged");
 
         int all = index->findCollection("All");
-        check(names(*index, index->itemsOf(all)) == std::vector<std::string>({ "Arcade:a", "NES:mario", "NES:zelda" }),
+        // Folders list in directory order, which is only sorted on Windows
+        std::vector<std::string> allGames = names(*index, index->itemsOf(all));
+        std::sort(allGames.begin(), allGames.end());
+        check(allGames == std::vector<std::string>({ "Arcade:a", "NES:mario", "NES:zelda" }),
               "empty .sub = every game; NES.sub's filter is joined with NES's include.txt (metroid has no file)");
 
         // includeMissingItems lists include.txt entries without files

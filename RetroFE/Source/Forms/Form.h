@@ -88,10 +88,11 @@ namespace Forms
         std::string open;         // Link, Results: id of the form to open
         std::string param;        // Results: parameter the chosen row's id is passed as (default "id")
         bool live = false;        // Text: the model gets every change while editing, e.g. for a search box
+        bool multiline = false;   // Text: several lines, rows high; the value keeps "\n" between them
         int min = 0;
         int max = 0;
         int limit = 200;          // Results: at most this many rows
-        int rows = 4;             // Image: height in rows
+        int rows = 4;             // Image, multi-line Text: height in rows
         std::vector<Field> children;
     };
 
@@ -299,4 +300,52 @@ namespace Forms
     // A layout attribute's number, e.g. "0.85" or "40": false (value untouched)
     // for anything else, e.g. "" or "half"
     bool parseNumber(const std::string& text, float& value);
+
+    // --- Editing text --------------------------------------------------------------
+
+    // Text being edited and where the cursor is: a byte offset, always at the
+    // start of a UTF-8 character. A one-line field keeps it at the end.
+    struct TextEdit
+    {
+        std::string text;
+        size_t cursor = 0;
+
+        void set(const std::string& value) { text = value; cursor = text.size(); }
+        void insert(const std::string& typed);   // at the cursor, which moves past it
+        void backspace();                        // the character before the cursor
+        void erase();                            // the character at the cursor (Delete)
+        void left();
+        void right();
+    };
+
+    // The byte offset of the next / previous UTF-8 character
+    size_t nextCharacter(const std::string& text, size_t position);
+    size_t previousCharacter(const std::string& text, size_t position);
+
+    // A multi-line text as drawn: lines no wider than width, each the bytes
+    // [start, end) of the text. A line breaks after a run of spaces (they stay
+    // at its end), within a word only when the word alone is too wide, and at
+    // every '\n' (which belongs to neither line). There's always at least one
+    // line: an empty text, or one that ends in '\n', ends with an empty line.
+    struct TextLine
+    {
+        size_t start = 0;
+        size_t end = 0;
+    };
+    std::vector<TextLine> layoutLines(const std::string& text, float width,
+                                      const std::function<float(const std::string&)>& measure);
+
+    // The line a cursor is drawn on: where a line wraps, the start of the next one
+    size_t lineAt(const std::vector<TextLine>& lines, size_t cursor);
+
+    // Where the cursor goes on Up (direction -1) or Down (+1): the line above
+    // or below, as near the same x as it allows; from the first line up to the
+    // start of the text, from the last down to its end
+    size_t moveCursorVertically(const std::string& text, const std::vector<TextLine>& lines, size_t cursor, int direction,
+                                const std::function<float(const std::string&)>& measure);
+
+    // Home and End: the start or end of the cursor's line (before the space
+    // where a line wraps, so the cursor stays on it)
+    size_t lineHome(const std::vector<TextLine>& lines, size_t cursor);
+    size_t lineEnd(const std::string& text, const std::vector<TextLine>& lines, size_t cursor);
 }

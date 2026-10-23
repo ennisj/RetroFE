@@ -50,6 +50,8 @@ ManagerUI::ManagerUI(Configuration& config)
 
 ManagerUI::~ManagerUI()
 {
+    // RetroFE is going: a game waiting to start goes too, unless it waits for this reload
+    launches_.shutdown();
     deInitialize();
     Setup::setConfiguration(nullptr);
 }
@@ -135,6 +137,13 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.library = library_.get();
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
+        services.requestLaunch = [](const std::string& collection, const std::string& game) {
+            launches_.want({ collection, game });   // handleResult closes the manager for it
+        };
+        services.launchProblem = [this] {
+            bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
+            return Manager::LaunchQueue::problem(reloadDue, catalog_ && catalog_->isBusy());
+        };
         Manager::registerProviders(model_, services);
         providersAdded_ = true;
     }
@@ -397,6 +406,7 @@ void ManagerUI::show()
     bool wasOpen = open_;
     status_.clear();
     leaveWarned_ = false;
+    launches_.screenChanged();
     view_.reset();
     focusNext_ = true;
     open_ = true;
@@ -480,6 +490,7 @@ bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
     context.loadCollection = loadCollection_;
     context.currentCollection = currentCollection_;
     context.requestReload = [this] { reloadWhenClosed_ = true; };
+    context.library = library_.get();
     auto id = frame.params.find("id");
     screen_ = std::make_unique<ThemeEditorScreen>(context, id != frame.params.end() ? id->second : "");
     SDL_ShowCursor(SDL_ENABLE);
@@ -586,7 +597,8 @@ bool ManagerUI::openKeyboard()
 
     const Forms::Field* field = widget_->editingField();
     keyboard_ = builder.keyboardWidgets().front();
-    keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number);
+    keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number,
+                      field && field->multiline);
     keyboardPage_ = page;
     keyboardPage_->allocateGraphicsMemory();
     keyboardPage_->start();
@@ -646,13 +658,17 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
         // that are also mapped controls (e.g. back = B) just type
         if (keyboardPage_) {
             SDL_Keycode key = e.type == SDL_KEYDOWN ? e.key.keysym.sym : 0;
+            bool ctrl = e.type == SDL_KEYDOWN && (e.key.keysym.mod & KMOD_CTRL);
             bool printable = key >= 32 && key < 127 && !(e.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI));
             if (printable || e.type == SDL_TEXTINPUT) {
                 typedOnKeyboard_ = true;
                 closeKeyboard();
             }
             // On the on-screen keyboard Enter is Select, which presses the focused key
-            else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+            // (Ctrl+Enter still keeps a multi-line text), and the arrows move between
+            // keys; Home, End and Page Up/Down still move in a multi-line text
+            else if (((key == SDLK_RETURN || key == SDLK_KP_ENTER) && !ctrl)
+                     || key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT) {
                 return false;
             }
         }
@@ -717,7 +733,11 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
         // While a field is edited the controls type on the on-screen keyboard
         if (keyboard_) {
             KeyboardWidget::Result result = keyboard_->navigate(navs[i]);
-            if (result != KeyboardWidget::Result::None) {
+            if (result == KeyboardWidget::Result::LineUp || result == KeyboardWidget::Result::LineDown) {
+                // A line as the field draws it, which only the field knows
+                widget_->moveEditLine(result == KeyboardWidget::Result::LineUp ? -1 : 1);
+            }
+            else if (result != KeyboardWidget::Result::None) {
                 widget_->finishEditing(result == KeyboardWidget::Result::Done);
                 syncKeyboard();
             }
@@ -790,6 +810,16 @@ void ManagerUI::handleWidgetResults()
 
 void ManagerUI::handleResult(const Forms::Model::Result& result)
 {
+    // A game to start: close (asking about unsaved changes first, like Close;
+    // asking again leaves them), and RetroFE starts it once it's reloaded if it has to
+    if (launches_.handle(result.ok, [this](bool discard) {
+            if (discard) {
+                leaveWarned_ = true;   // warned last time: this time the changes go
+            }
+            return requestClose();
+        })) {
+        return;
+    }
     if (result.ok && result.reload) {
         reloadRequested_ = true;
         close();
@@ -872,7 +902,31 @@ bool ManagerUI::takeReloadRequest()
         return false;
     }
     reloadRequested_ = false;
+    launches_.reloading();   // a game waiting for this reload starts once RetroFE is back
     return true;
+}
+
+bool ManagerUI::takeLaunchRequest(LaunchRequest& request)
+{
+    Manager::LaunchQueue::Take take = launches_.take(open_, reloadRequested_, catalog_ && catalog_->isBusy(), request);
+    if (take == Manager::LaunchQueue::Take::Dropped) {
+        LOG_WARNING("Manager", "Not starting the game Manage asked for: RetroFE can't reload while the Catalog installs");
+    }
+    return take == Manager::LaunchQueue::Take::Start;
+}
+
+void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string& problem)
+{
+    if (!context_ || locked_) {
+        return;
+    }
+    // Where the user was, as far as the screens go: Manage > Games > the game
+    open("manage");
+    if (!open_ || !push("games", { { "collection", request.collection } })
+        || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
+        return;
+    }
+    setStatus(problem.empty() ? "Back from " + request.game + "." : problem, !problem.empty());
 }
 
 void ManagerUI::setLocked(bool locked)

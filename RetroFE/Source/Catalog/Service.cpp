@@ -736,8 +736,8 @@ namespace Catalog
                 for (int i = 0; i < 10 && !stopping_; i++) std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 if (stopping_) break;
                 if (updater.repairProgramFolder()) {
-                    LOG_NOTICE("Catalog", updater.finishedForward() ? "RetroFE's new program folder is in place after all"
-                                                                     : "RetroFE's program folder is back in place");
+                    LOG_NOTICE("Catalog", (updater.finishedForward() ? "RetroFE's new program folder is in place after all"
+                                                                      : "RetroFE's program folder is back in place"));
                     std::lock_guard<std::mutex> lock(mutex_);
                     installed_ = installer_.installed();
                     if (updater.finishedForward()) {

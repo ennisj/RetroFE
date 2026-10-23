@@ -85,6 +85,7 @@ namespace
             field.open = attribute(node, "open");
             field.param = attribute(node, "param");
             field.live = Forms::isTruthy(attribute(node, "live"));
+            field.multiline = field.type == Forms::FieldType::Text && Forms::isTruthy(attribute(node, "multiline"));
             field.min = Utils::convertInt(attribute(node, "min"));
             field.max = Utils::convertInt(attribute(node, "max"));
             int limit = Utils::convertInt(attribute(node, "limit"));
@@ -498,6 +499,193 @@ int refocusIndex(const std::vector<FocusTarget>& targets, int previous)
     };
     int found = search(FocusTarget::Free);
     return found >= 0 ? found : search(FocusTarget::Guarded);
+}
+
+// --- Editing text ------------------------------------------------------------
+
+size_t nextCharacter(const std::string& text, size_t position)
+{
+    if (position >= text.size()) {
+        return text.size();
+    }
+    position++;
+    while (position < text.size() && (static_cast<unsigned char>(text[position]) & 0xC0) == 0x80) {
+        position++;
+    }
+    return position;
+}
+
+size_t previousCharacter(const std::string& text, size_t position)
+{
+    position = std::min(position, text.size());
+    if (position == 0) {
+        return 0;
+    }
+    position--;
+    while (position > 0 && (static_cast<unsigned char>(text[position]) & 0xC0) == 0x80) {
+        position--;
+    }
+    return position;
+}
+
+void TextEdit::insert(const std::string& typed)
+{
+    cursor = std::min(cursor, text.size());
+    text.insert(cursor, typed);
+    cursor += typed.size();
+}
+
+void TextEdit::backspace()
+{
+    cursor = std::min(cursor, text.size());
+    size_t start = previousCharacter(text, cursor);
+    text.erase(start, cursor - start);
+    cursor = start;
+}
+
+void TextEdit::erase()
+{
+    cursor = std::min(cursor, text.size());
+    text.erase(cursor, nextCharacter(text, cursor) - cursor);
+}
+
+void TextEdit::left()
+{
+    cursor = previousCharacter(text, cursor);
+}
+
+void TextEdit::right()
+{
+    cursor = nextCharacter(text, cursor);
+}
+
+std::vector<TextLine> layoutLines(const std::string& text, float width, const std::function<float(const std::string&)>& measure)
+{
+    std::vector<TextLine> lines;
+    auto fits = [&](size_t start, size_t end) { return measure(text.substr(start, end - start)) <= width; };
+    size_t paragraph = 0;
+    while (true) {
+        size_t newline = text.find('\n', paragraph);
+        size_t paragraphEnd = newline == std::string::npos ? text.size() : newline;
+        size_t start = paragraph;
+        while (true) {
+            if (start >= paragraphEnd || fits(start, paragraphEnd)) {
+                lines.push_back({ start, paragraphEnd });
+                break;
+            }
+            // The furthest run of spaces with what's before it fitting: the line ends after it
+            size_t breakAt = std::string::npos;
+            size_t from = start;
+            while (true) {
+                size_t space = text.find(' ', from);
+                if (space == std::string::npos || space >= paragraphEnd) {
+                    break;
+                }
+                if (space > start && !fits(start, space)) {
+                    break;
+                }
+                size_t after = space;
+                while (after < paragraphEnd && text[after] == ' ') {
+                    after++;
+                }
+                if (space > start) {
+                    breakAt = after;
+                }
+                from = after;
+            }
+            if (breakAt != std::string::npos && breakAt >= paragraphEnd) {
+                lines.push_back({ start, paragraphEnd });   // only spaces left after it
+                break;
+            }
+            if (breakAt != std::string::npos) {
+                lines.push_back({ start, breakAt });
+                start = breakAt;
+                continue;
+            }
+            // A word too wide for a line on its own: cut where it reaches the edge, at least one character
+            size_t cut = nextCharacter(text, start);
+            while (cut < paragraphEnd) {
+                size_t next = nextCharacter(text, cut);
+                if (!fits(start, next)) {
+                    break;
+                }
+                cut = next;
+            }
+            lines.push_back({ start, cut });
+            start = cut;
+        }
+        if (newline == std::string::npos) {
+            break;
+        }
+        paragraph = newline + 1;
+    }
+    return lines;
+}
+
+size_t lineAt(const std::vector<TextLine>& lines, size_t cursor)
+{
+    for (size_t i = lines.size(); i > 0; i--) {
+        if (lines[i - 1].start <= cursor) {
+            return i - 1;
+        }
+    }
+    return 0;
+}
+
+namespace
+{
+    // The last cursor position that's drawn on line i (not past a wrap)
+    size_t lastOnLine(const std::string& text, const std::vector<TextLine>& lines, size_t i)
+    {
+        const TextLine& line = lines[i];
+        bool wraps = i + 1 < lines.size() && lines[i + 1].start == line.end;
+        return wraps && line.end > line.start ? previousCharacter(text, line.end) : line.end;
+    }
+}
+
+size_t moveCursorVertically(const std::string& text, const std::vector<TextLine>& lines, size_t cursor, int direction,
+                            const std::function<float(const std::string&)>& measure)
+{
+    if (lines.empty()) {
+        return cursor;
+    }
+    size_t current = lineAt(lines, cursor);
+    if (direction < 0 && current == 0) {
+        return 0;
+    }
+    if (direction > 0 && current + 1 >= lines.size()) {
+        return text.size();
+    }
+    float x = measure(text.substr(lines[current].start, cursor - lines[current].start));
+    size_t target = direction < 0 ? current - 1 : current + 1;
+    size_t start = lines[target].start;
+    size_t last = lastOnLine(text, lines, target);
+    size_t best = start;
+    float bestDistance = x;
+    for (size_t position = nextCharacter(text, start); position <= last && position > start; position = nextCharacter(text, position)) {
+        float distance = std::fabs(measure(text.substr(start, position - start)) - x);
+        if (distance < bestDistance) {
+            best = position;
+            bestDistance = distance;
+        }
+        else if (distance > bestDistance) {
+            break;   // moving further away from here on
+        }
+        if (position >= last) {
+            break;
+        }
+    }
+    return best;
+}
+
+size_t lineHome(const std::vector<TextLine>& lines, size_t cursor)
+{
+    return lines.empty() ? 0 : lines[lineAt(lines, cursor)].start;
+}
+
+size_t lineEnd(const std::string& text, const std::vector<TextLine>& lines, size_t cursor)
+{
+    return lines.empty() ? text.size() : lastOnLine(text, lines, lineAt(lines, cursor));
 }
 
 }

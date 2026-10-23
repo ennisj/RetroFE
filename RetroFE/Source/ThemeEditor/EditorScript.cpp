@@ -169,6 +169,37 @@ namespace ThemeEditor
         if (n == "delete") return result(s.removeSelected());
         if (n == "undo") return result(s.undo());
         if (n == "redo") return result(s.redo());
+
+        // Templates. "default" names the Default page, "blank" an empty seed
+        auto primary = [](const std::string& word) { return word == "default" || word == "-" ? std::string() : word; };
+        if (n == "tplnew") {
+            if (c.words.size() < 3) return CommandResult::Failed;
+            const std::string basedOn = c.words[1] == "blank" ? std::string(EditorSession::BLANK) : primary(c.words[1]);
+            note = s.templateProblem(c.words[0], c.tail(2));
+            bool ok = s.newTemplate(c.words[0], c.tail(2), basedOn);
+            if (ok) note = "editing page " + std::to_string(s.pageIndex()) + ": " + s.pageLabel(s.pageIndex());
+            return result(ok);
+        }
+        if (n == "tplassign") {
+            if (c.words.size() < 2) return CommandResult::Failed;
+            note = s.removesTemplate(c.words[0]).empty() ? "" : "removes the template " + s.removesTemplate(c.words[0]);
+            return result(s.assignTemplate(c.words[0], primary(c.words[1])));
+        }
+        if (n == "tpldelete") {
+            if (c.words.empty()) return CommandResult::Failed;
+            return result(s.deleteTemplate(c.words[0], c.words.size() > 1 ? primary(c.words[1]) : std::string()));
+        }
+        if (n == "tplrename") return result(c.words.size() >= 2 && s.renameTemplate(c.words[0], c.tail(1)));
+
+        // Theme properties (paths already in the theme; the screen's import* commands copy files in)
+        if (n == "font") return result(s.setThemeFont(c.rest == "default" ? std::string() : c.rest));
+        if (n == "sound") {
+            if (c.words.empty()) return CommandResult::Failed;
+            const std::string path = c.tail(1);
+            return result(s.setSound(c.words[0], path == "none" ? std::string() : path));
+        }
+        if (n == "splashtext") return result(s.setSplashText(c.rest));
+        if (n == "splashbg") return result(s.setSplashBackground(c.rest == "none" ? std::string() : c.rest));
         return CommandResult::NotSession;
     }
 }

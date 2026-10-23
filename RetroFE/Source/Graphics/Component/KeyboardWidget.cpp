@@ -16,6 +16,7 @@
 #include "KeyboardWidget.h"
 #include "Image.h"
 #include <algorithm>
+#include <cstddef>
 
 namespace
 {
@@ -36,11 +37,12 @@ KeyboardWidget::~KeyboardWidget()
     KeyboardWidget::freeGraphicsMemory();
 }
 
-void KeyboardWidget::attach(std::string* text, const std::string& title, bool numeric)
+void KeyboardWidget::attach(Forms::TextEdit* text, const std::string& title, bool numeric, bool multiline)
 {
     text_ = text;
     title_ = title;
     numeric_ = numeric;
+    multiline_ = multiline && !numeric;
     shift_ = false;
     // Start on the first row of letters, or on 1 for numbers
     row_ = numeric ? 0 : 1;
@@ -69,7 +71,28 @@ const std::vector<std::vector<KeyboardWidget::Key>>& KeyboardWidget::keys() cons
         { { "-", Action::Insert, 1 }, { "0", Action::Insert, 1 }, { "Del", Action::Delete, 1 } },
         { { "Done", Action::Done, 3 } }
     };
-    return numeric_ ? numbers : (shift_ ? upper : lower);
+    // Multi-line text: cursor keys above, and a New line key; Done still finishes
+    static const std::vector<Key> cursorKeys = {
+        { "<-", Action::CursorLeft, 2 }, { "->", Action::CursorRight, 2 },
+        { "Line up", Action::LineUp, 3 }, { "Line down", Action::LineDown, 3 }
+    };
+    static const std::vector<Key> multilineBottom = {
+        { "Shift", Action::Shift, 2 }, { "Space", Action::Space, 2 }, { "New line", Action::NewLine, 2 },
+        { "Del", Action::Delete, 2 }, { "Done", Action::Done, 2 }
+    };
+    static const std::vector<std::vector<Key>> lowerLines = {
+        keyRow("1234567890"), keyRow("qwertyuiop"), keyRow("asdfghjkl-"), keyRow("zxcvbnm./\\"), cursorKeys, multilineBottom
+    };
+    static const std::vector<std::vector<Key>> upperLines = {
+        keyRow("!@$%&()_+="), keyRow("QWERTYUIOP"), keyRow("ASDFGHJKL'"), keyRow("ZXCVBNM,:\""), cursorKeys, multilineBottom
+    };
+    if (numeric_) {
+        return numbers;
+    }
+    if (multiline_) {
+        return shift_ ? upperLines : lowerLines;
+    }
+    return shift_ ? upper : lower;
 }
 
 void KeyboardWidget::clampFocus()
@@ -132,6 +155,9 @@ KeyboardWidget::Result KeyboardWidget::navigate(FormWidget::Nav nav)
         if (key.action == Action::Done) {
             return Result::Done;
         }
+        if (key.action == Action::LineUp || key.action == Action::LineDown) {
+            return key.action == Action::LineUp ? Result::LineUp : Result::LineDown;
+        }
         press(key);
         break;
     }
@@ -145,25 +171,29 @@ void KeyboardWidget::press(const Key& key)
 {
     switch (key.action) {
     case Action::Insert:
-        *text_ += key.label;
+        text_->insert(key.label);
         break;
     case Action::Space:
-        *text_ += " ";
+        text_->insert(" ");
+        break;
+    case Action::NewLine:
+        text_->insert("\n");
         break;
     case Action::Delete:
-        // Text is UTF-8; drop a whole character
-        while (!text_->empty()) {
-            unsigned char c = static_cast<unsigned char>(text_->back());
-            text_->pop_back();
-            if ((c & 0xC0) != 0x80) {
-                break;
-            }
-        }
+        text_->backspace();   // the whole UTF-8 character before the cursor
+        break;
+    case Action::CursorLeft:
+        text_->left();
+        break;
+    case Action::CursorRight:
+        text_->right();
         break;
     case Action::Shift:
         shift_ = !shift_;
         break;
     case Action::Done:
+    case Action::LineUp:
+    case Action::LineDown:
         break;
     }
 }
@@ -217,14 +247,34 @@ void KeyboardWidget::draw()
     const float width = (baseViewInfo.Width > 0 ? baseViewInfo.Width : layoutWidth - baseViewInfo.X) - padding * 2.0f;
     const float height = (baseViewInfo.Height > 0 ? baseViewInfo.Height : layoutHeight - baseViewInfo.Y) - padding * 2.0f;
 
-    // The field's name, then what's been typed
+    // The field's name, then what's been typed: the line the cursor is on, up
+    // to the cursor ("_") and as much after it as fits
+    const std::string& text = text_->text;
+    size_t cursor = std::min(text_->cursor, text.size());
+    size_t lineStart = 0;
+    if (cursor > 0) {
+        size_t newline = text.rfind('\n', cursor - 1);
+        lineStart = newline == std::string::npos ? 0 : newline + 1;
+    }
+    size_t lineEnd = text.find('\n', cursor);
+    lineEnd = lineEnd == std::string::npos ? text.size() : lineEnd;
+    std::string title = title_;
+    if (multiline_) {
+        size_t line = static_cast<size_t>(std::count(text.begin(), text.begin() + static_cast<std::ptrdiff_t>(cursor), '\n')) + 1;
+        size_t lines = static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) + 1;
+        title += "  (line " + std::to_string(line) + " of " + std::to_string(lines) + ")";
+    }
     float y = top;
-    painter_.text(title_, left, y, width, size * 0.85f, false, style_.noteAlpha);
+    painter_.text(title, left, y, width, size * 0.85f, false, style_.noteAlpha);
     y += size * 1.2f;
     float boxHeight = size * 1.6f;
     painter_.rect(left, y, width, boxHeight, style_.keyColor, style_.keyAlpha);
-    painter_.text(painter_.tail(*text_ + "_", width - padding, size), left + padding / 2.0f, y + (boxHeight - size) / 2.0f,
-                  width - padding, size, true, 1.0f);
+    std::string shown = painter_.tail(text.substr(lineStart, cursor - lineStart) + "_", width - padding, size);
+    float rest = width - padding - painter_.textWidth(shown, size);
+    if (lineEnd > cursor && rest > 0.0f) {
+        shown += painter_.fit(nullptr, text.substr(cursor, lineEnd - cursor), rest, size);
+    }
+    painter_.text(shown, left + padding / 2.0f, y + (boxHeight - size) / 2.0f, width - padding, size, true, 1.0f);
     y += boxHeight + padding;
 
     // The keys fill what's left above the hints
@@ -277,6 +327,9 @@ void KeyboardWidget::draw()
 
     if (style_.showHints) {
         std::string hint = "Select: type   Back: cancel";
+        if (multiline_) {
+            hint = "Select: type   Done: keep   Back: cancel";
+        }
         if (!numeric_) {
             hint += "   Shift: capitals and symbols";
         }

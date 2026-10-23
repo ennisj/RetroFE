@@ -49,16 +49,9 @@ namespace
         return field && (field->type == FieldType::Folder || field->type == FieldType::File);
     }
 
-    // Drop the last UTF-8 character
-    void popCharacter(std::string& s)
+    bool isMultiline(const Field* field)
     {
-        while (!s.empty()) {
-            unsigned char c = static_cast<unsigned char>(s.back());
-            s.pop_back();
-            if ((c & 0xC0) != 0x80) {
-                break;
-            }
-        }
+        return field && field->type == FieldType::Text && field->multiline;
     }
 
     // The screen is rebuilt at least this often, for values that change by
@@ -235,6 +228,32 @@ const std::vector<std::string>& FormWidget::wrap(const std::string& text, float 
     return wrapped_.emplace(key, painter_.wrap(text, width, fontSize())).first->second;
 }
 
+const std::vector<Forms::TextLine>& FormWidget::layout(const std::string& text, float width)
+{
+    std::string key = std::to_string(std::lround(width)) + '\x1f' + text;
+    auto found = layouts_.find(key);
+    if (found != layouts_.end()) {
+        return found->second;
+    }
+    if (layouts_.size() >= 64) {
+        layouts_.clear();   // one per edit, so they pile up while typing
+    }
+    float size = fontSize();
+    auto measure = [&](const std::string& s) { return painter_.textWidth(s, size); };
+    return layouts_.emplace(key, Forms::layoutLines(text, width, measure)).first->second;
+}
+
+bool FormWidget::editingMultiline() const
+{
+    return editing_ && isMultiline(focusedField_);
+}
+
+float FormWidget::multilineWidth(const Field& field) const
+{
+    // Beside the label like other values, or the whole width without one
+    return field.label.empty() ? contentWidth() : contentWidth() - labelWidth();
+}
+
 void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, bool isError)
 {
     float width = indent ? contentWidth() - labelWidth() : contentWidth();
@@ -407,6 +426,18 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             row.enabled = Forms::isEnabled(field, *model_);
             row.focusable = isInteractive(field.type) && row.enabled;
             rows_.push_back(row);
+            if (isMultiline(&field)) {
+                // Its further lines, each a row of its own so scrolling works as for any row
+                for (int line = 1; line < std::max(1, field.rows); line++) {
+                    Row more;
+                    more.kind = RowKind::TextLine;
+                    more.field = &field;
+                    more.line = line;
+                    more.value = row.value;
+                    more.enabled = row.enabled;
+                    rows_.push_back(more);
+                }
+            }
 
             if (field.type == FieldType::Button) {
                 if (confirm_.armed() == &field) {
@@ -523,8 +554,10 @@ void FormWidget::keepFocusVisible(float visibleHeight)
         }
         float topY = top * rowHeight();
         float bottomY = (focus_ + 1) * rowHeight();
-        // And a confirm question or a problem under it
-        for (size_t below = static_cast<size_t>(focus_) + 1; below < rows_.size() && rows_[below].kind == RowKind::Note && rows_[below].indent; below++) {
+        // And a multi-line field's further lines, and a confirm question or a problem under it
+        for (size_t below = static_cast<size_t>(focus_) + 1;
+             below < rows_.size() && ((rows_[below].kind == RowKind::Note && rows_[below].indent) || rows_[below].kind == RowKind::TextLine);
+             below++) {
             bottomY += rowHeight();
         }
         // At the last field, everything below it too (notes the user can't move to)
@@ -759,9 +792,10 @@ void FormWidget::startEditing(const Field& field)
 {
     editing_ = true;
     focusGuarded_ = false;
-    editBuffer_ = model_->get(field.bind);
-    editOriginal_ = editBuffer_;
-    liveSent_ = editBuffer_;
+    edit_.set(model_->get(field.bind));   // the cursor at the end
+    editTopLine_ = 0;
+    editOriginal_ = edit_.text;
+    liveSent_ = edit_.text;
     stale_ = true;
     LOG_DEBUG("Forms", "Editing " + field.label);
     textInputWasActive_ = SDL_IsTextInputActive() == SDL_TRUE;
@@ -770,11 +804,22 @@ void FormWidget::startEditing(const Field& field)
 
 void FormWidget::sendLiveText()
 {
-    if (editing_ && focusedField_ && focusedField_->live && model_ && editBuffer_ != liveSent_) {
-        liveSent_ = editBuffer_;
-        model_->set(focusedField_->bind, editBuffer_);
+    if (editing_ && focusedField_ && focusedField_->live && model_ && edit_.text != liveSent_) {
+        liveSent_ = edit_.text;
+        model_->set(focusedField_->bind, edit_.text);
         stale_ = true;
     }
+}
+
+void FormWidget::moveEditLine(int direction)
+{
+    if (!editingMultiline()) {
+        return;
+    }
+    float size = fontSize();
+    auto measure = [&](const std::string& s) { return painter_.textWidth(s, size); };
+    const std::vector<Forms::TextLine>& lines = layout(edit_.text, multilineWidth(*focusedField_));
+    edit_.cursor = Forms::moveCursorVertically(edit_.text, lines, edit_.cursor, direction, measure);
 }
 
 void FormWidget::finishEditing(bool keep)
@@ -793,14 +838,14 @@ void FormWidget::finishEditing(bool keep)
     }
     if (keep) {
         if (focusedField_->type == FieldType::Number) {
-            int value = Utils::convertInt(editBuffer_);
+            int value = Utils::convertInt(edit_.text);
             if (focusedField_->max > focusedField_->min) {
                 value = std::clamp(value, focusedField_->min, focusedField_->max);
             }
-            editBuffer_ = std::to_string(value);
+            edit_.set(std::to_string(value));
         }
-        model_->set(focusedField_->bind, editBuffer_);
-        LOG_DEBUG("Forms", focusedField_->label + " set to \"" + editBuffer_ + "\"");
+        model_->set(focusedField_->bind, edit_.text);
+        LOG_DEBUG("Forms", focusedField_->label + " set to \"" + edit_.text + "\"");
     }
     else if (focusedField_->live && liveSent_ != editOriginal_) {
         model_->set(focusedField_->bind, editOriginal_);
@@ -813,35 +858,74 @@ bool FormWidget::handleTextEvent(const SDL_Event& e)
         return false;
     }
     bool number = focusedField_ && focusedField_->type == FieldType::Number;
+    bool multiline = editingMultiline();
 
     if (e.type == SDL_TEXTINPUT) {
         std::string text = e.text.text;
         if (number) {
             text.erase(std::remove_if(text.begin(), text.end(), [](char c) { return !(c == '-' || (c >= '0' && c <= '9')); }), text.end());
         }
-        editBuffer_ += text;
+        edit_.insert(text);
         sendLiveText();
         return true;
     }
     if (e.type == SDL_KEYDOWN) {
         SDL_Keycode key = e.key.keysym.sym;
+        bool ctrl = (e.key.keysym.mod & KMOD_CTRL) != 0;
         if (key == SDLK_BACKSPACE) {
-            popCharacter(editBuffer_);
+            edit_.backspace();
             sendLiveText();
         }
         else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-            finishEditing(true);
+            // In a multi-line field Enter starts a new line and Ctrl+Enter keeps the text
+            if (multiline && !ctrl) {
+                edit_.insert("\n");
+                sendLiveText();
+            }
+            else {
+                finishEditing(true);
+            }
         }
         else if (key == SDLK_ESCAPE) {
             finishEditing(false);
         }
-        else if (key == SDLK_v && (e.key.keysym.mod & KMOD_CTRL) && SDL_HasClipboardText()) {
+        else if (key == SDLK_v && ctrl && SDL_HasClipboardText()) {
             char* clipboard = SDL_GetClipboardText();
             std::string text = clipboard ? clipboard : "";
             SDL_free(clipboard);
-            text.erase(std::remove_if(text.begin(), text.end(), [](char c) { return c == '\r' || c == '\n'; }), text.end());
-            editBuffer_ += text;
+            // Line breaks only where the field has lines, and always as "\n"
+            text.erase(std::remove_if(text.begin(), text.end(), [&](char c) { return c == '\r' || (c == '\n' && !multiline); }),
+                       text.end());
+            edit_.insert(text);
             sendLiveText();
+        }
+        else if (multiline && (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN
+                               || key == SDLK_HOME || key == SDLK_END || key == SDLK_DELETE
+                               || key == SDLK_PAGEUP || key == SDLK_PAGEDOWN)) {
+            // The cursor keys move in the text (the manager leaves them to the
+            // on-screen keyboard while that's shown)
+            float size = fontSize();
+            auto measure = [&](const std::string& s) { return painter_.textWidth(s, size); };
+            const std::vector<Forms::TextLine>& lines = layout(edit_.text, multilineWidth(*focusedField_));
+            int page = std::max(1, focusedField_->rows - 1);
+            switch (key) {
+            case SDLK_LEFT: edit_.left(); break;
+            case SDLK_RIGHT: edit_.right(); break;
+            case SDLK_UP:
+            case SDLK_DOWN:
+                edit_.cursor = Forms::moveCursorVertically(edit_.text, lines, edit_.cursor, key == SDLK_UP ? -1 : 1, measure);
+                break;
+            case SDLK_PAGEUP:
+            case SDLK_PAGEDOWN:
+                for (int i = 0; i < page; i++) {
+                    edit_.cursor = Forms::moveCursorVertically(edit_.text, lines, edit_.cursor, key == SDLK_PAGEUP ? -1 : 1, measure);
+                }
+                break;
+            case SDLK_HOME: edit_.cursor = ctrl ? 0 : Forms::lineHome(lines, edit_.cursor); break;
+            case SDLK_END: edit_.cursor = ctrl ? edit_.text.size() : Forms::lineEnd(edit_.text, lines, edit_.cursor); break;
+            case SDLK_DELETE: edit_.erase(); sendLiveText(); break;
+            default: break;
+            }
         }
         else {
             // Arrows and the like belong to the on-screen keyboard
@@ -881,7 +965,8 @@ std::string FormWidget::valueText(const Field& field)
 std::string FormWidget::hintText() const
 {
     if (editing_) {
-        return "Type, then Enter to keep or Esc to cancel. Ctrl+V pastes.";
+        return editingMultiline() ? "Enter: new line   Ctrl+Enter: keep   Esc: cancel   Ctrl+V: paste"
+                                  : "Type, then Enter to keep or Esc to cancel. Ctrl+V pastes.";
     }
     const Row* row = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) ? &rows_[focus_] : nullptr;
     const Field* field = row ? row->field : nullptr;
@@ -910,6 +995,44 @@ std::string FormWidget::hintText() const
         }
     }
     return (hint.empty() ? "" : hint + "   ") + (backCloses_ ? "Back: close" : "Back: return");
+}
+
+// One row of a multi-line text field: line row.line of what's shown (while
+// it's edited, counted from the first line in view), with the cursor
+void FormWidget::drawTextLine(const Row& row, float x, float textY, bool highlighted, float alpha)
+{
+    const Field& field = *row.field;
+    const float size = fontSize();
+    const float width = multilineWidth(field);
+    bool editingThis = editing_ && focusedField_ == &field;
+    const std::string& text = editingThis ? edit_.text : row.value;
+    if (text.empty() && !editingThis) {
+        if (row.line == 0 && !field.hint.empty()) {
+            painter_.text(field.hint, x, textY, width, size, false, style_.noteAlpha * alpha);
+        }
+        return;
+    }
+    const std::vector<Forms::TextLine>& lines = layout(text, width);
+    size_t index = static_cast<size_t>((editingThis ? editTopLine_ : 0) + row.line);
+    if (index >= lines.size()) {
+        return;
+    }
+    const Forms::TextLine& line = lines[index];
+    std::string shown = text.substr(line.start, line.end - line.start);
+    while (!shown.empty() && (shown.back() == ' ' || shown.back() == '\r')) {
+        shown.pop_back();   // spaces where a line wraps hang past the edge
+    }
+    int span = std::max(1, field.rows);
+    if (!editingThis && row.line == span - 1 && lines.size() > static_cast<size_t>(span)) {
+        shown += " ...";   // more than fits: shown in full while it's edited
+    }
+    painter_.text(shown, x, textY, width, size, highlighted, alpha);
+    if (editingThis && Forms::lineAt(lines, edit_.cursor) == index) {
+        size_t cursor = std::clamp(edit_.cursor, line.start, line.end);
+        float caretX = x + painter_.textWidth(text.substr(line.start, cursor - line.start), size);
+        float bar = painter_.textWidth("|", size);
+        painter_.text("|", caretX - bar / 2.0f, textY, bar * 2.0f, size, true, alpha);
+    }
 }
 
 // Fits the picture in the box, keeping its shape, at the box's top left or
@@ -994,8 +1117,60 @@ void FormWidget::draw()
     pageRows_ = std::max(1, static_cast<int>(visible / row) - 1);
     keepFocusVisible(visible);
 
+    // A multi-line field being edited scrolls within its rows to keep the cursor
+    // in view, and the form scrolls to keep the cursor's row in view too (on a
+    // short page the field may be taller than what's shown)
+    if (editingMultiline() && focus_ >= 0) {
+        const std::vector<Forms::TextLine>& lines = layout(edit_.text, multilineWidth(*focusedField_));
+        int cursorLine = static_cast<int>(Forms::lineAt(lines, edit_.cursor));
+        int span = std::max(1, focusedField_->rows);
+        editTopLine_ = std::clamp(editTopLine_, cursorLine - span + 1, cursorLine);
+        editTopLine_ = std::clamp(editTopLine_, 0, std::max(0, static_cast<int>(lines.size()) - span));
+        float caretTop = (focus_ + cursorLine - editTopLine_) * row;
+        if (caretTop < scroll_) {
+            scroll_ = caretTop;
+        }
+        else if (caretTop + row > scroll_ + visible) {
+            scroll_ = caretTop + row - visible;
+        }
+    }
+
     const float line = std::max(1.0f, size * 0.04f);   // separators
     const Field* armed = confirm_.armed();
+
+    auto drawHighlight = [&](float y, float h) {
+        if (focusImage_) {
+            ViewInfo& view = focusImage_->baseViewInfo;
+            view.X = left - padding / 2.0f;
+            view.Y = y;
+            view.Width = width + padding;
+            view.Height = h;
+            view.Alpha = baseViewInfo.Alpha;
+            view.Monitor = baseViewInfo.Monitor;
+            view.Layout = baseViewInfo.Layout;
+            focusImage_->draw();
+        }
+        else {
+            painter_.rect(left - padding / 2.0f, y, width + padding, h, style_.focusBackground, style_.focusBackgroundAlpha);
+        }
+    };
+    // The focused multi-line field: one highlight over all its rows, cut to the
+    // rows in view (it may be taller than the page shows)
+    bool groupHighlight = focus_ >= 0 && rows_[focus_].kind == RowKind::Field && isMultiline(rows_[focus_].field);
+    if (groupHighlight) {
+        float from = 1e9f;
+        float to = -1e9f;
+        for (size_t i = static_cast<size_t>(focus_); i < rows_.size() && (i == static_cast<size_t>(focus_) || rows_[i].kind == RowKind::TextLine); i++) {
+            float y = top + i * row - scroll_;
+            if (y >= top - 0.5f && y + row <= top + visible + 0.5f) {   // the rows drawn, as below
+                from = std::min(from, y);
+                to = std::max(to, y + row);
+            }
+        }
+        if (to > from) {
+            drawHighlight(from, to - from);
+        }
+    }
 
     for (size_t i = 0; i < rows_.size(); i++) {
         float y = top + i * row - scroll_;
@@ -1011,21 +1186,13 @@ void FormWidget::draw()
         bool focused = static_cast<int>(i) == focus_;
         bool confirming = focused && armed && r.field == armed;
         float textY = y + textOffset;
+        // A multi-line field's further lines are highlighted with it (drawn above, as one block)
+        bool highlighted = focused || (r.kind == RowKind::TextLine && focus_ >= 0 && rows_[focus_].field == r.field
+                                       && rows_[focus_].kind == RowKind::Field);
 
         if (focused) {
-            if (focusImage_) {
-                ViewInfo& view = focusImage_->baseViewInfo;
-                view.X = left - padding / 2.0f;
-                view.Y = y;
-                view.Width = width + padding;
-                view.Height = row;
-                view.Alpha = baseViewInfo.Alpha;
-                view.Monitor = baseViewInfo.Monitor;
-                view.Layout = baseViewInfo.Layout;
-                focusImage_->draw();
-            }
-            else {
-                painter_.rect(left - padding / 2.0f, y, width + padding, row, style_.focusBackground, style_.focusBackgroundAlpha);
+            if (!groupHighlight) {
+                drawHighlight(y, row);
             }
             if (confirming && style_.confirmBackgroundAlpha > 0.0f) {
                 painter_.rect(left - padding / 2.0f, y, width + padding, row, style_.confirmBackground, style_.confirmBackgroundAlpha);
@@ -1113,10 +1280,17 @@ void FormWidget::draw()
         }
         case RowKind::Spacer:
             break;
+        case RowKind::TextLine:
+            drawTextLine(r, r.field->label.empty() ? left : valueX, textY, highlighted, r.enabled ? 1.0f : style_.disabledAlpha);
+            break;
         case RowKind::Field: {
             const Field& field = *r.field;
             float alpha = r.enabled ? 1.0f : style_.disabledAlpha;
             painter_.text(field.label, left, textY, labelWidth() - gap, size, focused, alpha);
+            if (isMultiline(&field)) {
+                drawTextLine(r, field.label.empty() ? left : valueX, textY, focused, alpha);
+                break;
+            }
             float fieldValueWidth = valueWidth;
             bool isLink = field.type == FieldType::Link;
             if (isLink && !style_.linkMarker.empty()) {
@@ -1133,7 +1307,7 @@ void FormWidget::draw()
             std::string value = r.value;
             if (editingThis) {
                 // Keep the end in view while typing, e.g. the folder at the end of a long path
-                value = painter_.tail(editBuffer_ + "_", valueWidth, size);
+                value = painter_.tail(edit_.text + "_", valueWidth, size);
             }
             else if (focused && (field.type == FieldType::Number || field.type == FieldType::Choice)) {
                 // The arrows stay when the value is too long
