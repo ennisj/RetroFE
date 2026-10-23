@@ -171,6 +171,43 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 
 ---
 
+### M12. Round 2 screen decisions — Decided
+Each section's agent chose these; the alternatives are in brackets.
+- **Games: story text is edited on one line**, with ` | ` between paragraphs
+  [read-only plus replace-from-file; a multi-line field, which forms don't
+  have yet]. A story that already contains `|` can only be replaced from a
+  file, so nothing is rewritten by accident. A multi-line text field would
+  remove this limit (later).
+- **Games: favourites are per page.** RetroFE keeps favourites in the list of
+  the page you were on, so a game shown in a merged collection has a
+  favourite toggle for each page that shows it [only its own system's list,
+  which merged pages never read].
+- **Games: file lookups run in the background** (media slots, search
+  thumbnails), so slow USB drives don't stall the screen.
+- **Systems: delete only empty systems made here.** A system can be deleted
+  when its folder holds only settings, art and playlists, its games folder
+  isn't inside it, and no `menu.xml` lists it; the whole folder moves to
+  `manage/backups/deleted/` [never delete; delete anything empty].
+- **Systems: playlists RetroFE won't show** (because of `cyclePlaylist`) are
+  pointed out, with a one-step "Show it in RetroFE".
+- **Videos:** collections marked `type = videos` appear only under Videos;
+  "This is a video collection" on a system's Info screen moves it. New video
+  collections share one `VideoPlayer` launcher (VLC or mpv).
+- **Menus: deleting a menu moves its entries up** into the menus that list it,
+  in its place [refuse unless empty; delete the entries too]. Menus listed by
+  a `menu.xml` or `collectionLaunchers` can't be changed here (writing a
+  `menu.txt` would hide the XML).
+- **Menus: every entry and source has its own screen** [buttons on the list
+  with a "selected entry" choice], which works better with a controller.
+- **Menus: a new menu gets `settings.conf`, `info.conf` and `menu.txt`**;
+  without `settings.conf` RetroFE logs an error at start.
+- **Emulators: existing launchers stay read-only**; "Duplicate and edit" opens
+  the add form filled in [edit launchers made in Manage until used]. New
+  launchers write paths inside RetroFE's folder as `%RETROFE_PATH%\…`, and
+  names must be plain ASCII (RetroFE reads launcher file names in the ANSI
+  code page) and can't shadow another launcher (RetroFE looks up local, then
+  collection, then global launchers).
+
 ## Catalog
 
 ### C1. This fork from GitHub — Decided (publishing is Open)
@@ -195,3 +232,69 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 ### W2. The fork's changelog is separate from upstream's — Decided
 - Upstream's `CHANGELOG.md` is left alone so upstream merges stay clean. The
   fork's rounds are summarized in [FORK-CHANGELOG.md](FORK-CHANGELOG.md).
+
+---
+
+## Library (Manage data layer)
+
+The full reasoning, with the options considered for each, is in
+[design/manage-library.md](design/manage-library.md#decisions).
+
+### LB1. One conf editor; SettingsFile is built on it — Decided
+- `Library::ConfFile` (one file) and `ConfLayers` (later files win) replace
+  SettingsFile's own code. Edits keep every untouched byte, including each
+  line's own ending.
+
+### LB2. Originals are kept in `<root>/manage/backups/` — Decided
+- Before a file's first change, it's copied there at the same relative path;
+  a file that didn't exist gets an `.absent` marker. RetroFE never reads
+  `manage/`.
+- A file that differs from the kept original is never deleted or overwritten:
+  it's kept beside it first as `<name> (2).<ext>` and so on.
+
+### LB3. Metadata edits go in `<root>/manage/metadata/<type>.xml` — Decided
+- The file is hyperlist format and holds only the changed fields.
+  `MetadataDatabase` applies it after importing `meta/`, so edits survive
+  content updates and re-imports. Edits are also written into meta.db at once.
+- Not inside `meta/`, because a change there makes RetroFE re-import on every
+  start, due to its exe-time check.
+- Clearing an edit restores the value RetroFE's import would give, read from
+  hyperlist, mamelist and emuarc. A row that only the user's edits created is
+  deleted. If a shipped file can't be read, meta.db is left alone and a
+  re-import is requested.
+
+### LB4. `media.basePath` (OneSauce) is honoured — Decided
+- The order is `media.<type>`, then `media.basePath`, then `baseMediaPath`.
+  The rule is applied in `Configuration` and in the library, so OneSauce game
+  art shows.
+
+### LB5–LB10 — Decided
+- **LB5.** Menu-folder menus get `menu/<child>.txt`, and `menu_supported.txt`
+  is kept in step.
+- **LB6.** An empty `.sub` means every game: adding to it is a no-op, removing
+  from it is refused, and removing the last entry deletes the file.
+- **LB7.** A launcher override naming the default is removed.
+- **LB8.** Media lookups check files rather than list folders.
+- **LB9.** New systems are listed in `firstCollection` (read from RetroFE's live
+  configuration) only when it's a menu or can become one. Otherwise they go in
+  "Main", so a games collection never gets a menu.txt.
+- **LB10.** The index is an immutable snapshot, rebuilt in the background. A
+  change never cancels a running build: the build publishes, then one more follows.
+
+### LB11. `launcher = a, b, c` uses `a` (fork compat) — Decided
+- OneSauce/RetroFE Plus data names a default and its alternatives; 25
+  collections on K: do this.
+- RetroFE (`CollectionInfoBuilder`, `Launcher`) and the library use the first
+  name. The library shows the rest as read-only alternatives.
+- Setting the launcher in Manage moves the pick to the front and keeps the rest.
+- Options considered: leave the lists unresolved, or rewrite each list to a
+  single name. Both were rejected: the first stops OneSauce games launching,
+  and the second loses the alternatives.
+
+### LB12. `list.includeFile` / `list.excludeFile` are honoured (fork compat) — Decided
+- When set, they replace `include.txt` and `exclude.txt` as the collection's
+  lists, with the same format and rules. Paths are resolved like other keys:
+  `%BASE_ITEM_PATH%`, `%ITEM_COLLECTION_NAME%`, and relative to the root.
+- Applied in RetroFE's `ImportDirectory` and in the library scanner.
+- Option considered: keep ignoring them. Rejected, because then stock RetroFE
+  would list games OneSauce hides.

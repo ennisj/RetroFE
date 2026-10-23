@@ -44,9 +44,12 @@ generator only notices new files on the build after the one that finds them).
 | `Manager/Providers.cpp` | Registration: one include line and one `model.addProvider(...)` line per provider, in your section's slots. Keep the blank lines between slots so sections added in parallel merge cleanly. |
 | `Tests/<Section>Tests.cpp` | Unit tests, as a `static Test::Suite` (see `Tests/TestSupport.h`); every `Tests/*.cpp` is built in. |
 
-The Systems placeholder keeps the old "Add a collection" fields (now "Add a
-system", action `collection.create`); the Systems section can replace them
-with its own. The Manage hub links to each section's first form
+The Systems section replaced the old "Add a collection" fields with its own
+`system-add` screen (`system.create`, which adds a parent menu, installed
+launchers and the video preset); `collection.create` still works for layouts
+that use it. Systems and Videos share one provider class and one set of form
+templates (`Manager/Systems/SystemForms.cpp`), registered twice. The Manage
+hub links to each section's first form
 (`BuiltinForms.cpp`, form `manage`); you shouldn't need to change it.
 
 ## Naming
@@ -201,7 +204,11 @@ Things to know:
   they're drawn at, a couple of new thumbnails per frame, the least recently
   drawn are dropped past a memory budget, and files that fail are tried again
   every few seconds, so artwork that appears while the screen is open shows
-  up. Prefer small artwork for thumbnails (a box or logo) when you have a
+  up. A file replaced under the same name (new size or write time) is loaded
+  again after an action runs, a screen opens or `generation()` changes (files
+  aren't checked on a timer, so a slow network drive never stalls drawing),
+  so "replace this logo" can keep the path; the old picture stays until the
+  new one loads. Prefer small artwork for thumbnails (a box or logo) when you have a
   choice: big files still cost a decode each.
 - **Leaving**: `leaving(screen)` is asked when the user leaves a screen with
   Back or Escape, and for every open screen when the manager closes or F10
@@ -214,6 +221,11 @@ Things to know:
   while `isDirty()`.
 - **Confirming**: put `confirm="Delete this game?"` on the button; the action
   only runs on the second Select, so `runAction` doesn't need to ask.
+- **Buttons that hide themselves** (`visibleWhen` that turns off once
+  pressed): focus stays at the same place or moves up, and never lands on a
+  file or folder field by itself when anything else can take it. If it has
+  to, Select there does nothing until the user moves, so a second press
+  can't open a file picker.
 - **Navigating after an action**: `Result::open` pushes a screen and
   `Result::back` returns (asking `leaving()` like Back does), after success
   only. The message is shown on the screen you end up on. A form id that
@@ -224,9 +236,13 @@ Things to know:
   instead closes the manager and reloads straight away; Settings' Save and
   Add a system use that, because the user expects to see the result at once.
 - `Manager::Services` (`Provider.h`) is what providers can use: the
-  configuration, the Catalog and `requestReload`. If you need more (say
-  RetroFE's metadata database), add a field there and set it where
-  `ManagerUI::initialize` registers providers.
+  configuration, the Catalog, `requestReload`, and the shared library:
+  `library` (one `Library::Indexer` for every section, rebuilt each time the
+  manager opens) and `editor` (the `Library::Editor` all writes go through).
+  After a write, call `library->changed("what")`; when the manager closes with
+  changes pending, RetroFE reloads. Don't create your own Indexer. If you need
+  more, add a field there and set it where `ManagerUI::initialize` registers
+  providers.
 
 ## Forms for a section
 

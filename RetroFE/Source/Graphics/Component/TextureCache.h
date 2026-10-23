@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "../../Utility/FileStamp.h"
 #include <SDL2/SDL.h>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,10 @@
 // load per frame so paging through a list doesn't stall, the least recently
 // drawn are dropped past a pixel budget, and files that can't be loaded are
 // tried again a few seconds later, so artwork added meanwhile shows up.
+// After recheck(), pictures compare their file's size and write time when
+// next drawn and load again if it changed, e.g. after a logo was replaced.
+// Files aren't checked otherwise, so a slow or missing network drive never
+// holds up drawing.
 class TextureCache
 {
 public:
@@ -48,6 +53,13 @@ public:
     // with state Loading until then. Null with Missing when it can't be loaded.
     SDL_Texture* get(const std::string& path, int maxWidth, int maxHeight, bool urgent, State* state = nullptr);
 
+    // The files behind path's pictures (every picture when path is empty) may
+    // have changed: check when next drawn. A changed file replaces the old
+    // picture once it loads; until then, or if it can't be loaded yet (still
+    // being written), the old one stays and it's tried again a few seconds later.
+    // Pictures that couldn't be loaded are tried again straight away.
+    void recheck(const std::string& path = "");
+
     void clear();
 
 private:
@@ -56,7 +68,9 @@ private:
         SDL_Texture* texture = nullptr;
         size_t pixels = 0;
         uint64_t used = 0;       // the frame it was last asked for
-        uint32_t failedAt = 0;   // SDL ticks when loading it last failed
+        uint32_t failedAt = 0;   // SDL ticks when loading it (or its new version) last failed
+        FileStamp stamp;         // the file's when it was loaded
+        bool recheck = false;    // compare the stamp when next drawn (see recheck())
     };
 
     SDL_Texture* load(const std::string& path, int maxWidth, int maxHeight, size_t& pixels);

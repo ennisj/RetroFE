@@ -14,6 +14,12 @@
     <image src="../images/system_info_bg.png" x="960" y="555" width="1500" height="1093" xOrigin="center" yOrigin="center" layer="2"/>
     <image src="../images/system_info_overlay.png" x="960" y="555" width="1500" height="1093" xOrigin="center" yOrigin="center" layer="4"/>
 
-    <form x="960" y="555" width="1400" height="930" xOrigin="center" yOrigin="center" labelWidth="460" font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff" rowHeight="50" focusImage="../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35" backgroundColor="000000" backgroundAlpha="0" layer="3"/>
+    <form x="960" y="555" width="1400" height="930" xOrigin="center" yOrigin="center" labelWidth="460"
+          font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"
+          rowHeight="50" focusImage="../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35"
+          rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="75c8f7" headerAlpha="0.95"
+          separatorColor="75c8f7" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
+          statusColor="9fe3a6" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"
+          backgroundColor="000000" backgroundAlpha="0" layer="3"/>
 
 </layout>

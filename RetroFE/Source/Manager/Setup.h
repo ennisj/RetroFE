@@ -18,10 +18,26 @@
 #include <string>
 #include <vector>
 
+class Configuration;
+
 // Creates and inspects the files RetroFE reads, for the management UI.
 // Everything is written under Configuration::absolutePath.
 namespace Setup
 {
+    // RetroFE's live configuration, so firstCollection is read as RetroFE uses
+    // it (a command-line override included). Without it, the settings files are read.
+    void setConfiguration(Configuration* config);
+
+    // Where Browse goes: firstCollection, "Main" when unset
+    std::string firstCollection();
+
+    // The menu new systems are listed in: firstCollection when it's a menu or
+    // can become one, otherwise "Main" (see Library::MenuFiles::menuForNewCollections)
+    std::string topMenu();
+
+    // Empty when name can be a system's folder and menu entry, otherwise why not
+    std::string checkName(const std::string& name);
+
     struct NewCollection
     {
         std::string name;
@@ -34,7 +50,7 @@ namespace Setup
     // True when settings.conf exists, i.e. RetroFE isn't running on built-in defaults
     bool hasSettingsFile();
 
-    // Names of the collection folders, excluding the Main menu and "_" folders
+    // Names of the collection folders, excluding the top menu and "_" folders
     std::vector<std::string> listCollections();
 
     // Number of files in a folder matching the extensions, or -1 if the folder can't be read
@@ -43,11 +59,13 @@ namespace Setup
     // Returns an empty string when valid, otherwise what's wrong
     std::string validate(const NewCollection& collection);
 
-    // Creates collections/<name> with its settings and launcher, and adds it to the Main menu
+    // Creates collections/<name> with its settings and launcher, and adds it to the top menu
     bool createCollection(const NewCollection& collection, std::string& error);
 
-    // Adds a collection to the Main menu's menu.txt if it isn't listed yet,
-    // or removes it, leaving the other lines as they were
+    // Adds a collection to topMenu() if it isn't listed yet, or removes it,
+    // leaving the other lines as they were. The menu's menu.txt is used, or its
+    // menu/ folder when it has no menu.txt (see Library::MenuFiles); originals
+    // go to manage/backups. A name checkName() refuses isn't added.
     bool addToMainMenu(const std::string& name, std::string& error);
     bool removeFromMainMenu(const std::string& name, std::string& error);
 }

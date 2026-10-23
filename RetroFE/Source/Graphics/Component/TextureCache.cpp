@@ -32,7 +32,6 @@ namespace
 {
     // How long a picture that couldn't be loaded waits before another try
     constexpr uint32_t retryMs = 3000;
-
     // Entries kept at most, failures included
     constexpr size_t maxEntries = 512;
 
@@ -119,13 +118,59 @@ SDL_Texture* TextureCache::get(const std::string& path, int maxWidth, int maxHei
 
     std::string key = path + '\n' + std::to_string(maxWidth) + 'x' + std::to_string(maxHeight);
     auto found = entries_.find(key);
+    uint32_t now = SDL_GetTicks();
     if (found != entries_.end()) {
         Entry& entry = found->second;
         entry.used = frame_;
         if (entry.texture) {
-            return report(State::Ready, entry.texture);
+            // Only after recheck(): has the file been replaced under the same name?
+            if (!entry.recheck || now - entry.failedAt < retryMs) {
+                return report(State::Ready, entry.texture);
+            }
+            FileStamp stamp = FileStamp::of(path);
+            if (stamp == entry.stamp) {
+                entry.recheck = false;
+                return report(State::Ready, entry.texture);
+            }
+            if (!stamp.exists) {
+                // Deleted: the picture goes (and is looked for again now and then)
+                SDL_LockMutex(SDL::getMutex());
+                SDL_DestroyTexture(entry.texture);
+                SDL_UnlockMutex(SDL::getMutex());
+                pixels_ -= entry.pixels;
+                entry.texture = nullptr;
+                entry.pixels = 0;
+                entry.recheck = false;
+                entry.failedAt = now;
+                return report(State::Missing, nullptr);
+            }
+            if (!urgent && loadsLeft_ <= 0) {
+                return report(State::Ready, entry.texture);   // the old one until there's time to load
+            }
+            if (!urgent) {
+                loadsLeft_--;
+            }
+            // The new picture replaces the old only once it has loaded; a file
+            // still being written keeps the old one and is tried again later
+            size_t pixels = 0;
+            SDL_Texture* texture = load(path, maxWidth, maxHeight, pixels);
+            if (!texture) {
+                entry.failedAt = now;
+                return report(State::Ready, entry.texture);
+            }
+            SDL_LockMutex(SDL::getMutex());
+            SDL_DestroyTexture(entry.texture);
+            SDL_UnlockMutex(SDL::getMutex());
+            pixels_ = pixels_ - entry.pixels + pixels;
+            entry.texture = texture;
+            entry.pixels = pixels;
+            entry.stamp = stamp;
+            entry.recheck = false;
+            trim();
+            return report(State::Ready, texture);
         }
-        if (SDL_GetTicks() - entry.failedAt < retryMs) {
+        // Couldn't be loaded: tried again a few seconds later, or straight away after recheck()
+        if (!entry.recheck && now - entry.failedAt < retryMs) {
             return report(State::Missing, nullptr);
         }
     }
@@ -139,10 +184,13 @@ SDL_Texture* TextureCache::get(const std::string& path, int maxWidth, int maxHei
     bool firstTry = found == entries_.end();
     Entry& entry = entries_[key];
     entry.used = frame_;
+    entry.recheck = false;
+    entry.stamp = FileStamp::of(path);
     entry.texture = load(path, maxWidth, maxHeight, entry.pixels);
     if (!entry.texture) {
-        entry.failedAt = SDL_GetTicks();
-        if (firstTry && std::filesystem::exists(path)) {
+        entry.failedAt = now;
+        std::error_code ec;
+        if (firstTry && std::filesystem::exists(std::filesystem::u8path(path), ec)) {
             LOG_WARNING("Forms", "Can't load " + path + ": " + IMG_GetError());
         }
         trim();
@@ -154,14 +202,24 @@ SDL_Texture* TextureCache::get(const std::string& path, int maxWidth, int maxHei
     return report(State::Ready, texture);
 }
 
+void TextureCache::recheck(const std::string& path)
+{
+    for (auto& [key, entry] : entries_) {
+        if (path.empty() || key.compare(0, path.size() + 1, path + '\n') == 0) {
+            entry.recheck = true;
+            entry.failedAt = 0;
+        }
+    }
+}
+
 SDL_Texture* TextureCache::load(const std::string& path, int maxWidth, int maxHeight, size_t& pixels)
 {
     pixels = 0;
     std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) {
+    if (!std::filesystem::is_regular_file(std::filesystem::u8path(path), ec)) {
         return nullptr;
     }
-    SDL_Surface* image = IMG_Load(path.c_str());
+    SDL_Surface* image = IMG_Load(path.c_str());   // SDL takes UTF-8 paths
     if (!image) {
         return nullptr;
     }

@@ -518,7 +518,9 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
         }
     }
     else if (source == "collections") {
-        result.emplace_back("Main", "Main");
+        // The top menu first (listCollections leaves it out), then every other collection
+        std::string top = Setup::topMenu();
+        result.emplace_back(top, top);
         for (const std::string& name : collections_) {
             result.emplace_back(name, name);
         }

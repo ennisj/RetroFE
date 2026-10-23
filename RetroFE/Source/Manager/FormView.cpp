@@ -25,6 +25,14 @@
 using Forms::Field;
 using Forms::FieldType;
 
+namespace
+{
+    float textWidth(const std::string& text)
+    {
+        return ImGui::CalcTextSize(text.c_str()).x;
+    }
+}
+
 void FormView::setRenderer(SDL_Renderer* renderer)
 {
     pictures_.setRenderer(renderer);
@@ -41,6 +49,7 @@ void FormView::reset()
     confirm_.cancel();
     editing_ = nullptr;
     result_.reset();
+    pictures_.recheck();
 }
 
 bool FormView::cancelConfirm()
@@ -69,6 +78,12 @@ void FormView::draw(const Forms::Form& form, Forms::Model& model)
 {
     if (discard_) {
         freeImages();
+    }
+    // Pictures check whether their files changed after something was written
+    // (a new generation, an action, a new screen), never on a timer
+    if (model.generation() != generation_) {
+        generation_ = model.generation();
+        pictures_.recheck();
     }
     pictures_.beginFrame(2);
     drawFields(form.fields, model);
@@ -108,6 +123,9 @@ std::optional<Forms::Model::Result> FormView::takeResult()
 {
     std::optional<Forms::Model::Result> result = result_;
     result_.reset();
+    if (result) {
+        pictures_.recheck();   // an action ran (it may have written artwork) or a screen opens
+    }
     return result;
 }
 
@@ -125,6 +143,7 @@ void FormView::update(SDL_Window* window, Forms::Model& model)
         : FileDialog::pickFile(window, browse.title, browse.filterName, browse.pattern, path);
     if (chosen) {
         model.set(browse.bind, path);
+        pictures_.recheck();
     }
 }
 
@@ -140,7 +159,7 @@ void FormView::drawFields(const std::vector<Field>& fields, Forms::Model& model)
 void FormView::label(const Field& field)
 {
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(field.label.c_str());
+    ImGui::TextUnformatted(Forms::ellipsize(field.label, labelWidth() - ImGui::GetStyle().ItemSpacing.x, textWidth).c_str());
     ImGui::SameLine(labelWidth());
 }
 
@@ -319,7 +338,7 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         if (value.empty()) {
             break;
         }
-        ImGui::TextUnformatted(field.label.c_str());
+        ImGui::TextUnformatted(Forms::ellipsize(field.label, labelWidth() - ImGui::GetStyle().ItemSpacing.x, textWidth).c_str());
         ImGui::SameLine(labelWidth());
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextUnformatted(value.c_str());
@@ -362,16 +381,24 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
     ImGui::BeginChild("##results", ImVec2(0.0f, visibleRows * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_None);
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(rows.items.size()));
+    float gap = ImGui::GetStyle().ItemSpacing.x * 2.0f;
     while (clipper.Step()) {
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
             const Forms::Row& row = rows.items[static_cast<size_t>(i)];
             ImGui::PushID(i);
-            if (ImGui::Selectable(row.label.c_str())) {
+            // The detail on the right and the label on the left share the row,
+            // ending in "..." when they don't fit, rather than overlapping
+            float available = ImGui::GetContentRegionAvail().x;
+            float detailNeeds = row.detail.empty() ? 0.0f : textWidth(row.detail);
+            Forms::RowSplit split = Forms::splitRow(textWidth(row.label), detailNeeds, available, gap);
+            std::string label = Forms::ellipsize(row.label, split.label, textWidth);
+            if (ImGui::Selectable((label + "##row").c_str())) {
                 open(field.open, Forms::rowParams(field, row), false);
             }
-            if (!row.detail.empty()) {
-                ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(row.detail.c_str()).x);
-                ImGui::TextDisabled("%s", row.detail.c_str());
+            if (split.detail > 0.0f) {
+                std::string detail = Forms::ellipsize(row.detail, split.detail, textWidth);
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - textWidth(detail));
+                ImGui::TextDisabled("%s", detail.c_str());
             }
             ImGui::PopID();
         }
@@ -381,15 +408,18 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
 
 void FormView::drawLink(const Field& field, Forms::Model& model)
 {
-    if (ImGui::Selectable(field.label.c_str())) {
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float right = ImGui::GetContentRegionMax().x - textWidth(">");
+    std::string status = field.status.empty() ? "" : model.get(field.status);
+    std::string label = Forms::ellipsize(field.label, (status.empty() ? right : labelWidth()) - spacing, textWidth);
+    if (ImGui::Selectable((label + "##link").c_str())) {
         open(field.open, {}, true);
     }
-    std::string status = field.status.empty() ? "" : model.get(field.status);
     if (!status.empty()) {
         ImGui::SameLine(labelWidth());
-        ImGui::TextDisabled("%s", status.c_str());
+        ImGui::TextDisabled("%s", Forms::ellipsize(status, right - labelWidth() - spacing, textWidth).c_str());
     }
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(">").x);
+    ImGui::SameLine(right);
     ImGui::TextDisabled(">");
     if (!field.help.empty()) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth());
@@ -415,7 +445,7 @@ void FormView::drawImage(const Field& field, Forms::Model& model)
         return;
     }
     if (!field.label.empty()) {
-        ImGui::TextUnformatted(field.label.c_str());
+        ImGui::TextUnformatted(Forms::ellipsize(field.label, labelWidth() - ImGui::GetStyle().ItemSpacing.x, textWidth).c_str());
         ImGui::SameLine(labelWidth());
     }
     float width = height * static_cast<float>(w) / static_cast<float>(h);

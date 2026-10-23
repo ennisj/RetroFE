@@ -19,7 +19,7 @@
 #include "../Page.h"
 #include "../ViewInfo.h"
 #include "../../SDL.h"
-#include <sstream>
+#include "../../Forms/Form.h"
 
 WidgetPainter::WidgetPainter(Page& page, FontManager* font, FontManager* focusFont)
     : page_(page)
@@ -72,18 +72,26 @@ void WidgetPainter::textWith(FontManager* font, const std::string& text, float x
     if (text.empty() || !owner_ || !font_) {
         return;
     }
+    font = font ? font : font_;
+    // Too long: cut at a whole character with "..." rather than wherever Text stops
+    std::string shown = fit(font, text, maxWidth, fontSize);
+    if (shown.empty()) {
+        return;
+    }
     if (textsUsed_ >= texts_.size()) {
         texts_.push_back(std::make_unique<Text>("", page_, font_, owner_->Monitor));
     }
     Text* component = texts_[textsUsed_++].get();
-    component->setText(text);
+    component->setText(shown);
 
     ViewInfo& view = component->baseViewInfo;
-    view.font = font ? font : font_;
+    view.font = font;
     view.X = x;
     view.Y = y;
     view.FontSize = fontSize;
-    view.MaxWidth = maxWidth;
+    // Text adds up glyph widths in another order than textWidth, so text measured
+    // to fit exactly can come out a hair wider and lose its last letter
+    view.MaxWidth = maxWidth + fitSlack;
     view.Alpha = alpha * owner_->Alpha;
     view.Monitor = owner_->Monitor;
     view.Layout = owner_->Layout;
@@ -106,47 +114,39 @@ void WidgetPainter::rect(float x, float y, float w, float h, SDL_Color color, fl
                      page_.getLayoutWidthByMonitor(owner_->Monitor), page_.getLayoutHeightByMonitor(owner_->Monitor));
 }
 
-void WidgetPainter::texture(SDL_Texture* texture, float x, float y, float w, float h, float alpha)
+void WidgetPainter::texture(SDL_Texture* texture, float x, float y, float w, float h, float alpha, const SDL_Rect* source)
 {
     if (!texture || !owner_) {
         return;
     }
     SDL_FRect rect{ x, y, w, h };
     ViewInfo view = *owner_;
-    SDL::renderCopyF(texture, alpha * owner_->Alpha, nullptr, &rect, view,
+    SDL::renderCopyF(texture, alpha * owner_->Alpha, source, &rect, view,
                      page_.getLayoutWidthByMonitor(owner_->Monitor), page_.getLayoutHeightByMonitor(owner_->Monitor));
 }
 
 float WidgetPainter::textWidth(const std::string& text, float fontSize) const
 {
-    if (!font_ || font_->getHeight() <= 0) {
+    return textWidthWith(font_, text, fontSize);
+}
+
+float WidgetPainter::textWidthWith(FontManager* font, const std::string& text, float fontSize) const
+{
+    font = font ? font : font_;
+    if (!font || font->getHeight() <= 0) {
         return 0.0f;
     }
-    return static_cast<float>(font_->getWidth(text)) * fontSize / static_cast<float>(font_->getHeight());
+    return static_cast<float>(font->getWidth(text)) * fontSize / static_cast<float>(font->getHeight());
+}
+
+std::string WidgetPainter::fit(FontManager* font, const std::string& text, float width, float fontSize) const
+{
+    return Forms::ellipsize(text, width, [&](const std::string& s) { return textWidthWith(font, s, fontSize); });
 }
 
 std::vector<std::string> WidgetPainter::wrap(const std::string& text, float width, float fontSize) const
 {
-    std::vector<std::string> lines;
-    std::istringstream paragraphs(text);
-    std::string paragraph;
-    while (std::getline(paragraphs, paragraph)) {
-        std::istringstream words(paragraph);
-        std::string word;
-        std::string line;
-        while (words >> word) {
-            std::string candidate = line.empty() ? word : line + " " + word;
-            if (!line.empty() && textWidth(candidate, fontSize) > width) {
-                lines.push_back(line);
-                line = word;
-            }
-            else {
-                line = candidate;
-            }
-        }
-        lines.push_back(line);
-    }
-    return lines;
+    return Forms::wrapText(text, width, [&](const std::string& s) { return textWidth(s, fontSize); });
 }
 
 std::string WidgetPainter::tail(const std::string& text, float width, float fontSize) const
@@ -157,6 +157,9 @@ std::string WidgetPainter::tail(const std::string& text, float width, float font
     size_t start = 0;
     while (start < text.size() && textWidth("..." + text.substr(start), fontSize) > width) {
         start++;
+        while (start < text.size() && (static_cast<unsigned char>(text[start]) & 0xC0) == 0x80) {
+            start++;   // whole characters
+        }
     }
     return "..." + text.substr(start);
 }

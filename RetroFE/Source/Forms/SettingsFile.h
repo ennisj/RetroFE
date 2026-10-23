@@ -15,15 +15,15 @@
  */
 #pragma once
 
-#include <map>
+#include "../Library/ConfFile.h"
 #include <string>
-#include <vector>
 
 // Reads and edits the global settings files the way RetroFE loads them:
 // settings.conf, then settings1.conf .. settings15.conf, then
 // settings_saved.conf, with later definitions winning. A value is written back
 // to the file it effectively comes from, so overrides keep working, and only
 // that line changes: comments, order and line endings are kept.
+// (A thin wrapper over Library::ConfLayers, which does the work.)
 class SettingsFile
 {
 public:
@@ -48,25 +48,5 @@ public:
     bool set(const std::string& key, const std::string& value, const std::string& initialContent, std::string& error);
 
 private:
-    struct File
-    {
-        std::string path;
-        std::string name;
-        std::vector<std::string> lines;  // without line endings
-        bool crlf = false;
-        bool exists = false;
-    };
-    struct Location
-    {
-        size_t file;
-        size_t line;
-    };
-
-    static bool parseKey(const std::string& line, std::string& key);
-    static std::string valueOf(const std::string& line);
-    bool save(File& file, std::string& error);
-
-    std::string root_;
-    std::vector<File> files_;            // in load order; files_[0] is settings.conf
-    std::map<std::string, Location> keys_;  // where each key's effective value is
+    Library::ConfLayers layers_;  // in load order; file 0 is settings.conf
 };

@@ -42,6 +42,7 @@ public:
     // Call at the start of every draw
     void begin(const ViewInfo& owner);
 
+    // Text that doesn't fit in maxWidth is cut short with "..."
     void text(const std::string& text, float x, float y, float maxWidth, float fontSize, bool focused, float alpha);
 
     // The same in another font of the same face, e.g. another color; null means the normal font
@@ -49,12 +50,16 @@ public:
 
     void rect(float x, float y, float w, float h, SDL_Color color, float alpha);
 
-    // Draws a texture the caller owns, stretched to the box
-    void texture(SDL_Texture* texture, float x, float y, float w, float h, float alpha);
+    // Draws a texture the caller owns, or the source part of it, stretched to the box
+    void texture(SDL_Texture* texture, float x, float y, float w, float h, float alpha, const SDL_Rect* source = nullptr);
 
     float textWidth(const std::string& text, float fontSize) const;
+    float textWidthWith(FontManager* font, const std::string& text, float fontSize) const;
 
-    // Splits text into lines no wider than width, at spaces
+    // text, or its start and "..." when it's wider than width (see Forms::ellipsize)
+    std::string fit(FontManager* font, const std::string& text, float width, float fontSize) const;
+
+    // Splits text into lines no wider than width, at spaces (see Forms::wrapText)
     std::vector<std::string> wrap(const std::string& text, float width, float fontSize) const;
 
     // The end of text that fits in width, after "...", or text itself if it fits
@@ -63,6 +68,9 @@ public:
     bool hasFont() const { return font_ != nullptr; }
 
 private:
+    // Room given beyond maxWidth for rounding, in layout units
+    static constexpr float fitSlack = 1.0f;
+
     Page& page_;
     FontManager* font_;
     FontManager* focusFont_;

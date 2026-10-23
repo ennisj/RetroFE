@@ -18,6 +18,9 @@
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 #include <rapidxml.hpp>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -310,6 +313,191 @@ std::unique_ptr<Form> load(const std::string& id, const std::string& layoutName)
 void applyDefaults(const Form& form, Model& model)
 {
     ::applyDefaults(form.fields, model);
+}
+
+std::string ellipsize(const std::string& text, float width, const std::function<float(const std::string&)>& measure)
+{
+    if (text.empty() || measure(text) <= width) {
+        return text;
+    }
+    const std::string dots = "...";
+    if (measure(dots) > width) {
+        return "";
+    }
+    // Where each character starts, so a cut never splits one
+    std::vector<size_t> starts;
+    for (size_t i = 0; i < text.size(); i++) {
+        if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80) {
+            starts.push_back(i);
+        }
+    }
+    if (starts.empty()) {
+        return dots;   // only stray continuation bytes, e.g. Latin-1 text read as UTF-8
+    }
+    auto shortened = [&](size_t characters) {
+        std::string start = text.substr(0, characters < starts.size() ? starts[characters] : text.size());
+        while (!start.empty() && (start.back() == ' ' || start.back() == '\t')) {
+            start.pop_back();
+        }
+        return start + dots;
+    };
+    // The most characters that fit, found by halving (fewer characters never measure wider)
+    size_t low = 0;
+    size_t high = starts.size() - 1;
+    while (low < high) {
+        size_t middle = (low + high + 1) / 2;
+        if (measure(shortened(middle)) <= width) {
+            low = middle;
+        }
+        else {
+            high = middle - 1;
+        }
+    }
+    return shortened(low);
+}
+
+std::vector<std::string> wrapText(const std::string& text, float width, const std::function<float(const std::string&)>& measure)
+{
+    std::vector<std::string> lines;
+    if (text.empty()) {
+        return lines;
+    }
+    auto characterEnd = [&](const std::string& s, size_t start) {
+        size_t end = start + 1;
+        while (end < s.size() && (static_cast<unsigned char>(s[end]) & 0xC0) == 0x80) {
+            end++;
+        }
+        return end;
+    };
+    size_t paragraphStart = 0;
+    while (true) {
+        size_t paragraphEnd = text.find('\n', paragraphStart);
+        if (paragraphEnd == std::string::npos) {
+            paragraphEnd = text.size();
+        }
+        std::string paragraph = text.substr(paragraphStart, paragraphEnd - paragraphStart);
+        if (!paragraph.empty() && paragraph.back() == '\r') {
+            paragraph.pop_back();
+        }
+        std::string line;
+        size_t position = 0;
+        while (position < paragraph.size()) {
+            // The next word
+            while (position < paragraph.size() && (paragraph[position] == ' ' || paragraph[position] == '\t')) {
+                position++;
+            }
+            size_t wordEnd = paragraph.find_first_of(" \t", position);
+            if (wordEnd == std::string::npos) {
+                wordEnd = paragraph.size();
+            }
+            if (wordEnd == position) {
+                break;
+            }
+            std::string word = paragraph.substr(position, wordEnd - position);
+            position = wordEnd;
+
+            std::string candidate = line.empty() ? word : line + " " + word;
+            if (measure(candidate) <= width) {
+                line = candidate;
+                continue;
+            }
+            if (!line.empty()) {
+                lines.push_back(line);
+                line.clear();
+            }
+            // A word wider than a line on its own is split where it reaches the edge
+            while (measure(word) > width) {
+                size_t cut = characterEnd(word, 0);   // at least one character a line
+                while (cut < word.size()) {
+                    size_t next = characterEnd(word, cut);
+                    if (measure(word.substr(0, next)) > width) {
+                        break;
+                    }
+                    cut = next;
+                }
+                if (cut >= word.size()) {
+                    break;   // a single character wider than the line
+                }
+                lines.push_back(word.substr(0, cut));
+                word = word.substr(cut);
+            }
+            line = word;
+        }
+        lines.push_back(line);
+        if (paragraphEnd + 1 >= text.size()) {
+            break;   // the end, or a newline at the end
+        }
+        paragraphStart = paragraphEnd + 1;
+    }
+    return lines;
+}
+
+RowSplit splitRow(float labelNeeds, float detailNeeds, float width, float gap, float maxDetailShare)
+{
+    RowSplit split;
+    width = std::max(0.0f, width);
+    if (detailNeeds <= 0.0f) {
+        split.label = width;
+        return split;
+    }
+    float room = std::max(0.0f, width - gap);
+    if (labelNeeds + detailNeeds <= room) {
+        split.detail = detailNeeds;
+    }
+    else {
+        split.detail = std::min(detailNeeds, std::max(room * maxDetailShare, room - labelNeeds));
+    }
+    split.label = room - split.detail;
+    return split;
+}
+
+bool parseColor(const std::string& text, unsigned char rgb[3])
+{
+    std::string hex = !text.empty() && text[0] == '#' ? text.substr(1) : text;
+    if (hex.size() != 6 || hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+        return false;
+    }
+    for (int i = 0; i < 3; i++) {
+        rgb[i] = static_cast<unsigned char>(std::stoi(hex.substr(i * 2, 2), nullptr, 16));
+    }
+    return true;
+}
+
+bool parseNumber(const std::string& text, float& value)
+{
+    // Leading and trailing spaces are fine; anything else after the number isn't
+    size_t start = text.find_first_not_of(" \t");
+    if (start == std::string::npos) {
+        return false;
+    }
+    const char* begin = text.c_str() + start;
+    char* end = nullptr;
+    float parsed = std::strtof(begin, &end);
+    if (end == begin || std::string(end).find_first_not_of(" \t") != std::string::npos || !std::isfinite(parsed)) {
+        return false;
+    }
+    value = parsed;
+    return true;
+}
+
+int refocusIndex(const std::vector<FocusTarget>& targets, int previous)
+{
+    int count = static_cast<int>(targets.size());
+    if (count == 0) {
+        return -1;
+    }
+    previous = std::clamp(previous, 0, count - 1);
+    auto search = [&](FocusTarget wanted) {
+        for (int i = previous; i >= 0; i--) {
+            if (targets[i] == wanted) return i;
+        }
+        for (int i = previous + 1; i < count; i++) {
+            if (targets[i] == wanted) return i;
+        }
+        return -1;
+    };
+    int found = search(FocusTarget::Free);
+    return found >= 0 ? found : search(FocusTarget::Guarded);
 }
 
 }
