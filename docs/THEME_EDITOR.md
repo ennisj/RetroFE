@@ -194,12 +194,13 @@ item), or at the end of the page when nothing is selected, on lines of its
 own indented as its neighbours, with the file's line endings. It's placed in
 the middle of the page at a usual size, on a layer above every other, and
 selected. For an image or video the file chooser opens first: a file from
-elsewhere is copied into the theme's `images/` (`video/` or `videos/` for a
-video), or `assets/` when it has no such folder (a different file with the
-same name gets `-2`); one already in the theme is used where it is. *Not
-now* adds it with a placeholder name, which RetroFE skips until *Choose...*
-names a file. A page in a collection's folder refers to the file from the
-theme's folder, which RetroFE also looks in.
+elsewhere is copied into the page's own `images/` (`video/` or `videos/` for
+a video) when its folder has one, else the theme's, else `assets/` (a
+different file with the same name gets `-2`); one already in the theme is
+used where it is. `src` is written relative to the page's folder, as RetroFE
+reads it: a collection's page gets `images/x.png` beside it, or
+`../../../images/x.png` for the theme's. *Not now* adds it with a
+placeholder name, which RetroFE skips until *Choose...* names a file.
 
 ### Animations
 
@@ -212,7 +213,10 @@ xOffset, fontSize...), *from* (empty: from where it is), *to*, and an
 
 - *+ change* adds `alpha to 1` to a step, *+ step* a step of 0.2 seconds,
   *Add event* an event with one step (alpha from 0 to 1); *x* removes an
-  event, step or change. Clearing a field removes that attribute.
+  event, step or change. Clearing a field removes that attribute (an empty
+  `from` would make RetroFE start at 0 rather than where the element is).
+  The layout check reports empty `from`, `to` and `menuIndex`, and a `to`
+  that isn't a number, a percentage or left/center/right/top/bottom/stretch.
 - *Play* plays that event on the preview (as RetroFE triggers it), with the
   page as edited.
 - *Copy* (with an element chosen beside it) replaces the element's events

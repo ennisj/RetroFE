@@ -175,9 +175,24 @@ static Test::Suite layoutAdd("layout-native adding and animations", [] {
         out = withChild(scan("<layout><image src='a'/> <image src='b'/></layout>"), 0, "<text value='c'/>", 2);
         checkEqual(out, std::string("<layout><image src='a'/> <image src='b'/> <text value='c'/></layout>"), "inline, the space they have");
         out = withChild(scan("<layout>\n  <image src='a'/><image src='b'/>\n</layout>"), 0, "<text value='c'/>", 1);
-        LayoutDoc order = scan(out);
-        check(order.elements.size() == 4 && order.elements[2].name == "text" && order.elements[3].value("src") == "b",
-              "after the first of two on a line, before the second");
+        checkEqual(out, std::string("<layout>\n  <image src='a'/><text value='c'/><image src='b'/>\n</layout>"),
+                   "between two on a line: inline, as close as they are");
+        out = withChild(scan("<layout>\n  <image src='a'/> <image src='b'/>\n</layout>"), 0, "<text value='c'/>", 1);
+        checkEqual(out, std::string("<layout>\n  <image src='a'/> <text value='c'/> <image src='b'/>\n</layout>"), "or as spaced");
+
+        // The line ending is the sibling's line's, not the file's first
+        out = withChild(scan("<layout>\n  <image src='a'/>\r\n</layout>"), 0, "<text value='c'/>", 1);
+        checkEqual(out, std::string("<layout>\n  <image src='a'/>\r\n  <text value='c'/>\r\n</layout>"), "CRLF after a CRLF line in a mixed file");
+
+        // A byte order mark isn't part of the first line
+        out = withChild(scan("\xEF\xBB\xBF<layout width=\"1\" height=\"1\"></layout>"), 0, "<text value=\"a\"/>");
+        checkEqual(out, std::string("\xEF\xBB\xBF<layout width=\"1\" height=\"1\">\n    <text value=\"a\"/>\n</layout>"),
+                   "an empty root after a BOM opens over lines");
+        const LayoutDoc bomTabs = scan("\xEF\xBB\xBF<layout>\n\t<image src='a'/>\n</layout>\n");
+        checkEqual(indentUnit(bomTabs), std::string("\t"), "a BOM'd tab file's unit is a tab");
+        checkEqual(indentationOf(bomTabs, 0), std::string(""), "the root after a BOM starts its line");
+        out = withChild(scan("\xEF\xBB\xBF<layout/>"), 0, "<text value=\"a\"/>");
+        checkEqual(out, std::string("\xEF\xBB\xBF<layout>\n    <text value=\"a\"/>\n</layout>"), "a self-closing root after a BOM");
         check(withChild(scan("<layout><image src='a'/></layout>"), 0, "<x/>", 5) == "<layout><image src='a'/></layout>",
               "an `after` that isn't a child changes nothing");
     });
@@ -385,22 +400,60 @@ static Test::Suite layoutAdd("layout-native adding and animations", [] {
         writeFile(root + "/outside/other/new.png", "other art");
         std::string rel, error;
         check(!importFile(layouts, "Nox", root + "/outside/new.png", "images", rel, error), "the widget editor's import refuses a hand-made theme");
-        check(importIntoTheme(layouts, "Nox", root + "/outside/new.png", "images", rel, error) && rel == "images/new.png" &&
+        check(importIntoTheme(layouts, "Nox", root + "/outside/new.png", "images", "", rel, error) && rel == "images/new.png" &&
               readFile(layouts + "/Nox/images/new.png") == "art", "copied into images/: " + error);
-        check(importIntoTheme(layouts, "Nox", root + "/outside/new.png", "images", rel, error) && rel == "images/new.png", "the same file again: reused");
-        check(importIntoTheme(layouts, "Nox", root + "/outside/other/new.png", "images", rel, error) && rel == "images/new-2.png" &&
+        check(importIntoTheme(layouts, "Nox", root + "/outside/new.png", "images", "", rel, error) && rel == "images/new.png", "the same file again: reused");
+        check(importIntoTheme(layouts, "Nox", root + "/outside/other/new.png", "images", "", rel, error) && rel == "images/new-2.png" &&
               readFile(layouts + "/Nox/images/new.png") == "art", "a different one with the name: -2, nothing replaced");
-        check(importIntoTheme(layouts, "Nox", layouts + "/Nox/images/bg.png", "assets", rel, error) && rel == "images/bg.png",
+        check(importIntoTheme(layouts, "Nox", layouts + "/Nox/images/bg.png", "assets", "", rel, error) && rel == "images/bg.png",
               "a file already in the theme is used where it is");
-        check(!importIntoTheme(layouts, "..", root + "/outside/new.png", "images", rel, error), "not outside layouts");
-        check(!importIntoTheme(layouts, "Nox", root + "/outside/new.png", "../x", rel, error), "nor outside the theme");
+        check(!importIntoTheme(layouts, "..", root + "/outside/new.png", "images", "", rel, error), "not outside layouts");
+        check(!importIntoTheme(layouts, "Nox", root + "/outside/new.png", "../x", "", rel, error), "nor outside the theme");
+        check(!importIntoTheme(layouts, "Nox", root + "/outside/new.png", "images/../../x", "", rel, error), "nor through ..");
+        check(!importIntoTheme(layouts, "Nox", root + "/outside/new.png", "images", "../Other", rel, error), "relative to a folder of the theme only");
 
         LayoutSession s;
         s.open(root, "Nox", "layout.xml", error);
+        checkEqual(s.pageFolder(), std::string(""), "the main page is in the theme folder");
         checkEqual(s.importFolder("image"), std::string("images"), "images go in the theme's images/");
         checkEqual(s.importFolder("video"), std::string("assets"), "videos in assets/ when it has no video folder");
         fs::create_directories(layouts + "/Nox/video");
         checkEqual(s.importFolder("video"), std::string("video"), "else its video/");
+
+        // A collection's page: PageBuilder resolves src against the page's own folder
+        writeFile(layouts + "/Nox/collections/NES/layout/layout.xml", "<layout width=\"1920\" height=\"1080\">\n</layout>\n");
+        LayoutSession c;
+        check(c.open(root, "Nox", "collections/NES/layout/layout.xml", error), "a collection's page opens: " + error);
+        const std::string pageDir = c.pageFolder();
+        checkEqual(pageDir, std::string("collections/NES/layout"), "its folder");
+        checkEqual(c.importFolder("image"), std::string("images"), "without images/ of its own: the theme's");
+        check(importIntoTheme(layouts, "Nox", root + "/outside/new.png", c.importFolder("image"), pageDir, rel, error) &&
+              rel == "../../../images/new.png", "the src is relative to the page's folder: " + rel);
+        check(fs::exists(fs::path(layouts + "/Nox/" + pageDir) / rel), "and names the file from there");
+        check(importIntoTheme(layouts, "Nox", layouts + "/Nox/images/bg.png", "assets", pageDir, rel, error) &&
+              rel == "../../../images/bg.png", "a file already in the theme, from the page's folder: " + rel);
+        fs::create_directories(layouts + "/Nox/" + pageDir + "/images");
+        checkEqual(c.importFolder("image"), pageDir + "/images", "the page's own images/ first");
+        check(importIntoTheme(layouts, "Nox", root + "/outside/new.png", c.importFolder("image"), pageDir, rel, error) &&
+              rel == "images/new.png" && readFile(layouts + "/Nox/" + pageDir + "/images/new.png") == "art",
+              "copied beside the page: " + rel);
+        check(c.addElement("image", "", rel) && c.selectedElement()->value("src") == "images/new.png", "and used by the new image");
+    });
+
+    Test::run("the layout check: empty and unreadable animation values", [] {
+        auto issuesFor = [](const std::string& animate, const std::string& event = "onEnter") {
+            return checkLayoutXml("<layout width=\"10\" height=\"10\"><image src=\"a.png\"><" + event + "><set duration=\"1\">" + animate +
+                                  "</set></" + event.substr(0, event.find(' ')) + "></image></layout>");
+        };
+        check(issuesFor("<animate type=\"x\" to=\"center\"/>").empty(), "a keyword");
+        check(issuesFor("<animate type=\"width\" to=\"50%\"/>").empty() && issuesFor("<animate type=\"y\" from=\"-20\" to=\".5\"/>").empty(),
+              "a percentage and numbers");
+        check(issuesFor("<animate type=\"nop\"/>").empty(), "nop needs no to");
+        check(issuesFor("<animate type=\"x\" from=\"\" to=\"1\"/>").size() == 1, "from=\"\" is reported (it starts at 0)");
+        check(issuesFor("<animate type=\"x\" to=\"\"/>").size() == 1, "to=\"\" is reported");
+        std::vector<std::string> issues = issuesFor("<animate type=\"x\" to=\"middle\"/>");
+        check(issues.size() == 1 && issues[0].find("'middle'") != std::string::npos, "a word PageBuilder doesn't read is reported");
+        check(issuesFor("<animate type=\"x\" to=\"1\"/>", "onEnter menuIndex=\"\"").size() == 1, "menuIndex=\"\" is reported");
     });
 
     Test::run("script commands for adding and animations", [] {

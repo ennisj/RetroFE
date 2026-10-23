@@ -797,14 +797,26 @@ namespace ThemeEditor
 
     std::string LayoutSession::importFolder(const std::string& kind) const
     {
+        std::vector<std::string> names;
+        if (kind == "image") names = { "images" };
+        else if (kind == "video") names = { "video", "videos" };
+        // The page's own folder first (a collection's page keeps its art beside it), then the theme's
         std::vector<std::string> candidates;
-        if (kind == "image") candidates = { "images" };
-        else if (kind == "video") candidates = { "video", "videos" };
+        const std::string own = pageFolder();
+        if (!own.empty()) {
+            for (const std::string& n : names) candidates.push_back(own + "/" + n);
+        }
+        for (const std::string& n : names) candidates.push_back(n);
         std::error_code ec;
         for (const std::string& c : candidates) {
-            if (fs::is_directory(fs::path(themeDir()) / c, ec)) return c;
+            if (fs::is_directory(fs::path(themeDir()) / fs::path(c), ec)) return c;
         }
         return ASSETS_FOLDER;
+    }
+
+    std::string LayoutSession::pageFolder() const
+    {
+        return fs::path(page_).parent_path().generic_string();
     }
 
     bool LayoutSession::addElement(const std::string& paletteId, const std::string& type, const std::string& src)
@@ -912,8 +924,8 @@ namespace ThemeEditor
     bool LayoutSession::setAttributeOf(int element, const std::string& name, const std::string& value)
     {
         if (!insideSelected(element) || !attributeNameProblem(name).empty()) return false;
-        // PageBuilder reads the first character of from, to and menuIndex without
-        // checking there is one: an empty value inside an animation is removed instead
+        // Inside an animation an empty value is never what's meant (PageBuilder reads
+        // from="" and to="" as 0, menuIndex="" as menu 0): the attribute goes instead
         if (value.empty() && inAnimation(doc_, element)) return change(withoutAttribute(doc_, element, name), coalesce_);
         return change(withAttribute(doc_, element, name, value), coalesce_);
     }

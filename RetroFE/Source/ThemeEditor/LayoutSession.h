@@ -207,10 +207,13 @@ namespace ThemeEditor
         bool addElement(const std::string& paletteId, const std::string& type = "", const std::string& src = "");
         // One above the highest layer an element of the page sets, at most MAX_LAYER
         int newElementLayer() const;
-        // The theme's folder a chosen file of this kind ("image", "video",
-        // anything else) is copied into: the theme's own images/ (video/ or
-        // videos/ for videos) when it has one, else assets/
+        // The folder (in the theme, '/' separated) a chosen file of this kind
+        // ("image", "video", anything else) is copied into: the page's own
+        // images/ (video/ or videos/ for videos) when its folder has one,
+        // else the theme's, else assets/
         std::string importFolder(const std::string& kind) const;
+        // The page's folder in the theme: "" for layout.xml, "collections/NES/layout"
+        std::string pageFolder() const;
 
         // Animations. An element's events are its children named on...
         // (<onEnter>, <onMenuEnter>...), each holding <set duration=> steps
@@ -227,7 +230,7 @@ namespace ThemeEditor
         bool addAnimate(int set);                  // another change in that step: alpha to 1
         bool removeAnimation(int element);         // an event, set or animate
         // An empty value inside an animation removes the attribute (PageBuilder
-        // reads from="" / to="" / menuIndex="" past their end)
+        // reads from="" / to="" as 0, not "where it is", and menuIndex="" as menu 0)
         bool setAttributeOf(int element, const std::string& name, const std::string& value);
         bool removeAttributeOf(int element, const std::string& name);
         // The selected element's events become copies of `source`'s (its own

@@ -496,7 +496,8 @@ bool LayoutEditorScreen::importChosen(const std::string& path, const FileFor& wh
 {
     std::string rel, error;
     const std::string folder = session_.importFolder(what.kind);
-    if (!importIntoTheme(Utils::combinePath(ctx_.root, "layouts"), folder_, path, folder, rel, error)) {
+    // The src as this page writes it: relative to the page's own folder, which PageBuilder looks in first
+    if (!importIntoTheme(Utils::combinePath(ctx_.root, "layouts"), folder_, path, folder, session_.pageFolder(), rel, error)) {
         setStatus("Not added: " + error, true);
         return false;
     }

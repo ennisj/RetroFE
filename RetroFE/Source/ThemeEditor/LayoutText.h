@@ -111,7 +111,11 @@ namespace ThemeEditor
     // after its child `after`, or after its last child when `after` is -1
     // (an element without children gets its first). The fragment's lines are
     // separated by '\n' and nested by 4 spaces a level; they're written with
-    // the file's line ending and indentation unit (indentUnit).
+    // the line ending of the sibling's (or parent's) line and the file's
+    // indentation unit (indentUnit). A byte order mark isn't part of the
+    // first line.
+    //   - between a sibling and the next one on the same line: inline,
+    //     with the space they have between them
     //   - after a sibling that starts its line and has nothing but space or
     //     comments after it there: on a line of its own after that line,
     //     indented as the sibling (so a comment that heads the next element

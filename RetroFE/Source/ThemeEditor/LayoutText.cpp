@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "LayoutText.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -51,12 +52,23 @@ namespace ThemeEditor
             return "line " + std::to_string(lineOf(text, offset));
         }
 
-        // The start of offset's line, and whether only whitespace comes before it there
+        // A UTF-8 byte order mark's length at the start of the text (0 or 3)
+        size_t bomLength(const std::string& text)
+        {
+            return text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+                           static_cast<unsigned char>(text[2]) == 0xBF
+                       ? 3
+                       : 0;
+        }
+
+        // The start of offset's line, and whether only whitespace comes before
+        // it there. A byte order mark isn't part of the first line.
         size_t lineStart(const std::string& text, size_t offset, bool& onlySpace)
         {
             size_t s = offset;
             onlySpace = true;
-            while (s > 0 && text[s - 1] != '\n') {
+            const size_t first = std::min(bomLength(text), offset);
+            while (s > first && text[s - 1] != '\n') {
                 if (!isSpace(text[s - 1])) onlySpace = false;
                 --s;
             }
@@ -83,6 +95,15 @@ namespace ThemeEditor
             size_t nl = text.find('\n');
             if (nl != std::string::npos && nl > 0 && text[nl - 1] == '\r') return "\r\n";
             return "\n";
+        }
+
+        // The line ending of offset's line (a file can mix them); the file's
+        // when that line has none
+        std::string newlineAt(const std::string& text, size_t offset)
+        {
+            size_t nl = text.find('\n', offset);
+            if (nl == std::string::npos) return newlineOf(text);
+            return nl > 0 && text[nl - 1] == '\r' ? "\r\n" : "\n";
         }
     }
 
@@ -548,7 +569,6 @@ namespace ThemeEditor
         if (parent < 0 || parent >= count || fragment.empty()) return doc.text;
         if (after >= 0 && (after >= count || doc.elements[after].parent != parent)) return doc.text;
         const std::string& text = doc.text;
-        const std::string nl = newlineOf(text);
         const std::string unit = indentUnit(doc);
         const LayoutElement& p = doc.elements[parent];
         const int ref = after >= 0 ? after : (p.children.empty() ? -1 : p.children.back());
@@ -557,9 +577,25 @@ namespace ThemeEditor
         std::string insert;
         if (ref >= 0) {
             const LayoutElement& r = doc.elements[ref];
+            // The line ending of the sibling's own line
+            const std::string nl = newlineAt(text, r.end);
             const std::string indent = indentationOf(doc, ref);
             const bool starts = startsLine(text, r.begin);
-            if (starts && restQuiet(text, r.end)) {
+            // The sibling after it, when it's on the same line
+            int next = -1;
+            for (size_t k = 0; k + 1 < p.children.size(); ++k) {
+                if (p.children[k] == ref) next = p.children[k + 1];
+            }
+            if (next >= 0 && text.find('\n', r.end) < doc.elements[next].begin) next = -1;
+            if (next >= 0) {
+                // Between two on one line: inline, spaced as they are
+                const std::string between = text.substr(r.end, doc.elements[next].begin - r.end);
+                const std::string sep = inlineSpace(between) ? between : " ";
+                pos = r.end;
+                insert = sep + joinFragment(fragment);
+                offset = sep.size();
+            }
+            else if (starts && restQuiet(text, r.end)) {
                 // A line of its own, after the sibling's line
                 bool quiet = false;
                 pos = lineEnd(text, r.end, quiet);
@@ -592,6 +628,8 @@ namespace ThemeEditor
             eraseTo = pos;
         }
         else {
+            // The line ending of the parent's start tag's line
+            const std::string nl = newlineAt(text, p.startEnd);
             const std::string indent = indentationOf(doc, parent);
             const std::string inner = indent + unit;
             const bool lines = startsLine(text, p.begin) && pageElement(doc, parent);

@@ -770,7 +770,9 @@ User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#adding-elements).
   far from where you are in a long file), before `</layout>` (after a
   footer comment).
 - **Style from the neighbours.** Indentation from the sibling (or the
-  parent plus the file's unit), line endings from the file, one line per
+  parent plus the file's unit), the line ending of the sibling's (or
+  parent's) line, inline between two siblings that share a line, a byte
+  order mark not counted as part of the first line, one line per
   element when the sibling is on its own line, inline when it shares one,
   so an Aeon Nox one-line event gets `<animate/><animate/>` and a
   multi-line file gets lines. Considered: always a new line (breaks the
@@ -780,24 +782,32 @@ User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#adding-elements).
   uses (at most 19). Considered: `x="center"` with `xOrigin="center"` (the
   first sideways drag turns it into a number anyway), the selection's layer
   (may be under other things).
-- **Files: the theme's own folders.** Images go to the theme's `images/`
-  and videos to `video/` or `videos/` when it has one (Aeon Nox has both
-  `images/` and `video/`), else `assets/`, through the same copy rules as
-  the widget editor (`importIntoTheme`). The path written is relative to the
-  theme folder, which PageBuilder also searches for a page in a
-  collection's folder. Choosing comes first for an image or video; *Not
-  now* adds it with a placeholder name. Considered: one `assets/` for
-  everything (out of place in a hand-made theme), asking for the file after
-  adding (an element that draws nothing until then).
+- **Files: the theme's own folders, paths from the page.** Images go to the
+  page folder's `images/` when it has one, else the theme's (videos:
+  `video/` or `videos/`; Aeon Nox has `images/` and `video/`), else
+  `assets/`, through the same copy rules as the widget editor
+  (`importIntoTheme`). `src` is relative to the page's own folder, because
+  PageBuilder resolves it there first and only then in
+  `layouts/<configured layout>/`: a theme-relative path on a collection's
+  page would work only while the theme is the configured one (found in
+  review). A file already in the theme gets a page-relative path too.
+  Choosing comes first for an image or video; *Not now* adds it with a
+  placeholder name. Considered: one `assets/` for everything (out of place
+  in a hand-made theme), asking for the file after adding (an element that
+  draws nothing until then), copying into a new `images/` beside every
+  collection page (duplicates art the theme already has).
 - **The chooser is shared.** Moved from `ThemeEditorScreen` into
   `FileChooser` rather than copied.
 - **Animations are edited where they're written.** Each event, step and
   change is its element in the text; *+ change* / *+ step* / *Add event*
   insert one-line defaults (alpha), *x* removes one. An empty value inside
-  an animation removes the attribute, because PageBuilder reads the first
-  character of `from`, `to` and `menuIndex` without checking there is one.
-  Considered: a structured editor that rewrites the whole event (loses the
-  author's alignment, as in Aeon Nox's column-aligned events).
+  an animation removes the attribute: PageBuilder reads `from=""` as 0 (not
+  "where it is"), `to=""` as 0 and `menuIndex=""` as menu 0. It also read
+  the last character of an empty `from`/`to` (undefined behaviour); that's
+  guarded now (`getAnimationEvents`, a two-line change), and the layout
+  check reports empty `from`, `to`, `menuIndex` and a `to` it would read
+  as 0. Considered: a structured editor that rewrites the whole event
+  (loses the author's alignment, as in Aeon Nox's column-aligned events).
 - **Copy animations replaces.** The element's events become copies of the
   other element's, as written (re-indented); Undo brings back its own.
   Considered: merging by event name (unclear which wins when both have

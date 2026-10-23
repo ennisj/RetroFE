@@ -32,7 +32,9 @@
 //     default slots have no height)
 //   - a mode value PageBuilder doesn't recognise for that element
 //   - an animation set without duration, an animate without type, with an
-//     unknown tween type, or without "to"
+//     unknown tween type, or without "to"; from, to or menuIndex present but
+//     empty, and a "to" that isn't a number, a percentage or one of left,
+//     center, right, top, bottom, stretch (PageBuilder reads those as 0)
 //   - a layer outside 0..19 on any element or menu item (Page draws
 //     NUM_LAYERS = 20 layers and drops a component on any other), alpha
 //     outside 0..1, and a duration, layer or loadFontSize that isn't a number
