@@ -133,6 +133,9 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.library = library_.get();
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
+        services.requestLaunch = [this](const std::string& collection, const std::string& game) {
+            launchWanted_ = LaunchRequest{ collection, game };   // handleResult closes the manager for it
+        };
         Manager::registerProviders(model_, services);
         providersAdded_ = true;
     }
@@ -519,7 +522,8 @@ bool ManagerUI::openKeyboard()
 
     const Forms::Field* field = widget_->editingField();
     keyboard_ = builder.keyboardWidgets().front();
-    keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number);
+    keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number,
+                      field && field->multiline);
     keyboardPage_ = page;
     keyboardPage_->allocateGraphicsMemory();
     keyboardPage_->start();
@@ -579,13 +583,17 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
         // that are also mapped controls (e.g. back = B) just type
         if (keyboardPage_) {
             SDL_Keycode key = e.type == SDL_KEYDOWN ? e.key.keysym.sym : 0;
+            bool ctrl = e.type == SDL_KEYDOWN && (e.key.keysym.mod & KMOD_CTRL);
             bool printable = key >= 32 && key < 127 && !(e.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI));
             if (printable || e.type == SDL_TEXTINPUT) {
                 typedOnKeyboard_ = true;
                 closeKeyboard();
             }
             // On the on-screen keyboard Enter is Select, which presses the focused key
-            else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+            // (Ctrl+Enter still keeps a multi-line text), and the arrows move between keys
+            else if (((key == SDLK_RETURN || key == SDLK_KP_ENTER) && !ctrl)
+                     || key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT
+                     || key == SDLK_HOME || key == SDLK_END || key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) {
                 return false;
             }
         }
@@ -647,7 +655,11 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
         // While a field is edited the controls type on the on-screen keyboard
         if (keyboard_) {
             KeyboardWidget::Result result = keyboard_->navigate(navs[i]);
-            if (result != KeyboardWidget::Result::None) {
+            if (result == KeyboardWidget::Result::LineUp || result == KeyboardWidget::Result::LineDown) {
+                // A line as the field draws it, which only the field knows
+                widget_->moveEditLine(result == KeyboardWidget::Result::LineUp ? -1 : 1);
+            }
+            else if (result != KeyboardWidget::Result::None) {
                 widget_->finishEditing(result == KeyboardWidget::Result::Done);
                 syncKeyboard();
             }
@@ -709,6 +721,18 @@ void ManagerUI::handleWidgetResults()
 
 void ManagerUI::handleResult(const Forms::Model::Result& result)
 {
+    // A game to start: close (asking about unsaved changes first, like Close),
+    // and RetroFE starts it once it's reloaded if it has to
+    if (launchWanted_) {
+        LaunchRequest wanted = *launchWanted_;
+        launchWanted_.reset();
+        if (result.ok) {
+            if (requestClose()) {
+                pendingLaunch_ = wanted;
+            }
+            return;
+        }
+    }
     if (result.ok && result.reload) {
         reloadRequested_ = true;
         close();
@@ -774,6 +798,31 @@ bool ManagerUI::takeReloadRequest()
     }
     reloadRequested_ = false;
     return true;
+}
+
+bool ManagerUI::takeLaunchRequest(LaunchRequest& request)
+{
+    if (!pendingLaunch_ || open_ || reloadRequested_) {
+        return false;
+    }
+    request = *pendingLaunch_;
+    pendingLaunch_.reset();
+    return true;
+}
+
+void ManagerUI::returnFromLaunch(const LaunchRequest& request, bool started)
+{
+    if (!context_ || locked_) {
+        return;
+    }
+    // Where the user was, as far as the screens go: Manage > Games > the game
+    open("manage");
+    if (!open_ || !push("games", { { "collection", request.collection } })
+        || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
+        return;
+    }
+    setStatus(started ? "Back from " + request.game + "." : request.game + " couldn't be started: it isn't in "
+                  + request.collection + " any more. See log.txt.", !started);
 }
 
 void ManagerUI::setLocked(bool locked)

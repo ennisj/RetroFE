@@ -28,6 +28,7 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 class Configuration;
@@ -115,6 +116,19 @@ public:
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);
 
+    // A game Manage asked to start (Services::requestLaunch, "Start this game")
+    struct LaunchRequest
+    {
+        std::string collection;   // its own system
+        std::string game;
+    };
+    // True once, with the request, after the manager closed for it. Not while
+    // a reload is due: the request outlives RetroFE's reload (it's kept for
+    // the next ManagerUI), so the game starts with the changes made in Manage.
+    bool takeLaunchRequest(LaunchRequest& request);
+    // After the game: Manage opens again on its screen (Manage > Games > the game)
+    void returnFromLaunch(const LaunchRequest& request, bool started);
+
     // The page RetroFE draws collections with ("layout", or a randomLayout one
     // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
     void setLayoutPage(const std::string& page) { layoutPage_ = page; }
@@ -173,6 +187,8 @@ private:
     bool reloadWhenClosed_ = false;   // Services::requestReload was called
     bool leaveWarned_ = false;        // a provider objected to leaving; doing it again leaves
     int cursorWasShown_ = SDL_ENABLE;
+    std::optional<LaunchRequest> launchWanted_;                 // asked for by the action being run
+    inline static std::optional<LaunchRequest> pendingLaunch_;  // once closed; kept across a reload
 
     std::string status_;
     bool statusIsError_ = false;

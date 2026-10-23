@@ -169,6 +169,8 @@ private:
     CollectionInfo *getCollection( const std::string& collectionName, bool allowMissing = false );
     CollectionInfo *getHomeCollection( );
     RETROFE_STATE   selectHomeItem( const Item *item );
+    // Manage's "Start this game": launched as from its own system's page, then back to Manage
+    RETROFE_STATE   launchFromManager( const ManagerUI::LaunchRequest& request );
     CollectionInfo *getCatalogCollection( );
     bool            isHomeMenuPage( const std::string& collectionName ) const;  // Home or the Catalog list
     void updatePageControls(const std::string& type);

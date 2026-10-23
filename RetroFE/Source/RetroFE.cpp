@@ -642,7 +642,9 @@ bool RetroFE::run()
 				{
 					if (currentPage_->isIdle())
 					{
-						state = processUserInput(currentPage_);
+						// Manage asked to start a game (after any reload it needed)
+						ManagerUI::LaunchRequest launch;
+						state = manager_.takeLaunchRequest(launch) ? launchFromManager(launch) : processUserInput(currentPage_);
 					}
 					lastLaunchReturnTime_ = 0;
 				}
@@ -3455,6 +3457,70 @@ CollectionInfo* RetroFE::getCatalogCollection()
 bool RetroFE::isHomeMenuPage(const std::string& collectionName) const
 {
 	return homeMenu_ && (collectionName == Home::collectionName || collectionName == Home::catalogCollectionName);
+}
+
+// Manage's "Start this game": the game is launched as RETROFE_LAUNCH_REQUEST
+// launches the selected item, from its own system's collection (lastplayed,
+// play count and time played are kept the same way), then Manage opens on it again
+RetroFE::RETROFE_STATE RetroFE::launchFromManager(const ManagerUI::LaunchRequest& request)
+{
+	CollectionInfo* info = getCollection(request.collection);
+	Item* item = nullptr;
+	for (Item* candidate : info ? info->items : std::vector<Item*>())
+	{
+		if (candidate->leaf && candidate->name == request.game && candidate->collectionInfo &&
+			candidate->collectionInfo->name == request.collection)
+		{
+			item = candidate;
+			break;
+		}
+	}
+	if (!item || !currentPage_)
+	{
+		LOG_ERROR("RetroFE", "Manage asked to start " + request.collection + "/" + request.game + ", which isn't in its collection");
+		delete info;
+		manager_.returnFromLaunch(request, false);
+		return RETROFE_IDLE;
+	}
+	LOG_INFO("RetroFE", "Starting " + request.collection + "/" + request.game + " from Manage");
+
+	Launcher l(config_, *this);
+	launchEnter();
+	std::string lastPlayedSkipCollection;
+	int size = 0;
+	config_.getProperty(OPTION_LASTPLAYEDSKIPCOLLECTION, lastPlayedSkipCollection);
+	config_.getProperty(OPTION_LASTPLAYEDSIZE, size);
+	if (!lastPlayedSkipCollection.empty())
+	{
+		std::vector<std::string> skipped;
+		Utils::listToVector(lastPlayedSkipCollection, skipped, ',');
+		if (std::find(skipped.begin(), skipped.end(), item->collectionInfo->name) == skipped.end())
+		{
+			CollectionInfoBuilder cib(config_, *metadb_);
+			cib.updateLastPlayedPlaylist(info, item, size);
+		}
+	}
+	l.LEDBlinky(3, item->collectionInfo->name, item);
+	bool reboot = l.run(item->collectionInfo->name, item, currentPage_);
+	if (reboot)
+	{
+		attract_.reset();
+		bool unloadSDL = false;
+		config_.getProperty(OPTION_UNLOADSDL, unloadSDL);
+		if (unloadSDL)
+		{
+			launchExit();
+		}
+		delete info;
+		reboot_ = true;
+		return RETROFE_QUIT_REQUEST;
+	}
+	attract_.reset();
+	launchExit();
+	l.LEDBlinky(4);
+	delete info;
+	manager_.returnFromLaunch(request, true);
+	return RETROFE_IDLE;
 }
 
 // Load a collection

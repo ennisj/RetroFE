@@ -1303,6 +1303,76 @@ EditResult Editor::moveMenuChild(const Index& index, const std::string& menu, co
     return EditResult{ true, "Moved " + child + ".", { Utils::combinePath(menuRecord->folder, "menu.txt") } };
 }
 
+// --- Hidden games (exclude lists) ---------------------------------------------------
+
+namespace
+{
+    // The exclude-list lines that hide (or would hide) a game. ImportDirectory
+    // matches them against each file's name without its extension (the
+    // folder's name is the item's only with list.emuarc).
+    std::vector<std::string> excludeEntries(const Index& index, int collection, const std::string& game)
+    {
+        std::vector<std::string> entries;
+        if (collection < 0 || static_cast<size_t>(collection) >= index.candidates.size()) {
+            return entries;
+        }
+        for (const Index::Candidate& candidate : index.candidates[static_cast<size_t>(collection)]) {
+            if (candidate.name == game && std::find(entries.begin(), entries.end(), candidate.basename) == entries.end()) {
+                entries.push_back(candidate.basename);
+            }
+        }
+        if (entries.empty()) {
+            entries.push_back(game);   // listed by include.txt with no file: matched by its name
+        }
+        return entries;
+    }
+}
+
+EditResult Editor::setGameHidden(const Index& index, const std::string& collection, const std::string& game, bool hidden)
+{
+    int c;
+    const CollectionRecord* record = findRecord(index, collection, c);
+    if (!record || !record->is(KindSystem)) {
+        return EditResult::fail("There's no system called \"" + collection + "\".");
+    }
+    std::string problem = LineList::checkEntry(game);
+    if (game.empty() || !problem.empty()) {
+        return EditResult::fail(problem.empty() ? "The game's name is empty." : problem);
+    }
+    if (hidden && index.findGame(record->name, game) < 0) {
+        return EditResult::fail(record->name + " doesn't list a game called \"" + game + "\".");
+    }
+    std::string file = record->excludeFile.empty() ? Utils::combinePath(record->folder, "exclude.txt") : record->excludeFile;
+    std::string fileName = Utils::getFileName(file);
+    LineList list(file);
+    std::string error;
+    if (!list.load(&error)) {
+        return EditResult::fail(error);
+    }
+    std::vector<std::string> entries = excludeEntries(index, c, game);
+    bool changed = false;
+    for (const std::string& entry : entries) {
+        if (hidden && list.find(entry) < 0) {
+            if (!LineList::checkEntry(entry).empty() || !list.add(entry, error)) {
+                return EditResult::fail(error.empty() ? LineList::checkEntry(entry) : error);
+            }
+            changed = true;
+        }
+        else if (!hidden) {
+            changed |= list.remove(entry);
+        }
+    }
+    if (!changed) {
+        return hidden ? EditResult{ true, game + " is hidden already.", {} }
+                      : EditResult::fail(fileName + " doesn't hide " + game + ".");
+    }
+    if (!list.save(error, &backups_)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, hidden ? "Hid " + game + ": " + fileName + " lists it now."
+                                    : "Showing " + game + " again: it's out of " + fileName + ".", { file } };
+}
+
 // --- Playlists and merged collections -----------------------------------------------
 
 namespace

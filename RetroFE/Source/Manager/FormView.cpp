@@ -97,8 +97,17 @@ bool FormView::inputText(const Field& field, Forms::Model& model, float width)
     bool editingThis = editing_ == &field;
     std::string shown = editingThis ? std::string() : model.get(field.bind);
     std::string& text = editingThis ? editBuffer_ : shown;
-    ImGui::SetNextItemWidth(width);
-    bool changed = ImGui::InputTextWithHint("##value", field.hint.c_str(), &text);
+    bool changed = false;
+    if (field.multiline) {
+        // Enter starts a new line; clicking away or Tab keeps the text, Escape cancels
+        float height = ImGui::GetTextLineHeight() * static_cast<float>(std::max(1, field.rows))
+                     + ImGui::GetStyle().FramePadding.y * 2.0f;
+        changed = ImGui::InputTextMultiline("##value", &text, ImVec2(width, height));
+    }
+    else {
+        ImGui::SetNextItemWidth(width);
+        changed = ImGui::InputTextWithHint("##value", field.hint.c_str(), &text);
+    }
     if (ImGui::IsItemActivated()) {
         editing_ = &field;
         editOriginal_ = model.get(field.bind);

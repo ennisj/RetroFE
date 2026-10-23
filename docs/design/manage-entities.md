@@ -51,6 +51,7 @@ parallel.
 | `value` | A read-only label and value |
 | `image` | Artwork or other media from a path |
 | `text live="yes"` | Search boxes that filter while typing |
+| `text multiline="yes" rows="N"` | Longer text kept as lines, such as a game's story |
 
 ### Data
 
@@ -70,7 +71,8 @@ These carry over from One Saucier, where they were learned the hard way:
 - **Write through a temporary file and rename it into place**, keeping
   comments, spacing and line endings in files people also edit by hand.
 - **Choices instead of free text** wherever there's a fixed set of valid
-  values (launchers, yes/no, sort fields); free text is one line, trimmed.
+  values (launchers, yes/no, sort fields); free text is one line, trimmed
+  (texts that are lines, such as a story, use a multi-line field).
 - **Ask before deleting**, and say what stays ("Its games stay on the drive").
 - **Changes take effect on reload.** RetroFE reads configuration, collections,
   metadata and media once, and caches media folder listings for good. Screens
