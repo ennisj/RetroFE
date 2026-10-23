@@ -888,11 +888,12 @@ bool SelfUpdater::apply(const Package& package, const std::string& archive, std:
                      + backup.u8string() + ".";
         return false;
     };
+    // Each rename is retried too: a virus scanner can hold a file it's just seen for a moment
     auto swap = [&](const Step& step) {
-        if (step.kind != Step::Kind::Add && !renameFile(step.destination, step.aside)) {
+        if (step.kind != Step::Kind::Add && !persist([&] { return renameFile(step.destination, step.aside); })) {
             return "Could not move " + step.destination.filename().u8string() + " aside (is it open in another program?)";
         }
-        if (step.kind != Step::Kind::Remove && !renameFile(step.prepared, step.destination)) {
+        if (step.kind != Step::Kind::Remove && !persist([&] { return renameFile(step.prepared, step.destination); })) {
             return "Could not put the new " + step.destination.filename().u8string() + " in place";
         }
         return std::string();
