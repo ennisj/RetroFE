@@ -729,15 +729,126 @@ the edited values (a git word diff), `retrofe --theme-check "Aeon Nox"`
 passed on it, closing the manager reloaded RetroFE, and Put back the original
 restored the file byte for byte.
 
-### Left for later
+### Left for later (as left by that round)
 
-- Adding elements (an "add image / text / video" with the raw attributes,
-  or the widget library's fragments inserted as text).
-- Editing animations (a list of events, sets and tweens).
-- Showing animated positions (the box where an animation ends).
+- ~~Adding elements~~, ~~editing animations~~, ~~showing where an
+  animation ends~~ (next section).
 - Editing several pages at once (`layout.xml` and `layout 4x3.xml` usually
   move together).
 - Snapping a centred box of odd width puts its edge, not its centre, on the grid.
+
+## Layout-native mode: adding elements and animations
+
+User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#adding-elements).
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/LayoutText` `withChild` | Inserts an element's text as a child: after a given child or the last one, else into an empty parent (a self-closing one opens). The style comes from the file: on a line of its own after a sibling that starts its line and has only space or comments after it there, indented as that sibling; inline after a sibling that shares its line, spaced as the siblings are; into an empty page element (root, component, menu item) on lines of its own, into an empty event or set inline. Fragments are written with `\n` and 4-space levels and re-expressed in the file's line ending and `indentUnit` (the most common parent-to-child indentation difference). `fragmentOf` turns an element's own text back into such a fragment (for copying animations between elements at different depths). |
+| `ThemeEditor/LayoutPalette.{h,cpp}` | The palette: image, video, text, statusText, container, reloadableImage (`type`), reloadableVideo (`imageType`), reloadableText and reloadableScrollingText (`type`), reloadableHiscores, a vertical menu and a custom wheel menu with `<itemDefaults>` (and items). Each a template placed by its top-left corner and layer. The animation fragments (`eventFragment`, `setFragment`, `animateFragment`), the tween types and algorithms in the case layouts write them, `engineEventName` (`onMenuEnter` -> `menuEnter`). Pure. |
+| `ThemeEditor/LayoutSession` | `addElement` (after the selection's page element, else at the end; centred; `newElementLayer`; selects it by the path found at the insert offset), `importFolder`; animations: `events`, `childrenNamed`, `addEvent`/`addSet`/`addAnimate`, `removeAnimation`, `setAttributeOf`/`removeAttributeOf` (inside the selection only; an empty value inside an animation removes the attribute), `copyAnimationsFrom`, `findInSelected`; `enterEndBox`. Animation edits keep the boxes: the "paths changed" test now compares only paths outside animation events. |
+| `ThemeEditor/ThemeStore` `importIntoTheme` | `importFile` without the editor-made guard, for hand-made themes (adds, never replaces; `-2` for a different file of the same name). |
+| `ThemeEditor/EditorScript` | `add`, `event`, `addset`, `addanimate`, `rmanim`, `animattr`, `rmanimattr`, `getanim`, `copyanims`, `events`, `endbox`. |
+| `Manager/Themes/app/FileChooser.{h,cpp}` | The widget editor's file chooser, moved out of `ThemeEditorScreen` so both editors use it (same behaviour; *Cancel* / *Not now* is reported apart from closing it). |
+| `Manager/Themes/app/LayoutEditorScreen` | *Add element...* and the palette dialog, the chooser for a new image or video and *Choose...* beside `src`, *Shows* for reloadable types, the *Animations* panel (events as tree nodes with *Play* and *x*; steps with duration; changes with type, algorithm, from, to; *+ change*, *+ step*, *Add event*, *Copy its animations*), dashed end boxes and *Play the start*; script commands `palette`, `addfile`, `srcfile`, `browse`, `browsedir`, `replay`, `endboxes`, `showanims`, `openevent`. |
+
+### Decisions made in this round
+
+- **Raw elements, not widgets.** The palette writes RetroFE's own elements
+  with the attributes PageBuilder reads (a test runs every entry, every
+  type, through the layout check and rapidxml, alone and inserted into an
+  Aeon Nox-style page). Considered: the widget library's fragments (they
+  carry `{TOKEN}`s and the editor's ids, and are built for the widget
+  model).
+- **Where it goes: after the selection, else at the end.** After the page
+  element the selection is part of (its menu, for an item), so a new
+  element lands next to what you're looking at; with nothing selected after
+  the page's last element (a trailing comment stays last). Only same-named
+  elements after it change path (PageBuilder builds by name, in file
+  order), which the tests check. Considered: always at the end (simple, but
+  far from where you are in a long file), before `</layout>` (after a
+  footer comment).
+- **Style from the neighbours.** Indentation from the sibling (or the
+  parent plus the file's unit), line endings from the file, one line per
+  element when the sibling is on its own line, inline when it shares one,
+  so an Aeon Nox one-line event gets `<animate/><animate/>` and a
+  multi-line file gets lines. Considered: always a new line (breaks the
+  one-line event style), a fixed 4 spaces (wrong for tab files).
+- **Placed numerically in the middle, on top.** `x`/`y` are the numbers
+  that centre the default size; the layer is one above the highest the page
+  uses (at most 19). Considered: `x="center"` with `xOrigin="center"` (the
+  first sideways drag turns it into a number anyway), the selection's layer
+  (may be under other things).
+- **Files: the theme's own folders.** Images go to the theme's `images/`
+  and videos to `video/` or `videos/` when it has one (Aeon Nox has both
+  `images/` and `video/`), else `assets/`, through the same copy rules as
+  the widget editor (`importIntoTheme`). The path written is relative to the
+  theme folder, which PageBuilder also searches for a page in a
+  collection's folder. Choosing comes first for an image or video; *Not
+  now* adds it with a placeholder name. Considered: one `assets/` for
+  everything (out of place in a hand-made theme), asking for the file after
+  adding (an element that draws nothing until then).
+- **The chooser is shared.** Moved from `ThemeEditorScreen` into
+  `FileChooser` rather than copied.
+- **Animations are edited where they're written.** Each event, step and
+  change is its element in the text; *+ change* / *+ step* / *Add event*
+  insert one-line defaults (alpha), *x* removes one. An empty value inside
+  an animation removes the attribute, because PageBuilder reads the first
+  character of `from`, `to` and `menuIndex` without checking there is one.
+  Considered: a structured editor that rewrites the whole event (loses the
+  author's alignment, as in Aeon Nox's column-aligned events).
+- **Copy animations replaces.** The element's events become copies of the
+  other element's, as written (re-indented); Undo brings back its own.
+  Considered: merging by event name (unclear which wins when both have
+  one).
+- **Play uses the engine's own trigger.** `Page::triggerEventOnAllMenus`
+  (as RetroFE does for menu events; `Page::triggerEvent` when there's no
+  selected item), from `update()`, after a pending rebuild so it plays the
+  page as edited; *Play the start* rebuilds so every `onEnter` plays.
+- **End boxes from `onEnter` only.** The last value each change of the
+  element's first `onEnter` (one without `menuIndex` preferred) gives
+  `x`, `y`, `xOffset`, `yOffset`, `width`, `height`, resolved as PageBuilder
+  does (`center` is half the page, `50%` of its width or height), drawn
+  dashed when that box isn't the placed one. Other events (onMenuEnter,
+  onIdle loops) and origin tweens aren't shown. Considered: running the
+  tweens (needs the engine's clock), every event's end (a stack of boxes).
+
+### Checked
+
+`retrofe_tests` (`Tests/LayoutAddTests.cpp`, on an Aeon Nox-style page with
+a BOM, CRLF, comments heading elements, blank lines and one-line events):
+inserts at the end (before a trailing comment), after a sibling (before the
+blank line and comment of the next), after a sibling with a comment on its
+line, multi-line fragments in the file's unit, tab and two-space files, the
+last line without a line ending, self-closing and empty parents (root,
+component, set, event), inline siblings and an `after` that isn't a child;
+every palette entry and type passes the layout check and rapidxml, alone
+and inserted; tween names equal LayoutCheck's; adding at the end keeps
+every other element's path and text, after an element shifts only its
+kind, after a menu item goes after the menu, a wheel with its items; save;
+animate add/edit/remove back to the exact bytes, empty values removed,
+steps and events added on their own lines, refusals; copying onto a
+self-closing element and replacing an element's own; end boxes (the top
+bar, alpha-only, `center`, `50%`); `importIntoTheme` and `importFolder`;
+the script commands.
+
+GUI check (2026-10-23, private root `E:\Storage\Agents\native5`, scripted):
+the details note, the top bar's dashed end box, the palette, a text, game
+art and an image from a file outside the theme added (copied to
+`images/badge.png`), the top bar's animations copied onto the text and
+edited (3 s, a second change with easeOutCubic), *Play* mid-animation, the
+file chooser, save. The saved `layout.xml` differed from the original by
+the ten inserted lines only, `retrofe --theme-check "Aeon Nox"` passed,
+and RetroFE reloaded the theme when the manager closed.
+
+### Left for later
+
+- Editing `layout.xml` and `layout 4x3.xml` together.
+- Selecting an off-page element by its end box on the canvas (the list
+  selects it).
+- End boxes for other events, and previewing an event's frames by a slider.
+- Adding a sound (`<sound>`) and menu items from the palette.
 
 ## Other open items
 

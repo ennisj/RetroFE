@@ -117,6 +117,11 @@ namespace ThemeEditor
     // path in the theme as it is.
     bool importFile(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
                     const std::string& subfolder, std::string& relOut, std::string& error);
+    // importFile without asking whether the editor made the theme: the
+    // layout editor adds files to hand-made themes this way. It only ever
+    // adds a file (never replaces one) inside layouts/<folder>/<subfolder>.
+    bool importIntoTheme(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
+                         const std::string& subfolder, std::string& relOut, std::string& error);
 
     // Why a file isn't a font the theme can use ("" when it is): a .ttf or
     // .otf whose first bytes are a TrueType (00 01 00 00, "true") or

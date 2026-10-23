@@ -16,7 +16,8 @@ Two kinds of theme, in two ways:
   its project inside it (`layouts/<Theme>/editor/project.xml`) and a marker on
   the first line of each page it wrote.
 - **Hand-made themes**, Aeon Nox included, in the **layout editor**: it
-  changes the elements a page already has, in the page file itself (see
+  changes a page's elements, adds new ones and edits their animations, in
+  the page file itself (see
   [Hand-made themes: the layout editor](#hand-made-themes-the-layout-editor)).
   It never duplicates or deletes a hand-made theme.
 
@@ -137,10 +138,10 @@ selected name is larger too.
 ## Hand-made themes: the layout editor
 
 **Manage > Themes > (a hand-made theme) > Edit** opens its pages in the
-layout editor. It moves, resizes and changes the attributes of the elements
-a page already has, and can copy (Duplicate) or delete one; it can't add new
-elements yet. Everything you don't change stays exactly as it was: comments,
-spacing, the order of attributes, quotes, line endings, animations.
+layout editor. It moves, resizes and changes the attributes of a page's
+elements, copies (Duplicate) or deletes one, adds new ones and edits their
+animations. Everything you don't change stays exactly as it was: comments,
+spacing, the order of attributes, quotes, line endings.
 
 - **Left: Pages and Elements.** Every page of the theme: `layout.xml` and its
   variants (`layout 4x3.xml`, `layout - 1.xml`), `splash.xml`, the
@@ -161,9 +162,64 @@ spacing, the order of attributes, quotes, line endings, animations.
   `layer` (0 is drawn first, 19 on top), `font`, `fontSize`, `fontColor` and
   `src`, as the text they are, with what RetroFE makes of the position and
   size beside them (`x = center` shows `= 960`). A menu item shows what it
-  takes from its `<itemDefaults>`. *All attributes* lists every attribute,
-  each editable as text and removable (*x*), and adds new ones. Its
-  animations (`<onEnter>` and the rest) are listed, not changed.
+  takes from its `<itemDefaults>`. Game art, video and text have *Shows*
+  (their `type`, or a video's `imageType`) with the usual choices; an image,
+  video or sound has *Choose...* beside `src`. *All attributes* lists every
+  attribute, each editable as text and removable (*x*), and adds new ones.
+  *Animations* edits its events (below).
+- **Top:** *Where animations end* draws a dashed box where an element's
+  `onEnter` leaves it, when that isn't where it's placed (Aeon Nox's top bar
+  is placed above the page and slides down to it); with *All boxes*, every
+  element's. *Play the start* builds the preview again, so every `onEnter`
+  plays.
+
+### Adding elements
+
+**Add element...** (above the element list) shows the elements RetroFE
+builds, written as its own XML:
+
+| Entry | Element | |
+|---|---|---|
+| Image, Video | `image`, `video` | a file of the theme's; asks for it first |
+| Text, Status text | `text`, `statusText` | fixed text; what RetroFE is doing |
+| Container (a box) | `container` | a coloured box |
+| Game art | `reloadableImage type=` | logo, artwork_front, screenshot, fanart, marquee... |
+| Game video | `reloadableVideo imageType=` | the game's video, with art of that kind when it has none |
+| Game text, Scrolling game text | `reloadableText`, `reloadableScrollingText type=` | title, year, manufacturer...; story, description, tagline |
+| Hiscores | `reloadableHiscores` | |
+| Menu (a list), Menu (a wheel) | `menu` with `<itemDefaults>` (and three `<item>`s for the wheel) | |
+
+The new element goes after the selected element (after its menu, for a menu
+item), or at the end of the page when nothing is selected, on lines of its
+own indented as its neighbours, with the file's line endings. It's placed in
+the middle of the page at a usual size, on a layer above every other, and
+selected. For an image or video the file chooser opens first: a file from
+elsewhere is copied into the theme's `images/` (`video/` or `videos/` for a
+video), or `assets/` when it has no such folder (a different file with the
+same name gets `-2`); one already in the theme is used where it is. *Not
+now* adds it with a placeholder name, which RetroFE skips until *Choose...*
+names a file. A page in a collection's folder refers to the file from the
+theme's folder, which RetroFE also looks in.
+
+### Animations
+
+An element's events (`<onEnter>`, `<onExit>`, `<onMenuEnter>`,
+`<onHighlightEnter>`, ... every one RetroFE reads) are listed in file order.
+Each has steps (`<set duration=>`) that play one after another, and each step
+has changes (`<animate>`) that play together: a *type* (x, y, alpha, width,
+xOffset, fontSize...), *from* (empty: from where it is), *to*, and an
+*algorithm* (linear when not set). Everything is edited in place, as text:
+
+- *+ change* adds `alpha to 1` to a step, *+ step* a step of 0.2 seconds,
+  *Add event* an event with one step (alpha from 0 to 1); *x* removes an
+  event, step or change. Clearing a field removes that attribute.
+- *Play* plays that event on the preview (as RetroFE triggers it), with the
+  page as edited.
+- *Copy* (with an element chosen beside it) replaces the element's events
+  with copies of that element's, as they're written.
+
+An element whose animations change its position or size says so: on screen
+it moves from where it's placed here.
 
 What a drag writes: **numbers**. Dragging an element sideways turns
 `x="center"` into the number it stood for plus the move; dragging it
@@ -172,8 +228,7 @@ straight up or down leaves `x` alone. Resizing writes `width` and/or
 didn't drag stay put, whatever the origin. A menu item whose position comes
 from its `<itemDefaults>` (it sets `xOffset` but not `x`, like Aeon Nox's
 wheel) moves by its `xOffset` / `yOffset` instead, so it keeps following the
-defaults. An element whose animations change its position or size says so:
-on screen it moves from where it's placed here. A vertical menu's slots are
+defaults. A vertical menu's slots are
 made from its settings, so they're shown but not dragged; boxes of text and
 of art that hasn't loaded are a guess until it draws (the panel says so).
 
@@ -193,8 +248,10 @@ the theme in the widget editor instead.
 ## Limits in this version
 
 - No controller driving: the editor needs a mouse and keyboard.
-- The layout editor changes existing elements only: no new elements yet,
-  and animations are shown but not edited.
+- The layout editor edits one page at a time (`layout.xml` and `layout
+  4x3.xml` are separate), adds raw elements rather than the widget editor's
+  widgets, and shows only where `onEnter` leaves an element (not the other
+  events).
 - Second-screen pages (One Saucier's `layout1.xml`) are kept in the project
   but not saved.
 
@@ -263,4 +320,11 @@ In the layout editor the commands are:
 | `attr NAME VALUE...`, `rmattr NAME`, `get NAME`, `layer N` | sets, removes or notes an attribute |
 | `duplicate`, `delete`, `undo`, `redo`, `snap on\|off` | |
 | `save`, `restore` (puts back the original), `restoredialog`, `deletedialog`, `closedialogs` | |
-| `boxes on\|off`, `preview COLLECTION`, `rebuild`, `close`, `discard` | |
+| `boxes on\|off`, `endboxes on\|off`, `preview COLLECTION`, `rebuild`, `close`, `discard` | |
+| `add ID [TYPE\|-] [SRC...]` | adds a palette entry (`image`, `text`, `reloadableText`, `menu-custom`...; `-` keeps its type) |
+| `addfile image\|video PATH`, `srcfile PATH` | copies a file in and adds an image or video with it, or makes it the selected element's `src` |
+| `palette`, `browse [src\|image\|video]`, `browsedir FOLDER` | opens the palette, or the editor's file chooser (for the `src`, or a new image or video) |
+| `event NAME`, `addset EVENT`, `addanimate SET`, `rmanim PATH` | animations, by paths inside the selected element (`onEnter[0]/set[0]/animate[1]`) |
+| `animattr PATH NAME VALUE...`, `rmanimattr PATH NAME`, `getanim PATH NAME` | an event's, step's or change's attributes (an empty value removes it) |
+| `showanims`, `openevent EVENT` | scrolls the panel to *Animations*; unfolds an event (`onEnter[0]`) |
+| `copyanims PATH`, `events`, `endbox`, `replay EVENT` | copies another element's animations; notes the events and where onEnter leaves it; plays an event on the preview |

@@ -95,48 +95,10 @@ namespace
         return def.fragment.find("FONTCOLOR") != std::string::npos;
     }
 
-    // The file types a chooser offers, by a var's filter (lower case, with the dot)
-    std::vector<std::string> extensionsFor(const std::string& filter)
-    {
-        static const std::vector<std::string> image = { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp" };
-        static const std::vector<std::string> video = { ".mp4", ".mkv", ".avi", ".webm", ".mov", ".m4v", ".mpg", ".mpeg" };
-        if (filter == "image") return image;
-        if (filter == "video") return video;
-        if (filter == "media") {
-            std::vector<std::string> both = image;
-            both.insert(both.end(), video.begin(), video.end());
-            return both;
-        }
-        if (filter == "text") return { ".txt" };
-        if (filter == "font") return { ".ttf", ".otf" };
-        if (filter == "sound") return { ".wav", ".ogg", ".mp3", ".flac" };
-        return {};
-    }
-
-    std::string filterLabel(const std::string& filter)
-    {
-        if (filter == "image") return "Images";
-        if (filter == "video") return "Videos";
-        if (filter == "media") return "Images and videos";
-        if (filter == "text") return "Text files";
-        if (filter == "font") return "Fonts";
-        if (filter == "sound") return "Sounds";
-        return "All files";
-    }
-
-    std::string patternFor(const std::string& filter)
-    {
-        std::string pattern;
-        for (const std::string& ext : extensionsFor(filter)) pattern += (pattern.empty() ? "*" : ";*") + ext;
-        return pattern.empty() ? "*.*" : pattern;
-    }
-
-    bool insideFolder(const fs::path& path, const fs::path& folder)
-    {
-        std::error_code ec;
-        const fs::path rel = fs::weakly_canonical(path, ec).lexically_relative(fs::weakly_canonical(folder, ec));
-        return !ec && !rel.empty() && rel.begin()->string() != "..";
-    }
+    // The chooser's (FileChooser.h)
+    using Themes::insideFolder;
+    std::string filterLabel(const std::string& filter) { return Themes::chooserFilterLabel(filter); }
+    std::string patternFor(const std::string& filter) { return Themes::chooserPattern(filter); }
 
     const char* const SOUND_KINDS[4][2] = {
         { "load", "Start" }, { "unload", "Quit" }, { "highlight", "Highlight" }, { "select", "Select" }
@@ -577,14 +539,16 @@ ThemeEditorScreen::FileRequest ThemeEditorScreen::varRequest(const std::string& 
 
 void ThemeEditorScreen::openBrowser(const FileRequest& request)
 {
-    browser_.request = request;
+    browserRequest_ = request;
     const fs::path root = fs::path(ctx_.root);
     std::error_code ec;
-    browser_.dir = fs::is_directory(lastBrowseDir_, ec) && insideFolder(lastBrowseDir_, root) ? lastBrowseDir_
-                                                                                            : fs::path(session_.layoutsRoot()) / folder_;
-    browser_.listed = false;
-    browser_.selected.clear();
-    browser_.show = true;
+    Themes::FileChooser::Request shown;
+    shown.filter = request.filter;
+    shown.title = request.title;
+    shown.note = request.note;
+    shown.destination = request.what == FileFor::Font ? "the theme's fonts folder" : "the theme's assets folder";
+    browser_.open(shown, fs::is_directory(lastBrowseDir_, ec) && insideFolder(lastBrowseDir_, root) ? lastBrowseDir_
+                                                                                                  : fs::path(session_.layoutsRoot()) / folder_);
 }
 
 // After placing a widget: a file it needs that isn't in the theme yet (a
@@ -730,7 +694,7 @@ bool ThemeEditorScreen::runCommand(const EditorCommand& command, std::string& no
     const std::vector<std::string>& words = command.words;
     // Files, copied in as a chosen file is (the path is the rest of the line)
     auto importTo = [&](FileRequest request, const std::string& path) {
-        browser_.show = false;
+        browser_.close();
         bool ok = importChosen(path, request);
         note = status_;
         return ok;
@@ -761,9 +725,8 @@ bool ThemeEditorScreen::runCommand(const EditorCommand& command, std::string& no
         return true;
     }
     if (n == "browsedir") {
-        browser_.dir = fs::path(ctx_.root) / command.rest;
-        browser_.listed = false;
-        return browser_.show;
+        browser_.showFolder(fs::path(ctx_.root) / command.rest);
+        return browser_.isOpen();
     }
     if (n == "tpldialog") { openTemplateDialog(command.rest, command.rest.empty(), ""); return true; }
     if (n == "open") { openSection_ = command.rest; return true; }
@@ -791,7 +754,8 @@ bool ThemeEditorScreen::runCommand(const EditorCommand& command, std::string& no
         return true;
     }
     if (n == "closedialogs") {
-        showAdd_ = showReport_ = showTemplate_ = showDeleteTpl_ = browser_.show = false;
+        showAdd_ = showReport_ = showTemplate_ = showDeleteTpl_ = false;
+        browser_.close();
         return true;
     }
     if (n == "wait") { scriptWait_ = words.empty() ? 0 : std::atoi(words[0].c_str()); return true; }
@@ -831,8 +795,9 @@ void ThemeEditorScreen::drawTargets()
 
 bool ThemeEditorScreen::escape()
 {
-    if (showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.show) {
-        showAdd_ = showClose_ = showReport_ = showTemplate_ = showDeleteTpl_ = browser_.show = false;
+    if (showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen()) {
+        showAdd_ = showClose_ = showReport_ = showTemplate_ = showDeleteTpl_ = false;
+        browser_.close();
         return true;
     }
     if (session_.dragging()) {
@@ -1747,124 +1712,19 @@ void ThemeEditorScreen::drawAddWidget()
 
 void ThemeEditorScreen::drawBrowser()
 {
-    ImGuiIO& io = ImGui::GetIO();
-    syncPopup("Choose a file", browser_.show, browser_.open);
-    ImGui::SetNextWindowSize(ImVec2(std::min(io.DisplaySize.x - 40.0f, 720.0f * ctx_.scale),
-                                    std::min(io.DisplaySize.y - 40.0f, 560.0f * ctx_.scale)), ImGuiCond_Appearing);
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::BeginPopupModal("Choose a file", &browser_.show)) return;
-    if (!browser_.show) {
-        ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-        return;
-    }
-    const FileRequest& request = browser_.request;
-    const fs::path root = fs::path(ctx_.root);
-    const fs::path theme = fs::path(session_.layoutsRoot()) / folder_;
-    ImGui::TextWrapped("%s", request.title.c_str());
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-    ImGui::TextWrapped("Showing %s inside the RetroFE folder. The one you choose is copied into the theme's %s folder.",
-                       Utils::toLower(filterLabel(request.filter)).c_str(), request.what == FileFor::Font ? "fonts" : "assets");
-    if (!request.note.empty()) ImGui::TextWrapped("%s", request.note.c_str());
-    ImGui::PopStyleColor();
-
-    // Where: always inside the RetroFE folder
-    std::error_code ec;
-    const bool atRoot = !insideFolder(browser_.dir, root);
-    if (atRoot) browser_.dir = root;
-    std::string where = browser_.dir.lexically_relative(root).generic_string();
-    ImGui::BeginDisabled(atRoot || where == "." || where.empty());
-    if (ImGui::Button("Up")) {
-        browser_.dir = browser_.dir.parent_path();
-        browser_.listed = false;
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("This theme")) { browser_.dir = theme; browser_.listed = false; }
-    ImGui::SameLine();
-    if (ImGui::Button("RetroFE folder")) { browser_.dir = root; browser_.listed = false; }
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", where.empty() || where == "." ? "(the RetroFE folder)" : where.c_str());
-
-    // Listed once per folder, not every frame
-    if (!browser_.listed) {
-        browser_.listed = true;
-        browser_.entries.clear();
-        browser_.selected.clear();
-        const std::vector<std::string> extensions = extensionsFor(request.filter);
-        for (fs::directory_iterator it(browser_.dir, ec), end; !ec && it != end; it.increment(ec)) {
-            std::error_code fec;
-            const std::string name = it->path().filename().string();
-            if (name.empty() || name[0] == '.') continue;
-            if (it->is_directory(fec)) {
-                browser_.entries.emplace_back(name, true);
-            }
-            else if (it->is_regular_file(fec)) {
-                const std::string ext = Utils::toLower(it->path().extension().string());
-                if (extensions.empty() || std::find(extensions.begin(), extensions.end(), ext) != extensions.end()) {
-                    browser_.entries.emplace_back(name, false);
-                }
-            }
-        }
-        std::sort(browser_.entries.begin(), browser_.entries.end(), [](const auto& a, const auto& b) {
-            if (a.second != b.second) return a.second;
-            return Utils::toLower(a.first) < Utils::toLower(b.first);
-        });
-    }
-
-    const float buttonsH = ImGui::GetFrameHeightWithSpacing() * 1.6f;
-    ImGui::BeginChild("##files", ImVec2(0, -buttonsH), ImGuiChildFlags_Borders);
-    bool choose = false;
-    fs::path enter;
-    ImGuiListClipper clipper;
-    clipper.Begin(static_cast<int>(browser_.entries.size()));
-    while (clipper.Step()) {
-        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-            const auto& entry = browser_.entries[i];
-            ImGui::PushID(i);
-            if (entry.second) {
-                if (ImGui::Selectable(("[" + entry.first + "]").c_str())) enter = browser_.dir / entry.first;
-            }
-            else if (ImGui::Selectable(entry.first.c_str(), browser_.selected == entry.first, ImGuiSelectableFlags_AllowDoubleClick)) {
-                browser_.selected = entry.first;
-                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) choose = true;
-            }
-            ImGui::PopID();
-        }
-    }
-    if (browser_.entries.empty()) ImGui::TextDisabled("No folders or %s here.", Utils::toLower(filterLabel(request.filter)).c_str());
-    ImGui::EndChild();
-    if (!enter.empty()) {
-        browser_.dir = enter;
-        browser_.listed = false;
-    }
-
-    ImGui::BeginDisabled(browser_.selected.empty());
-    if (ImGui::Button("Choose") || (choose && !browser_.selected.empty())) {
+    std::string path;
+    const Themes::FileChooser::Result result =
+        browser_.draw(ctx_.scale, fs::path(ctx_.root), fs::path(session_.layoutsRoot()) / folder_, path);
+    if (result == Themes::FileChooser::Result::Chosen) {
         job_ = Job::Import;
-        jobRequest_ = request;
-        jobPath_ = (browser_.dir / browser_.selected).string();
-        browser_.show = false;
-        ImGui::CloseCurrentPopup();
+        jobRequest_ = browserRequest_;
+        jobPath_ = path;
     }
-    ImGui::EndDisabled();
-    if (FileDialog::isSupported()) {
-        ImGui::SameLine();
-        if (ImGui::Button("Somewhere else...")) {
-            // The system's dialog blocks: it opens from update(), after this frame
-            job_ = Job::NativePick;
-            jobRequest_ = request;
-            browser_.show = false;
-            ImGui::CloseCurrentPopup();
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Choose a file anywhere, with the system's file dialog");
+    else if (result == Themes::FileChooser::Result::SomewhereElse) {
+        // The system's dialog blocks: it opens from update(), after this frame
+        job_ = Job::NativePick;
+        jobRequest_ = browserRequest_;
     }
-    ImGui::SameLine();
-    if (ImGui::Button(request.note.empty() ? "Cancel" : "Not now")) {
-        browser_.show = false;
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
 }
 
 void ThemeEditorScreen::drawTemplateDialog()

@@ -15,6 +15,8 @@
  */
 #include "LayoutSession.h"
 #include "LayoutCheck.h"
+#include "LayoutPalette.h"
+#include "ThemeExport.h"
 #include "ThemeGenerate.h"
 #include "ThemeProject.h"
 #include "ThemeStore.h"
@@ -85,6 +87,37 @@ namespace ThemeEditor
         bool isAnimationEvent(const std::string& name)
         {
             return name.size() > 2 && name[0] == 'o' && name[1] == 'n' && std::isupper(static_cast<unsigned char>(name[2]));
+        }
+
+        bool inAnimation(const LayoutDoc& doc, int i)
+        {
+            for (int e = i; e >= 0; e = doc.elements[e].parent) {
+                if (isAnimationEvent(doc.elements[e].name)) return true;
+            }
+            return false;
+        }
+
+        // The paths of everything but animations, in document order
+        std::vector<std::string> pagePaths(const LayoutDoc& doc)
+        {
+            std::vector<std::string> out;
+            for (size_t i = 0; i < doc.elements.size(); ++i) {
+                if (!inAnimation(doc, static_cast<int>(i))) out.push_back(doc.elements[i].path);
+            }
+            return out;
+        }
+
+        // An animate's value as PageBuilder resolves it (getHorizontalAlignment
+        // for x, xOffset, width; getVerticalAlignment for y, yOffset, height)
+        float tweenValue(const std::string& value, bool horizontal, int w, int h)
+        {
+            const float size = static_cast<float>(horizontal ? w : h);
+            if (value.empty()) return 0.0f;
+            if (value == (horizontal ? "left" : "top")) return 0.0f;
+            if (value == "center") return size / 2.0f;
+            if (value == (horizontal ? "right" : "bottom") || value == "stretch") return size;
+            if (value.back() == '%') return std::round(size * static_cast<float>(std::atof(value.substr(0, value.size() - 1).c_str())) / 100.0f);
+            return static_cast<float>(std::atof(value.c_str()));
         }
     }
 
@@ -315,10 +348,8 @@ namespace ThemeEditor
     {
         LayoutDoc next;
         if (!parseLayoutText(text, next, error)) return false;
-        bool samePaths = next.elements.size() == doc_.elements.size();
-        for (size_t i = 0; samePaths && i < next.elements.size(); ++i) {
-            samePaths = next.elements[i].path == doc_.elements[i].path;
-        }
+        // Animation edits move only the paths inside events: the boxes stay
+        const bool samePaths = pagePaths(next) == pagePaths(doc_);
         doc_ = std::move(next);
         if (!samePaths) {
             // Elements came or went: the boxes are found again by the next build,
@@ -749,6 +780,214 @@ namespace ThemeEditor
         // The parent is selected when it was a menu (an item went), else nothing
         if (parent > 0) selectPath(parentPath);
         else select(-1);
+        return true;
+    }
+
+    // ---- adding elements -------------------------------------------------------
+
+    int LayoutSession::newElementLayer() const
+    {
+        int highest = -1;
+        for (const LayoutElement& e : doc_.elements) {
+            int layer = 0;
+            if (numberValue(e.value("layer"), layer)) highest = std::max(highest, layer);
+        }
+        return clampLayer(highest + 1);
+    }
+
+    std::string LayoutSession::importFolder(const std::string& kind) const
+    {
+        std::vector<std::string> candidates;
+        if (kind == "image") candidates = { "images" };
+        else if (kind == "video") candidates = { "video", "videos" };
+        std::error_code ec;
+        for (const std::string& c : candidates) {
+            if (fs::is_directory(fs::path(themeDir()) / c, ec)) return c;
+        }
+        return ASSETS_FOLDER;
+    }
+
+    bool LayoutSession::addElement(const std::string& paletteId, const std::string& type, const std::string& src)
+    {
+        const PaletteEntry* entry = paletteEntry(paletteId);
+        if (!open_ || !entry || doc_.elements.empty()) return false;
+        // After the page element the selection is part of (a menu, for its item), else at the end
+        int after = -1;
+        if (selected_ > 0) {
+            int top = selected_;
+            while (doc_.elements[top].parent > 0) top = doc_.elements[top].parent;
+            if (doc_.elements[top].parent == 0) after = top;
+        }
+        const int x = (canvasW() - entry->w) / 2;
+        const int y = (canvasH() - entry->h) / 2;
+        size_t at = std::string::npos;
+        const std::string text = withChild(doc_, 0, paletteFragment(*entry, type, src, x, y, newElementLayer()), after, &at);
+        LayoutDoc next;
+        std::string error;
+        if (!parseLayoutText(text, next, error)) return false;
+        std::string path;
+        for (const LayoutElement& e : next.elements) {
+            if (e.begin == at) { path = e.path; break; }
+        }
+        if (path.empty()) return false;
+        endCoalesce();
+        return change(text, "", path);
+    }
+
+    // ---- animations ------------------------------------------------------------
+
+    std::vector<int> LayoutSession::events(int element) const
+    {
+        std::vector<int> out;
+        if (element < 0 || element >= elementCount()) return out;
+        for (int child : doc_.elements[element].children) {
+            if (isAnimationEvent(doc_.elements[child].name)) out.push_back(child);
+        }
+        return out;
+    }
+
+    std::vector<int> LayoutSession::childrenNamed(int element, const std::string& name) const
+    {
+        std::vector<int> out;
+        if (element < 0 || element >= elementCount()) return out;
+        for (int child : doc_.elements[element].children) {
+            if (doc_.elements[child].name == name) out.push_back(child);
+        }
+        return out;
+    }
+
+    std::vector<std::string> LayoutSession::eventNames()
+    {
+        return layoutVocabulary().events;
+    }
+
+    bool LayoutSession::insideSelected(int element) const
+    {
+        if (selected_ < 0 || element < 0 || element >= elementCount()) return false;
+        for (int e = element; e >= 0; e = doc_.elements[e].parent) {
+            if (e == selected_) return true;
+        }
+        return false;
+    }
+
+    int LayoutSession::findInSelected(const std::string& relativePath) const
+    {
+        const LayoutElement* e = selectedElement();
+        if (!e) return -1;
+        if (relativePath.empty() || relativePath == "-") return selected_;
+        return doc_.find(e->path.empty() ? relativePath : e->path + "/" + relativePath);
+    }
+
+    bool LayoutSession::addEvent(const std::string& event)
+    {
+        if (selected_ <= 0 || inAnimation(doc_, selected_) || !isAnimationEvent(event) ||
+            !attributeNameProblem(event).empty()) {
+            return false;
+        }
+        endCoalesce();
+        return change(withChild(doc_, selected_, eventFragment(event)), "");
+    }
+
+    bool LayoutSession::addSet(int event)
+    {
+        if (!insideSelected(event) || event == selected_ || !isAnimationEvent(doc_.elements[event].name)) return false;
+        endCoalesce();
+        return change(withChild(doc_, event, setFragment()), "");
+    }
+
+    bool LayoutSession::addAnimate(int set)
+    {
+        if (!insideSelected(set) || doc_.elements[set].name != "set" || !inAnimation(doc_, set)) return false;
+        endCoalesce();
+        return change(withChild(doc_, set, animateFragment()), "");
+    }
+
+    bool LayoutSession::removeAnimation(int element)
+    {
+        if (!insideSelected(element) || element == selected_ || !inAnimation(doc_, element)) return false;
+        endCoalesce();
+        return change(withoutElement(doc_, element), "");
+    }
+
+    bool LayoutSession::setAttributeOf(int element, const std::string& name, const std::string& value)
+    {
+        if (!insideSelected(element) || !attributeNameProblem(name).empty()) return false;
+        // PageBuilder reads the first character of from, to and menuIndex without
+        // checking there is one: an empty value inside an animation is removed instead
+        if (value.empty() && inAnimation(doc_, element)) return change(withoutAttribute(doc_, element, name), coalesce_);
+        return change(withAttribute(doc_, element, name, value), coalesce_);
+    }
+
+    bool LayoutSession::removeAttributeOf(int element, const std::string& name)
+    {
+        if (!insideSelected(element)) return false;
+        endCoalesce();
+        return change(withoutAttribute(doc_, element, name), "");
+    }
+
+    bool LayoutSession::copyAnimationsFrom(int source)
+    {
+        if (selected_ <= 0 || source <= 0 || source >= elementCount() || source == selected_ ||
+            inAnimation(doc_, selected_) || inAnimation(doc_, source)) {
+            return false;
+        }
+        std::vector<std::string> copies;
+        for (int ev : events(source)) copies.push_back(fragmentOf(doc_, ev));
+        if (copies.empty()) return false;
+        const int target = selected_;
+        LayoutDoc work = doc_;
+        std::string error;
+        // Its own go first, last to first (the target comes before them, so its index stays)
+        std::vector<int> own = events(target);
+        for (auto it = own.rbegin(); it != own.rend(); ++it) {
+            if (!parseLayoutText(withoutElement(work, *it), work, error)) return false;
+        }
+        for (const std::string& copy : copies) {
+            if (!parseLayoutText(withChild(work, target, copy), work, error)) return false;
+        }
+        endCoalesce();
+        return change(work.text, "");
+    }
+
+    bool LayoutSession::enterEndBox(int element, DragRect& out) const
+    {
+        const ElementGeom* found = geometry(element);
+        if (!found || found->around) return false;
+        // The onEnter the engine plays when the page starts: one without a menuIndex, else the first
+        int enter = -1;
+        for (int ev : childrenNamed(element, "onEnter")) {
+            if (!doc_.elements[ev].has("menuIndex")) { enter = ev; break; }
+            if (enter < 0) enter = ev;
+        }
+        if (enter < 0) return false;
+        ElementGeom g = *found;
+        bool changed = false;
+        const int w = canvasW(), h = canvasH();
+        for (int set : childrenNamed(enter, "set")) {
+            for (int animate : childrenNamed(set, "animate")) {
+                const LayoutElement& a = doc_.elements[animate];
+                if (!a.has("to")) continue;
+                const std::string type = lower(a.value("type"));
+                const std::string to = a.value("to");
+                if (type == "x") g.x = tweenValue(to, true, w, h);
+                else if (type == "y") g.y = tweenValue(to, false, w, h);
+                else if (type == "xoffset") g.xOffset = tweenValue(to, true, w, h);
+                else if (type == "yoffset") g.yOffset = tweenValue(to, false, w, h);
+                else if (type == "width") g.w = tweenValue(to, true, w, h);
+                else if (type == "height") g.h = tweenValue(to, false, w, h);
+                else continue;
+                changed = true;
+            }
+        }
+        if (!changed) return false;
+        DragRect r;
+        r.x = g.left();
+        r.y = g.top();
+        r.w = std::max(1, roundDelta(g.w));
+        r.h = std::max(1, roundDelta(g.h));
+        const DragRect placed = box(element);
+        if (r.x == placed.x && r.y == placed.y && r.w == placed.w && r.h == placed.h) return false;
+        out = r;
         return true;
     }
 

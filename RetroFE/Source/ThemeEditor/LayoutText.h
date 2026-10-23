@@ -107,6 +107,39 @@ namespace ThemeEditor
     std::string withDuplicate(const LayoutDoc& doc, int element);
     std::string duplicatePath(const std::string& path);
 
+    // Inserts `fragment`, one element's text, as a child of `parent`: right
+    // after its child `after`, or after its last child when `after` is -1
+    // (an element without children gets its first). The fragment's lines are
+    // separated by '\n' and nested by 4 spaces a level; they're written with
+    // the file's line ending and indentation unit (indentUnit).
+    //   - after a sibling that starts its line and has nothing but space or
+    //     comments after it there: on a line of its own after that line,
+    //     indented as the sibling (so a comment that heads the next element
+    //     stays with it)
+    //   - after a sibling that shares its line: right after it, on that line,
+    //     with the space the siblings have between them (the fragment's lines
+    //     joined)
+    //   - into an element without children: before its end tag (a
+    //     self-closing tag gets one), on lines of its own when the element is
+    //     a page element (the root, a component, a menu item) that starts
+    //     its line, else inline (animation events and sets: <set ...><animate
+    //     .../></set>)
+    // `at`, when given, is where the new element's '<' is in the result.
+    std::string withChild(const LayoutDoc& doc, int parent, const std::string& fragment, int after = -1, size_t* at = nullptr);
+    // The file's indentation step: the most common difference between an
+    // element's indentation and its parent's, among elements that start
+    // their lines; 4 spaces when there are none
+    std::string indentUnit(const LayoutDoc& doc);
+    // The file's line ending: CRLF when its first line break is one
+    std::string lineEnding(const std::string& text);
+    // The whitespace before an element on its line ("" when something else
+    // comes before it there)
+    std::string indentationOf(const LayoutDoc& doc, int element);
+    // An element's text as a fragment for withChild: its lines after the
+    // first lose the element's own indentation, and are re-expressed in
+    // 4-space levels of the file's unit
+    std::string fragmentOf(const LayoutDoc& doc, int element);
+
     // The line (1-based) a byte offset is on
     int lineOf(const std::string& text, size_t offset);
 }

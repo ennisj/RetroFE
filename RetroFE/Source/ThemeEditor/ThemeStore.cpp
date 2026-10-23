@@ -483,7 +483,17 @@ namespace ThemeEditor
             error = "save the theme '" + folder + "' before adding files to it";
             return false;
         }
+        return importIntoTheme(layoutsRoot, folder, sourcePath, subfolder, relOut, error);
+    }
+
+    bool importIntoTheme(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
+                         const std::string& subfolder, std::string& relOut, std::string& error)
+    {
+        relOut.clear();
+        if (!themeFolderValid(subfolder)) { error = "invalid folder '" + subfolder + "'"; return false; }
+        if (!themeFolderValid(folder)) { error = "invalid theme folder '" + folder + "'"; return false; }
         std::error_code ec;
+        if (!fs::is_directory(fs::path(layoutsRoot) / folder, ec)) { error = "there's no theme '" + folder + "'"; return false; }
         const fs::path src(sourcePath);
         if (!fs::is_regular_file(src, ec)) { error = "not a readable file: " + sourcePath; return false; }
         {
