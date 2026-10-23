@@ -33,6 +33,10 @@ int main()
         tests();
     }
 
+    // This run's folders go; other runs' (in other worktrees, at the same time) are left alone
+    std::error_code ec;
+    std::filesystem::remove_all(Test::runFolder(), ec);
+
     std::cout << std::endl << Test::checks - Test::failures << "/" << Test::checks << " checks passed" << std::endl;
     return Test::failures == 0 ? 0 : 1;
 }
