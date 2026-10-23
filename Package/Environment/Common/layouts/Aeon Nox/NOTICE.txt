@@ -1,0 +1,77 @@
+Aeon Nox for this RetroFE fork
+==============================
+
+Source
+------
+Aeon Nox, the RetroFE theme by David Horowitz (2016), based on the Aeon Nox skin
+for Kodi (see credits.txt and readme.txt, both kept as they were).
+
+Copied from RetroFE's original repository:
+  https://github.com/phulshof/RetroFE
+  folder  Package/Environment/Common/layouts/Aeon Nox
+  commit  9f9230d09cbd4dae074b9465ca090567fd0623e7 (2023-04-15)
+Every file was checked against that commit's Git blob hashes.
+
+License: distributed with RetroFE under the GNU General Public License v3.0
+(LICENSE.txt at the root of the repository). The fonts have their own
+licenses, listed below and kept in fonts/.
+
+
+Fonts
+-----
+  BebasNeue.ttf                Bebas Neue 2.000, Dharma Type. SIL Open Font License 1.1
+                               (fonts/OFL-BebasNeue.txt). From github.com/google/fonts,
+                               ofl/bebasneue, commit 1e42f687f08eac15a39bde41db3d32198d269067.
+  OpenSans.ttf                 Open Sans 3.003, Condensed Regular: the static wdth=75 wght=400
+                               instance of OpenSans[wdth,wght].ttf from github.com/google/fonts,
+                               ofl/opensans, commit db398e70ce14719a0c99da39fd257c0c75dfae02,
+                               made with fontTools. SIL Open Font License 1.1 (fonts/OFL-OpenSans.txt).
+  Oswald-Regular.ttf,          Oswald 2.002, vernon adams, unchanged from upstream.
+  Oswald-Bold.ttf              SIL Open Font License 1.1 (fonts/OFL-Oswald.txt).
+  RobotoCondensed-Regular.ttf  Roboto Condensed 2.001201, Google, unchanged from upstream.
+                               Apache License 2.0 (fonts/LICENSE-RobotoCondensed.txt).
+
+
+What this fork changed
+----------------------
+RetroFE here builds a page for every collection, so every list is menu 0.
+Upstream drew systems (menu 0) and games (menu 1) on one page; the two views are
+now separate pages:
+
+  layout.xml, layout 4x3.xml      The games view (information wall, box art), used by
+                                  every collection without a page of its own. It now
+                                  shows with onEnter as well as onMenuEnter.
+  collections/Main/layout/        The systems view (one logo per collection) for Browse.
+                                  Collections without a logo show their name.
+  collections/Home/layout/        Home (Catalog, Settings, Manage, Browse) in the systems
+                                  style, with a logo, icon, tagline and description per
+                                  item under collections/Home/medium_artwork/.
+  collections/Catalog/layout/     The Catalog: packages in the logo strip, their kind,
+                                  source and version in the info panel, and an icon and
+                                  text for the Sources item under
+                                  collections/Catalog/medium_artwork/.
+  forms/layout.xml                Settings, Manage and Sources, on the theme's info panel.
+  forms/package/layout.xml        A package, leaving the Catalog's info panel visible.
+  forms/keyboard/layout.xml       The on-screen keyboard.
+
+Also:
+  - Fonts: BebasNeue.ttf was version 1.002 under the Dharma Type EULA, which doesn't
+    allow redistribution; replaced with the OFL release. OpenSans.ttf was an
+    "Open Sans Hebrew Condensed" build with no copyright or license information and
+    306 characters; replaced with Open Sans Condensed (Latin, Greek, Cyrillic,
+    Hebrew). fonts/MC360.ttf, actually Ubuntu Condensed 0.80 under the Ubuntu Font
+    Licence (shipped without it), is removed; the games view's story text uses
+    Roboto Condensed instead. License texts added for every font.
+  - New artwork, drawn for the fork: images/background.png (behind every page, where
+    upstream was black), images/form_focus.png (the focused row on form pages), and
+    the Home logos and icons and the Sources icon (Bebas Neue for the logo text).
+  - Games view: the top bar names the collection in text (upstream showed its system
+    logo, which collections made in RetroFE don't have); "ITEMS" and the count no
+    longer overlap; titles without box art use Oswald; MC360 replaced as above.
+  - Images and sounds on collection pages are referenced relative to their folder
+    (../../../images/...), so RetroFE doesn't log an error before falling back.
+  - XML tidied so the files are well-formed: mismatched closing tags fixed, comment
+    rules no longer contain "--", a duplicated attribute removed, minScrollTime
+    spelled correctly. The 4:3 date no longer runs into the time.
+  - splash.xml: same intro video; the missing Roboto-Bold.ttf reference and the
+    commented-out examples are gone.

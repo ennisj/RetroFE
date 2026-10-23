@@ -1,0 +1,1 @@
+Add or remove sources: an index file on the web or on disk, or a folder of package archives on a USB stick or a NAS. You can check them all for updates here too.

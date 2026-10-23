@@ -234,3 +234,45 @@ Actions:
 | `source.remove` | Removes `draft:removeSource` |
 | `catalog.refresh` | Reads the sources again |
 | `open.sources` | Opens the Sources screen |
+
+## The default layout: Aeon Nox
+
+RetroFE's default layout is **Aeon Nox**, David Horowitz's theme after Kodi's
+Aeon Nox skin: the built-in settings, and the `settings.conf` RetroFE creates,
+say `layout = Aeon Nox`. When that folder isn't installed, RetroFE uses its
+built-in pages. `layouts/Aeon Nox/NOTICE.txt` says where it comes from and what
+this fork changed. It styles everything above, so it's a working example:
+
+| File in `layouts/Aeon Nox/` | Draws |
+|-----------------------------|-------|
+| `layout.xml` | A collection's games: the information wall and box art. Every collection without a page of its own uses it. |
+| `collections/Main/layout/layout.xml` | Browse: one logo per collection, or its name when there's no logo |
+| `collections/Home/layout/layout.xml` | Home, in the same style as Browse |
+| `collections/Home/medium_artwork/` | Home's artwork and text: `logo/`, `icon/`, `tagline/` and `description/`, each with a file per item (`Catalog.png`, `Catalog.txt`...) |
+| `collections/Catalog/layout/layout.xml` | The Catalog: package logos, with kind, source and version in the info panel |
+| `collections/Catalog/medium_artwork/` | An icon and text for the Sources item (`Catalog Sources.png`, `.txt`), which has no package artwork |
+| `forms/layout.xml` | Settings, Manage and Sources |
+| `forms/package/layout.xml` | A package: the form takes the top of the screen, so the Catalog's info panel stays visible below it |
+| `forms/keyboard/layout.xml` | The on-screen keyboard |
+| `layout 4x3.xml` next to each `layout.xml` | 4:3 versions, used with `randomLayout = layout 4x3` |
+
+Things worth knowing when you make your own:
+
+- Every collection, Home and the Catalog included, is a page of its own with its
+  list at `menuIndex` 0, and a page starts with `onEnter`. Tweens that only use
+  `onMenuEnter` for a deeper menu never run.
+- Home's items and the Sources item are built in, so their artwork comes from the
+  layout: `mode="layout"` on a `<menu>`, `reloadableImage` or
+  `reloadableScrollingText` reads
+  `layouts/<layout>/collections/<collection>/medium_artwork/<type>/<item>`.
+  `reloadableScrollingText` with `direction="vertical"` and `startPosition="0"`
+  shows a text file as wrapped text that only scrolls when it doesn't fit.
+- `src` paths are relative to the page's own folder. RetroFE falls back to the
+  layout's folder but logs an error first, so pages in `collections/<name>/layout/`
+  use `../../../images/...`. Fonts are always relative to the layout's folder.
+- Form and keyboard pages have no selected item, so reloadable components show
+  nothing there (not even `type="time"`). To show a package's artwork, leave part
+  of the Catalog page visible behind the form, as `forms/package/layout.xml` does.
+- A label that should only appear with its value can be the value's prefix
+  (`singlePrefix` and `pluralPrefix`) padded with spaces and cut off by
+  `maxWidth`; the Catalog page does this for Kind, Source and Version.

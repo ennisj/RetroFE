@@ -28,6 +28,7 @@ vertical = 720
 windowBorder = true
 windowResize = true
 hideMouse = no
+layout = Aeon Nox
 firstCollection = Main
 homeMenu = yes
 )";

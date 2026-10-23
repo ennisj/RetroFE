@@ -69,7 +69,7 @@ For all `BOOLEAN` types, the following values are accepted: `yes`, `no`, `true`,
 ## CUSTOMIZATION OPTIONS
 | Option | Default | Type | Description | CoinOPS Added Feature |
 |--------|---------|------|-------------|-----------------------|
-| `layout` | `Arcades` | `STRING` | Theme to be used in RetroFE, a folder name in /layouts | |
+| `layout` | `Aeon Nox` | `STRING` | Theme to be used in RetroFE, a folder name in /layouts | |
 | `randomLayout` | `""` | `MSTRING` | Randomly choose a layout on launch, CSV list of layout names | ✅ |
 | `firstPlaylist` | `arcades` | `STRING` | Start on this playlist if available | |
 | `autoPlaylist` | `all` | `STRING` | Start on this playlist when entering a collection if available | |

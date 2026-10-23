@@ -1,0 +1,652 @@
+<layout width="1600" height="1200" font="fonts/OpenSans.ttf" loadFontSize="36" fontColor="dedede">
+
+<!-- Aeon Nox: the Main menu (Browse), one logo per collection -->
+
+    <!-- ============================================================================================================================= -->
+    <!-- Sounds -->
+    <!-- ============================================================================================================================= -->
+
+
+    <sound type="load"      src="../../../sounds/load.wav" />
+
+
+    <sound type="unload"    src="../../../sounds/unload.wav" />
+
+
+    <sound type="highlight" src="../../../sounds/highlight.wav" />
+
+
+    <sound type="select"    src="../../../sounds/select.wav" />
+
+
+    <!-- Background (the fork adds it: upstream is black where there is no fanart) -->
+    <image src="../../../images/background.png" x="0" y="0" width="1600" height="1200" layer="0"/>
+
+
+    <!-- ============================================================================================================================= -->
+    <!-- Fan art background -->
+    <!-- ============================================================================================================================= -->
+
+
+    <!-- Fan Art Background -->
+    <reloadableImage type="fanart" alpha="0" x="center" y="center" width="stretch" height="stretch" xOrigin="center" yOrigin="center" layer="0">
+        <onEnter>          <set duration=".1"> <animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"> <animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"> <animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"> <animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"> <animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"> <animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"> <animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"> <animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".15"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".05"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"> <animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"> <animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableImage>
+
+
+    <!-- ============================================================================================================================= -->
+    <!-- Main menu fixed art & text -->
+    <!-- ============================================================================================================================= -->
+
+
+    <!-- Bar -->
+    <image src="../../../images/bar.png" alpha="0" x="center" y="center" width="stretch" height="135" xOrigin="center" yOrigin="center" layer="11">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- Info Bar Top -->
+    <!--0 to 765 for half bar or 0 to 1558 for full bar-->
+    <image src="../../../images/infobar1.png" alpha="0" x="1558" y="center" xOrigin="right" yOrigin="center" layer="9">
+        <onEnter>
+            <set duration=".50">
+                <animate type="alpha"               to="1"  />
+                <animate type="y"     from="center" to="510"/>
+            </set>
+        </onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>
+            <set duration=".50">
+                <animate type="alpha"               to="1"  />
+                <animate type="y"     from="center" to="510"/>
+            </set>
+        </onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- Info Bar Bottom -->
+    <!--1920 to 1000 for half bar or 1920 to 42 for full bar-->
+    <image src="../../../images/infobar2.png" alpha="0" x="42" y="center" xOrigin="left" yOrigin="center" layer="9">
+        <onEnter>
+            <set duration=".50">
+                <animate type="alpha" from="0"      to="1"  />
+                <animate type="y"     from="center" to="685"/>
+            </set>
+        </onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>
+            <set duration=".50">
+                <animate type="alpha" from="0"      to="1"  />
+                <animate type="y"     from="center" to="685"/>
+            </set>
+        </onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- Time -->
+    <!-- With seconds = %I:%M:%S %p / Without seconds = %I:%M %p -->
+    <reloadableText type="time" timeFormat="%I:%M:%S %p" alpha="0" x="1360" y="center" xOrigin="left" yOrigin="center" fontSize="42" loadFontSize="42" fontColor="75c8f7" layer="10">
+        <onEnter>
+            <set duration=".50">
+                <animate type="alpha"               to="1"  />
+                <animate type="y"     from="center" to="515"/>
+            </set>
+        </onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>
+            <set duration=".50">
+                <animate type="alpha"               to="1"  />
+                <animate type="y"     from="center" to="515"/>
+            </set>
+        </onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <!-- Date -->
+    <!-- http://www.cplusplus.com/reference/ctime/strftime/ -->
+    <reloadableText type="time" alpha="0" timeFormat="%A, %B %d, %Y" x="1340" y="center" xOrigin="right" yOrigin="center" fontSize="42" loadFontSize="42" layer="10">
+        <onEnter>
+            <set duration=".50">
+                <animate type="alpha"               to="1"  />
+                <animate type="y"     from="center" to="515"/>
+            </set>
+        </onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>
+            <set duration=".50">
+                <animate type="alpha"                 to="1"  />
+                <animate type="y"       from="center" to="515"/>
+            </set>
+        </onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <!-- ============================================================================================================================= -->
+    <!-- Main menu reloadable art & text -->
+    <!-- ============================================================================================================================= -->
+
+
+    <!-- video_background -->
+    <image src="../../../images/black.png" alpha="0" x="1300" y="220" width="360" height="280" xOrigin="center" yOrigin="center" layer="8">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- video_overlay -->
+    <image src="../../../images/video_overlay.png" alpha="0" x="center" y="220" width="1400" xOrigin="center" yOrigin="center" layer="11">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- Rectangular cropped video -->
+    <reloadableVideo imageType="screenshot" alpha="0" x="700" y="220" width="1920" maxHeight="2560" xOrigin="center" yOrigin="center" containerX="128" containerY="80" containerWidth="1000" containerHeight="280" layer="9">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableVideo>
+
+
+    <!-- text_overlay -->
+
+
+    <reloadableText type="title" alpha="0" x="140" y="220" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Bold.ttf" fontSize="80" loadFontSize="80" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="manufacturer" alpha="0" x="140" y="280" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="year" alpha="0" x="140" y="320" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="30" loadFontSize="30" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <!-- Scrolling text containing the Horizontal story -->
+    <reloadableScrollingText type="story" alpha="1" x="80" y="683" width="1530" height="35" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="35" loadFontSize="35" fontColor="f2f2f2" direction="horizontal" scrollingSpeed="100" startPosition="1820" startTime="1" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableScrollingText>
+
+
+    <!-- ============================================================================================================================= -->
+    <!-- System Info -->
+    <!-- ============================================================================================================================= -->
+
+
+    <!-- Device Text overlay -->
+
+
+    <reloadableText type="lb_manufacturer" alpha="0" x="750" y="845" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="manufacturer" alpha="0" x="980" y="845" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="lb_type" alpha="0" x="750" y="895" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="type" alpha="0" x="1000" y="980" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="lb_generation" alpha="0" x="750" y="945" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="generation" alpha="0" x="980" y="945" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="lb_year" alpha="0" x="750" y="995" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="year" alpha="0" x="995" y="995" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="lb_media" alpha="0" x="750" y="1045" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="media" alpha="0" x="980" y="1045" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="lb_cpu" alpha="0" x="750" y="1095" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <reloadableText type="cpu" alpha="0" x="980" y="1095" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableText>
+
+
+    <!-- Device image -->
+    <reloadableImage type="device" alpha="0" x="350" y="975" maxWidth="500" height="330" xOrigin="center" yOrigin="center" layer="11">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableImage>
+
+
+    <!-- Device image container overlay-->
+    <image src="../../../images/system_info_overlay.png" alpha="0" x="center" y="bottom" width="1600" maxHeight="400" xOrigin="center" yOrigin="bottom" yOffset="-25" layer="9">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- Device image container -->
+    <reloadableImage type="device" x="center" y="975" width="2000" maxHeight="4000" xOrigin="center" yOrigin="center" containerX="75" containerY="805" containerWidth="1450" containerHeight="340" layer="9">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="0.3"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="0.3"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="0.3"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="0.3"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="0.3"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="0.3"/></set></onGameExit>
+    </reloadableImage>
+
+
+    <!-- Device image container background-->
+    <image src="../../../images/system_info_bg.png" x="center" alpha="0" y="bottom" width="1600" maxHeight="400" xOrigin="center" yOrigin="bottom" yOffset="-25" layer="8">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </image>
+
+
+    <!-- ============================================================================================================================= -->
+    <!-- Main menu wheel -->
+    <!-- ============================================================================================================================= -->
+
+
+    <!-- Logo Menu -->
+    <menu type="custom" imageType="logo" scrollTime=".2" scrollAcceleration=".02" minScrollTime="0.1" orientation="horizontal" textFallback="true" x="0" width="center" y="910">
+        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="400" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="64" fontSize="64" layer="12"/>
+        <item xOffset="-1500" alpha="0"/>
+        <item xOffset="-1000">
+            <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
+            <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
+            <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
+            <onMenuExit>       <set duration=".1"><animate type="alpha"          to="0"  /></set></onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
+        </item>
+        <item xOffset="-500">
+            <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
+            <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
+            <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
+            <onMenuExit>       <set duration=".1"><animate type="alpha"          to="0"  /></set></onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
+        </item>
+        <item xOffset="0" layer="12" alpha="1" selected="true">
+            <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+            <onMenuEnter>
+                <set duration=".1">
+                    <animate type="height" from="120" to="90"/>
+                    <animate type="alpha"  from="0"   to="1" />
+                </set>
+            </onMenuEnter>
+            <onMenuExit>
+                <set duration=".1">
+                    <animate type="height" to="120"/>
+                    <animate type="alpha"  to="0"  />
+                </set>
+            </onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"/></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="1"/></set></onGameExit>
+        </item>
+        <item xOffset="500">
+            <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
+            <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
+            <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
+            <onMenuExit>       <set duration=".1"><animate type="alpha"          to="0"  /></set></onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
+        </item>
+        <item xOffset="1000">
+            <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
+            <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
+            <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
+            <onMenuExit>       <set duration=".1"><animate type="alpha"          to="0"  /></set></onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
+        </item>
+        <item xOffset="1500" alpha="0"/>
+    </menu>
+
+
+    <!-- Main video -->
+    <reloadableVideo imageType="screenshot" alpha="1" x="1300" y="220" width="360" maxHeight="280" xOrigin="center" yOrigin="center" layer="9">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
+        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
+        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
+        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
+    </reloadableVideo>
+
+
+    <!-- Playlist -->
+    <reloadableImage type="playlist" mode="common" alpha="0" x="940" y="500" xOrigin="center" yOrigin="top" maxHeight="30" layer="19">
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>
+            <set duration=".50">
+                <animate type="alpha" from="0"   to="0"  />
+                <animate type="y"                to="500"/>
+            </set>
+        </onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"  /></set></onMenuExit>
+        <onIdle>
+            <set duration=".2">
+                <animate type="nop"/>
+            </set>
+            <set duration=".8">
+                <animate type="alpha" to="0.5"/>
+            </set>
+            <set duration=".2">
+                <animate type="nop"/>
+            </set>
+            <set duration=".8">
+                <animate type="alpha" to="1"/>
+            </set>
+        </onIdle>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+    </reloadableImage>
+
+
+</layout>
