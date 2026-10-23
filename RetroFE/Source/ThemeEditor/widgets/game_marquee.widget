@@ -1,0 +1,20 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# A preset over game_art: fragment, animations and attributes come from it.
+# Changed: no layout_preferred mode (the game's own media), no Transform Video.
+[widget]
+id = game_marquee
+base = game_art
+name = Game Marquee
+category = media
+color = E7C84C
+summary = Selected game's marquee art.
+info = game_art preset - type=marquee - the game's own art
+w = 760
+h = 206
+minw = 60
+minh = 24
+layer = 9
+
+[var]
+token = IMAGETYPE
+default = marquee

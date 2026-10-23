@@ -1,0 +1,68 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: no Loop Video or Min Show Time (reloadableVideo reads neither
+# numLoops nor minShowTime: it loops per the global setting), no Hardware
+# Decode (no hwdec), no Transform Video (no transform=), and no
+# layout_preferred mode; the default is no mode (the game's own media).
+# Jukebox playback is kept: reloadableVideo reads jukebox.
+[widget]
+id = game_video
+name = Game Video
+category = media
+color = 45A8E0
+summary = Selected game's video panel (screenshot art when no video exists).
+info = imageType=screenshot - the game's own media
+w = 555
+h = 535
+minw = 80
+minh = 45
+layer = 10
+
+[var]
+token = ASPECT
+name = Maintain Aspect Ratio
+type = bool
+default = true
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[var]
+token = VOLUME
+name = Volume
+type = text
+default = 1
+numeric = true
+step = 0.1
+min = 0
+max = 1
+
+[var]
+token = ARTMODE
+name = Art Source Mode
+type = text
+default =
+options = -|system|layout|common|commonlayout|systemlayout|menu
+
+[var]
+token = IMAGETYPE
+name = Fallback Still Art
+type = text
+default = screenshot
+options = logo|screenshot|artwork_front|artwork_front_s|title|background|marquee|video|story|fanart
+
+[var]
+token = JUKEBOX
+name = Jukebox Playback
+type = bool
+default = false
+
+[fragment]
+<reloadableVideo id="{{ID}}" imageType="{{IMAGETYPE}}" mode="{{ARTMODE}}" {{?JUKEBOX}}jukebox="true" {{/JUKEBOX}}x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" width="{{W}}" {{ASPECT:maxHeight:height}}="{{H}}" volume="{{VOLUME}}" menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableVideo>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

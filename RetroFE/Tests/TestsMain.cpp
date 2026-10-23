@@ -23,6 +23,7 @@ int main()
 {
     runFormsTests();
     runCatalogTests();
+    runThemeEditorTests();
 
     std::cout << std::endl << Test::checks - Test::failures << "/" << Test::checks << " checks passed" << std::endl;
     return Test::failures == 0 ? 0 : 1;

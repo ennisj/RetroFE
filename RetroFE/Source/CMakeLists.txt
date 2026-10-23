@@ -370,6 +370,49 @@ if(MSVC)
 endif()
 
 ##############################################################
+# Theme editor core (Source/ThemeEditor): no SDL, no ImGui windows. A static
+# library so retrofe and retrofe_tests share one build of it (and of its
+# generated sources).
+set(THEME_EDITOR_WIDGETS_DIR "${RETROFE_DIR}/Source/ThemeEditor/widgets")
+file(GLOB THEME_EDITOR_WIDGET_FILES CONFIGURE_DEPENDS "${THEME_EDITOR_WIDGETS_DIR}/*.widget")
+set(THEME_EDITOR_WIDGETS_SOURCE "${CMAKE_BINARY_DIR}/autogen/ThemeEditorWidgets.cpp")
+add_custom_command(
+    OUTPUT "${THEME_EDITOR_WIDGETS_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -DINPUT_DIR=${THEME_EDITOR_WIDGETS_DIR} -DOUTPUT=${THEME_EDITOR_WIDGETS_SOURCE} -P "${RETROFE_DIR}/CMake/EmbedWidgets.cmake"
+    DEPENDS ${THEME_EDITOR_WIDGET_FILES} "${RETROFE_DIR}/CMake/EmbedWidgets.cmake"
+    COMMENT "Embedding the theme editor's widgets"
+)
+set(THEME_EDITOR_FONT_LICENSE_FILE "${RETROFE_DIR}/ThirdParty/fonts/LICENSE-Apache-2.0.txt")
+set(THEME_EDITOR_FONT_LICENSE_SOURCE "${CMAKE_BINARY_DIR}/autogen/ThemeEditorFontLicense.cpp")
+add_custom_command(
+    OUTPUT "${THEME_EDITOR_FONT_LICENSE_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -DINPUT=${THEME_EDITOR_FONT_LICENSE_FILE} -DOUTPUT=${THEME_EDITOR_FONT_LICENSE_SOURCE} -DSYMBOL=theme_editor_font_license -P "${RETROFE_DIR}/CMake/EmbedFile.cmake"
+    DEPENDS "${THEME_EDITOR_FONT_LICENSE_FILE}" "${RETROFE_DIR}/CMake/EmbedFile.cmake"
+    COMMENT "Embedding the bundled font's licence"
+)
+add_library(retrofe_theme_editor STATIC
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorCanvas.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorNav.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/LetterTiles.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/LetterTiles.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeExport.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeExport.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeGenerate.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeGenerate.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeProject.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeProject.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeStore.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeStore.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/WidgetDefs.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/WidgetDefs.h"
+	"${THEME_EDITOR_WIDGETS_SOURCE}"
+	"${THEME_EDITOR_FONT_LICENSE_SOURCE}"
+)
+target_link_libraries(retrofe_theme_editor ${ZLIB_LIBRARIES})
+
+##############################################################
 # Unit tests for code that doesn't need SDL: cmake -DRETROFE_BUILD_TESTS=ON, then run retrofe_tests
 option(RETROFE_BUILD_TESTS "Build the retrofe_tests unit tests" OFF)
 if(RETROFE_BUILD_TESTS)
@@ -377,6 +420,7 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Tests/TestsMain.cpp"
 		"${RETROFE_DIR}/Tests/FormsTests.cpp"
 		"${RETROFE_DIR}/Tests/CatalogTests.cpp"
+		"${RETROFE_DIR}/Tests/ThemeEditorTests.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
@@ -397,6 +441,12 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Utility/Utils.cpp"
 	)
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
+	# The theme editor tests read the bundled font and check the layout
+	# vocabulary against PageBuilder.cpp and Tween.cpp in the source tree
+	target_link_libraries(retrofe_tests retrofe_theme_editor)
+	target_compile_definitions(retrofe_tests PRIVATE
+		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
+		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
 	# The Catalog tests extract and write zip archives
 	if(WIN32)
 		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES} winhttp)
@@ -415,6 +465,7 @@ set(LIBRARY_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORC
 include_directories(${RETROFE_INCLUDE_DIRS})
 add_executable(retrofe  ${RETROFE_SOURCES} ${RETROFE_HEADERS})
 add_dependencies(retrofe GenerateVersioningHeader)
+target_link_libraries(retrofe retrofe_theme_editor)
 
 find_library(WEBPDEMUX_LIBRARY
     NAMES webpdemux

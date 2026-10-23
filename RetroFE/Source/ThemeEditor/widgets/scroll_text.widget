@@ -1,0 +1,85 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: the Text Type list is ReloadableScrollingText's own types (any
+# other type, like story, scrolls the matching text file from the media
+# folder).
+[widget]
+id = scroll_text
+name = Scrolling Text
+category = text
+color = 6FB8A0
+glyph = ST
+summary = Metadata text that scrolls when it overflows the box.
+info = reloadableScrollingText - type=<Text Type>, direction + speed knobs
+w = 690
+h = 70
+minw = 80
+minh = 24
+layer = 12
+
+[var]
+token = TEXTTYPE
+name = Text Type
+type = text
+default = title
+options = title|year|manufacturer|developer|genre|rating|score|numberPlayers|numberButtons|numberJoyWays|ctrlType|playlist|firstLetter|collectionName|collectionIndex|collectionIndexSize|collectionSize|story
+
+[var]
+token = DIRECTION
+name = Direction
+type = text
+default = horizontal
+options = horizontal|vertical
+
+[var]
+token = SPEED
+name = Scroll Speed
+type = text
+default = 60
+numeric = true
+step = 5
+min = 0
+max = 500
+
+[var]
+token = STARTPOS
+name = Start Position
+type = text
+default = 0
+numeric = true
+step = 10
+min = 0
+max = 4000
+
+[var]
+token = STARTTIME
+name = Start Delay (s)
+type = text
+default = 5
+numeric = true
+step = 0.5
+min = 0
+max = 60
+
+[var]
+token = ENDTIME
+name = End Hold (s)
+type = text
+default = 1
+numeric = true
+step = 0.5
+min = 0
+max = 60
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[fragment]
+<reloadableScrollingText id="{{ID}}" type="{{TEXTTYPE}}" direction="{{DIRECTION}}" x="{{X}}" y="{{CY}}" yOrigin="center" maxWidth="{{W}}" fontSize="{{FS}}" loadFontSize="{{FS}}"{{?HASFONT}} font="{{FONT}}"{{/HASFONT}}{{?HASFONTCOLOR}} fontColor="{{FONTCOLOR}}"{{/HASFONTCOLOR}} scrollingSpeed="{{SPEED}}" startPosition="{{STARTPOS}}" startTime="{{STARTTIME}}" endTime="{{ENDTIME}}" menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableScrollingText>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

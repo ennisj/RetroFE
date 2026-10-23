@@ -78,3 +78,4 @@ namespace Test
 
 void runFormsTests();
 void runCatalogTests();
+void runThemeEditorTests();

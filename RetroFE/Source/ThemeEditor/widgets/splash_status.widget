@@ -1,0 +1,19 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: no value or Sample Text (statusText doesn't read value; the engine
+# streams its own startup messages into it).
+[widget]
+id = splash_status
+name = Status Messages
+category = text
+color = 8FB8E0
+glyph = MSG
+summary = Where the frontend's startup/scan messages render (Splash Screen page).
+info = statusText - the engine streams its startup text here
+w = 900
+h = 60
+minw = 120
+minh = 24
+layer = 3
+
+[fragment]
+<statusText id="{{ID}}" x="{{CX}}" y="{{CY}}" xOrigin="center" yOrigin="center" width="{{W}}" height="{{H}}" fontSize="{{FS}}"{{?HASFONT}} font="{{FONT}}"{{/HASFONT}}{{?HASFONTCOLOR}} fontColor="{{FONTCOLOR}}"{{/HASFONTCOLOR}} alpha="{{ALPHA}}" layer="{{LAYER}}"/>

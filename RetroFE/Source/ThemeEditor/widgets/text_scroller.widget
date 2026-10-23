@@ -1,0 +1,72 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: <scrollingText src=> becomes <reloadableScrollingText type="file">,
+# whose location is relative to the RetroFE folder, so it is written as
+# layouts/<theme folder>/<file>. No Pause (pauseTime isn't read). The default
+# file is text/scroller.txt in the theme folder.
+[widget]
+id = text_scroller
+name = Text File Scroller
+category = text
+color = 6F9BE0
+glyph = TF
+summary = Scrolls the contents of a text file (instructions, credits).
+info = reloadableScrollingText type=file - location = the theme's own file
+w = 555
+h = 44
+minw = 80
+minh = 20
+layer = 18
+
+[var]
+token = SRC
+name = Text File
+type = file
+filter = text
+default = text/scroller.txt
+
+[var]
+token = DIRECTION
+name = Direction
+type = text
+default = vertical
+options = horizontal|vertical
+
+[var]
+token = ALIGN
+name = Alignment
+type = text
+default = left
+options = left|center|right
+
+[var]
+token = SPEED
+name = Scroll Speed
+type = text
+default = 25
+numeric = true
+step = 5
+min = 0
+max = 500
+
+[var]
+token = STARTTIME
+name = Start Delay (s)
+type = text
+default = 3
+numeric = true
+step = 0.5
+min = 0
+max = 60
+
+[var]
+token = ENDTIME
+name = End Hold (s)
+type = text
+default = 3
+numeric = true
+step = 0.5
+min = 0
+max = 60
+
+[fragment]
+<reloadableScrollingText id="{{ID}}" type="file" location="layouts/{{THEMEDIR}}/{{SRC}}" x="{{X}}" y="{{Y}}" width="{{W}}" height="{{H}}" fontSize="{{FS}}" direction="{{DIRECTION}}" alignment="{{ALIGN}}" scrollingSpeed="{{SPEED}}" startPosition="0" startTime="{{STARTTIME}}" endTime="{{ENDTIME}}"{{?HASFONT}} font="{{FONT}}"{{/HASFONT}}{{?HASFONTCOLOR}} fontColor="{{FONTCOLOR}}"{{/HASFONTCOLOR}} alpha="{{ALPHA}}" layer="{{LAYER}}"/>
