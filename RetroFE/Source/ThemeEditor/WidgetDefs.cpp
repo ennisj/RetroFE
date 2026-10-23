@@ -15,6 +15,7 @@
  */
 
 #include "WidgetDefs.h"
+#include "ThemeProject.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
@@ -228,7 +229,7 @@ namespace ThemeEditor
                 else if (key == "h") { if (!parseInt(val, 1, 100000, out.h)) { error = "bad h"; return false; } }
                 else if (key == "minw") { if (!parseInt(val, 1, 100000, out.minW)) { error = "bad minw"; return false; } sawMinW = true; }
                 else if (key == "minh") { if (!parseInt(val, 1, 100000, out.minH)) { error = "bad minh"; return false; } sawMinH = true; }
-                else if (key == "layer") { if (!parseInt(val, 0, 20, out.layer)) { error = "bad layer (0..20)"; return false; } }
+                else if (key == "layer") { if (!parseInt(val, 0, MAX_LAYER, out.layer)) { error = "bad layer (0.." + std::to_string(MAX_LAYER) + ")"; return false; } }
                 else if (key == "menu") {
                     if (val != "true" && val != "false") { error = "menu must be true|false"; return false; }
                     out.menu = (val == "true");

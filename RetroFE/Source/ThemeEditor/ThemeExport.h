@@ -75,7 +75,9 @@ namespace ThemeEditor
     // The full save: project.xml, every page generated with animations on and
     // nothing filtered (the Show toggles are an editor aid), shared templates
     // fanned out to each member collection, the bundled font when the project
-    // uses it, and the letter tiles when a page uses firstLetter art.
+    // uses it, and the letter tiles when a page uses firstLetter art. A page
+    // that doesn't generate (including one that doesn't parse) or a
+    // collection whose name isn't folderNameSafe is an error.
     // Second-screen pages aren't written yet (a warning says so).
     SavePlan buildSavePlan(const ThemeProject& p, const WidgetLibrary& lib, const SaveInputs& inputs);
 

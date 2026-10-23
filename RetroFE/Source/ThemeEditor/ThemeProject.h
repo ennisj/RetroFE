@@ -37,6 +37,12 @@ namespace ThemeEditor
 {
     using Attributes = std::vector<std::pair<std::string, std::string>>;
 
+    // The highest layer the engine draws: Page has NUM_LAYERS = 20 (0..19)
+    // and drops a component on any other layer. Every layer the editor
+    // writes, offsets included, is clamped to 0..MAX_LAYER.
+    static const int MAX_LAYER = 19;
+    static inline int clampLayer(int layer) { return layer < 0 ? 0 : (layer > MAX_LAYER ? MAX_LAYER : layer); }
+
     struct WidgetInstance
     {
         std::string def;    // the WidgetDef id this was placed from
@@ -44,7 +50,7 @@ namespace ThemeEditor
         std::string name;   // display name ("Game Video 1")
         int x = 0, y = 0;   // theme units (1920x1080 or 1080x1920)
         int w = 0, h = 0;
-        int layer = 0;      // 0..20
+        int layer = 0;      // 0..MAX_LAYER
         int alphaPct = 100; // opacity 0..100, written as alpha="0.NN"
 
         // A per-widget font (a theme-relative path); empty uses the theme's font.
@@ -180,6 +186,12 @@ namespace ThemeEditor
     // control bytes become spaces, runs collapse, edges trim (trailing dots
     // too), device names (CON, COM1, ...) get " Theme" added. Never empty.
     std::string themeFolderName(const std::string& themeName);
+
+    // Is `name` safe as one folder name on every platform: not empty, not
+    // "." or "..", no control or Windows-forbidden characters, no leading
+    // space or dot, no trailing space or dot, not a device name. Whatever
+    // themeFolderName returns passes.
+    bool folderNameSafe(const std::string& name);
 
     // The next numbered identity for placing a widget on a page:
     // "<defId>_<n>" / "<defName> <n>", n one past the highest in use

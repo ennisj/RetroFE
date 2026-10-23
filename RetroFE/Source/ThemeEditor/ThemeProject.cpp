@@ -17,6 +17,7 @@
 #include "ThemeProject.h"
 #include "WidgetDefs.h"
 #include <rapidxml.hpp>
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -328,6 +329,19 @@ namespace ThemeEditor
         return out;
     }
 
+    // CON, PRN, AUX, NUL, COM1-9, LPT1-9 are devices on Windows, with or without an extension
+    static bool isDeviceName(const std::string& name)
+    {
+        std::string base;
+        for (char c : name) base += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const size_t dot = base.find('.');
+        if (dot != std::string::npos) base = base.substr(0, dot);
+        while (!base.empty() && base.back() == ' ') base.pop_back();
+        return base == "con" || base == "prn" || base == "aux" || base == "nul" ||
+               (base.size() == 4 && (base.compare(0, 3, "com") == 0 || base.compare(0, 3, "lpt") == 0) &&
+                base[3] >= '1' && base[3] <= '9');
+    }
+
     std::string themeFolderName(const std::string& themeName)
     {
         std::string out;
@@ -341,17 +355,24 @@ namespace ThemeEditor
             out += c;
         }
         while (!out.empty() && (out.back() == ' ' || out.back() == '.')) out.pop_back();
-        while (!out.empty() && out.front() == '.') out.erase(out.begin());   // no "..", no hidden folders
+        while (!out.empty() && (out.front() == '.' || out.front() == ' ')) out.erase(out.begin());   // no "..", no hidden folders
         if (out.empty()) out = "Theme";
-        std::string base;
-        for (char c : out) base += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        const size_t dot = base.find('.');
-        if (dot != std::string::npos) base = base.substr(0, dot);
-        const bool device = base == "con" || base == "prn" || base == "aux" || base == "nul" ||
-                            (base.size() == 4 && (base.compare(0, 3, "com") == 0 || base.compare(0, 3, "lpt") == 0) &&
-                             base[3] >= '1' && base[3] <= '9');
-        if (device) out += " Theme";
+        // Windows reads everything before the first dot, so "COM1.txt" becomes "COM1 Theme.txt"
+        if (isDeviceName(out)) out.insert(std::min(out.find('.'), out.size()), " Theme");
         return out;
+    }
+
+    bool folderNameSafe(const std::string& name)
+    {
+        if (name.empty() || name == "." || name == "..") return false;
+        for (char c : name) {
+            if (static_cast<unsigned char>(c) < 0x20 || c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' ||
+                c == '"' || c == '<' || c == '>' || c == '|') {
+                return false;
+            }
+        }
+        if (name.front() == ' ' || name.front() == '.' || name.back() == ' ' || name.back() == '.') return false;
+        return !isDeviceName(name);
     }
 
     void nextIdentity(const ThemePage& page, const std::string& defId, const std::string& defName,
@@ -591,9 +612,7 @@ namespace ThemeEditor
             w.y = getInt(n, "y");
             w.w = getInt(n, "w");
             w.h = getInt(n, "h");
-            w.layer = getInt(n, "layer");
-            if (w.layer < 0) w.layer = 0;
-            if (w.layer > 20) w.layer = 20;
+            w.layer = clampLayer(getInt(n, "layer"));
             w.autoScroll = get(n, "autoscroll") != "0";
             w.canvasHide = getInt(n, "hide") != 0;
             w.alphaPct = getInt(n, "alpha", 100);

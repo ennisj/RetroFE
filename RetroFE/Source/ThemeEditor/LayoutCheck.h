@@ -31,10 +31,15 @@
 //   - a mode value PageBuilder doesn't recognise for that element
 //   - an animation set without duration, an animate without type, with an
 //     unknown tween type, or without "to"
+//   - a layer outside 0..19 on any element or menu item (Page draws
+//     NUM_LAYERS = 20 layers and drops a component on any other), alpha
+//     outside 0..1, and a duration, layer or loadFontSize that isn't a number
 //
 // The vocabulary is kept in step with PageBuilder by a test that checks every
-// name here appears in PageBuilder.cpp (and every tween type in Tween.cpp).
-// It doesn't check asset files exist or that values are well-formed numbers.
+// name here is still mentioned in PageBuilder.cpp (and every tween type in
+// Tween.cpp). That catches a name PageBuilder stops reading; it isn't proof
+// that PageBuilder reads it on that element. It doesn't check asset files
+// exist or that x/y/width/height values are well-formed.
 
 #include <string>
 #include <vector>
@@ -43,6 +48,10 @@ namespace ThemeEditor
 {
     // Problems found, each naming the element (and its id when it has one)
     std::vector<std::string> checkLayoutXml(const std::string& xml);
+
+    // Why PageBuilder couldn't use this at all (rapidxml can't parse it, or
+    // there's no <layout> root); "" when it can
+    std::string layoutParseError(const std::string& xml);
 
     // The names the check accepts, for the drift test
     struct LayoutVocabulary

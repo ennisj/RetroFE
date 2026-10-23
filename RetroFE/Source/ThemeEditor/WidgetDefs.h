@@ -65,7 +65,7 @@ namespace ThemeEditor
         bool warpable = false; // One Saucier's transform= widgets; this engine can't warp, see ThemeGenerate.h
         int w = 0, h = 0;      // default size when placed
         int minW = 8, minH = 8;
-        int layer = 0;         // default layer 0..20
+        int layer = 0;         // default layer 0..MAX_LAYER (19)
         bool menu = false;     // a scrolling menu (its fragment names {{MENU_ITEMS}})
         bool horizontal = false;
         bool strip = false;    // an art strip: a ribbon of neighbouring items

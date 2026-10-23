@@ -45,18 +45,10 @@ namespace ThemeEditor
 
     namespace
     {
-        // A collection name usable as a folder under collections/
-        bool collectionFolderOk(const std::string& c)
-        {
-            if (c.empty() || c == "." || c == "..") return false;
-            for (char ch : c) {
-                if (static_cast<unsigned char>(ch) < 0x20 || ch == '\\' || ch == '/' || ch == ':' || ch == '*' ||
-                    ch == '?' || ch == '"' || ch == '<' || ch == '>' || ch == '|') {
-                    return false;
-                }
-            }
-            return true;
-        }
+        // A collection name usable as a folder under collections/ as it is:
+        // Windows would silently drop a trailing dot or space and write
+        // somewhere else
+        bool collectionFolderOk(const std::string& c) { return folderNameSafe(c); }
 
         // Does a generated page place firstLetter art? (Generated opening tags are one line each.)
         bool usesLetterArt(const std::string& xml)

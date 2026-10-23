@@ -28,8 +28,11 @@ namespace ThemeEditor
 {
     namespace
     {
+        // Regular files only: libstdc++ throws when a stream reads a directory
         bool readFile(const fs::path& path, std::string& out)
         {
+            std::error_code ec;
+            if (!fs::is_regular_file(path, ec)) return false;
             std::ifstream in(path, std::ios::binary);
             if (!in) return false;
             out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
@@ -39,6 +42,8 @@ namespace ThemeEditor
         // The first line of a file, without its line ending; "" when unreadable
         std::string firstLine(const fs::path& path)
         {
+            std::error_code ec;
+            if (!fs::is_regular_file(path, ec)) return std::string();
             std::ifstream in(path, std::ios::binary);
             if (!in) return std::string();
             std::string line;
@@ -151,9 +156,15 @@ namespace ThemeEditor
         if (!fs::is_directory(dir, ec)) return TF_FOREIGN;
         const fs::path layout = dir / "layout.xml";
         if (fs::exists(layout, ec)) return isEditorMarker(firstLine(layout)) ? TF_EDITOR : TF_FOREIGN;
-        if (fs::exists(dir / PROJECT_FILE, ec)) return TF_EDITOR;
-        if (fs::is_empty(dir, ec) && !ec) return TF_FRESH;
-        return TF_FOREIGN;
+        if (fs::is_regular_file(dir / PROJECT_FILE, ec)) return TF_EDITOR;
+        // Empty, or only the editor's own folders left behind by a save that
+        // never got as far as project.xml
+        for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            std::error_code dec;
+            if (!((name == "editor" || name == ASSETS_FOLDER) && it->is_directory(dec))) return TF_FOREIGN;
+        }
+        return ec ? TF_FOREIGN : TF_FRESH;
     }
 
     bool loadTheme(const std::string& layoutsRoot, const std::string& folder, ThemeProject& out, std::string& error)
@@ -178,7 +189,7 @@ namespace ThemeEditor
             s.name = s.folder;
             s.kind = probeTheme(layoutsRoot, s.folder);
             std::error_code pec;
-            s.hasProject = fs::exists(it->path() / PROJECT_FILE, pec);
+            s.hasProject = fs::is_regular_file(it->path() / PROJECT_FILE, pec);
             if (s.hasProject) {
                 ThemeProject p;
                 if (loadTheme(layoutsRoot, s.folder, p, s.error)) {
@@ -205,7 +216,8 @@ namespace ThemeEditor
         error.clear();
         if (report) *report = SaveReport();
         if (!themeFolderValid(folder)) { error = "invalid theme folder '" + folder + "'"; return false; }
-        if (probeTheme(layoutsRoot, folder) == TF_FOREIGN) {
+        const ThemeFolderKind kind = probeTheme(layoutsRoot, folder);
+        if (kind == TF_FOREIGN) {
             error = "'" + folder + "' wasn't made with the theme editor, so it won't be overwritten";
             return false;
         }
@@ -219,18 +231,54 @@ namespace ThemeEditor
         }
 
         const fs::path dir = fs::path(layoutsRoot) / folder;
-        const std::vector<std::string> before = scanEditorPages(dir);
         std::error_code ec;
+        // A page somebody wrote by hand inside an editor theme (no marker) is
+        // never overwritten, e.g. collections/NES/layout/layout.xml when NES
+        // joins a template. Checked before anything is written.
+        for (const auto& f : plan.files) {
+            if (!isPagePath(f.relPath)) continue;
+            const fs::path path = dir / f.relPath;
+            if (fs::exists(path, ec) && !isEditorMarker(firstLine(path))) {
+                error = f.relPath + " in '" + folder + "' was written by hand, so it won't be overwritten; "
+                        "move it away, or take that collection out of the template";
+                return false;
+            }
+        }
+
+        const std::vector<std::string> before = scanEditorPages(dir);
+        const bool existed = fs::exists(dir, ec);
         fs::create_directories(dir, ec);
         if (!fs::is_directory(dir, ec)) { error = "can't create " + dir.string(); return false; }
+
+        // A first save that fails takes back what it wrote, so the folder
+        // doesn't end up looking like somebody else's
+        std::vector<fs::path> created;
+        auto rollback = [&]() {
+            if (kind != TF_FRESH) return;
+            std::error_code ignore;
+            for (const auto& path : created) fs::remove(path, ignore);
+            for (const auto& path : created) {
+                for (fs::path d = path.parent_path(); d != dir && d.has_parent_path(); d = d.parent_path()) {
+                    if (!fs::is_empty(d, ignore) || ignore) break;
+                    fs::remove(d, ignore);
+                }
+            }
+            if (!existed && fs::is_empty(dir, ignore)) fs::remove(dir, ignore);
+        };
 
         std::vector<std::string> planPaths;
         for (const auto& f : plan.files) {
             planPaths.push_back(f.relPath);
             const fs::path path = dir / f.relPath;
             std::string existing;
-            if (readFile(path, existing) && existing == f.content) continue;
-            if (!writeFileAtomic(path.string(), f.content, error)) return false;
+            const bool had = readFile(path, existing);
+            if (had && existing == f.content) continue;
+            if (!writeFileAtomic(path.string(), f.content, error)) {
+                if (!had) created.push_back(path);   // its folders may be new
+                rollback();
+                return false;
+            }
+            if (!had) created.push_back(path);
             if (report) report->written.push_back(f.relPath);
         }
 
@@ -238,6 +286,14 @@ namespace ThemeEditor
         // wrote that this one doesn't (marker-checked, so never a hand-made page)
         for (const std::string& rel : stalePages(planPaths, before)) {
             const fs::path path = dir / rel;
+            // On a case-insensitive drive "collections/nes" and "collections/NES"
+            // are the page just written: never remove that
+            bool planned = false;
+            for (const auto& planPath : planPaths) {
+                std::error_code eq;
+                if (fs::equivalent(path, dir / planPath, eq) && !eq) { planned = true; break; }
+            }
+            if (planned) continue;
             fs::remove(path, ec);
             if (fs::exists(path, ec)) {
                 error = "couldn't remove the old page " + rel + "; it would keep overriding that collection";
@@ -353,7 +409,8 @@ namespace ThemeEditor
             return false;
         }
         fs::remove_all(dir, ec);
-        if (ec || fs::exists(dir)) {
+        std::error_code gone;
+        if (ec || fs::exists(dir, gone)) {
             error = "couldn't delete '" + folder + "'" + (ec ? ": " + ec.message() : std::string());
             return false;
         }
@@ -365,8 +422,13 @@ namespace ThemeEditor
     {
         relOut.clear();
         if (!themeFolderValid(folder)) { error = "invalid theme folder '" + folder + "'"; return false; }
-        if (probeTheme(layoutsRoot, folder) == TF_FOREIGN) {
+        const ThemeFolderKind kind = probeTheme(layoutsRoot, folder);
+        if (kind == TF_FOREIGN) {
             error = "'" + folder + "' wasn't made with the theme editor";
+            return false;
+        }
+        if (kind == TF_FRESH) {
+            error = "save the theme '" + folder + "' before adding files to it";
             return false;
         }
         std::error_code ec;

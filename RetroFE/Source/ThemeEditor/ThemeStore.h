@@ -56,7 +56,8 @@ namespace ThemeEditor
     std::vector<ThemeSummary> listThemes(const std::string& layoutsRoot);
 
     // What's at layouts/<folder>:
-    //   no folder, or an empty one               -> TF_FRESH
+    //   no folder, an empty one, or only editor/
+    //   and/or assets/ folders (no project)      -> TF_FRESH
     //   layout.xml starts with the marker        -> TF_EDITOR
     //   no layout.xml but editor/project.xml     -> TF_EDITOR (a save that stopped early)
     //   anything else                            -> TF_FOREIGN
@@ -76,8 +77,11 @@ namespace ThemeEditor
 
     // Saves the project into layouts/<folder>: project.xml first, then every
     // page, the font and the letter tiles, then removes pages an earlier save
-    // wrote that this one doesn't (only pages carrying the marker). Refused
-    // for a hand-made folder. Nothing is written when the plan has an error.
+    // wrote that this one doesn't (only pages carrying the marker, never one
+    // that is the same file as a page just written). Refused, before
+    // anything is written, for a hand-made folder, when the plan has an
+    // error, or when a page would replace a hand-made page (no marker)
+    // inside the theme. A first save that fails removes what it wrote.
     bool saveTheme(const std::string& layoutsRoot, const std::string& folder, const ThemeProject& p,
                    const WidgetLibrary& lib, const SaveInputs& inputs, SaveReport* report, std::string& error);
 
@@ -103,7 +107,8 @@ namespace ThemeEditor
 
     // Copies a file into the theme's assets/ and answers the path pages use
     // ("assets/<name>"). An identical file already there is reused; a
-    // different one with the same name gets -2, -3... added.
+    // different one with the same name gets -2, -3... added. Refused for a
+    // theme that has never been saved (TF_FRESH).
     bool importAsset(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
                      std::string& relOut, std::string& error);
 

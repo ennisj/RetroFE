@@ -15,9 +15,11 @@
  */
 
 #include "LayoutCheck.h"
+#include "ThemeProject.h"
 #include <rapidxml.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <set>
 
 // Every list here mirrors Graphics/PageBuilder.cpp (and Animate/Tween.cpp for
@@ -150,6 +152,22 @@ namespace ThemeEditor
             return s;
         }
 
+        // Page::NUM_LAYERS is 20 (the drift test checks it)
+        const int LAST_LAYER = MAX_LAYER;
+
+        bool number(const std::string& s, double& out)
+        {
+            if (s.empty()) return false;
+            char* end = nullptr;
+            out = std::strtod(s.c_str(), &end);
+            return end && *end == '\0';
+        }
+
+        bool integer(const std::string& s, double& out)
+        {
+            return number(s, out) && out == static_cast<double>(static_cast<long>(out));
+        }
+
         std::string nameOf(const Node* n) { return std::string(n->name(), n->name_size()); }
 
         const rapidxml::xml_attribute<>* attribute(const Node* n, const char* name) { return n->first_attribute(name); }
@@ -173,8 +191,30 @@ namespace ThemeEditor
 
             void issue(const Node* n, const std::string& what) { issues.push_back(describe(n) + ": " + what); }
 
+            // The values the engine reads as plain numbers (convertInt/convertFloat
+            // turn anything else into 0 without a word)
+            void checkValues(const Node* n)
+            {
+                double v = 0;
+                if (attribute(n, "layer")) {
+                    if (!integer(value(n, "layer"), v)) issue(n, "layer '" + value(n, "layer") + "' isn't a whole number");
+                    else if (v < 0 || v > LAST_LAYER) issue(n, "layer " + value(n, "layer") + " is outside 0.." + std::to_string(LAST_LAYER) + " (the engine drops it)");
+                }
+                if (attribute(n, "alpha")) {
+                    if (!number(value(n, "alpha"), v)) issue(n, "alpha '" + value(n, "alpha") + "' isn't a number");
+                    else if (v < 0 || v > 1) issue(n, "alpha " + value(n, "alpha") + " is outside 0..1");
+                }
+                if (attribute(n, "duration") && (!number(value(n, "duration"), v) || v < 0)) {
+                    issue(n, "duration '" + value(n, "duration") + "' isn't a number of seconds");
+                }
+                if (attribute(n, "loadFontSize") && (!integer(value(n, "loadFontSize"), v) || v < 1)) {
+                    issue(n, "loadFontSize '" + value(n, "loadFontSize") + "' isn't a size");
+                }
+            }
+
             void checkAttributes(const Node* n, bool viewInfo, const char* const* own)
             {
+                checkValues(n);
                 for (const rapidxml::xml_attribute<>* a = n->first_attribute(); a; a = a->next_attribute()) {
                     const std::string name(a->name(), a->name_size());
                     if (inList(name, own)) continue;
@@ -204,6 +244,12 @@ namespace ThemeEditor
                         }
                         else if (!attribute(a, "to") && type != "nop" && type != "restart") {
                             issue(a, "animate has no 'to'");
+                        }
+                        else if (type == "layer") {
+                            double v = 0;
+                            if (!integer(value(a, "to"), v) || v < 0 || v > LAST_LAYER) {
+                                issue(a, "animates to layer " + value(a, "to") + ", outside 0.." + std::to_string(LAST_LAYER));
+                            }
                         }
                         if (attribute(a, "algorithm") && !inList(lower(value(a, "algorithm")), ALGORITHMS)) {
                             issue(a, "algorithm '" + value(a, "algorithm") + "' isn't known (it would play as linear)");
@@ -254,6 +300,20 @@ namespace ThemeEditor
                 if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults>");
             }
         };
+    }
+
+    std::string layoutParseError(const std::string& xml)
+    {
+        std::vector<char> buffer(xml.begin(), xml.end());
+        buffer.push_back('\0');
+        rapidxml::xml_document<> doc;
+        try {
+            doc.parse<0>(buffer.data());
+        }
+        catch (const rapidxml::parse_error& e) {
+            return std::string("not valid XML: ") + e.what();
+        }
+        return doc.first_node("layout") ? std::string() : std::string("no <layout> root");
     }
 
     std::vector<std::string> checkLayoutXml(const std::string& xml)

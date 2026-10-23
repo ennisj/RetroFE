@@ -70,10 +70,14 @@ everything in One Saucier's `app/retrofe/theme/*`.
   SDL2_image's `IMG_SavePNG`: that would pull SDL into the core and the test
   binary just to write a PNG. The encoder is 40 lines and the test inflates
   the result to check it.
-- **Digit tiles.** This engine looks a `firstLetter` tile up by the title's
-  first character as it is (One Saucier folds digits into `#`), so the set is
-  `#`, `A`–`Z` **and** `0`–`9` (each digit tile highlights the `#` row): 37
-  files.
+- **Digit and default tiles.** This engine looks a `firstLetter` tile up by
+  the title's first character exactly as it is (One Saucier folds digits into
+  `#`; here the file-name match is case-sensitive on every platform), so the
+  set is `#`, `A`–`Z`, `0`–`9` (each digit tile highlights the `#` row) and
+  `default.png` with nothing highlighted, which the engine falls back to for
+  any other character: 38 files. **Limitation:** a title starting with a
+  lowercase letter shows `default.png`. Lowercase copies (`a.png`) can't be
+  written: on Windows they'd be the same file as `A.png`.
 - **Unknown attributes kept.** Root and widget attributes this version
   doesn't know (One Saucier's `artSource`, intro and THEMES art, future
   fields) are kept as they were and written back, so a One Saucier project
@@ -111,6 +115,7 @@ missing required attribute logs an error and drops the component.
 | reloadableText types | Its own list | Game Metadata offers the types ReloadableText has (`numberButtons`, `numberJoyWays`, `playCount`, `lastPlayed`, `timeSpent`, `isFavorite`, ...). One Saucier's `fullTitle`, `publisher`, `subGenre`, `series`, `region`, `date`, `story` only resolve from an info file, so they're gone. Scrolling Text likewise (`story` stays: scrolling text reads it from the media folder). |
 | `src=` on collection pages | Resolved against the page's own folder first | Theme files are written `src="{{PAGEROOT}}{{SRC}}"` (`../../../` on `collections/<c>/layout/layout.xml`), so they resolve first time instead of logging an error and falling back. Sounds too. |
 | `id=` | Read as a number by Text; nothing uses it | The editor's string ids are kept (they read as 0). They're the joint between the project and the XML. |
+| `layer=` | Page has `NUM_LAYERS = 20`: layers 0–19 are drawn; `Page::addComponent` drops (and leaks) a component on any other | `MAX_LAYER = 19` everywhere: widget definitions refuse 20, projects load 20+ as 19, the generator clamps every layer it writes, including offsets (the ghost wheel's selected slot at +6, the strip's popped and selected slots at +1). `LayoutCheck` flags a layer outside 0–19 on any element, menu item or layer animation. One Saucier allowed 0–20. |
 | Second screen `layout1.xml` | Not read (monitors use `monitor=`) | Not saved yet (see above). |
 
 ### Per widget
@@ -139,14 +144,24 @@ is split:
 1. **`LayoutCheck`** (`checkLayoutXml`) parses with rapidxml and checks each
    element and attribute against the vocabulary PageBuilder reads, the
    required attributes it logs errors for, mode values, `<itemDefaults>` in
-   menus (PageBuilder dereferences it), and animations (`duration`, tween
-   types, `to`, algorithm names). Saving runs it over every page and reports
-   issues as warnings, which catches dialect problems in user-made widgets.
-2. **A drift test** reads `Graphics/PageBuilder.cpp` and
-   `Graphics/Animate/Tween.cpp` from the source tree and checks every name
-   the check accepts appears there. If PageBuilder stops reading an
-   attribute, the test fails; when it learns one, `LayoutCheck.cpp` needs the
-   addition.
+   menus (PageBuilder dereferences it), animations (`duration`, tween types,
+   `to`, algorithm names), layers in 0–19, alpha in 0–1, and numbers where
+   the engine reads numbers (`duration`, `layer`, `loadFontSize`). Saving
+   runs it over every page and reports issues as warnings, which catches
+   dialect problems in user-made widgets. A page that doesn't parse at all
+   (rapidxml fails, or no `<layout>` root) is an **error**, from the
+   generator itself: `raw` vars and verbatim ladders go in unescaped, so a
+   bad value there can break the XML, and that must never be saved.
+2. **A drift test** reads `Graphics/PageBuilder.cpp`,
+   `Graphics/Animate/Tween.cpp` and `Graphics/Page.h` from the source tree
+   and checks every name the check accepts is still mentioned there, and
+   that `NUM_LAYERS` is still 20. It's a "still mentioned" check, not
+   acceptance: it catches PageBuilder dropping a name, not whether it reads
+   that name on that element (the element lists in `LayoutCheck.cpp` were
+   written from reading `PageBuilder.cpp`). When PageBuilder learns an
+   attribute, `LayoutCheck.cpp` needs the addition. A test binary run
+   without the source tree (the path is compiled in) prints one "skipped"
+   line instead.
 3. **The key test**: every stock widget, with every bool flipped and every
    listed option, wheels with every shape knob (pulse, ghost, idle dim, fade,
    tilt, curve, text wheel), measured strips and verbatim ladders, and a page
@@ -192,12 +207,32 @@ What a folder is (`probeTheme`):
 
 | Folder | Verdict |
 |---|---|
-| Doesn't exist, or empty | fresh |
+| Doesn't exist, empty, or holding only `editor/` and/or `assets/` folders (and no project) | fresh |
 | `layout.xml` starts with the marker (either editor's) | editor-made |
-| No `layout.xml` but `editor/project.xml` | editor-made (a save that stopped early) |
+| No `layout.xml` but a file `editor/project.xml` | editor-made (a save that stopped early) |
 | Anything else | **foreign**: never written to, duplicated or deleted |
 
 The fork's default Aeon Nox is foreign.
+
+Inside an editor-made theme, a page somebody wrote by hand (a page position
+without the marker, e.g. `collections/NES/layout/layout.xml`) is guarded
+too: a save that would write there (NES gets a template, or joins one) is
+refused with a message saying which file, before anything is written. The
+user moves the file away or takes that collection out of the template.
+(Considered: backing it up to `.bak` and carrying on. Refusing is clearer
+and loses nothing.)
+
+A theme folder can't be left looking foreign by the editor's own failures:
+a first save that fails removes the files it wrote and the folders it made,
+`importAsset` refuses a theme that has never been saved, and a folder
+holding only `editor/` or `assets/` still counts as fresh. (One Saucier's
+"export.incomplete" marker covered the same case.)
+
+Folder names the editor writes, for themes and collection templates, must be
+safe as written (`folderNameSafe`): no forbidden or control characters, no
+leading or trailing space or dot (Windows would silently write somewhere
+else), no device names (`CON`, `COM1.txt`, ...). A template for a collection
+whose name isn't safe is a plan error.
 
 ### Operations (`ThemeStore.h`)
 
@@ -205,7 +240,9 @@ The fork's default Aeon Nox is foreign.
   if it has an error); writes `project.xml` first, then every page, the font
   and the tiles; then removes pages a previous save wrote that this one
   doesn't (only marker-carrying page positions, and their emptied folders;
-  media beside them stays). Each file goes to `<file>.tmp` and is renamed
+  media beside them stays; a stale path that is the same file as a page just
+  written, as `collections/nes` and `collections/NES` are on a
+  case-insensitive drive, is kept). Each file goes to `<file>.tmp` and is renamed
   over the old one; unchanged files aren't rewritten. The report lists what
   was written and removed, plan warnings, and files widgets point at that
   aren't in the theme.
@@ -217,7 +254,8 @@ The fork's default Aeon Nox is foreign.
   at the new folder.
 - `deleteTheme`: editor-made only; links inside are removed, not followed.
 - `importAsset`: copies a file into `assets/`, reusing an identical file and
-  adding `-2`, `-3` for a different one with the same name.
+  adding `-2`, `-3` for a different one with the same name. The theme must
+  have been saved once.
 - `listThemes`: every folder under `layouts/`, with the verdict and, for
   editor-made themes, the project's name, orientation and counts (a broken
   project lists with its error).
@@ -259,8 +297,13 @@ written first, so an interrupted save is repaired by the next one).
   `WidgetVar` (bool, dropdown, stepper, text, file via `importAsset`); undo
   snapshots per page; templates (`createNamed`, `reassign`,
   `deleteTemplateTo`, `effectiveCover` for the preview collection).
-- **Save** shows `SaveReport` warnings. It renders the letter tiles each time
-  (only written when they change), so run it off the render pass too.
+- **Save** shows `SaveReport` warnings **and `report.removed`**: the user
+  must see which pages a save deleted. The first save of a theme One Saucier
+  exported removes its `layout1.xml` second-screen pages, for example (they
+  carry the marker, and second screens aren't saved yet). It renders the
+  letter tiles each time (only written when they change), so run it off the
+  render pass too. A save refused because of a hand-made page should say
+  which file, as the error does.
   `EditorNav.h` is ready for controller editing.
 - **`--theme-check <layout>`**: load, generate, build the page, report and
   exit, for automated checks against the real engine.

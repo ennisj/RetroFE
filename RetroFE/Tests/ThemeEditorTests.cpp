@@ -36,6 +36,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -219,7 +220,7 @@ void runThemeEditorTests()
             { "unknown section", "[widget]\nid = a\n[fragmnet]\nx\n" },
             { "unknown widget key", "[widget]\nid = a\nwat = 1\n" },
             { "content before a section", "id = a\n[widget]\n" },
-            { "layer out of range", "[widget]\nid = a\nname = A\ncategory = text\ncolor = 000000\nw = 1\nh = 1\nlayer = 21\n[fragment]\n<t id=\"{{ID}}\"/>\n" },
+            { "layer out of range", "[widget]\nid = a\nname = A\ncategory = text\ncolor = 000000\nw = 1\nh = 1\nlayer = 20\n[fragment]\n<t id=\"{{ID}}\"/>\n" },
             { "duplicate var token", "[widget]\nid = a\nname = A\ncategory = text\ncolor = 000000\nw = 1\nh = 1\n[var]\ntoken = T\nname = t\ntype = bool\ndefault = true\n[var]\ntoken = T\nname = t\ntype = bool\ndefault = true\n[fragment]\n<t id=\"{{ID}}\"/>\n" },
             { "bad var type", "[widget]\nid = a\nname = A\ncategory = text\ncolor = 000000\nw = 1\nh = 1\n[var]\ntoken = T\nname = t\ntype = int\ndefault = 1\n[fragment]\n<t id=\"{{ID}}\"/>\n" },
             { "bad bool default", "[widget]\nid = a\nname = A\ncategory = text\ncolor = 000000\nw = 1\nh = 1\n[var]\ntoken = T\nname = t\ntype = bool\ndefault = yes\n[fragment]\n<t id=\"{{ID}}\"/>\n" },
@@ -684,8 +685,8 @@ void runThemeEditorTests()
         wp.pages[0].widgets[1].layer = 25;
         GenResult rw = generateLayoutXml(wp, wp.pages[0], lib);
         XmlDoc wdoc(rw.xml);
-        check(rw.ok() && !rw.warnings.empty() && attr(wdoc.node("layout") ? wdoc.node("layout")->first_node("reloadableText") : nullptr, "layer") == "20",
-              "layer 25 is written as 20, with a warning");
+        check(rw.ok() && !rw.warnings.empty() && attr(wdoc.node("layout") ? wdoc.node("layout")->first_node("reloadableText") : nullptr, "layer") == "19",
+              "layer 25 is written as 19 (the last layer drawn), with a warning");
         ThemeProject op = referenceProject();
         op.pages[0].widgets[1].x = 5000;
         rw = generateLayoutXml(op, op.pages[0], lib);
@@ -891,20 +892,30 @@ void runThemeEditorTests()
         check(issuesFor("<form/><keyboard/>").empty(), "forms and keyboards aren't the editor's business");
     });
 
-    run("theme editor: the layout check's vocabulary is PageBuilder's", [] {
-        const std::string pageBuilder = readFile(std::string(RETROFE_SOURCE_DIR) + "/Graphics/PageBuilder.cpp");
-        const std::string tween = readFile(std::string(RETROFE_SOURCE_DIR) + "/Graphics/Animate/Tween.cpp");
-        check(!pageBuilder.empty() && !tween.empty(), "PageBuilder.cpp and Tween.cpp are readable");
+    // A "still mentioned" check, not proof PageBuilder reads a name on that
+    // element: it catches a name PageBuilder stops reading. It needs the
+    // source tree, so a binary run elsewhere skips it.
+    run("theme editor: the layout check's vocabulary is still PageBuilder's", [] {
+        const std::string source = RETROFE_SOURCE_DIR;
+        const std::string pageBuilder = readFile(source + "/Graphics/PageBuilder.cpp");
+        const std::string tween = readFile(source + "/Graphics/Animate/Tween.cpp");
+        const std::string pageH = readFile(source + "/Graphics/Page.h");
+        if (pageBuilder.empty() || tween.empty() || pageH.empty()) {
+            std::cout << "  skipped: the RetroFE sources aren't at " << source << std::endl;
+            return;
+        }
         const LayoutVocabulary v = layoutVocabulary();
         for (const auto& lists : { &v.elements, &v.attributes, &v.events, &v.values }) {
             for (const auto& name : *lists) {
-                check(pageBuilder.find("\"" + name + "\"") != std::string::npos, "PageBuilder.cpp reads \"" + name + "\"");
+                check(pageBuilder.find("\"" + name + "\"") != std::string::npos, "PageBuilder.cpp mentions \"" + name + "\"");
             }
         }
         for (const auto& name : v.tweens) {
-            check(tween.find("{\"" + name + "\",") != std::string::npos, "Tween.cpp knows \"" + name + "\"");
+            check(std::regex_search(tween, std::regex("\\{\\s*\"" + name + "\"\\s*,")), "Tween.cpp maps \"" + name + "\"");
         }
         check(v.attributes.size() > 80 && v.events.size() == 34 && v.tweens.size() == 44, "the vocabulary is complete");
+        check(std::regex_search(pageH, std::regex("NUM_LAYERS\\s*=\\s*" + std::to_string(MAX_LAYER + 1) + "\\s*;")),
+              "Page.h draws NUM_LAYERS = MAX_LAYER + 1 layers");
     });
 
     // --- letter tiles --------------------------------------------------------------------------
@@ -915,15 +926,32 @@ void runThemeEditorTests()
         std::vector<std::pair<std::string, std::string>> tiles;
         std::string error;
         check(renderLetterTiles(ttf, LetterTileStyle(), tiles, error), "tiles render: " + error);
-        check(tiles.size() == 37, "37 tiles: # A..Z 0..9");
-        check(tiles.size() == 37 && tiles[0].first == "#.png" && tiles[1].first == "A.png" && tiles[26].first == "Z.png" &&
-              tiles[27].first == "0.png" && tiles[36].first == "9.png", "tile names");
-        check(tiles.size() == 37 && tiles[27].second == tiles[0].second, "digits highlight the # row");
-        bool allPng = true;
+        check(tiles.size() == 38, "38 tiles: # A..Z 0..9 default");
+        check(tiles.size() == 38 && tiles[0].first == "#.png" && tiles[1].first == "A.png" && tiles[26].first == "Z.png" &&
+              tiles[27].first == "0.png" && tiles[36].first == "9.png" && tiles[37].first == "default.png", "tile names");
+        check(tiles.size() == 38 && tiles[27].second == tiles[0].second, "digits highlight the # row");
+        check(tiles.size() == 38 && tiles[37].second != tiles[0].second, "default.png highlights nothing");
+        bool allPng = true, crcs = true;
         for (const auto& t : tiles) {
-            if (t.second.size() < 100 || t.second.compare(0, 8, std::string("\x89PNG\r\n\x1a\n", 8)) != 0) allPng = false;
+            const std::string& png = t.second;
+            if (png.size() < 100 || png.compare(0, 8, std::string("\x89PNG\r\n\x1a\n", 8)) != 0) { allPng = false; continue; }
+            // Every chunk: length, type, data, CRC over type + data; IEND last
+            size_t at = 8;
+            std::string last;
+            while (at + 12 <= png.size()) {
+                auto u8 = [&png](size_t i) { return static_cast<uLong>(static_cast<unsigned char>(png[i])); };
+                const uLong len = (u8(at) << 24) | (u8(at + 1) << 16) | (u8(at + 2) << 8) | u8(at + 3);
+                if (at + 12 + len > png.size()) { crcs = false; break; }
+                const uLong stored = (u8(at + 8 + len) << 24) | (u8(at + 9 + len) << 16) | (u8(at + 10 + len) << 8) | u8(at + 11 + len);
+                const uLong crc = crc32(crc32(0L, Z_NULL, 0), reinterpret_cast<const Bytef*>(png.data() + at + 4), static_cast<uInt>(len + 4));
+                if (crc != stored) crcs = false;
+                last = png.substr(at + 4, 4);
+                at += 12 + len;
+            }
+            if (at != png.size() || last != "IEND") crcs = false;
         }
         check(allPng, "every tile is a PNG");
+        check(crcs, "every chunk's CRC is right and the file ends with IEND");
         if (!tiles.empty()) {
             const std::string& png = tiles[1].second;
             auto be32 = [&png](size_t at) {
@@ -1124,7 +1152,7 @@ void runThemeEditorTests()
         for (const auto& f : lp.files) {
             if (f.relPath.rfind(std::string(LETTER_TILES_FOLDER) + "/", 0) == 0) ++tiles;
         }
-        check(lp.ok() && tiles == 37, "Game Letters brings its 37 tiles");
+        check(lp.ok() && tiles == 38, "Game Letters brings its 38 tiles");
         SavePlan nofont = buildSavePlan(letters, lib, SaveInputs());
         check(nofont.ok() && nofont.warnings.size() == 2, "no font: two warnings (font, letters), not a refusal");
 
@@ -1317,6 +1345,175 @@ void runThemeEditorTests()
         std::error_code ec;
         fs::remove_all(root + "_src", ec);
         fs::remove_all(root + "_widgets", ec);
+    });
+
+    // --- review fixes ------------------------------------------------------------------------
+
+    // Page draws NUM_LAYERS = 20 layers (0..19) and drops a component on any other
+    run("theme editor: every layer written is one the engine draws (0..19)", [] {
+        WidgetLibrary lib = stockLibrary();
+        std::string error;
+        WidgetDef d;
+        check(!parseWidgetDef("[widget]\nid = a\nname = A\ncategory = text\ncolor = 000000\nw = 1\nh = 1\nlayer = 20\n[fragment]\n<t id=\"{{ID}}\"/>\n", d, error),
+              "a definition's default layer 20 is refused");
+        ThemeProject parsed;
+        check(projectParse("<themeProject version=\"1\" name=\"n\" orientation=\"horizontal\"><page collection=\"\">"
+                           "<widget def=\"game_title\" id=\"t_1\" layer=\"20\"/></page></themeProject>", parsed, error) &&
+              parsed.pages[0].widgets[0].layer == MAX_LAYER, "a project's layer 20 loads as 19");
+        for (const auto& def : lib.defs) check(def.layer <= MAX_LAYER, def.id + " defaults to a drawn layer");
+
+        // Offsets stay in range: the ghost's selected slot (+6), the strip's popped and selected slots (+1)
+        WidgetInstance wheel = place("wheel_vertical", "wheel_vertical_1", 0, 0, 300, 900, 18);
+        wheel.menuGhost = true;
+        std::string xml;
+        std::vector<std::string> issues = generateAndCheck(lib, wheel, &xml);
+        check(issues.empty(), "a ghost wheel at layer 18 checks clean:" + join(issues));
+        check(xml.find("layer=\"24\"") == std::string::npos && xml.find("layer=\"19\"") != std::string::npos,
+              "the ghost's selected slot stops at 19 (was 24)");
+        for (int layer : { 19, 25 }) {
+            WidgetInstance strip = place("art_strip", "art_strip_1", 0, 0, 1400, 266, layer);
+            issues = generateAndCheck(lib, strip, &xml);
+            check(issues.empty() && xml.find("layer=\"20\"") == std::string::npos && xml.find("layer=\"26\"") == std::string::npos,
+                  "a strip at layer " + std::to_string(layer) + " writes no layer past 19:" + join(issues));
+            strip.stripPitchPx = 300;
+            strip.stripSelW = 350;
+            issues = generateAndCheck(lib, strip, &xml);
+            check(issues.empty() && xml.find("layer=\"20\"") == std::string::npos,
+                  "a linear strip at layer " + std::to_string(layer) + " pops its selected slot no further than 19:" + join(issues));
+        }
+        check(menuItemsXml(0, 0, 300, 900, 40, true).find("layer=\"40\"") == std::string::npos, "menu slots clamp their layer");
+        check(menuPulseXml(MenuSelGeom{ 0, 0, 10, 10, true }, 0).find("layer=\"0\"") != std::string::npos, "the pulse never goes below 0");
+
+        auto issuesFor = [](const std::string& body) {
+            return checkLayoutXml("<layout width=\"1920\" height=\"1080\">" + body + "</layout>");
+        };
+        check(issuesFor("<image src=\"a.png\" layer=\"20\"/>").size() == 1, "the check flags layer 20 on a component");
+        check(issuesFor("<image src=\"a.png\" layer=\"-1\"/>").size() == 1, "...and a negative layer");
+        check(issuesFor("<menu><itemDefaults layer=\"19\"/><item layer=\"20\"/></menu>").size() == 1, "...and on a menu item");
+        check(issuesFor("<image src=\"a.png\" layer=\"x\"/>").size() == 1, "...and a layer that isn't a number");
+        check(issuesFor("<image src=\"a.png\"><onEnter><set duration=\"1\"><animate type=\"layer\" to=\"20\"/></set></onEnter></image>").size() == 1,
+              "...and an animation to layer 20");
+        check(issuesFor("<image src=\"a.png\" alpha=\"1.5\"/>").size() == 1 && issuesFor("<image src=\"a.png\" alpha=\"half\"/>").size() == 1,
+              "alpha outside 0..1, or not a number");
+        check(issuesFor("<image src=\"a.png\"><onEnter><set duration=\"soon\"><animate type=\"alpha\" to=\"1\"/></set></onEnter></image>").size() == 1,
+              "a duration that isn't a number");
+        check(issuesFor("<text value=\"x\" loadFontSize=\"big\"/>").size() == 1, "a loadFontSize that isn't a size");
+        check(issuesFor("<image src=\"a.png\" layer=\"19\" alpha=\"0.60\"/>").empty(), "layer 19 and alpha 0.60 are fine");
+    });
+
+    run("theme editor: a generated page that doesn't parse is an error", [] {
+        WidgetLibrary lib = stockLibrary();
+        ThemeProject p;
+        p.name = "Raw";
+        WidgetInstance art = place("game_art", "game_art_1", 0, 0, 400, 300, 9);
+        art.setVar("NATURAL", "true");
+        art.setVar("NATPOSSET", "true");
+        art.setVar("NATPOS", "x=\"1\" <oops");   // a raw value goes in verbatim
+        p.pages[0].widgets.push_back(art);
+        GenResult r = generateLayoutXml(p, p.pages[0], lib);
+        check(!r.ok() && r.xml.empty() && r.errors[0].find("isn't valid layout XML") != std::string::npos,
+              "a broken raw value makes the page an error, not a warning");
+        SaveInputs in;
+        check(!buildSavePlan(p, lib, in).ok(), "...and the save plan refuses it");
+
+        ThemeProject q;
+        q.name = "Ladder";
+        WidgetInstance ladder = place("art_strip", "art_strip_1", 0, 0, 1400, 266, 6);
+        ladder.stripItemsRaw = "selected=\"true|x=\"1\"";   // an unterminated quote
+        q.pages[0].widgets.push_back(ladder);
+        check(!generateLayoutXml(q, q.pages[0], lib).ok(), "a broken verbatim ladder is an error");
+        check(layoutParseError("<layout/>").empty() && !layoutParseError("<page/>").empty() && !layoutParseError("<layout").empty(),
+              "layoutParseError: fine, no root, not XML");
+
+        // Bool values are normalised: a stored value can't reach the XML raw
+        WidgetDef probe;
+        std::string error;
+        parseWidgetDef(PROBE_DEF, probe, error);
+        WidgetInstance w = place("probe", "probe_1", 0, 0, 10, 10, 0);
+        w.setVar("FLAG", "yes\" evil=\"1");
+        checkEqual(expandText("{{FLAG}}", probe, w, GenOptions()).text, "false", "a hostile bool value writes false");
+        w.setVar("FLAG", "true");
+        checkEqual(expandText("{{FLAG}}", probe, w, GenOptions()).text, "true", "a true bool writes true");
+    });
+
+    run("theme editor: folder names are safe as written", [] {
+        for (const char* name : { "New Theme", "  .hidden ", "Trailing.", "con", "COM1.txt", "a\tb", "Theme...", ". x" }) {
+            check(folderNameSafe(themeFolderName(name)), std::string("themeFolderName(\"") + name + "\") is safe: " + themeFolderName(name));
+        }
+        check(folderNameSafe("Neo Geo") && folderNameSafe("Sega Genesis (US)"), "ordinary names are safe");
+        check(!folderNameSafe("Arcade.") && !folderNameSafe("Arcade ") && !folderNameSafe(" Arcade") && !folderNameSafe("con") &&
+              !folderNameSafe("nul.txt") && !folderNameSafe("A/B") && !folderNameSafe("..") && !folderNameSafe(""),
+              "trailing dots and spaces, device names and separators aren't");
+        WidgetLibrary lib = stockLibrary();
+        for (const char* collection : { "Arcade.", "Arcade ", "con" }) {
+            ThemeProject p;
+            createTemplate(p, collection);
+            check(!buildSavePlan(p, lib, SaveInputs()).ok(), std::string("a template for \"") + collection + "\" is refused");
+            ThemeProject m;
+            createTemplate(m, "Arcade");
+            m.page("Arcade")->members.push_back(collection);
+            check(!buildSavePlan(m, lib, SaveInputs()).ok(), std::string("a member \"") + collection + "\" is refused");
+        }
+    });
+
+    run("theme editor: saving never overwrites a hand-made page, and never strands a folder", [] {
+        WidgetLibrary lib = stockLibrary();
+        const std::string root = makeRoot("theme_editor_review");
+        SaveInputs in;
+        in.fontBytes = fontBytes();
+        std::string error, folder;
+        check(createTheme(root, "Guarded", false, lib, in, folder, error), "create: " + error);
+        const fs::path dir = fs::path(root) / folder;
+
+        // H1: a hand-written page inside an editor theme
+        const std::string handMade = "<layout width=\"1920\" height=\"1080\"><text value=\"mine\"/></layout>\n";
+        writeFile((dir / "collections/NES/layout/layout.xml").string(), handMade);
+        ThemeProject p;
+        loadTheme(root, folder, p, error);
+        const std::string projectBefore = readFile((dir / PROJECT_FILE).string());
+        createTemplate(p, "Arcade");
+        p.page("Arcade")->members.push_back("NES");
+        SaveReport report;
+        const bool saved = saveTheme(root, folder, p, lib, in, &report, error);
+        check(!saved && error.find("collections/NES/layout/layout.xml") != std::string::npos && error.find("by hand") != std::string::npos,
+              "adding NES to a template is refused while NES has a hand-made page: " + error);
+        check(readFile((dir / "collections/NES/layout/layout.xml").string()) == handMade, "...the hand-made page is untouched");
+        check(readFile((dir / PROJECT_FILE).string()) == projectBefore && !pathExists(dir / "collections/Arcade"),
+              "...and nothing else was written");
+        p.page("Arcade")->members.clear();
+        createTemplate(p, "NES");
+        check(!saveTheme(root, folder, p, lib, in, nullptr, error), "a template of its own for NES is refused too");
+        fs::remove_all(dir / "collections/NES");
+        check(saveTheme(root, folder, p, lib, in, nullptr, error), "once the page is moved away, it saves: " + error);
+
+        // M2: a page renamed only in case is the same file on a case-insensitive drive
+        ThemeProject renamed = p;
+        renamed.page("NES")->collection = "nes";
+        renamed.page("nes")->tplName = "nes";
+        check(saveTheme(root, folder, renamed, lib, in, &report, error), "save with the collection renamed in case: " + error);
+        check(isEditorMarker(readFile((dir / "collections/nes/layout/layout.xml").string()).substr(0, 40)),
+              "the page just written is still there (was: removed as stale on Windows)");
+
+        // M1: a first save that fails leaves nothing behind
+        const fs::path fresh = fs::path(root) / "Fresh";
+        fs::create_directories(fresh / PROJECT_FILE);   // a folder where project.xml must go: the write fails
+        check(probeTheme(root, "Fresh") == TF_FRESH, "a folder holding only editor/ is fresh");
+        ThemeProject f;
+        f.name = "Fresh";
+        check(!saveTheme(root, "Fresh", f, lib, in, nullptr, error), "the blocked save fails");
+        check(probeTheme(root, "Fresh") == TF_FRESH && !pathExists(fresh / "layout.xml"), "...and the folder is still fresh, not foreign");
+        fs::remove_all(fresh / "editor");
+        fs::create_directories(fresh / ASSETS_FOLDER);
+        check(probeTheme(root, "Fresh") == TF_FRESH, "a folder holding only assets/ is fresh");
+        writeFile((fresh / "notes.txt").string(), "x");
+        check(probeTheme(root, "Fresh") == TF_FOREIGN, "...anything else makes it foreign");
+        writeFile(root + "_src/logo.png", "PNG");
+        std::string rel;
+        check(!importAsset(root, "Never Saved", root + "_src/logo.png", rel, error) && error.find("save") != std::string::npos &&
+              !pathExists(fs::path(root) / "Never Saved"), "importing into a theme that was never saved is refused, nothing created");
+        check(importAsset(root, folder, root + "_src/logo.png", rel, error), "importing into a saved theme works");
+        std::error_code ec;
+        fs::remove_all(root + "_src", ec);
     });
 
     // Not a test: with RETROFE_THEME_SAMPLE_DIR set to a layouts folder, saves

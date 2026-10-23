@@ -15,6 +15,7 @@
  */
 
 #include "ThemeGenerate.h"
+#include "LayoutCheck.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -97,7 +98,13 @@ namespace ThemeEditor
             for (const auto& v : def.vars) {
                 // "raw" substitutes verbatim (whole attribute strings); other
                 // non-bool values are escaped
-                tv.add(v.token, inst.varValue(v.token, v.def), v.type != "bool" && v.type != "raw");
+                if (v.type == "bool") {
+                    // Normalised, so a stored value can never reach the XML raw
+                    tv.add(v.token, inst.varValue(v.token, v.def) == "true" ? "true" : "false", false);
+                }
+                else {
+                    tv.add(v.token, inst.varValue(v.token, v.def), v.type != "raw");
+                }
             }
             return tv;
         }
@@ -240,6 +247,7 @@ namespace ThemeEditor
                       "  </onMenuIdle>\n" +
                       "</item>\n";
         }
+        layer = clampLayer(layer);
         if (w < 1) w = 1;
         if (h < 1) h = 1;
         if (slots < MENU_SLOTS_MIN) slots = MENU_SLOTS_MIN;
@@ -339,7 +347,7 @@ namespace ThemeEditor
                     else {
                         out += " width=\"" + std::to_string(selW) + "\" maxHeight=\"" + std::to_string(selH) + "\" selected=\"true\"";
                     }
-                    if (ghostStyle) out += " alpha=\"1\" layer=\"" + std::to_string(layer + 6) + "\"";
+                    if (ghostStyle) out += " alpha=\"1\" layer=\"" + std::to_string(clampLayer(layer + 6)) + "\"";
                 }
                 else {
                     out += slotAlpha(k);
@@ -376,7 +384,7 @@ namespace ThemeEditor
         // on menu idle it appears over the selected logo and grows 1.2x while
         // fading out. One layer below the wheel so the grown edges peek out.
         if (!g.valid) return std::string();
-        const int lay = layer > 0 ? layer - 1 : 0;
+        const int lay = clampLayer(layer - 1);
         const std::string W = std::to_string(g.w);
         const std::string H = std::to_string(g.h);
         const std::string W2 = std::to_string((g.w * 12) / 10);
@@ -414,6 +422,7 @@ namespace ThemeEditor
     std::string menuStripItemsXml(int x, int y, int w, int h, int layer, int slots, int pitchPx, int itemMaxW,
                                   int dimPct, int selW, int selH)
     {
+        layer = clampLayer(layer);
         if (w < 1) w = 1;
         if (h < 1) h = 1;
         if (slots < 7) slots = 7;
@@ -444,7 +453,7 @@ namespace ThemeEditor
             if (selW > 0 || selH > 0) {
                 if (selW > 0) sel += " width=\"" + std::to_string(selW) + "\"";
                 if (selH > 0) sel += " maxHeight=\"" + std::to_string(selH) + "\"";
-                sel += " layer=\"" + std::to_string(layer < 20 ? layer + 1 : 20) + "\"";
+                sel += " layer=\"" + std::to_string(clampLayer(layer + 1)) + "\"";
             }
             item(0, sel);
             for (int i = 1; i <= n; ++i) item(i * pitchPx, "");
@@ -467,7 +476,7 @@ namespace ThemeEditor
         // The ribbon's slot order: entering edge, the popped slot, the right
         // side, the hidden selected slot, the left side
         item(0, " alpha=\"0\"");
-        out += "<item layer=\"" + std::to_string(layer + 1) + "\"/>\n";
+        out += "<item layer=\"" + std::to_string(clampLayer(layer + 1)) + "\"/>\n";
         for (int i = 1; i <= hpairs; ++i) item(itemW * i, "");
         item(itemW * (hpairs + 1), " alpha=\"0\"");
         item(0, " alpha=\"0\" selected=\"true\"");
@@ -544,7 +553,7 @@ namespace ThemeEditor
             int bx = w.x, by = w.y, bw = w.w, bh = w.h;
             if (w.warp) w.warpBounds(bx, by, bw, bh);
             if (bw < 1 || bh < 1) r.errors.push_back("widget '" + w.id + "' has a degenerate size");
-            if (w.layer < 0 || w.layer > 20) r.warnings.push_back("widget '" + w.id + "' layer clamped to 0..20");
+            if (w.layer < 0 || w.layer > MAX_LAYER) r.warnings.push_back("widget '" + w.id + "' layer clamped to 0.." + std::to_string(MAX_LAYER));
             if (bx + bw <= 0 || by + bh <= 0 || bx >= spaceW || by >= spaceH) {
                 r.warnings.push_back("widget '" + w.id + "' lies fully outside the canvas");
             }
@@ -580,8 +589,7 @@ namespace ThemeEditor
             if (opt.canvasPreview && w.canvasHide) continue;
 
             WidgetInstance inst = w;
-            if (inst.layer < 0) inst.layer = 0;
-            if (inst.layer > 20) inst.layer = 20;
+            inst.layer = clampLayer(inst.layer);
             // A splash video must finish, or the splash never ends
             if (ThemeProject::isSplashPage(page.collection) && inst.def == "static_video") inst.setVar("LOOP", "false");
 
@@ -696,6 +704,12 @@ namespace ThemeEditor
         }
 
         out += "</layout>\n";
+        // Raw values (type=raw vars, verbatim ladders) go in unescaped: a page
+        // that doesn't parse is an error, never a theme
+        if (r.ok()) {
+            const std::string parseError = layoutParseError(r.xml);
+            if (!parseError.empty()) r.errors.push_back("the generated page isn't valid layout XML (check raw values and ladders): " + parseError);
+        }
         if (!r.ok()) r.xml.clear();   // never hand back half a theme
         return r;
     }

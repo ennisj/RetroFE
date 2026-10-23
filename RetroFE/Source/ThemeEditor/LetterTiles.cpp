@@ -151,7 +151,8 @@ namespace ThemeEditor
         const float dimPx = cellH * 0.66f;   // resting glyph height
         const float hiPx = cellH * 0.92f;    // the highlighted letter is bigger
 
-        for (int hi = 0; hi < rows; ++hi) {
+        // hi == rows renders default.png: no letter highlighted
+        for (int hi = 0; hi <= rows; ++hi) {
             std::vector<unsigned char> rgba(static_cast<size_t>(style.tileW) * static_cast<size_t>(style.tileH) * 4, 0);
             for (int row = 0; row < rows; ++row) {
                 const bool isHi = row == hi;
@@ -168,11 +169,15 @@ namespace ThemeEditor
             }
             std::string png = encodePng(rgba.data(), style.tileW, style.tileH);
             if (png.empty()) { error = "PNG encoding failed"; out.clear(); return false; }
-            out.emplace_back(std::string(1, LETTER_TILE_ROWS[hi]) + ".png", std::move(png));
+            out.emplace_back(hi == rows ? std::string("default") : std::string(1, LETTER_TILE_ROWS[hi]), std::move(png));
         }
+        std::string plain = std::move(out.back().second);
+        out.pop_back();
+        for (auto& t : out) t.first += ".png";
         // Digits highlight the '#' row
         const std::string hash = out[0].second;
         for (char d = '0'; d <= '9'; ++d) out.emplace_back(std::string(1, d) + ".png", hash);
+        out.emplace_back("default.png", std::move(plain));
         return true;
     }
 }
