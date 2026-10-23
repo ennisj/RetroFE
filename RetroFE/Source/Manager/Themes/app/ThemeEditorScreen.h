@@ -175,6 +175,7 @@ private:
     bool previewDirty_ = true;
     float sinceChange_ = 0.0f;
     unsigned seenRevision_ = 0;
+    int seenPage_ = 0;
     std::vector<std::string> genIssues_;      // the generator's errors and warnings
     std::vector<std::string> engineIssues_;   // what PageBuilder logged building it
     std::unique_ptr<CollectionInfo> master_;  // the preview collection as loaded
@@ -206,6 +207,7 @@ private:
     bool treeFromIndex_ = false;
     std::string treeFilter_;
     std::string chosenCollection_;          // picked in the Collections list
+    std::string openSection_;               // a section a script asked to unfold
     bool showTemplate_ = false, templateOpen_ = false;
     std::string tplCollection_;             // "" = choose one in the dialog
     bool tplFixedCollection_ = false;

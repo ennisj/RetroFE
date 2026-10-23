@@ -240,6 +240,11 @@ void ThemeEditorScreen::update(float dt)
         }
     }
 
+    // Another page is shown (a click, a script, a template made or deleted)
+    if (session_.pageIndex() != seenPage_) {
+        seenPage_ = session_.pageIndex();
+        previewDirty_ = true;
+    }
     // Rebuild once the project has been still for a moment, and never mid-drag
     if (session_.revision() != seenRevision_) {
         seenRevision_ = session_.revision();
@@ -300,8 +305,11 @@ void ThemeEditorScreen::rebuildPreview()
 
     std::vector<std::string> issues;
     Page* page = nullptr;
+    // A splash page has no wheel by design: the engine's note about that isn't a problem
+    const bool splash = ThemeProject::isSplashPage(session_.page().collection);
     {
-        Logger::TapScope tap([&issues](Logger::Zone, const std::string& component, const std::string& message) {
+        Logger::TapScope tap([&issues, splash](Logger::Zone, const std::string& component, const std::string& message) {
+            if (splash && message.find("doesn't have any menus") != std::string::npos) return;
             if (Themes::pageBuildComponent(component)) issues.push_back("[" + component + "] " + message);
         });
         PageBuilder builder(folder_, "layout", *ctx_.config, ctx_.fontCache);
@@ -711,6 +719,23 @@ bool ThemeEditorScreen::runCommand(const EditorCommand& command, std::string& no
         return browser_.show;
     }
     if (n == "tpldialog") { openTemplateDialog(command.rest, command.rest.empty(), ""); return true; }
+    if (n == "open") { openSection_ = command.rest; return true; }
+    if (n == "choose") {
+        // Picks a collection in the Collections list, as a click does
+        for (const TreeRow& row : tree_) {
+            if (row.name != command.rest || row.depth < 0) continue;
+            chosenCollection_ = row.name;
+            previewName_ = row.name;
+            const ThemePage* shown = &pageShownFor(session_.project(), row.name, row.menu);
+            for (int i = 0; i < session_.pageCount(); ++i) {
+                if (&session_.project().pages[i] == shown) session_.setPage(i);
+            }
+            previewDirty_ = true;
+            note = "page " + std::to_string(session_.pageIndex());
+            return true;
+        }
+        return false;
+    }
     if (n == "tpldeletedialog") {
         if (!session_.project().page(command.rest) || command.rest.empty()) return false;
         delPrimary_ = command.rest;
@@ -865,7 +890,7 @@ void ThemeEditorScreen::draw()
         ImGui::PopStyleColor();
     }
 
-    const float sideW = 310.0f * s;
+    const float sideW = 340.0f * s;
     const float propsW = 330.0f * s;
     const float statusH = ImGui::GetTextLineHeightWithSpacing() * 3.2f;
     ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -985,9 +1010,20 @@ void ThemeEditorScreen::drawThemePanel()
     ImGui::SameLine();
     if (ImGui::RadioButton("Portrait", &vertical, 1)) session_.setVertical(true);
 
+    // A script's "open" command unfolds a section, so it shows in a screenshot
+    auto unfold = [this](const char* section) {
+        if (openSection_ == section || openSection_ == std::string("-") + section) {
+            ImGui::SetNextItemOpen(openSection_[0] != '-');
+            openSection_.clear();
+        }
+    };
+    unfold("fonts");
     if (ImGui::CollapsingHeader("Font and sounds")) drawThemeProperties();
+    unfold("splash");
     if (ImGui::CollapsingHeader("Splash")) drawSplash();
     drawPages();
+    if (openSection_ == "collections") ImGui::SetScrollHereY(0.0f);   // and scrolled to
+    unfold("collections");
     if (ImGui::CollapsingHeader("Collections", ImGuiTreeNodeFlags_DefaultOpen)) drawCollections();
 
     ImGui::SeparatorText("Widgets on this page");
@@ -1017,25 +1053,33 @@ void ThemeEditorScreen::drawFileRow(const char* label, const std::string& value,
     ImGui::PushID(label);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(ImGui::GetFontSize() * 5.5f);
-    if (value.empty()) {
-        ImGui::TextDisabled("none");
-    }
-    else {
-        std::string shown = fs::path(value).filename().string();
-        if (!session_.themeHasFile(value)) shown += " (missing)";
-        ImGui::TextUnformatted(shown.c_str());
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", value.c_str());
-    }
+    const float valueX = ImGui::GetFontSize() * 6.0f;
     const float buttons = ImGui::CalcTextSize("Choose...").x + ImGui::CalcTextSize("x").x + ImGui::GetStyle().FramePadding.x * 4.0f +
                           ImGui::GetStyle().ItemSpacing.x * 2.0f;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttons));
+    const float buttonsX = std::max(valueX + ImGui::GetFontSize() * 3.0f, ImGui::GetContentRegionMax().x - buttons);
+    // The file's name beside the label when it fits, else on a line of its own under it
+    std::string shown = value.empty() ? std::string() : fs::path(value).filename().string();
+    if (!value.empty() && !session_.themeHasFile(value)) shown = "(missing) " + shown;
+    const float room = buttonsX - valueX - ImGui::GetStyle().ItemSpacing.x;
+    const bool below = !shown.empty() && ImGui::CalcTextSize(shown.c_str()).x > room;
+    ImGui::SameLine(valueX);
+    if (value.empty()) ImGui::TextDisabled("none");
+    else if (!below) ImGui::TextUnformatted(shown.c_str());
+    if (!value.empty() && !below && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", value.c_str());
+    ImGui::SameLine(buttonsX);
     if (ImGui::SmallButton("Choose...")) openBrowser(request);
     ImGui::SameLine();
     ImGui::BeginDisabled(value.empty());
     if (ImGui::SmallButton("x")) clear();
     ImGui::EndDisabled();
     if (!value.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("Take it off (the file stays in the theme folder)");
+    if (below) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetFontSize());
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionMax().x);
+        ImGui::TextUnformatted(shown.c_str());
+        ImGui::PopTextWrapPos();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", value.c_str());
+    }
     ImGui::PopID();
 }
 
@@ -1043,19 +1087,20 @@ void ThemeEditorScreen::drawThemeProperties()
 {
     const ThemeProject& p = session_.project();
     // The theme's font: the bundled Roboto, or one in its fonts/ folder
-    std::string current = p.font.empty() ? std::string("Roboto (bundled)") : fs::path(p.font).filename().string();
+    std::string current = p.font.empty() ? std::string("Roboto (bundled)") : fs::path(p.font).stem().string();
     float import = ImGui::CalcTextSize("Import...").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Font");
-    ImGui::SameLine(ImGui::GetFontSize() * 5.5f);
+    ImGui::SameLine(ImGui::GetFontSize() * 6.0f);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - import);
     if (ImGui::BeginCombo("##font", current.c_str())) {
         if (ImGui::Selectable("Roboto (bundled)", p.font.empty())) session_.setThemeFont("");
         for (const std::string& font : fonts_) {
-            if (ImGui::Selectable(fs::path(font).filename().string().c_str(), font == p.font)) session_.setThemeFont(font);
+            if (ImGui::Selectable(fs::path(font).stem().string().c_str(), font == p.font)) session_.setThemeFont(font);
         }
         ImGui::EndCombo();
     }
+    if (ImGui::IsItemHovered() && !p.font.empty()) ImGui::SetTooltip("%s", p.font.c_str());
     if (ImGui::IsItemHovered() && !p.font.empty() && !session_.themeHasFile(p.font)) ImGui::SetTooltip("%s isn't in the theme", p.font.c_str());
     ImGui::SameLine();
     if (ImGui::Button("Import...##font")) {
@@ -1088,7 +1133,7 @@ void ThemeEditorScreen::drawSplash()
     std::string text = session_.splashText();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Text");
-    ImGui::SameLine(ImGui::GetFontSize() * 5.5f);
+    ImGui::SameLine(ImGui::GetFontSize() * 6.0f);
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::InputText("##splashText", &text)) {
         session_.setCoalesceKey("splashText");
@@ -1643,8 +1688,8 @@ void ThemeEditorScreen::drawBrowser()
     const fs::path theme = fs::path(session_.layoutsRoot()) / folder_;
     ImGui::TextWrapped("%s", request.title.c_str());
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-    ImGui::TextWrapped("%s files inside the RetroFE folder. The one you choose is copied into the theme's %s folder.",
-                       filterLabel(request.filter).c_str(), request.what == FileFor::Font ? "fonts" : "assets");
+    ImGui::TextWrapped("Showing %s inside the RetroFE folder. The one you choose is copied into the theme's %s folder.",
+                       Utils::toLower(filterLabel(request.filter)).c_str(), request.what == FileFor::Font ? "fonts" : "assets");
     if (!request.note.empty()) ImGui::TextWrapped("%s", request.note.c_str());
     ImGui::PopStyleColor();
 

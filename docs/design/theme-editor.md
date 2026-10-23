@@ -1,8 +1,9 @@
 # Design: the theme editor
 
 Status: the core is ported (rounds 1–3 of the porting plan: core port,
-widget dialect audit, storage and saving), and the first UI round is done:
-the Themes screens and the editor screen (see "UI round 1" below). The core
+widget dialect audit, storage and saving), the first UI round is done (the
+Themes screens and the editor screen, "UI round 1" below) and so is the
+next (templates, files, theme properties, "Editor round 3" below). The core
 lives in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is
 tested by `RetroFE/Tests/ThemeEditorTests.cpp`; the screens are in
 `RetroFE/Source/Manager/Themes/`, tested by `RetroFE/Tests/ThemesTests.cpp`.
@@ -148,7 +149,8 @@ is split:
 1. **`LayoutCheck`** (`checkLayoutXml`) parses with rapidxml and checks each
    element and attribute against the vocabulary PageBuilder reads, the
    required attributes it logs errors for, mode values, `<itemDefaults>` in
-   menus (PageBuilder dereferences it), animations (`duration`, tween types,
+   menus (without one PageBuilder uses empty defaults, so the items have no
+   size; it used to crash), animations (`duration`, tween types,
    `to`, algorithm names), layers in 0–19, alpha in 0–1, and numbers where
    the engine reads numbers (`duration`, `layer`, `loadFontSize`). Saving
    runs it over every page and reports issues as warnings, which catches
@@ -319,8 +321,10 @@ the `--theme-check` branch in `Main.cpp`, and the Themes slots in
   to the window), inside `drawTargets()` under the mutex; the canvas shows it
   with the theme's own aspect (`canvasFit`), so a portrait theme on a
   landscape screen comes out the right shape.
-- A page with no components isn't built: `Page::draw` logs an error every
-  frame for one.
+- A page with no components isn't built: there's nothing to draw. (`Page::draw`
+  used to log an error every frame for one, and drew nothing at all on a page
+  whose only components were menus, such as a theme that is just a wheel;
+  editor round 3 fixed that in `Page::draw`.)
 - What PageBuilder logs while building (warnings and errors) is shown under
   the canvas, as are the generator's warnings.
 
@@ -412,18 +416,136 @@ details, New theme, Edit, scripted editing, the Add widget, Saved and
 Unsaved changes dialogs, the leaving warning, Duplicate, Delete with
 confirm, Use this theme, and RetroFE running the new theme with its wheel.
 
-### Next round
+### Next round (as left by round 1)
 
-- Templates: add (`createNamed`), reassign, delete (`deleteTemplateTo`),
-  preview cover with `effectiveCover`.
+- ~~Templates: add, reassign, delete, coverage~~ (round 3).
 - Controller editing (`EditorNav.h` is ready) and an on-screen keyboard for
   the text fields.
 - Guides and alignment snapping between widgets; multi-select.
-- Ask for a file when placing Static Image / Static Video (their defaults
-  don't exist in a new theme).
-- The wheel's selected item highlight for text wheels; theme fonts and
-  sounds in the theme panel.
+- ~~Ask for a file when placing Static Image / Static Video~~ (round 3).
+- ~~The selected item highlight for text wheels; theme fonts and sounds~~
+  (round 3).
 - Hand-made themes (see below).
+
+## Editor round 3: templates, files, theme properties
+
+### What was built
+
+| Where | What |
+|---|---|
+| `EditorSession` | Templates: `newTemplate` (blank, from the Default page or a copy of a template, optionally with more collections), `assignTemplate` (one or many, one undo step), `removesTemplate` (what a move would delete), `deleteTemplate` (with a replacement), `renameTemplate`, `templateProblem`, `handMadePage`. Theme properties: `setThemeFont`, `setSound`, the splash page (`makeSplashPage`, `setSplashText`, `setSplashBackground`). Files: `missingFiles` (the selected widget's file settings whose file isn't in the theme), `themeHasFile`. Every one is an undo step; page changes keep the splash page last and keep editing the page that was being edited (found again by a collection it covered). |
+| `ThemeProject` | `pageShownFor` (which page this engine shows for a collection) and `MENUS_TEMPLATE` (`_menu`). |
+| `ThemeStore` | `importFile` (`importAsset` into any folder of the theme; a file already inside the theme is used where it is), `themeFiles` (a folder's files by extension), `handMadeCollectionPage`. |
+| `ThemeExport` | `defaultSplashPage`, shared by the save plan's fallback and the editor's "make a splash page". |
+| `ThemeGenerate` | Wheels: the selected slot gets `fontSize` × 1.3; a text wheel's other slots rest at alpha 0.60. |
+| `EditorScript` | `tplnew`, `tplassign`, `tpldelete`, `tplrename`, `font`, `sound`, `splashtext`, `splashbg`. |
+| `ThemeEditorScreen` | The theme panel's *Font and sounds*, *Splash*, *Pages* (new / copy / rename / delete, the template's collections) and *Collections* (the menu tree from `Services::library`, each collection's page); the template and delete dialogs; the ImGui file chooser; asking for a file after placing a widget; the screen-only script commands (`import*`, `browse`, `browsedir`, `choose`, `tpldialog`, `tpldeletedialog`, `closedialogs`, `open`). |
+| `Graphics/MenuXml.h`, `PageBuilder.cpp`, `Page.cpp` | The engine fixes below. |
+| `ManagerUI.cpp` | One line: the editor's context gets `library_`. |
+
+### Engine fixes (shared code)
+
+- **A `<menu>` without `<itemDefaults>` crashed RetroFE** (access violation):
+  `PageBuilder::buildMenu` passed the missing node to `addFont`, which
+  dereferences it, and `buildVerticalMenu` reads attributes from it.
+  `MenuXml::itemDefaults` now gives such a menu an empty `<itemDefaults/>`
+  (allocated in the document, so it lives as long as the parse) and
+  PageBuilder logs a warning, as if the layout had written one. Options
+  considered: skip the menu with a warning (a hand-made page then has no
+  wheel at all, so RetroFE has nothing to browse with), null checks at every
+  use (several sites, easy to miss one). Empty defaults keep the menu and
+  touch one line of `buildMenu`.
+- **A vertical menu whose items have no height looped forever**, adding slots
+  until memory ran out (each slot is `-1` high, so the running height never
+  reaches the menu's). `MenuXml::verticalMenuFull` also ends the menu when a
+  slot adds no height, with a warning.
+- **A page whose only components are menus drew nothing** and logged "Layer
+  index out of bounds" every frame: `Page::LayerComponents_` is sized when
+  the first non-menu component is added, and `Page::draw` drew menus inside
+  that per-layer loop. `Page::draw` now sizes it first. Found in the GUI
+  check (a template page holding a wheel and an image whose file was
+  missing); by the code, a page that is just a wheel does the same in
+  RetroFE itself.
+- Tested: `MenuXml` is header-only and SDL-free, so `retrofe_tests` checks
+  both helpers on parsed XML; the drift test reads `MenuXml.h` with
+  `PageBuilder.cpp`. `retrofe --theme-check` built a hand-made layout with
+  both kinds of broken menu (`NoDefaults` in the test root) without crashing
+  or hanging, and reported the warnings. `Page::draw` needs SDL, so it was
+  checked in the GUI only.
+- `layoutBuildBlocker` (the editor and `--theme-check` refused to build such
+  pages) is relaxed to "it doesn't parse"; `LayoutCheck` still reports a menu
+  without `<itemDefaults>`, now as "its items have no size".
+
+### Decisions
+
+- **Coverage is shown as this engine resolves it, not inherited down the
+  menu tree.** One Saucier's engine keeps the current page when a
+  collection has no override, so its editor shows a parent's template as
+  inherited by everything below. This fork's RetroFE builds a new page on
+  every collection change (`RetroFE.cpp`, the NEXT_PAGE state) from
+  `LayoutPages::collectionFolder`: the collection's own folder, else
+  `collections/_menu/layout` for a menu of collections, else the theme's
+  `layout.xml`. Showing inheritance would promise pages RetroFE doesn't show.
+  Instead: the Collections list shows each collection's real page
+  (`pageShownFor`), the template dialog's *Also the N collections under it*
+  puts a whole branch on a template explicitly (One Saucier's cascade), and
+  `_menu` is offered as a template for every menu. Considered: emulating
+  inheritance by writing a page for every descendant at save time (many
+  files, and pages appearing in folders the user never chose).
+- **Templates keep One Saucier's model** (a primary collection plus members;
+  a template can't exist without a collection). Moving a template's only
+  collection off it deletes it, as in One Saucier; the dialog says so and
+  Undo brings it back. Considered: refusing that move (then the only way to
+  reuse a collection is delete-then-create).
+- **A collection with a hand-made page can't get a template**: the dialog
+  and "Add a collection" refuse it with the reason, instead of letting save
+  fail later (save still refuses too).
+- **Files: an ImGui chooser inside the RetroFE folder first, the system
+  dialog as "Somewhere else..."**. It works the same on every platform,
+  never leaves the editor, and the files a theme uses usually come from the
+  RetroFE folder (artwork, other layouts). The system dialog blocks, so it
+  runs from `update()` (`Job::NativePick`), never while drawing. Directory
+  listings are read once per folder, not per frame.
+- **Fonts go into `fonts/`, everything else into `assets/`**; a file already
+  inside the theme folder isn't copied again.
+- **Asking for a file after placing** uses the same chooser, with *Not now*:
+  the widget stays with its placeholder and saving warns, so placing never
+  fails. It asks for the first missing file only.
+- **Splash: text and background, made of widgets**: a splash page gets a
+  Static Text (the theme's name) and, for a background, a full-page Static
+  Image or Static Video (a video plays once, so the splash ends). No new
+  project fields, so the page stays editable as a page.
+- **Text wheel highlight**: the selected name 1.3× larger (the size tweens
+  between slots), the others at 60% opacity, *Selected Text Color* if set.
+  No default colour: the theme's own colour stays the user's choice.
+- **The left column is wider** (340 instead of 270) for the new sections.
+
+### Checked
+
+`retrofe_tests`: templates (new, blank, copy, assign, members, primary moving,
+deleting by moving, undo, rename, delete with replacement, the splash page
+staying last, hand-made refusals, scripts), `pageShownFor` (own, member,
+`_menu` for menus only, Default), saving writes member pages, font import
+into `fonts/` and listing, in-theme files not copied, sounds in the page,
+the splash page (text, video then image background, removal, undo), missing
+files after placing, `MenuXml`. The GUI check (2026-10-23, private test root
+`E:\Storage\Agents\editor3`, scripted): text wheel, the file chooser opened
+by placing a Static Image (theme folder, then `media/backgrounds`), import,
+font and sound import, splash text and background, two templates (one a copy
+of Default joined by NES and SNES, one blank), the Collections list with
+each page, the template and delete dialogs, save, the splash page preview,
+Use this theme; then RetroFE running the theme: the Home and NES text wheels
+with the selected name highlighted, Main on the Default page, Consoles and
+NES on the Console Look template. `--theme-check` on the result: clean.
+
+### Left for later
+
+- Controller editing and an on-screen keyboard; guides, alignment snapping,
+  multi-select (as before).
+- Previewing a page as one of its member collections from the Pages list
+  (the Collections list does it).
+- A template's own font or sounds (they're the theme's).
+- Second-screen pages; hand-made themes (below).
 
 ## Open question: hand-made themes
 
@@ -458,5 +580,5 @@ most faithful to One Saucier. This needs the user's call.
 - The Xcode project doesn't list the new files (it hasn't been updated for
   the fork's other additions either).
 - `static_video`'s default `videos/background.mp4` and `static_image`'s
-  `images/background.png` don't exist in a new theme; saving warns. The UI
-  should ask for a file when placing them.
+  `images/background.png` don't exist in a new theme; the editor asks for a
+  file when they're placed (round 3), and saving warns if it's still missing.
