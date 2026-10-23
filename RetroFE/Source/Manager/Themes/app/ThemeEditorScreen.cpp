@@ -52,6 +52,8 @@ namespace
     const float REBUILD_DELAY = 0.25f;
     // At most this many items of the preview collection go on the page
     const size_t PREVIEW_ITEMS = 60;
+    // Files bigger than this are announced before they're copied (the copy blocks a frame)
+    const uintmax_t LARGE_COPY = 16u * 1024u * 1024u;
 
     ImU32 colourOf(const std::string& hex, int alpha)
     {
@@ -400,9 +402,21 @@ void ThemeEditorScreen::runJob()
     case Job::NativePick:
         pickNative();
         break;
-    case Job::Import:
+    case Job::Import: {
+        // The copy blocks: a big file is announced first and copied on the next frame
+        std::error_code ec;
+        const uintmax_t size = fs::file_size(fs::path(jobPath_), ec);
+        if (!ec && size > LARGE_COPY && !jobAnnounced_) {
+            jobAnnounced_ = true;
+            setStatus("Copying " + fs::path(jobPath_).filename().string() + " (" + std::to_string(size / (1024 * 1024)) +
+                      " MB) into the theme...", false);
+            job_ = Job::Import;
+            break;
+        }
+        jobAnnounced_ = false;
         importChosen(jobPath_, jobRequest_);
         break;
+    }
     case Job::None:
         break;
     }
@@ -423,6 +437,8 @@ bool ThemeEditorScreen::save()
     for (const std::string& removed : report_.removed) LOG_NOTICE("ThemeEditor", "Removed " + removed);
     for (const std::string& warning : report_.warnings) LOG_WARNING("ThemeEditor", warning);
     showReport_ = !report_.removed.empty() || !report_.warnings.empty();
+    refreshHandMade();
+    tplProblemKey_.clear();
     setStatus("Saved (" + std::to_string(report_.written.size()) + " files written).", false);
 
     // RetroFE shows the saved theme after the manager closes, if it's the one in use
@@ -472,7 +488,9 @@ void ThemeEditorScreen::pickNative()
     const FileRequest request = jobRequest_;
     std::string path;
     if (!FileDialog::pickFile(ctx_.window, request.title, filterLabel(request.filter), patternFor(request.filter), path)) return;
-    importChosen(path, request);
+    // Copied next frame, as a file chosen in the editor's own chooser is
+    job_ = Job::Import;
+    jobPath_ = path;
 }
 
 // Copies a chosen file into the theme (fonts into fonts/, the rest into
@@ -480,6 +498,14 @@ void ThemeEditorScreen::pickNative()
 bool ThemeEditorScreen::importChosen(const std::string& path, const FileRequest& request)
 {
     std::string rel, error;
+    if (request.what == FileFor::Font) {
+        // Only a real font goes into fonts/: RetroFE falls back to its default font for anything else
+        const std::string problem = fontFileProblem(path);
+        if (!problem.empty()) {
+            setStatus("Not added: " + problem, true);
+            return false;
+        }
+    }
     const std::string subfolder = request.what == FileFor::Font ? "fonts" : ASSETS_FOLDER;
     if (!importFile(session_.layoutsRoot(), folder_, path, subfolder, rel, error)) {
         setStatus("Not added: " + error, true);
@@ -575,6 +601,7 @@ void ThemeEditorScreen::refreshTree()
             row.name = name;
             tree_.push_back(row);
         }
+        refreshHandMade();
         return;
     }
     treeFromIndex_ = true;
@@ -606,6 +633,7 @@ void ThemeEditorScreen::refreshTree()
         }
         tree_.push_back(rowFor(record, 0));
     }
+    refreshHandMade();
 }
 
 std::vector<std::string> ThemeEditorScreen::descendants(const std::string& collection) const
@@ -1094,9 +1122,9 @@ void ThemeEditorScreen::drawThemeProperties()
     ImGui::SameLine(ImGui::GetFontSize() * 6.0f);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - import);
     if (ImGui::BeginCombo("##font", current.c_str())) {
-        if (ImGui::Selectable("Roboto (bundled)", p.font.empty())) session_.setThemeFont("");
+        if (ImGui::Selectable("Roboto (bundled)##bundled", p.font.empty())) session_.setThemeFont("");
         for (const std::string& font : fonts_) {
-            if (ImGui::Selectable(fs::path(font).stem().string().c_str(), font == p.font)) session_.setThemeFont(font);
+            if (ImGui::Selectable((fs::path(font).stem().string() + "##" + font).c_str(), font == p.font)) session_.setThemeFont(font);
         }
         ImGui::EndCombo();
     }
@@ -1208,6 +1236,9 @@ void ThemeEditorScreen::drawPages()
     std::vector<std::string> covered;
     if (primary != MENUS_TEMPLATE) covered.push_back(primary);
     for (const std::string& m : page.members) covered.push_back(m);
+    // Changes wait until the page has been drawn: moving a collection can
+    // delete a template, and `page` refers into the project's pages
+    std::string unassign, add;
     for (const std::string& c : covered) {
         ImGui::PushID(c.c_str());
         ImGui::Bullet();
@@ -1215,7 +1246,7 @@ void ThemeEditorScreen::drawPages()
         ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("x").x - ImGui::GetStyle().FramePadding.x * 2.0f);
         const bool last = covered.size() == 1 && primary != MENUS_TEMPLATE;
         ImGui::BeginDisabled(last);
-        if (ImGui::SmallButton("x")) session_.assignTemplate(c, "");
+        if (ImGui::SmallButton("x")) unassign = c;
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip(last ? "A template needs a collection: delete the template instead"
@@ -1233,17 +1264,42 @@ void ThemeEditorScreen::drawPages()
         for (const TreeRow& row : tree_) {
             if (row.depth < 0 || row.name.empty() || page.covers(row.name) || !listed.insert(row.name).second) continue;
             if (!filter.empty() && Utils::toLower(row.name).find(filter) == std::string::npos) continue;
-            std::string label = row.name + "  (now " + pageNameFor(row.name, row.menu) + ")";
-            bool handMade = session_.handMadePage(row.name);
+            std::string label = row.name + "  (now " + pageNameFor(row.name, row.menu) + ")##add" + row.name;
+            bool handMade = isHandMade(row.name);
             ImGui::BeginDisabled(handMade);
-            if (ImGui::Selectable(label.c_str())) session_.assignTemplate(row.name, primary);
+            bool chosen = ImGui::Selectable(label.c_str());
             ImGui::EndDisabled();
             if (handMade && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 ImGui::SetTooltip("Its page in this theme was written by hand; the editor won't overwrite it");
             }
+            if (chosen) {
+                add = row.name;
+                ImGui::CloseCurrentPopup();
+                break;
+            }
         }
         ImGui::EndCombo();
     }
+    if (!unassign.empty()) session_.assignTemplate(unassign, "");
+    else if (!add.empty()) session_.assignTemplate(add, primary);
+}
+
+void ThemeEditorScreen::refreshHandMade()
+{
+    // Read once per tree and after saving, not per frame: each is a file read
+    handMade_.clear();
+    std::set<std::string> names;
+    for (const TreeRow& row : tree_) {
+        if (row.depth >= 0 && !row.name.empty()) names.insert(row.name);
+    }
+    for (const std::string& name : names) {
+        if (session_.handMadePage(name)) handMade_.insert(name);
+    }
+}
+
+bool ThemeEditorScreen::isHandMade(const std::string& collection) const
+{
+    return handMade_.count(collection) != 0;
 }
 
 void ThemeEditorScreen::drawCollections()
@@ -1835,7 +1891,7 @@ void ThemeEditorScreen::drawTemplateDialog()
             for (const TreeRow& row : tree_) {
                 if (row.depth < 0 || row.name.empty() || !listed.insert(row.name).second) continue;
                 if (!filter.empty() && Utils::toLower(row.name).find(filter) == std::string::npos) continue;
-                if (ImGui::Selectable(row.name.c_str(), row.name == tplCollection_)) {
+                if (ImGui::Selectable((row.name + "##coll").c_str(), row.name == tplCollection_)) {
                     tplCollection_ = row.name;
                     if (tplName_.empty()) tplName_ = row.name;
                 }
@@ -1883,7 +1939,7 @@ void ThemeEditorScreen::drawTemplateDialog()
             if (ImGui::Selectable("The Default page", tplBasedOn_.empty())) tplBasedOn_.clear();
             if (ImGui::Selectable("An empty page", tplBasedOn_ == EditorSession::BLANK)) tplBasedOn_ = EditorSession::BLANK;
             for (const std::string& t : templates) {
-                if (ImGui::Selectable(seedLabel(t).c_str(), tplBasedOn_ == t)) tplBasedOn_ = t;
+                if (ImGui::Selectable((seedLabel(t) + "##seed" + t).c_str(), tplBasedOn_ == t)) tplBasedOn_ = t;
             }
             ImGui::EndCombo();
         }
@@ -1908,14 +1964,20 @@ void ThemeEditorScreen::drawTemplateDialog()
         problem = "Choose a collection.";
     }
     else if (tplChoice_ == 0) {
-        problem = session_.templateProblem(tplCollection_, tplName_);
+        // Worked out when the inputs change, not every frame (it reads the collection's page file)
+        const std::string key = tplCollection_ + '\n' + tplName_ + '\n' + std::to_string(session_.revision());
+        if (key != tplProblemKey_) {
+            tplProblemKey_ = key;
+            tplProblem_ = session_.templateProblem(tplCollection_, tplName_);
+        }
+        problem = tplProblem_;
         summary = "Makes the template " + tplName_ + " for " + tplCollection_ + " and starts editing it.";
     }
     else {
         const ThemePage* cover = p.coveredBy(tplCollection_);
         const std::string current = cover ? cover->collection : std::string();
         if (current == target && !tplCascade_) problem = tplCollection_ + " uses that already.";
-        else if (!target.empty() && session_.handMadePage(tplCollection_)) {
+        else if (!target.empty() && isHandMade(tplCollection_)) {
             problem = "collections/" + tplCollection_ + "/layout/layout.xml in this theme was written by hand; the editor won't overwrite it.";
         }
         summary = tplCollection_ + " will use " + (target.empty() ? std::string("the Default page") : p.page(target)->displayName()) + ".";
@@ -1993,7 +2055,7 @@ void ThemeEditorScreen::drawDeleteTemplate()
             if (ImGui::Selectable("The Default page", delReplacement_.empty())) delReplacement_.clear();
             for (const std::string& other : session_.templates()) {
                 if (other == delPrimary_ || other == MENUS_TEMPLATE) continue;
-                if (ImGui::Selectable(label(other).c_str(), other == delReplacement_)) delReplacement_ = other;
+                if (ImGui::Selectable((label(other) + "##repl" + other).c_str(), other == delReplacement_)) delReplacement_ = other;
             }
             ImGui::EndCombo();
         }

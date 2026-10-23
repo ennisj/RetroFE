@@ -118,6 +118,11 @@ namespace ThemeEditor
     bool importFile(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
                     const std::string& subfolder, std::string& relOut, std::string& error);
 
+    // Why a file isn't a font the theme can use ("" when it is): a .ttf or
+    // .otf whose first bytes are a TrueType (00 01 00 00, "true") or
+    // OpenType ("OTTO") header
+    std::string fontFileProblem(const std::string& path);
+
     // The files in a folder of the theme whose extension (lower case, with
     // the dot) is listed, as theme paths ("fonts/x.ttf"), sorted
     std::vector<std::string> themeFiles(const std::string& layoutsRoot, const std::string& folder,

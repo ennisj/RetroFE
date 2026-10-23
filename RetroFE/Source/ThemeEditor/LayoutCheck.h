@@ -28,7 +28,8 @@
 //   - a required attribute PageBuilder logs an error for (image src, text
 //     value, reloadable type, type="file" location, sound src/type, ...)
 //   - a <menu> without <itemDefaults> (PageBuilder gives it empty ones, so
-//     its items have no size)
+//     each item has only what it sets itself, and a vertical menu's
+//     default slots have no height)
 //   - a mode value PageBuilder doesn't recognise for that element
 //   - an animation set without duration, an animate without type, with an
 //     unknown tween type, or without "to"

@@ -228,6 +228,10 @@ namespace ThemeEditor
         // the page being edited is found again (by a collection it covered)
         void pagesChanged(const std::vector<std::string>& covered, const std::string& goTo);
         std::vector<std::string> coveredByCurrent() const;
+        // A collection on a template whose name differs from this one only in case, else ""
+        std::string caseClash(const std::string& collection) const;
+        // The template with this name (ignoring case), leaving out the one whose primary is `except`
+        const ThemePage* templateNamed(const std::string& name, const std::string& except) const;
         WidgetInstance* splashWidget(const std::string& def);
 
         const WidgetLibrary* lib_ = nullptr;

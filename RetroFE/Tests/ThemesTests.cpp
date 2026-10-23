@@ -147,12 +147,18 @@ static Test::Suite themes("themes", [] {
         check(MenuXml::itemDefaults(nullptr) == nullptr, "no menu, nothing");
 
         // A slot of height 50 in a 120-high menu: two fit, the third ends it
-        check(!MenuXml::verticalMenuFull(0, 50, 120) && !MenuXml::verticalMenuFull(50, 100, 120) &&
-              MenuXml::verticalMenuFull(100, 150, 120), "slots are added until the menu is full");
-        // Items with no height (-1, as buildViewInfo leaves them) never fill it
-        check(MenuXml::verticalMenuFull(0, -1, 500) && MenuXml::verticalMenuFull(0, 0, 500),
-              "a slot that adds no height ends the menu instead of looping forever");
-        check(MenuXml::verticalMenuFull(0, 40, -1), "a menu with no height of its own gets one slot, as before");
+        check(!MenuXml::verticalMenuFull(0, 50, 120, true, 1) && !MenuXml::verticalMenuFull(50, 100, 120, true, 2) &&
+              MenuXml::verticalMenuFull(100, 150, 120, true, 3), "slots are added until the menu is full");
+        // Default items with no height (-1, as buildViewInfo leaves them) never fill it
+        check(MenuXml::verticalMenuFull(0, -1, 500, true, 1) && MenuXml::verticalMenuFull(0, 0, 500, true, 1),
+              "a default slot that adds no height ends the menu instead of looping forever");
+        // ...but an overridden slot of height 0, or one with negative spacing, is the layout's choice
+        check(!MenuXml::verticalMenuFull(100, 100, 500, false, 3) && !MenuXml::verticalMenuFull(100, 80, 500, false, 3),
+              "an <item index=> slot of height 0 or negative spacing doesn't end the menu");
+        check(!MenuXml::verticalMenuFull(100, 150, 500, false, 3), "and the slots after it carry on");
+        check(MenuXml::verticalMenuFull(100, 100, 500, false, MenuXml::MAX_VERTICAL_SLOTS),
+              "whatever the sizes, a menu stops at MAX_VERTICAL_SLOTS slots");
+        check(MenuXml::verticalMenuFull(0, 40, -1, true, 1), "a menu with no height of its own gets one slot, as before");
     });
 
     Test::run("a theme without splash.xml can't be used (RetroFE wouldn't start)", [] {
@@ -690,6 +696,73 @@ static Test::Suite themes("themes", [] {
               s.project().page("Lynx")->displayName() == "Pocket Size", "tplrename keeps the spaces");
         check(runSessionCommand(s, parseEditorCommand("tpldelete Lynx default"), error) == CommandResult::Ok &&
               !s.project().page("Lynx") && !s.project().page("GBA"), "tpldelete");
+    });
+
+    Test::run("the editor session: cascades, case, renames, stale pages and the page being edited", [] {
+        std::string root = makeThemesRoot("session_templates2");
+        EditorSession s;
+        std::string folder, error;
+        check(openNew(root, "Tpl2", s, folder), "opened");
+        const std::string dir = root + "/layouts/" + folder;
+        writeFile(dir + "/collections/Atari/layout/layout.xml", "<layout width=\"1920\" height=\"1080\"></layout>");
+
+        // A cascade skips the collection whose page was written by hand, and says so
+        check(s.newTemplate("Consoles", "Consoles Look", "", { "NES", "Atari", "SNES" }), "a new template for a menu and what's under it");
+        const ThemePage* consoles = s.project().page("Consoles");
+        check(consoles && consoles->covers("NES") && consoles->covers("SNES") && !consoles->covers("Atari"),
+              "newTemplate(alsoFor) takes NES and SNES, not the hand-made Atari");
+        check(s.newTemplate("Arcade", "Arcade Look", EditorSession::BLANK), "another template");
+        int skipped = 0;
+        check(s.assignTemplate(std::vector<std::string>{ "MAME", "Atari", "FBNeo" }, "Arcade", &skipped) && skipped == 1,
+              "assignTemplate(many) skips Atari: " + std::to_string(skipped));
+        check(s.project().page("Arcade")->covers("MAME") && s.project().page("Arcade")->covers("FBNeo") &&
+              !s.project().page("Arcade")->covers("Atari"), "and takes the rest");
+
+        // Names that differ only in case are one folder on Windows
+        check(s.templateProblem("nes", "Lower").find("only in case") != std::string::npos, "a template for nes while NES has one");
+        check(!s.assignTemplate("mame", "Consoles"), "nor can mame join one while MAME is on another");
+        check(!s.renameTemplate("Arcade", "consoles look"), "renaming to another template's name is refused, ignoring case");
+        check(s.renameTemplate("Arcade", "Arcade LOOK") && s.project().page("Arcade")->displayName() == "Arcade LOOK",
+              "changing the case of its own name is fine");
+
+        // Erasing a template before the one being edited keeps editing that one
+        check(s.newTemplate("GBA", "Handheld", EditorSession::BLANK), "a third template, now being edited");
+        check(s.newTemplate("Lynx", "Lynx Only", EditorSession::BLANK), "and a fourth");
+        s.setPage(s.pageCount() - 2);   // Handheld (the splash page isn't there yet)
+        check(s.page().collection == "GBA", "editing Handheld");
+        check(s.assignTemplate(std::vector<std::string>{ "MAME", "FBNeo", "Arcade" }, ""), "Arcade Look loses all its collections");
+        check(!s.project().page("Arcade") && s.page().collection == "GBA", "it's gone, and Handheld is still the page being edited");
+
+        // Saving after a template went: its pages go too
+        SaveInputs inputs;
+        inputs.fontBytes = fontBytes();
+        SaveReport report;
+        check(s.save(inputs, report, error), "saved: " + error);
+        check(fs::exists(dir + "/collections/Lynx/layout/layout.xml") && fs::exists(dir + "/collections/NES/layout/layout.xml"),
+              "the templates' pages are written");
+        check(s.deleteTemplate("Lynx", "") && s.assignTemplate("NES", ""), "Lynx Only deleted, NES back on Default");
+        check(s.save(inputs, report, error), "saved again: " + error);
+        bool removedLynx = false, removedNes = false;
+        for (const std::string& r : report.removed) {
+            removedLynx |= r == "collections/Lynx/layout/layout.xml";
+            removedNes |= r == "collections/NES/layout/layout.xml";
+        }
+        check(removedLynx && removedNes && !fs::exists(dir + "/collections/Lynx") && !fs::exists(dir + "/collections/NES/layout/layout.xml"),
+              "the pages they no longer have are removed");
+        check(fs::exists(dir + "/collections/Atari/layout/layout.xml") && fs::exists(dir + "/collections/SNES/layout/layout.xml"),
+              "the hand-made page and the ones still covered stay");
+
+        // Only real fonts go into fonts/
+        writeFile(root + "_src/fake.ttf", "not a font at all");
+        writeFile(root + "_src/font.txt", fontBytes());
+        writeFile(root + "_src/Real.ttf", fontBytes());
+        writeFile(root + "_src/Open.otf", std::string("OTTO") + std::string(60, '\0'));
+        check(!fontFileProblem(root + "_src/fake.ttf").empty() && !fontFileProblem(root + "_src/font.txt").empty(),
+              "a .ttf that isn't one, and a font that isn't called .ttf/.otf, are refused");
+        check(fontFileProblem(root + "_src/Real.ttf").empty() && fontFileProblem(root + "_src/Open.otf").empty(),
+              "TrueType and OpenType headers pass");
+        std::error_code ec;
+        fs::remove_all(root + "_src", ec);
     });
 
     Test::run("the editor session: theme font, sounds, splash and files to ask for", [] {

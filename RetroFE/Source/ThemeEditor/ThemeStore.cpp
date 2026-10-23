@@ -446,6 +446,20 @@ namespace ThemeEditor
         return out;
     }
 
+    std::string fontFileProblem(const std::string& path)
+    {
+        const fs::path file(path);
+        const std::string ext = lower(file.extension().string());
+        const std::string name = file.filename().string();
+        if (ext != ".ttf" && ext != ".otf") return name + " isn't a font (a .ttf or .otf file)";
+        std::ifstream in(file, std::ios::binary);
+        char head[4] = { 0, 0, 0, 0 };
+        if (!in || !in.read(head, 4)) return "can't read " + name;
+        const std::string magic(head, 4);
+        if (magic == std::string("\x00\x01\x00\x00", 4) || magic == "true" || magic == "OTTO") return "";
+        return name + " doesn't look like a font: it doesn't start with a TrueType or OpenType header";
+    }
+
     bool handMadeCollectionPage(const std::string& layoutsRoot, const std::string& folder, const std::string& collection)
     {
         if (!themeFolderValid(folder) || !themeFolderValid(collection)) return false;

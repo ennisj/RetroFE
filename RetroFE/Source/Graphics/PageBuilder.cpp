@@ -1449,6 +1449,12 @@ void PageBuilder::buildCustomMenu(ScrollingList* menu, const rapidxml::xml_node<
 		i++;
 	}
 
+	// Allowed (ScrollingList copes with no points: nothing is drawn, scrolling
+	// and selecting still work), but it's never what the layout meant
+	if (points->empty()) {
+		LOG_WARNING("Layout", "A custom menu has no <item> slots, so it shows nothing.");
+	}
+
 	menu->setPoints(points, tweenPoints);
 }
 
@@ -1479,6 +1485,11 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 	}
 
 	bool end = false;
+	// The highest slot an <item index=> overrides; past it every slot takes the defaults
+	int lastOverride = -1;
+	for (const auto& entry : overrideItems) {
+		if (entry.first > lastOverride) lastOverride = entry.first;
+	}
 
 	// menu start
 
@@ -1514,10 +1525,12 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		int itemSpacing = itemSpacingXml ? Utils::convertInt(itemSpacingXml->value()) : 0;
 		float nextHeight = height + viewInfo->Height + itemSpacing;
 
-		// Also ends a menu whose items have no height (it would never fill)
-		if (MenuXml::verticalMenuFull(height, nextHeight, menu->baseViewInfo.Height)) {
-			if (nextHeight <= height && nextHeight < menu->baseViewInfo.Height) {
-				LOG_WARNING("Layout", "Menu items have no height, so the vertical menu gets one item; give <itemDefaults> a height.");
+		// Also ends a menu whose default items have no height (it would never fill)
+		const bool onlyDefaultsFromHere = index > lastOverride;
+		if (MenuXml::verticalMenuFull(height, nextHeight, menu->baseViewInfo.Height, onlyDefaultsFromHere, points->size() + 1)) {
+			if (nextHeight < menu->baseViewInfo.Height) {
+				LOG_WARNING("Layout", "The vertical menu's items don't fill it (<itemDefaults> has no height?); it stops at " +
+					std::to_string(points->size() + 1) + " items.");
 			}
 			end = true;
 		}

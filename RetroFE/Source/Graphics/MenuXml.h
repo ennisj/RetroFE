@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <rapidxml.hpp>
 
 // What PageBuilder::buildMenu needs from a <menu> element before it builds
@@ -39,12 +40,20 @@ namespace MenuXml
         return defaults;
     }
 
+    // The most slots a vertical menu gets, whatever its sizes say
+    static const size_t MAX_VERTICAL_SLOTS = 1024;
+
     // A vertical menu adds slots until the next one would reach the menu's
-    // height. A slot that adds no height (no height on the item or its
-    // defaults, no spacing) would never get there and the loop would run
-    // until memory ran out, so that ends the menu too.
-    inline bool verticalMenuFull(float height, float nextHeight, float menuHeight)
+    // height. When the slots from here on all take <itemDefaults> (no item
+    // overrides an index past this one) and the defaults add no height (no
+    // height, no spacing), it would never get there and the loop would run
+    // until memory ran out: that ends the menu. A single overridden slot of
+    // height 0, or negative spacing on one, is left alone. `slots` is how
+    // many the menu has with this one; MAX_VERTICAL_SLOTS is the backstop.
+    inline bool verticalMenuFull(float height, float nextHeight, float menuHeight, bool onlyDefaultsFromHere, size_t slots)
     {
-        return nextHeight >= menuHeight || nextHeight <= height;
+        if (nextHeight >= menuHeight) return true;
+        if (onlyDefaultsFromHere && nextHeight <= height) return true;
+        return slots >= MAX_VERTICAL_SLOTS;
     }
 }

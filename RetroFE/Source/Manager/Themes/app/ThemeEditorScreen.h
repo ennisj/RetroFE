@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -133,6 +134,8 @@ private:
     FileRequest varRequest(const std::string& token) const;
     void askForFiles();
     void refreshTree();
+    void refreshHandMade();
+    bool isHandMade(const std::string& collection) const;
     void refreshFonts();
     std::vector<std::string> descendants(const std::string& collection) const;
     std::string pageNameFor(const std::string& collection, bool menu) const;
@@ -194,6 +197,7 @@ private:
     Job job_ = Job::None;
     FileRequest jobRequest_;
     std::string jobPath_;
+    bool jobAnnounced_ = false;   // a big copy's status line has been shown
 
     // Files
     Browser browser_;
@@ -208,6 +212,8 @@ private:
     std::string treeFilter_;
     std::string chosenCollection_;          // picked in the Collections list
     std::string openSection_;               // a section a script asked to unfold
+    std::set<std::string> handMade_;        // collections whose page in the theme was written by hand
+    std::string tplProblemKey_, tplProblem_;
     bool showTemplate_ = false, templateOpen_ = false;
     std::string tplCollection_;             // "" = choose one in the dialog
     bool tplFixedCollection_ = false;

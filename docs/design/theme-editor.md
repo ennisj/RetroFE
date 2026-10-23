@@ -458,7 +458,15 @@ confirm, Use this theme, and RetroFE running the new theme with its wheel.
 - **A vertical menu whose items have no height looped forever**, adding slots
   until memory ran out (each slot is `-1` high, so the running height never
   reaches the menu's). `MenuXml::verticalMenuFull` also ends the menu when a
-  slot adds no height, with a warning.
+  slot adds no height, but only once every slot from there on takes
+  `<itemDefaults>` (past the last `<item index=>`), so an overridden slot of
+  height 0 or with negative spacing is left alone; 1024 slots is the
+  backstop. PageBuilder warns when the menu stops short of its height.
+- **A custom menu with no `<item>`s** reaches `ScrollingList::setPoints`
+  with an empty list. Checked in RetroFE (a `ZeroItems` layout as the Home
+  page): it builds, scrolls in all four directions and selects without
+  crashing, and draws nothing. No guard was needed; PageBuilder and
+  `LayoutCheck` now say the menu shows nothing.
 - **A page whose only components are menus drew nothing** and logged "Layer
   index out of bounds" every frame: `Page::LayerComponents_` is sized when
   the first non-menu component is added, and `Page::draw` drew menus inside
@@ -499,7 +507,14 @@ confirm, Use this theme, and RetroFE running the new theme with its wheel.
   reuse a collection is delete-then-create).
 - **A collection with a hand-made page can't get a template**: the dialog
   and "Add a collection" refuse it with the reason, instead of letting save
-  fail later (save still refuses too).
+  fail later (save still refuses too). Which collections have one is read
+  when the menu tree is (re)read and after each save, not per frame.
+- **Collection names that differ only in case** (`nes` while `NES` is on a
+  template) are refused: on Windows they're one folder. Template names are
+  unique ignoring case, renames included.
+- **Fonts are checked before they're copied**: `.ttf`/`.otf` with a
+  TrueType or OpenType header. A file over 16 MB is announced in the status
+  line one frame before its (blocking) copy.
 - **Files: an ImGui chooser inside the RetroFE folder first, the system
   dialog as "Somewhere else..."**. It works the same on every platform,
   never leaves the editor, and the files a theme uses usually come from the

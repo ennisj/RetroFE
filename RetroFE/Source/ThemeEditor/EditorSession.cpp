@@ -628,18 +628,17 @@ namespace ThemeEditor
     bool EditorSession::setSplashText(const std::string& text)
     {
         if (!isOpen() || (hasSplashPage() && splashWidget("static_text") && splashText() == text)) return false;
+        // Everything that can fail before the undo step is taken
+        ThemePage fresh;
+        if (!defaultSplashPage(project_, *lib_, fresh)) return false;
         const std::vector<std::string> covered = coveredByCurrent();
         beginChange(coalesce_.empty() ? "" : coalesce_);
         if (!hasSplashPage()) {
-            ThemePage splash;
-            if (!defaultSplashPage(project_, *lib_, splash)) return false;
-            project_.pages.push_back(splash);
+            project_.pages.push_back(fresh);
             pagesChanged(covered, "");
         }
         WidgetInstance* w = splashWidget("static_text");
         if (!w) {
-            ThemePage fresh;
-            defaultSplashPage(project_, *lib_, fresh);
             ThemePage* splash = project_.page(ThemeProject::splashPage());
             WidgetInstance name = fresh.widgets[0];
             if (splash->findWidget(name.id)) nextIdentity(*splash, name.def, "Static Text", name.id, name.name);
@@ -761,13 +760,37 @@ namespace ThemeEditor
             return "collections/" + collection + "/layout/layout.xml in this theme was written by hand; RetroFE uses it "
                    "for " + collection + ", and the editor won't overwrite it.";
         }
+        if (const std::string clash = caseClash(collection); !clash.empty()) {
+            return "\"" + collection + "\" and \"" + clash + "\" differ only in case: on Windows they're the same "
+                   "folder, so they can't have pages of their own.";
+        }
         const std::string clean = trimmed(name);
         if (clean.empty()) return "Give the template a name.";
+        if (const ThemePage* same = templateNamed(clean, "")) return "There's already a template called " + same->displayName() + ".";
+        return "";
+    }
+
+    std::string EditorSession::caseClash(const std::string& collection) const
+    {
+        const std::string key = lower(collection);
         for (const auto& p : project_.pages) {
             if (p.collection.empty() || ThemeProject::isSplashPage(p.collection)) continue;
-            if (lower(p.displayName()) == lower(clean)) return "There's already a template called " + p.displayName() + ".";
+            std::vector<std::string> names = p.members;
+            names.push_back(p.collection);
+            for (const std::string& c : names) {
+                if (c != collection && lower(c) == key) return c;
+            }
         }
         return "";
+    }
+
+    const ThemePage* EditorSession::templateNamed(const std::string& name, const std::string& except) const
+    {
+        for (const auto& p : project_.pages) {
+            if (p.collection.empty() || ThemeProject::isSplashPage(p.collection) || p.collection == except) continue;
+            if (lower(p.displayName()) == lower(trimmed(name))) return &p;
+        }
+        return nullptr;
     }
 
     bool EditorSession::newTemplate(const std::string& collection, const std::string& name, const std::string& basedOn,
@@ -781,7 +804,10 @@ namespace ThemeEditor
         beginChange("");
         if (!createNamed(project_, collection, trimmed(name), basedOn == BLANK ? std::string("\x01") : basedOn)) return false;
         for (const std::string& c : alsoFor) {
-            if (c == collection || c.empty() || ThemeProject::isSplashPage(c) || !folderNameSafe(c) || handMadePage(c)) continue;
+            if (c == collection || c.empty() || ThemeProject::isSplashPage(c) || !folderNameSafe(c) || handMadePage(c) ||
+                !caseClash(c).empty()) {
+                continue;
+            }
             reassign(project_, c, collection);
         }
         pagesChanged({}, collection);
@@ -807,7 +833,7 @@ namespace ThemeEditor
         std::vector<std::string> moving;
         for (const std::string& c : collections) {
             if (c.empty() || ThemeProject::isSplashPage(c)) continue;
-            if (!primary.empty() && (!folderNameSafe(c) || handMadePage(c))) {
+            if (!primary.empty() && (!folderNameSafe(c) || handMadePage(c) || !caseClash(c).empty())) {
                 if (skipped) ++*skipped;
                 continue;
             }
@@ -857,6 +883,7 @@ namespace ThemeEditor
         ThemePage* p = project_.page(primary);
         if (!isOpen() || clean.empty() || !p || primary.empty() || ThemeProject::isSplashPage(primary)) return false;
         if (p->displayName() == clean) return false;
+        if (templateNamed(clean, primary)) return false;   // names stay unique, ignoring case
         beginChange(coalesce_.empty() ? "" : coalesce_);
         project_.page(primary)->tplName = clean;
         changed();

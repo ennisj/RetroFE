@@ -297,7 +297,8 @@ namespace ThemeEditor
                     value(n, "location").empty()) {
                     issue(n, "type=\"file\" needs a location");
                 }
-                if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults> (RetroFE uses empty defaults: its items have no size)");
+                if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults> (RetroFE uses empty defaults: each item has only what it sets itself)");
+                if (menu && value(n, "type") == "custom" && !n->first_node("item")) issue(n, "custom menu has no <item> slots, so it shows nothing");
             }
         };
     }

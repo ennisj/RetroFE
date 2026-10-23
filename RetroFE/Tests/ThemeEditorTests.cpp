@@ -881,6 +881,8 @@ void runThemeEditorTests()
         check(issuesFor("<reloadableImage type=\"logo\" mode=\"layout_preferred\"/>").size() == 1, "layout_preferred isn't a mode");
         check(issuesFor("<menu mode=\"system\"><itemDefaults/></menu>").size() == 1, "menus don't read system mode");
         check(issuesFor("<menu/>").size() == 1, "a menu without itemDefaults");
+        check(issuesFor("<menu type=\"custom\"><itemDefaults/></menu>").size() == 1, "a custom menu without items shows nothing");
+        check(issuesFor("<menu type=\"custom\"><itemDefaults/><item/></menu>").empty(), "one with an item is fine");
         check(issuesFor("<image/>").size() == 1 && issuesFor("<text/>").size() == 1 && issuesFor("<reloadableText/>").size() == 1,
               "missing src, value, type");
         check(issuesFor("<reloadableScrollingText type=\"file\"/>").size() == 1, "type=file without a location");
