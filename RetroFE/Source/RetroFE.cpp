@@ -796,7 +796,7 @@ bool RetroFE::run()
 				// Nothing set up yet: start in the manager
 				if (!Setup::hasSettingsFile() || Setup::listCollections().empty())
 				{
-					manager_.open(ManagerUI::Screen::Manage);
+					manager_.open("manage");
 				}
 
 				splashMode = false;
@@ -3193,7 +3193,7 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 				{
 					// Catalog items are packages: show the chosen one's details
 					if (nextPageItem_->name == Home::catalogSourcesItem)
-						manager_.open(ManagerUI::Screen::Sources);
+						manager_.open("sources");
 					else
 						manager_.openPackage(nextPageItem_->name);
 				}
@@ -3367,11 +3367,11 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 	}
 	if (item->name == Home::settings)
 	{
-		manager_.open(ManagerUI::Screen::Settings);
+		manager_.open("settings");
 	}
 	else if (item->name == Home::manage)
 	{
-		manager_.open(ManagerUI::Screen::Manage);
+		manager_.open("manage");
 	}
 	else if (item->name == Home::catalog)
 	{
@@ -3382,7 +3382,7 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 			nextPageName_ = Home::catalogCollectionName;
 			return RETROFE_NEXT_PAGE_REQUEST;
 		}
-		manager_.open(ManagerUI::Screen::Sources);
+		manager_.open("sources");
 	}
 	return RETROFE_IDLE;
 }

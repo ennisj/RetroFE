@@ -15,16 +15,76 @@
  */
 #include "FormView.h"
 #include "FileDialog.h"
+#include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
 #include <algorithm>
+#include <cstdint>
+#include <filesystem>
+
+#if __has_include(<SDL2/SDL_image.h>)
+#include <SDL2/SDL_image.h>
+#elif __has_include(<SDL2_image/SDL_image.h>)
+#include <SDL2_image/SDL_image.h>
+#else
+#include <SDL_image.h>
+#endif
 
 using Forms::Field;
 using Forms::FieldType;
 
+FormView::~FormView()
+{
+    freeImages();
+}
+
+void FormView::freeImages()
+{
+    for (auto& [path, texture] : textures_) {
+        if (texture) {
+            SDL_DestroyTexture(texture);
+        }
+    }
+    textures_.clear();
+}
+
+SDL_Texture* FormView::texture(const std::string& path)
+{
+    auto found = textures_.find(path);
+    if (found != textures_.end()) {
+        return found->second;
+    }
+    SDL_Texture* texture = nullptr;
+    std::error_code ec;
+    if (renderer_ && std::filesystem::is_regular_file(path, ec)) {
+        texture = IMG_LoadTexture(renderer_, path.c_str());
+        if (!texture) {
+            LOG_WARNING("Forms", "Can't load " + path + ": " + IMG_GetError());
+        }
+    }
+    textures_[path] = texture;
+    return texture;
+}
+
+void FormView::open(const std::string& form, const Forms::Params& params)
+{
+    if (form.empty()) {
+        return;
+    }
+    Forms::Model::Result result;
+    result.ok = true;
+    result.open = form;
+    result.params = params;
+    result_ = result;
+}
+
 void FormView::draw(const Forms::Form& form, Forms::Model& model)
 {
+    if (discard_) {
+        freeImages();
+        discard_ = false;
+    }
     drawFields(form.fields, model);
 }
 
@@ -234,9 +294,122 @@ void FormView::drawField(const Field& field, Forms::Model& model)
     case FieldType::Button:
         drawButton(field, model, false);
         break;
+
+    case FieldType::Results:
+        drawResults(field, model);
+        break;
+
+    case FieldType::Link:
+        drawLink(field, model);
+        break;
+
+    case FieldType::Value: {
+        std::string value = model.get(field.bind);
+        if (value.empty()) {
+            break;
+        }
+        ImGui::TextUnformatted(field.label.c_str());
+        ImGui::SameLine(labelWidth());
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(value.c_str());
+        ImGui::PopTextWrapPos();
+        if (!field.help.empty()) {
+            drawNotes(field, model);
+        }
+        break;
+    }
+
+    case FieldType::Image:
+        drawImage(field, model);
+        break;
     }
 
     ImGui::EndDisabled();
+}
+
+void FormView::drawResults(const Field& field, Forms::Model& model)
+{
+    if (!field.label.empty()) {
+        ImGui::SeparatorText(field.label.c_str());
+    }
+    Forms::Rows rows = model.rows(field.bind, static_cast<size_t>(field.limit));
+    if (rows.items.empty()) {
+        if (!field.empty.empty()) {
+            ImGui::TextWrapped("%s", field.empty.c_str());
+        }
+        return;
+    }
+    std::string note = Forms::rowsNote(rows);
+    if (!note.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", note.c_str());
+        ImGui::PopTextWrapPos();
+    }
+
+    // Only the rows in view are drawn
+    float visibleRows = static_cast<float>(std::min<size_t>(rows.items.size(), 12));
+    ImGui::BeginChild("##results", ImVec2(0.0f, visibleRows * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_None);
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(rows.items.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+            const Forms::Row& row = rows.items[static_cast<size_t>(i)];
+            ImGui::PushID(i);
+            if (ImGui::Selectable(row.label.c_str())) {
+                open(field.open, { { field.param, row.id } });
+            }
+            if (!row.detail.empty()) {
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(row.detail.c_str()).x);
+                ImGui::TextDisabled("%s", row.detail.c_str());
+            }
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+}
+
+void FormView::drawLink(const Field& field, Forms::Model& model)
+{
+    if (ImGui::Selectable(field.label.c_str())) {
+        open(field.open, {});
+    }
+    std::string status = field.status.empty() ? "" : model.get(field.status);
+    if (!status.empty()) {
+        ImGui::SameLine(labelWidth());
+        ImGui::TextDisabled("%s", status.c_str());
+    }
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(">").x);
+    ImGui::TextDisabled(">");
+    if (!field.help.empty()) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth());
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", field.help.c_str());
+        ImGui::PopTextWrapPos();
+    }
+}
+
+void FormView::drawImage(const Field& field, Forms::Model& model)
+{
+    std::string path = model.get(field.bind);
+    SDL_Texture* picture = path.empty() ? nullptr : texture(path);
+    int w = 0;
+    int h = 0;
+    if (!picture || SDL_QueryTexture(picture, nullptr, nullptr, &w, &h) != 0 || w <= 0 || h <= 0) {
+        return;
+    }
+    if (!field.label.empty()) {
+        ImGui::TextUnformatted(field.label.c_str());
+        ImGui::SameLine(labelWidth());
+    }
+    // rows high, keeping its shape, and no wider than the window
+    float height = std::max(1, field.rows) * ImGui::GetTextLineHeightWithSpacing();
+    float width = height * static_cast<float>(w) / static_cast<float>(h);
+    float available = ImGui::GetContentRegionAvail().x;
+    if (width > available && available > 0.0f) {
+        height *= available / width;
+        width = available;
+    }
+    ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(picture)), ImVec2(width, height));
 }
 
 void FormView::drawPath(const Field& field, Forms::Model& model, bool folder)

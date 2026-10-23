@@ -44,6 +44,11 @@ namespace
         return true;
     }
 
+    // Binding and action prefixes the model serves itself
+    const std::vector<std::string> builtinPrefixes = {
+        "settings", "draft", "info", "param", "package", "collection", "source", "catalog", "open", "back"
+    };
+
 
     // The source the Sources form describes
     Catalog::SourceConfig draftSource(std::map<std::string, std::string>& drafts)
@@ -76,6 +81,8 @@ ManagerModel::ManagerModel(Configuration& config)
 {
 }
 
+ManagerModel::~ManagerModel() = default;
+
 void ManagerModel::refresh()
 {
     settings_.load();
@@ -84,6 +91,51 @@ void ManagerModel::refresh()
     countedPath_.clear();
     countedExtensions_.clear();
     romCountText_.clear();
+    for (auto& [prefix, provider] : providers_) {
+        provider->refresh();
+    }
+}
+
+void ManagerModel::setScreen(const std::string& form, const Forms::Params& params)
+{
+    screen_.form = form;
+    screen_.params = params;
+    for (auto& [prefix, provider] : providers_) {
+        provider->enter(screen_);
+    }
+}
+
+bool ManagerModel::addProvider(std::unique_ptr<Manager::Provider> provider)
+{
+    if (!provider) {
+        return false;
+    }
+    std::string prefix = provider->prefix();
+    bool valid = !prefix.empty() && prefix.find_first_of(":. ") == std::string::npos;
+    if (!valid || providers_.count(prefix)
+        || std::find(builtinPrefixes.begin(), builtinPrefixes.end(), prefix) != builtinPrefixes.end()) {
+        LOG_ERROR("Manager", "Can't add a provider for \"" + prefix + "\": the prefix is invalid, built in or taken");
+        return false;
+    }
+    providers_[prefix] = std::move(provider);
+    return true;
+}
+
+Manager::Provider* ManagerModel::provider(const std::string& key, char separator, std::string& rest) const
+{
+    if (providers_.empty()) {
+        return nullptr;
+    }
+    size_t at = key.find(separator);
+    if (at == std::string::npos) {
+        return nullptr;
+    }
+    auto found = providers_.find(key.substr(0, at));
+    if (found == providers_.end()) {
+        return nullptr;
+    }
+    rest = key.substr(at + 1);
+    return found->second.get();
 }
 
 std::string ManagerModel::settingKey(const std::string& key) const
@@ -117,7 +169,10 @@ std::string ManagerModel::settingValue(const std::string& key)
 void ManagerModel::setDefault(const std::string& key, const std::string& value)
 {
     std::string name;
-    if (stripPrefix(key, "settings:", name)) {
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        p->setDefault(name, value, screen_);
+    }
+    else if (stripPrefix(key, "settings:", name)) {
         settingDefaults_[name] = value;
     }
     else if (stripPrefix(key, "draft:", name) && drafts_[name].empty()) {
@@ -132,6 +187,12 @@ void ManagerModel::setDefault(const std::string& key, const std::string& value)
 std::string ManagerModel::get(const std::string& key)
 {
     std::string name;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        return p->get(name, screen_);
+    }
+    if (stripPrefix(key, "param:", name)) {
+        return screen_.param(name);
+    }
     if (stripPrefix(key, "settings:", name)) {
         auto pending = pendingSettings_.find(name);
         return pending != pendingSettings_.end() ? pending->second : settingValue(name);
@@ -177,13 +238,16 @@ std::string ManagerModel::get(const std::string& key)
     if (key == "info:sourceIsFolder") {
         return drafts_["sourceType"] == "folder" ? "yes" : "no";
     }
+    if (key == "info:hasCollections") {
+        return collections_.empty() ? "no" : "yes";
+    }
     return "";
 }
 
 std::string ManagerModel::packageValue(const std::string& key)
 {
     Catalog::Entry entry;
-    if (!catalog_ || !catalog_->entry(package_, entry)) {
+    if (!catalog_ || !catalog_->entry(screen_.param("id"), entry)) {
         return key == "summary" ? "This package isn't offered by any source any more." : "";
     }
     const Catalog::Package& package = entry.package;
@@ -275,17 +339,13 @@ std::string ManagerModel::catalogStatus()
          + std::to_string(sources) + (sources == 1 ? " source." : " sources.");
 }
 
-std::string ManagerModel::takeOpenRequest()
-{
-    std::string request = openRequest_;
-    openRequest_.clear();
-    return request;
-}
-
 void ManagerModel::set(const std::string& key, const std::string& value)
 {
     std::string name;
-    if (stripPrefix(key, "settings:", name)) {
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        p->set(name, value, screen_);
+    }
+    else if (stripPrefix(key, "settings:", name)) {
         std::string saved = settingValue(name);
         std::string newValue = value;
 
@@ -309,6 +369,10 @@ void ManagerModel::set(const std::string& key, const std::string& value)
 
 std::vector<std::string> ManagerModel::list(const std::string& key)
 {
+    std::string name;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        return p->list(name, screen_);
+    }
     if (key == "info:collections") {
         return collections_;
     }
@@ -333,9 +397,30 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
     return values;
 }
 
+Forms::Rows ManagerModel::rows(const std::string& key, size_t limit)
+{
+    std::string name;
+    Forms::Rows rows;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        rows = p->rows(name, limit, screen_);
+    }
+    // Hold providers to the limit, so a form never draws thousands of rows
+    if (rows.total < rows.items.size()) {
+        rows.total = rows.items.size();
+    }
+    if (rows.items.size() > limit) {
+        rows.items.resize(limit);
+    }
+    return rows;
+}
+
 std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std::string& source)
 {
     std::vector<std::pair<std::string, std::string>> result;
+    std::string name;
+    if (Manager::Provider* p = provider(source, ':', name)) {
+        return p->options(name, screen_);
+    }
 
     if (source == "layouts") {
         result.emplace_back("", "Built-in");
@@ -376,6 +461,10 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
 
 std::string ManagerModel::actionProblem(const std::string& action)
 {
+    std::string name;
+    if (Manager::Provider* p = provider(action, '.', name)) {
+        return p->actionProblem(name, screen_);
+    }
     if (action == "settings.save") {
         return pendingSettings_.empty() ? "No changes to save." : "";
     }
@@ -383,7 +472,10 @@ std::string ManagerModel::actionProblem(const std::string& action)
         return Setup::validate(Setup::NewCollection{ drafts_["name"], drafts_["romPath"], drafts_["extensions"],
                                                      drafts_["executable"], drafts_["arguments"] });
     }
-    if (action == "open.sources") {
+    if (stripPrefix(action, "open.", name)) {
+        return name.empty() ? "Unknown action " + action : "";
+    }
+    if (action == "back") {
         return "";
     }
     return catalogProblem(action);
@@ -403,10 +495,10 @@ std::string ManagerModel::catalogProblem(const std::string& action)
 
     if (action == "package.install" || action == "package.remove" || action == "package.cancel") {
         Catalog::Entry entry;
-        if (!catalog_->entry(package_, entry)) {
+        if (!catalog_->entry(screen_.param("id"), entry)) {
             return "This package isn't offered by any source any more.";
         }
-        bool busy = catalog_->isQueued(package_);
+        bool busy = catalog_->isQueued(screen_.param("id"));
         bool installed = !entry.installedVersion.empty();
         if (action == "package.cancel") return busy ? "" : "Nothing to stop.";
         if (busy) return "Already working on it.";
@@ -441,13 +533,13 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
     }
     result.ok = true;
     if (action == "package.install") {
-        catalog_->install(package_);
+        catalog_->install(screen_.param("id"));
     }
     else if (action == "package.remove") {
-        catalog_->remove(package_);
+        catalog_->remove(screen_.param("id"));
     }
     else if (action == "package.cancel") {
-        catalog_->cancel(package_);
+        catalog_->cancel(screen_.param("id"));
     }
     else if (action == "package.removeInstalled") {
         removedPackage_ = get("draft:removePackage");
@@ -481,16 +573,22 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
 
 Forms::Model::Result ManagerModel::runAction(const std::string& action)
 {
+    std::string name;
+    if (Manager::Provider* p = provider(action, '.', name)) {
+        return p->runAction(name, screen_);
+    }
     if (action == "settings.save") {
         return saveSettings();
     }
     if (action == "collection.create") {
         return createCollection();
     }
-    if (action == "open.sources") {
-        openRequest_ = "sources";
+    if (stripPrefix(action, "open.", name) || action == "back") {
         Result result;
-        result.ok = true;
+        result.message = actionProblem(action);
+        result.ok = result.message.empty();
+        result.open = name;
+        result.back = action == "back";
         return result;
     }
     return runCatalogAction(action);

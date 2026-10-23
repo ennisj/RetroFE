@@ -15,9 +15,19 @@
  */
 #include "FormWidget.h"
 #include "Image.h"
+#include "../../SDL.h"
 #include "../../Utility/Log.h"
 #include "../../Utility/Utils.h"
 #include <algorithm>
+#include <filesystem>
+
+#if __has_include(<SDL2/SDL_image.h>)
+#include <SDL2/SDL_image.h>
+#elif __has_include(<SDL2_image/SDL_image.h>)
+#include <SDL2_image/SDL_image.h>
+#else
+#include <SDL_image.h>
+#endif
 
 using Forms::Field;
 using Forms::FieldType;
@@ -34,6 +44,7 @@ namespace
         case FieldType::Number:
         case FieldType::Choice:
         case FieldType::Button:
+        case FieldType::Link:
             return true;
         default:
             return false;
@@ -51,6 +62,9 @@ namespace
             }
         }
     }
+
+    // Images kept per form; more than this and they're all dropped and reloaded as drawn
+    constexpr size_t maxTextures = 96;
 }
 
 FormWidget::FormWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor)
@@ -75,8 +89,32 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     model_ = model;
     focus_ = -1;
     focusedField_ = nullptr;
+    focusedItem_.clear();
     scroll_ = 0.0f;
     status_.clear();
+    rows_.clear();
+}
+
+Forms::Focus FormWidget::focus() const
+{
+    Forms::Focus focus;
+    if (form_) {
+        focus.field = Forms::fieldIndex(*form_, focusedField_);
+        focus.item = focusedItem_;
+        focus.scroll = scroll_;
+    }
+    return focus;
+}
+
+void FormWidget::restoreFocus(const Forms::Focus& focus)
+{
+    if (!form_) {
+        return;
+    }
+    focusedField_ = Forms::fieldAt(*form_, focus.field);
+    focusedItem_ = focus.item;
+    scroll_ = focus.scroll;
+    rows_.clear();
 }
 
 void FormWidget::allocateGraphicsMemory()
@@ -97,6 +135,7 @@ void FormWidget::freeGraphicsMemory()
         focusImage_->freeGraphicsMemory();
         focusImage_.reset();
     }
+    freeTextures();
 }
 
 void FormWidget::setStatus(const std::string& message, bool isError)
@@ -117,6 +156,59 @@ std::optional<Forms::Model::Result> FormWidget::takeResult()
     std::optional<Forms::Model::Result> result = result_;
     result_.reset();
     return result;
+}
+
+// --- Images ------------------------------------------------------------------
+
+SDL_Texture* FormWidget::texture(const std::string& path)
+{
+    auto found = textures_.find(path);
+    if (found != textures_.end()) {
+        return found->second;
+    }
+    if (textures_.size() >= maxTextures) {
+        freeTextures();
+    }
+    SDL_Texture* texture = nullptr;
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(path, ec)) {
+        SDL_LockMutex(SDL::getMutex());
+        texture = IMG_LoadTexture(SDL::getRenderer(baseViewInfo.Monitor), path.c_str());
+        SDL_UnlockMutex(SDL::getMutex());
+        if (texture) {
+            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        }
+        else {
+            LOG_WARNING("Forms", "Can't load " + path + ": " + IMG_GetError());
+        }
+    }
+    textures_[path] = texture;
+    return texture;
+}
+
+void FormWidget::freeTextures()
+{
+    SDL_LockMutex(SDL::getMutex());
+    for (auto& [path, texture] : textures_) {
+        if (texture) {
+            SDL_DestroyTexture(texture);
+        }
+    }
+    SDL_UnlockMutex(SDL::getMutex());
+    textures_.clear();
+}
+
+// Fits the picture in the box, keeping its shape, at the box's top left
+void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWidth, float maxHeight)
+{
+    int w = 0;
+    int h = 0;
+    if (!picture || SDL_QueryTexture(picture, nullptr, nullptr, &w, &h) != 0 || w <= 0 || h <= 0
+        || maxWidth <= 0.0f || maxHeight <= 0.0f) {
+        return;
+    }
+    float scale = std::min(maxWidth / static_cast<float>(w), maxHeight / static_cast<float>(h));
+    painter_.texture(picture, x, y, w * scale, h * scale, 1.0f);
 }
 
 // --- Layout ------------------------------------------------------------------
@@ -153,6 +245,82 @@ void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, 
         row.indent = indent;
         row.isError = isError;
         rows_.push_back(row);
+    }
+}
+
+void FormWidget::addResults(const Field& field)
+{
+    if (!field.label.empty()) {
+        Row header;
+        header.kind = RowKind::Header;
+        header.text = field.label;
+        rows_.push_back(header);
+    }
+    Forms::Rows results = model_->rows(field.bind, static_cast<size_t>(field.limit));
+    if (results.items.empty()) {
+        if (!field.empty.empty()) {
+            addWrapped(RowKind::Note, field.empty, false);
+        }
+        return;
+    }
+    std::string note = Forms::rowsNote(results);
+    if (!note.empty()) {
+        addWrapped(RowKind::Note, note, false);
+    }
+    bool thumbnails = std::any_of(results.items.begin(), results.items.end(),
+                                  [](const Forms::Row& item) { return !item.image.empty(); });
+    for (Forms::Row& item : results.items) {
+        Row row;
+        row.kind = RowKind::Item;
+        row.field = &field;
+        row.item = std::move(item.id);
+        row.text = std::move(item.label);
+        row.detail = std::move(item.detail);
+        row.image = std::move(item.image);
+        row.thumbnail = thumbnails;
+        row.focusable = true;
+        rows_.push_back(std::move(row));
+    }
+}
+
+void FormWidget::addValue(const Field& field)
+{
+    std::string value = model_->get(field.bind);
+    if (value.empty()) {
+        return;
+    }
+    // The first line goes next to the label, the rest under it
+    bool first = true;
+    for (const std::string& line : painter_.wrap(value, contentWidth() - labelWidth(), fontSize())) {
+        Row row;
+        row.kind = RowKind::Value;
+        row.field = first ? &field : nullptr;
+        row.text = line;
+        row.indent = true;
+        rows_.push_back(row);
+        first = false;
+    }
+    if (!field.help.empty()) {
+        addWrapped(RowKind::Note, field.help, true);
+    }
+}
+
+void FormWidget::addImage(const Field& field)
+{
+    std::string path = model_->get(field.bind);
+    if (path.empty() || !texture(path)) {
+        return;
+    }
+    Row row;
+    row.kind = RowKind::Image;
+    row.field = &field;
+    row.image = path;
+    row.span = std::max(1, field.rows);
+    rows_.push_back(row);
+    for (int i = 1; i < row.span; i++) {
+        Row spacer;
+        spacer.kind = RowKind::Spacer;
+        rows_.push_back(spacer);
     }
 }
 
@@ -198,6 +366,18 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             break;
         }
 
+        case FieldType::Results:
+            addResults(field);
+            break;
+
+        case FieldType::Value:
+            addValue(field);
+            break;
+
+        case FieldType::Image:
+            addImage(field);
+            break;
+
         default: {
             Row row;
             row.kind = RowKind::Field;
@@ -213,7 +393,8 @@ void FormWidget::addFields(const std::vector<Field>& fields)
                 }
                 break;
             }
-            if (!field.status.empty()) {
+            // A link shows its status on its own row
+            if (!field.status.empty() && field.type != FieldType::Link) {
                 std::string status = model_->get(field.status);
                 if (!status.empty()) {
                     addWrapped(RowKind::Note, status, true);
@@ -252,21 +433,36 @@ void FormWidget::buildRows()
         addWrapped(RowKind::Status, status_, false, statusIsError_);
     }
 
-    // Keep the same field focused while rows come and go around it
+    // Keep the same field, and result, focused while rows come and go around it.
+    // When the focused result goes away (e.g. the search changed), stay in its list.
     focus_ = -1;
+    int sameList = -1;
     for (size_t i = 0; i < rows_.size(); i++) {
-        if (rows_[i].focusable && rows_[i].field == focusedField_) {
-            focus_ = static_cast<int>(i);
+        if (!rows_[i].focusable || rows_[i].field != focusedField_) {
+            continue;
         }
+        if (rows_[i].item == focusedItem_) {
+            focus_ = static_cast<int>(i);
+            break;
+        }
+        if (sameList < 0) {
+            sameList = static_cast<int>(i);
+        }
+    }
+    if (focus_ < 0) {
+        focus_ = sameList;
     }
     if (focus_ < 0) {
         for (size_t i = 0; i < rows_.size(); i++) {
             if (rows_[i].focusable) {
                 focus_ = static_cast<int>(i);
-                focusedField_ = rows_[i].field;
                 break;
             }
         }
+    }
+    if (focus_ >= 0) {
+        focusedField_ = rows_[focus_].field;
+        focusedItem_ = rows_[focus_].item;
     }
 }
 
@@ -310,9 +506,29 @@ void FormWidget::moveFocus(int direction)
         if (rows_[index].focusable) {
             focus_ = index;
             focusedField_ = rows_[index].field;
+            focusedItem_ = rows_[index].item;
             return;
         }
     }
+}
+
+// Left/Right in a results list: a page at a time, staying in the list
+void FormWidget::pageResults(int direction)
+{
+    if (focus_ < 0) {
+        return;
+    }
+    const Field* list = rows_[focus_].field;
+    int target = focus_;
+    for (int step = 0; step < pageRows_; step++) {
+        int next = target + direction;
+        if (next < 0 || next >= static_cast<int>(rows_.size()) || rows_[next].kind != RowKind::Item || rows_[next].field != list) {
+            break;
+        }
+        target = next;
+    }
+    focus_ = target;
+    focusedItem_ = rows_[target].item;
 }
 
 bool FormWidget::navigate(Nav nav)
@@ -332,7 +548,8 @@ bool FormWidget::navigate(Nav nav)
         buildRows();
     }
 
-    const Field* field = focus_ >= 0 ? rows_[focus_].field : nullptr;
+    const Row* row = focus_ >= 0 ? &rows_[focus_] : nullptr;
+    const Field* field = row ? row->field : nullptr;
     static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back" };
     LOG_DEBUG("Forms", std::string(names[static_cast<int>(nav)]) + " on " + (field ? field->label : "nothing"));
     switch (nav) {
@@ -344,7 +561,10 @@ bool FormWidget::navigate(Nav nav)
         break;
     case Nav::Left:
     case Nav::Right:
-        if (field) {
+        if (row && row->kind == RowKind::Item) {
+            pageResults(nav == Nav::Right ? 1 : -1);
+        }
+        else if (field) {
             if ((field->type == FieldType::Folder || field->type == FieldType::File) && nav == Nav::Right) {
                 startEditing(*field);
             }
@@ -354,8 +574,8 @@ bool FormWidget::navigate(Nav nav)
         }
         break;
     case Nav::Select:
-        if (field) {
-            activate(*field);
+        if (row && field) {
+            activate(*row);
         }
         break;
     case Nav::Back:
@@ -364,8 +584,9 @@ bool FormWidget::navigate(Nav nav)
     return true;
 }
 
-void FormWidget::activate(const Field& field)
+void FormWidget::activate(const Row& row)
 {
+    const Field& field = *row.field;
     switch (field.type) {
     case FieldType::Text:
     case FieldType::Number:
@@ -393,6 +614,18 @@ void FormWidget::activate(const Field& field)
     case FieldType::Button:
         if (model_->actionProblem(field.action).empty()) {
             result_ = model_->runAction(field.action);
+        }
+        break;
+    case FieldType::Link:
+    case FieldType::Results:
+        if (!field.open.empty()) {
+            Forms::Model::Result open;
+            open.ok = true;
+            open.open = field.open;
+            if (field.type == FieldType::Results) {
+                open.params[field.param] = row.item;
+            }
+            result_ = open;
         }
         break;
     default:
@@ -440,9 +673,20 @@ void FormWidget::startEditing(const Field& field)
 {
     editing_ = true;
     editBuffer_ = model_->get(field.bind);
+    editOriginal_ = editBuffer_;
+    liveSent_ = editBuffer_;
     LOG_DEBUG("Forms", "Editing " + field.label);
     textInputWasActive_ = SDL_IsTextInputActive() == SDL_TRUE;
     SDL_StartTextInput();
+}
+
+// A live field's model sees the text as it's typed, from either keyboard
+void FormWidget::sendLiveText()
+{
+    if (editing_ && focusedField_ && focusedField_->live && model_ && editBuffer_ != liveSent_) {
+        liveSent_ = editBuffer_;
+        model_->set(focusedField_->bind, editBuffer_);
+    }
 }
 
 void FormWidget::finishEditing(bool keep)
@@ -455,7 +699,10 @@ void FormWidget::finishEditing(bool keep)
     if (!textInputWasActive_) {
         SDL_StopTextInput();
     }
-    if (keep && focusedField_ && model_) {
+    if (!focusedField_ || !model_) {
+        return;
+    }
+    if (keep) {
         if (focusedField_->type == FieldType::Number) {
             int value = Utils::convertInt(editBuffer_);
             if (focusedField_->max > focusedField_->min) {
@@ -465,6 +712,9 @@ void FormWidget::finishEditing(bool keep)
         }
         model_->set(focusedField_->bind, editBuffer_);
         LOG_DEBUG("Forms", focusedField_->label + " set to \"" + editBuffer_ + "\"");
+    }
+    else if (focusedField_->live && liveSent_ != editOriginal_) {
+        model_->set(focusedField_->bind, editOriginal_);
     }
 }
 
@@ -481,12 +731,14 @@ bool FormWidget::handleTextEvent(const SDL_Event& e)
             text.erase(std::remove_if(text.begin(), text.end(), [](char c) { return !(c == '-' || (c >= '0' && c <= '9')); }), text.end());
         }
         editBuffer_ += text;
+        sendLiveText();
         return true;
     }
     if (e.type == SDL_KEYDOWN) {
         SDL_Keycode key = e.key.keysym.sym;
         if (key == SDLK_BACKSPACE) {
             popCharacter(editBuffer_);
+            sendLiveText();
         }
         else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
             finishEditing(true);
@@ -500,6 +752,7 @@ bool FormWidget::handleTextEvent(const SDL_Event& e)
             SDL_free(clipboard);
             text.erase(std::remove_if(text.begin(), text.end(), [](char c) { return c == '\r' || c == '\n'; }), text.end());
             editBuffer_ += text;
+            sendLiveText();
         }
         else {
             // Arrows and the like belong to the on-screen keyboard
@@ -543,6 +796,8 @@ std::string FormWidget::valueText(const Field& field, bool focused)
         }
         return values.size() > 3 ? text + ", ..." : text;
     }
+    case FieldType::Link:
+        return field.status.empty() ? "" : model_->get(field.status);
     case FieldType::Button:
         return "";
     default:
@@ -555,21 +810,26 @@ std::string FormWidget::hintText() const
     if (editing_) {
         return "Type, then Enter to keep or Esc to cancel. Ctrl+V pastes.";
     }
-    const Field* field = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) ? rows_[focus_].field : nullptr;
+    const Row* row = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) ? &rows_[focus_] : nullptr;
+    const Field* field = row ? row->field : nullptr;
     std::string hint;
-    if (field) {
+    if (row && row->kind == RowKind::Item) {
+        hint = field && !field->open.empty() ? "Select: open   Left/Right: page" : "Left/Right: page";
+    }
+    else if (field) {
         switch (field->type) {
         case FieldType::Text:   hint = "Select: edit"; break;
         case FieldType::Number: hint = "Left/Right: change   Select: type"; break;
         case FieldType::Toggle: hint = "Select: change"; break;
         case FieldType::Choice: hint = "Left/Right: change"; break;
         case FieldType::Button: hint = "Select: " + field->label; break;
+        case FieldType::Link:   hint = "Select: open"; break;
         case FieldType::Folder:
         case FieldType::File:   hint = canBrowse_ ? "Select: browse   Right: type" : "Select: edit"; break;
         default: break;
         }
     }
-    return (hint.empty() ? "" : hint + "   ") + "Back: close";
+    return (hint.empty() ? "" : hint + "   ") + (backCloses_ ? "Back: close" : "Back: return");
 }
 
 void FormWidget::draw()
@@ -580,6 +840,8 @@ void FormWidget::draw()
         return;
     }
 
+    // Typing on the on-screen keyboard changes the text between frames
+    sendLiveText();
     buildRows();
     painter_.begin(baseViewInfo);
 
@@ -596,7 +858,9 @@ void FormWidget::draw()
     const float textOffset = (row - size) / 2.0f;
     const float valueX = left + labelWidth();
     const float valueWidth = width - labelWidth();
+    const float gap = size * 0.5f;
 
+    pageRows_ = std::max(1, static_cast<int>(visible / row) - 1);
     keepFocusVisible(visible);
 
     for (size_t i = 0; i < rows_.size(); i++) {
@@ -638,16 +902,59 @@ void FormWidget::draw()
         case RowKind::Status:
             painter_.text((r.isError ? "! " : "") + r.text, left, textY, width, size, false, 1.0f);
             break;
+        case RowKind::Value:
+            if (r.field) {
+                painter_.text(r.field->label, left, textY, labelWidth(), size, false, 1.0f);
+            }
+            painter_.text(r.text, valueX, textY, valueWidth, size, false, 1.0f);
+            break;
+        case RowKind::Item: {
+            float x = left;
+            if (r.thumbnail) {
+                float thumbWidth = row * 1.4f;
+                if (!r.image.empty()) {
+                    drawPicture(texture(r.image), x, y + row * 0.08f, thumbWidth, row * 0.84f);
+                }
+                x += thumbWidth + gap;
+            }
+            // The detail on the right, the label in what's left
+            float detailWidth = 0.0f;
+            if (!r.detail.empty()) {
+                detailWidth = std::min(painter_.textWidth(r.detail, size), width * 0.4f);
+                painter_.textWith(detailFont_, r.detail, left + width - detailWidth, textY, detailWidth, size, style_.rowDetailAlpha);
+            }
+            painter_.text(r.text, x, textY, left + width - x - detailWidth - (detailWidth > 0 ? gap : 0.0f), size, focused, 1.0f);
+            break;
+        }
+        case RowKind::Image: {
+            const Field& field = *r.field;
+            bool labelled = !field.label.empty();
+            if (labelled) {
+                painter_.text(field.label, left, textY, labelWidth(), size, false, 1.0f);
+            }
+            // Shrinks rather than overlapping the hints when its last rows are scrolled out
+            float boxHeight = std::min(r.span * row, top + visible - y) - row * 0.1f;
+            drawPicture(texture(r.image), labelled ? valueX : left, y + row * 0.05f, labelled ? valueWidth : width, boxHeight);
+            break;
+        }
+        case RowKind::Spacer:
+            break;
         case RowKind::Field: {
             const Field& field = *r.field;
             float alpha = r.enabled ? 1.0f : style_.disabledAlpha;
             painter_.text(field.label, left, textY, labelWidth(), size, focused, alpha);
+            float fieldValueWidth = valueWidth;
+            if (field.type == FieldType::Link && !style_.linkMarker.empty()) {
+                float markerWidth = painter_.textWidth(style_.linkMarker, size);
+                painter_.text(style_.linkMarker, left + width - markerWidth, textY, markerWidth, size, focused, alpha);
+                fieldValueWidth -= markerWidth + gap;
+            }
             std::string value = valueText(field, focused);
             if (value.empty() && !field.hint.empty() && !(editing_ && focused)) {
-                painter_.text(field.hint, valueX, textY, valueWidth, size, false, style_.noteAlpha * alpha);
+                painter_.text(field.hint, valueX, textY, fieldValueWidth, size, false, style_.noteAlpha * alpha);
             }
             else {
-                painter_.text(value, valueX, textY, valueWidth, size, focused, alpha);
+                painter_.text(value, valueX, textY, fieldValueWidth, size, focused, alpha);
             }
             break;
         }

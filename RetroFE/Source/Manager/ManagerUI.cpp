@@ -32,20 +32,8 @@
 
 namespace
 {
-    const char* formId(ManagerUI::Screen screen)
-    {
-        switch (screen) {
-        case ManagerUI::Screen::Settings: return "settings";
-        case ManagerUI::Screen::Manage:   return "manage";
-        case ManagerUI::Screen::Sources:  return "sources";
-        case ManagerUI::Screen::Package:  return "package";
-        }
-        return "";
-    }
-
-    constexpr ManagerUI::Screen screens[] = {
-        ManagerUI::Screen::Settings, ManagerUI::Screen::Manage, ManagerUI::Screen::Sources, ManagerUI::Screen::Package
-    };
+    // The form the Settings key opens
+    constexpr const char* settingsForm = "settings";
 }
 
 ManagerUI::ManagerUI(Configuration& config)
@@ -99,6 +87,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
     SDL_GetRendererOutputSize(renderer_, nullptr, &outputHeight);
     scale_ = std::max(1.0f, static_cast<float>(outputHeight) / 720.0f);
     view_.setScale(scale_);
+    view_.setRenderer(renderer_);
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -130,20 +119,27 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         return false;
     }
 
-    loadForms();
+    // Forms are loaded when first opened, from the layout in use now
+    forms_.clear();
     startCatalog();
+    if (!providersAdded_) {
+        Manager::registerProviders(model_, Manager::Services{ config_, catalog_.get() });
+        providersAdded_ = true;
+    }
     LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open Settings");
     return true;
 }
 
-void ManagerUI::loadForms()
+const Forms::Form* ManagerUI::form(const std::string& id)
 {
-    // A layout can provide its own versions in layouts/<layout>/forms/
-    std::string layoutName;
-    config_.getProperty(OPTION_LAYOUT, layoutName);
-    for (Screen screen : screens) {
-        forms_[screen] = Forms::load(formId(screen), layoutName);
+    auto found = forms_.find(id);
+    if (found == forms_.end()) {
+        // A layout can provide its own versions in layouts/<layout>/forms/
+        std::string layoutName;
+        config_.getProperty(OPTION_LAYOUT, layoutName);
+        found = forms_.emplace(id, Forms::load(id, layoutName)).first;
     }
+    return found->second.get();
 }
 
 void ManagerUI::startCatalog()
@@ -207,12 +203,6 @@ bool ManagerUI::takeCatalogChanges()
     return true;
 }
 
-void ManagerUI::openPackage(const std::string& id)
-{
-    model_.selectPackage(id);
-    open(Screen::Package);
-}
-
 void ManagerUI::deInitialize()
 {
     if (!context_) {
@@ -222,6 +212,8 @@ void ManagerUI::deInitialize()
         close();
     }
     destroyPage();
+    view_.freeImages();
+    view_.setRenderer(nullptr);
     ImGui::SetCurrentContext(context_);
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
@@ -231,13 +223,46 @@ void ManagerUI::deInitialize()
     renderer_ = nullptr;
 }
 
-void ManagerUI::open(Screen screen)
+void ManagerUI::open(const std::string& form, const Forms::Params& params)
 {
     if (!context_) {
         return;
     }
+    nav_.open(form, params);
+    show();
+}
+
+void ManagerUI::push(const std::string& form, const Forms::Params& params)
+{
+    if (!context_) {
+        return;
+    }
+    nav_.push(form, params, widget_ ? widget_->focus() : Forms::Focus{});
+    show();
+}
+
+void ManagerUI::back()
+{
+    if (nav_.back()) {
+        show();
+    }
+    else {
+        close();
+    }
+}
+
+void ManagerUI::show()
+{
+    const Navigator::Frame* frame = nav_.current();
+    if (!frame) {
+        close();
+        return;
+    }
+    // The old screen goes first: a text field still being edited there is cancelled on its own screen
+    destroyPage();
+    view_.discardImages();
+
     bool wasOpen = open_;
-    screen_ = screen;
     status_.clear();
     focusNext_ = true;
     open_ = true;
@@ -245,16 +270,20 @@ void ManagerUI::open(Screen screen)
         model_.refresh();
         cursorWasShown_ = SDL_ShowCursor(SDL_QUERY);
     }
-    if (forms_[screen_]) {
-        Forms::applyDefaults(*forms_[screen_], model_);
+    model_.setScreen(frame->form, frame->params);
+    const Forms::Form* shown = form(frame->form);
+    if (shown) {
+        Forms::applyDefaults(*shown, model_);
     }
 
     // Draw it as a layout page unless asked for ImGui, or the page can't be built
     std::string renderer;
     config_.getProperty("formsRenderer", renderer);
-    destroyPage();
     if (Utils::toLower(renderer) == "imgui" || !buildPage()) {
         SDL_ShowCursor(SDL_ENABLE);
+    }
+    else {
+        widget_->restoreFocus(frame->focus);
     }
 
     // Controls held while opening (e.g. the Select that chose it) must be released first
@@ -263,18 +292,21 @@ void ManagerUI::open(Screen screen)
 
 void ManagerUI::close()
 {
+    nav_.clear();
     if (!open_) {
         return;
     }
     open_ = false;
     destroyPage();
+    view_.discardImages();
     SDL_ShowCursor(cursorWasShown_);
 }
 
 bool ManagerUI::buildPage()
 {
-    const Forms::Form* form = forms_[screen_].get();
-    if (!form || !fontCache_) {
+    const Navigator::Frame* frame = nav_.current();
+    const Forms::Form* shown = frame ? form(frame->form) : nullptr;
+    if (!shown || !fontCache_) {
         return false;
     }
 
@@ -282,7 +314,7 @@ bool ManagerUI::buildPage()
     std::string layoutName;
     config_.getProperty(OPTION_LAYOUT, layoutName);
     std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
-    std::string screenFile = Utils::combinePath(formsPath, formId(screen_), "layout.xml");
+    std::string screenFile = Utils::combinePath(formsPath, frame->form, "layout.xml");
     std::string sharedFile = Utils::combinePath(formsPath, "layout.xml");
 
     PageBuilder builder(layoutName, "layout", config_, fontCache_);
@@ -298,7 +330,7 @@ bool ManagerUI::buildPage()
 
     Page* page = builder.buildPage();
     if (!page || builder.formWidgets().empty()) {
-        LOG_ERROR("Manager", "The " + std::string(formId(screen_)) + " page has no <form>, using ImGui instead");
+        LOG_ERROR("Manager", "The " + frame->form + " page has no <form>, using ImGui instead");
         if (page) {
             page->deInitialize();
             delete page;
@@ -307,8 +339,9 @@ bool ManagerUI::buildPage()
     }
 
     widget_ = builder.formWidgets().front();
-    widget_->bind(form, &model_);
+    widget_->bind(shown, &model_);
     widget_->setCanBrowse(FileDialog::isSupported());
+    widget_->setBackCloses(nav_.depth() <= 1);
     page_ = page;
     page_->allocateGraphicsMemory();
     page_->start();
@@ -408,7 +441,7 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_ && !locked_) {
         // Opens Settings, or closes it; from another screen it switches to Settings
         if (!e.key.repeat) {
-            open_ && screen_ == Screen::Settings ? close() : open(Screen::Settings);
+            nav_.toggle(settingsForm) ? show() : close();
         }
         return true;
     }
@@ -435,10 +468,10 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
         if (widget_->handleTextEvent(e)) {
             return true;
         }
-        // Escape always leaves, whatever the controls say
+        // Escape always goes back, whatever the controls say
         if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) {
             if (!widget_->navigate(FormWidget::Nav::Back)) {
-                close();
+                back();
             }
             return true;
         }
@@ -447,9 +480,9 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
     ImGui::SetCurrentContext(context_);
 
-    // Escape closes the panel, unless it's being used to leave a text field
-    if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !ImGui::GetIO().WantTextInput) {
-        close();
+    // Escape goes back, unless it's being used to leave a text field
+    if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat && !ImGui::GetIO().WantTextInput) {
+        back();
         return true;
     }
     ImGui_ImplSDL2_ProcessEvent(&e);
@@ -492,7 +525,7 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
             continue;
         }
         if (!widget_->navigate(navs[i])) {
-            close();
+            back();
         }
         else {
             syncKeyboard();   // a Select may have started editing
@@ -532,7 +565,6 @@ void ManagerUI::handleWidgetResults()
         }
     }
     if (auto result = widget_->takeResult()) {
-        widget_->setStatus(result->message, !result->ok);
         handleResult(*result);
     }
 }
@@ -542,9 +574,27 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
     if (result.ok && result.reload) {
         reloadRequested_ = true;
         close();
+        return;
     }
-    else if (model_.takeOpenRequest() == "sources") {
-        open(Screen::Sources);
+    // After success an action can move to another screen, which then shows its message
+    if (result.ok && result.back) {
+        back();
+    }
+    else if (result.ok && !result.open.empty()) {
+        const Navigator::Frame* frame = nav_.current();
+        push(result.open, Forms::mergeParams(frame ? frame->params : Forms::Params{}, result.params));
+    }
+    if (open_) {
+        setStatus(result.message, !result.ok);
+    }
+}
+
+void ManagerUI::setStatus(const std::string& message, bool isError)
+{
+    status_ = message;
+    statusIsError_ = isError;
+    if (widget_) {
+        widget_->setStatus(message, isError);
     }
 }
 
@@ -595,7 +645,11 @@ void ManagerUI::setLocked(bool locked)
 void ManagerUI::drawWindow()
 {
     ImGuiIO& io = ImGui::GetIO();
-    const Forms::Form* form = forms_[screen_].get();
+    const Navigator::Frame* frame = nav_.current();
+    if (!frame) {
+        return;
+    }
+    const Forms::Form* shown = form(frame->form);
 
     // Dim the page behind the window
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 150));
@@ -606,7 +660,7 @@ void ManagerUI::drawWindow()
     ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, io.DisplaySize.y - 40.0f * scale_));
 
     // "###manager" keeps one window while the title changes with the form
-    std::string title = (form ? Forms::title(*form, model_) : std::string(formId(screen_))) + "###manager";
+    std::string title = (shown ? Forms::title(*shown, model_) : frame->form) + "###manager";
     if (focusNext_) {
         ImGui::SetNextWindowFocus();
         focusNext_ = false;
@@ -614,18 +668,14 @@ void ManagerUI::drawWindow()
     bool keepOpen = true;
     ImGui::Begin(title.c_str(), &keepOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
-    if (form) {
-        view_.draw(*form, model_);
+    if (shown) {
+        view_.draw(*shown, model_);
     }
     else {
         ImGui::TextWrapped("This form couldn't be loaded. Check the log for details.");
     }
 
     std::optional<Forms::Model::Result> result = view_.takeResult();
-    if (result) {
-        status_ = result->message;
-        statusIsError_ = !result->ok;
-    }
 
     if (!status_.empty()) {
         ImGui::Spacing();
@@ -634,20 +684,34 @@ void ManagerUI::drawWindow()
         ImGui::PopStyleColor();
     }
 
+    bool goBack = false;
+    bool deeper = nav_.depth() > 1;
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("%s: Settings    Esc: close", SDL_GetScancodeName(toggleKey_));
+    ImGui::TextDisabled("%s: Settings    Esc: %s", SDL_GetScancodeName(toggleKey_), deeper ? "back" : "close");
     float closeWidth = ImGui::CalcTextSize("Close").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - closeWidth);
+    float backWidth = ImGui::CalcTextSize("Back").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    if (deeper) {
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - closeWidth - backWidth - ImGui::GetStyle().ItemSpacing.x);
+        goBack = ImGui::Button("Back");
+        ImGui::SameLine();
+    }
+    else {
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - closeWidth);
+    }
     if (ImGui::Button("Close")) {
         keepOpen = false;
     }
 
     ImGui::End();
 
+    // Navigating replaces the form being drawn, so only once the window is done
     if (!keepOpen) {
         close();
+    }
+    else if (goBack) {
+        back();
     }
     else if (result) {
         handleResult(*result);

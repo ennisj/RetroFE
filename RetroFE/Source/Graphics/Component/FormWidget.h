@@ -19,6 +19,7 @@
 #include "WidgetPainter.h"
 #include "../../Forms/Form.h"
 #include <SDL2/SDL.h>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,10 +34,12 @@ class Image;
 //   <form x="240" y="80" width="800" height="560" fontSize="28" fontColor="dedede"
 //         focusColor="ffffff" rowHeight="44" labelWidth="300"
 //         focusBackgroundColor="ffffff" focusBackgroundAlpha="0.12" focusImage="images/row.png"
-//         backgroundColor="000000" backgroundAlpha="0.85" onText="On" offText="Off"/>
+//         backgroundColor="000000" backgroundAlpha="0.85" onText="On" offText="Off"
+//         rowDetailColor="9fb4d0" rowDetailAlpha="0.8" linkMarker=">"/>
 //
-// Up/Down move between fields; Left/Right change a toggle, number or choice;
-// Select edits text, picks a folder or file, or presses a button; Back leaves.
+// Up/Down move between fields; Left/Right change a toggle, number or choice,
+// or page through a results list; Select edits text, picks a folder or file,
+// presses a button, or opens a link or result; Back leaves.
 class FormWidget : public Component
 {
 public:
@@ -51,6 +54,8 @@ public:
         std::string focusImage;             // absolute path; drawn behind the focused row
         float noteAlpha = 0.55f;
         float disabledAlpha = 0.35f;
+        float rowDetailAlpha = 0.7f;        // a result's detail, on the right
+        std::string linkMarker = ">";       // at the right of a link
         std::string onText = "On";
         std::string offText = "Off";
         bool showTitle = true;
@@ -71,11 +76,22 @@ public:
     ~FormWidget() override;
 
     void setStyle(const Style& style) { style_ = style; }
+
+    // The font for results' details (rowDetailColor); the normal font when null
+    void setDetailFont(FontManager* font) { detailFont_ = font; }
+
     void bind(const Forms::Form* form, Forms::Model* model);
+
+    // Where the user is, and putting them back there after returning to the form
+    Forms::Focus focus() const;
+    void restoreFocus(const Forms::Focus& focus);
 
     // Whether Select on a folder or file field asks for a native picker
     // (takeBrowse) rather than editing the path as text
     void setCanBrowse(bool canBrowse) { canBrowse_ = canBrowse; }
+
+    // Whether Back closes the manager or returns to the previous screen, for the hints
+    void setBackCloses(bool closes) { backCloses_ = closes; }
 
     // Returns false when Back was pressed outside a text field, i.e. the screen should close
     bool navigate(Nav nav);
@@ -91,6 +107,9 @@ public:
 
     void setStatus(const std::string& message, bool isError);
     std::optional<Browse> takeBrowse();
+
+    // An action's result, or a link or result row asking to open a form
+    // (Result::open with the parameters it adds)
     std::optional<Forms::Model::Result> takeResult();
 
     void allocateGraphicsMemory() override;
@@ -98,12 +117,24 @@ public:
     void draw() override;
 
 private:
-    enum class RowKind { Title, Header, Field, Note, Status };
+    enum class RowKind
+    {
+        Title, Header, Field, Note, Status,
+        Item,     // a row of a Results field
+        Value,    // a Value field, or a further line of its value
+        Image,    // an Image field, spanning `span` rows
+        Spacer    // the rest of an image's rows
+    };
     struct Row
     {
         RowKind kind = RowKind::Note;
         const Forms::Field* field = nullptr;
         std::string text;
+        std::string item;       // Item: the result's id
+        std::string detail;     // Item: shown on the right
+        std::string image;      // Item: thumbnail; Image: the picture
+        int span = 1;           // Image: rows it covers
+        bool thumbnail = false; // Item: leave room for thumbnails in this list
         bool focusable = false;
         bool enabled = true;
         bool indent = false;    // notes under a field line up with its value
@@ -112,12 +143,17 @@ private:
 
     void buildRows();
     void addFields(const std::vector<Forms::Field>& fields);
+    void addResults(const Forms::Field& field);
+    void addValue(const Forms::Field& field);
+    void addImage(const Forms::Field& field);
     void addWrapped(RowKind kind, const std::string& text, bool indent, bool isError = false);
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
-    void activate(const Forms::Field& field);
+    void pageResults(int direction);
+    void activate(const Row& row);
     void change(const Forms::Field& field, int direction);
     void startEditing(const Forms::Field& field);
+    void sendLiveText();
     std::string valueText(const Forms::Field& field, bool focused);
     std::string hintText() const;
     float contentWidth() const;
@@ -125,21 +161,32 @@ private:
     float labelWidth() const;
     float fontSize() const;
 
+    // Images by path, loaded when first drawn; nullptr if it can't be loaded
+    SDL_Texture* texture(const std::string& path);
+    void freeTextures();
+    void drawPicture(SDL_Texture* texture, float x, float y, float maxWidth, float maxHeight);
+
     WidgetPainter painter_;
     Style style_;
+    FontManager* detailFont_ = nullptr;
     const Forms::Form* form_ = nullptr;
     Forms::Model* model_ = nullptr;
 
     std::vector<Row> rows_;
     int focus_ = -1;              // index into rows_
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
+    std::string focusedItem_;     // and in a results list, the row's id
     float scroll_ = 0.0f;
+    int pageRows_ = 10;           // rows that fit, for paging through results
 
     bool canBrowse_ = false;
+    bool backCloses_ = true;
     bool editing_ = false;
     bool justFinishedEditing_ = false;  // the Enter/Esc that ended editing isn't also Select/Back
     bool textInputWasActive_ = false;
     std::string editBuffer_;
+    std::string editOriginal_;    // live fields: what to put back if the edit is cancelled
+    std::string liveSent_;        // live fields: what the model was last given
 
     std::string status_;
     bool statusIsError_ = false;
@@ -147,4 +194,5 @@ private:
     std::optional<Forms::Model::Result> result_;
 
     std::unique_ptr<Image> focusImage_;
+    std::map<std::string, SDL_Texture*> textures_;
 };

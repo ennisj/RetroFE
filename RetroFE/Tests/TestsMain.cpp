@@ -18,11 +18,18 @@
 // Build with -DRETROFE_BUILD_TESTS=ON.
 
 #include "TestSupport.h"
+#include <algorithm>
 
 int main()
 {
     runFormsTests();
     runCatalogTests();
+
+    auto& suites = Test::suites();
+    std::sort(suites.begin(), suites.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [name, tests] : suites) {
+        tests();
+    }
 
     std::cout << std::endl << Test::checks - Test::failures << "/" << Test::checks << " checks passed" << std::endl;
     return Test::failures == 0 ? 0 : 1;

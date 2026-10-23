@@ -1002,7 +1002,7 @@ void runCatalogTests()
         checkEqual(model.get("info:catalogStatus"), "2 packages from 1 source.", "status");
         checkEqual(model.get("draft:removeSource"), "local", "removal starts on the first source");
 
-        model.selectPackage("base");
+        model.setScreen("package", { { "id", "base" } });
         checkEqual(model.get("package:name"), "Base", "name");
         checkEqual(model.get("package:canInstall"), "yes", "can install");
         checkEqual(model.get("package:canRemove"), "no", "nothing to remove");
@@ -1015,10 +1015,11 @@ void runCatalogTests()
         checkEqual(model.get("package:canRemove"), "yes", "can remove");
         check(model.list("info:installed") == std::vector<std::string>({ "Base 1.0" }), "installed list");
 
-        model.selectPackage("pack");
+        model.setScreen("package", { { "id", "pack" } });
         checkEqual(model.get("package:requires"), "Needs Base >=1.0", "requirements");
 
-        check(model.runAction("open.sources").ok && model.takeOpenRequest() == "sources" && model.takeOpenRequest().empty(), "open.sources asks once");
+        Forms::Model::Result opened = model.runAction("open.sources");
+        check(opened.ok && opened.open == "sources" && !opened.back, "open.sources opens the Sources screen");
     });
 
     // --- Real HTTP, against a test server ----------------------------------------

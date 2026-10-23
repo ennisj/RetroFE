@@ -95,7 +95,7 @@ static const char* const formLayout = R"(
   <container x="0" y="0" width="1280" height="720" backgroundColor="000000" backgroundAlpha="0.75" layer="0"/>
   <form x="center" y="center" xOrigin="center" yOrigin="center" width="820" height="660"
         fontSize="22" fontColor="c8c8c8" focusColor="ffffff" rowHeight="34" labelWidth="260"
-        backgroundColor="14181e" backgroundAlpha="1"
+        rowDetailColor="8fa9c9" backgroundColor="14181e" backgroundAlpha="1"
         focusBackgroundColor="3d6fb6" focusBackgroundAlpha="0.55" layer="1"/>
 </layout>
 )";

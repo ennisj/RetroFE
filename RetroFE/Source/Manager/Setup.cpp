@@ -205,7 +205,7 @@ std::string validate(const NewCollection& collection)
 {
     std::string name = Utils::trimEnds(collection.name);
     if (name.empty()) {
-        return "Give the collection a name.";
+        return "Give the system a name.";
     }
     if (name.find_first_of("\\/:*?\"<>|#") != std::string::npos) {
         return "The name can't contain \\ / : * ? \" < > | or #.";
@@ -217,7 +217,7 @@ std::string validate(const NewCollection& collection)
         return "\"Main\" is the menu RetroFE starts on. Pick another name.";
     }
     if (fs::exists(Utils::combinePath(collectionsPath(), name))) {
-        return "A collection called \"" + name + "\" already exists.";
+        return "A system called \"" + name + "\" already exists.";
     }
 
     std::error_code ec;

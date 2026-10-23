@@ -22,12 +22,84 @@
 #include "../Source/Forms/Form.h"
 #include "../Source/Forms/SettingsFile.h"
 #include "../Source/Manager/ManagerModel.h"
+#include "../Source/Manager/Navigator.h"
+#include "../Source/Manager/Provider.h"
+#include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
 using namespace Test;
+
+namespace
+{
+    // Serves game:<key> and game.<action> like an entity module would
+    class GameProvider : public Manager::Provider
+    {
+    public:
+        std::string entered;   // the last screen entered
+        std::map<std::string, std::string> values;
+
+        std::string prefix() const override { return "game"; }
+
+        void enter(const Manager::Screen& screen) override { entered = screen.form + ":" + screen.param("id"); }
+
+        std::string get(const std::string& key, const Manager::Screen& screen) override
+        {
+            return key == "title" ? "Game " + screen.param("id") : values[key];
+        }
+
+        void set(const std::string& key, const std::string& value, const Manager::Screen&) override
+        {
+            values[key] = value;
+        }
+
+        Forms::Rows rows(const std::string& key, size_t limit, const Manager::Screen&) override
+        {
+            // "search" respects the limit; "careless" doesn't, nor give a total
+            Forms::Rows rows;
+            size_t count = key == "search" ? std::min<size_t>(limit, 5312) : 10;
+            for (size_t i = 0; i < count; i++) {
+                rows.items.push_back({ "g" + std::to_string(i), "Game " + std::to_string(i), "", "" });
+            }
+            rows.total = key == "search" ? 5312 : 0;
+            return rows;
+        }
+
+        std::vector<std::pair<std::string, std::string>> options(const std::string& key, const Manager::Screen&) override
+        {
+            if (key == "genres") return { { "shmup", "Shoot 'em up" } };
+            return {};
+        }
+
+        std::string actionProblem(const std::string& action, const Manager::Screen& screen) override
+        {
+            if (action == "save") return screen.param("id").empty() ? "No game chosen." : "";
+            return Provider::actionProblem(action, screen);
+        }
+
+        Forms::Model::Result runAction(const std::string& action, const Manager::Screen& screen) override
+        {
+            Forms::Model::Result result;
+            result.message = actionProblem(action, screen);
+            result.ok = result.message.empty();
+            if (result.ok) {
+                result.message = "Saved.";
+                result.open = "game-media";
+                result.params["tab"] = "logo";
+            }
+            return result;
+        }
+    };
+
+    class SettingsProvider : public GameProvider
+    {
+    public:
+        std::string prefix() const override { return "settings"; }
+    };
+}
 
 void runFormsTests()
 {
@@ -115,14 +187,66 @@ void runFormsTests()
     // --- Form parsing ---------------------------------------------------------
 
     run("built-in forms parse", [&] {
-        for (const char* id : { "settings", "manage", "sources", "package" }) {
+        std::vector<std::string> ids = Forms::builtinFormIds();
+        for (const char* id : { "settings", "manage", "sources", "package",
+                                "games", "menus", "systems", "videos", "emulators", "themes" }) {
+            check(std::find(ids.begin(), ids.end(), id) != ids.end(), std::string(id) + " is built in");
+        }
+        for (const std::string& id : ids) {
             auto form = Forms::parse(Forms::builtinForm(id), error);
-            check(form != nullptr, std::string(id) + ": " + error);
+            check(form != nullptr, id + ": " + error);
             if (form) {
                 checkEqual(form->id, id, "id");
-                check(!form->fields.empty(), std::string(id) + " has fields");
+                check(!form->fields.empty(), id + " has fields");
             }
         }
+    });
+
+    run("results, link, value and image elements", [&] {
+        auto form = Forms::parse(R"(
+            <form id="t">
+              <text label="Search" bind="game:query" live="yes"/>
+              <results bind="game:search" open="game" empty="No games match" limit="50"/>
+              <results bind="game:byYear" open="year" param="year"/>
+              <section label="Details">
+                <link label="Media" open="game-media" status="game:mediaSummary"/>
+                <value label="Year" bind="game:year"/>
+                <image bind="game:media:logo" rows="6"/>
+              </section>
+            </form>)", error);
+        check(form != nullptr, "parsed: " + error);
+        if (!form) return;
+        const Forms::Field& search = form->fields[0];
+        const Forms::Field& results = form->fields[1];
+        check(search.live && !results.live, "live text");
+        check(results.type == Forms::FieldType::Results, "results type");
+        checkEqual(results.open, "game", "results open");
+        checkEqual(results.param, "id", "param defaults to id");
+        checkEqual(results.empty, "No games match", "empty text");
+        check(results.limit == 50 && form->fields[2].limit == 200, "limit, and its default");
+        checkEqual(form->fields[2].param, "year", "param");
+        const std::vector<Forms::Field>& details = form->fields[3].children;
+        check(details.size() == 3 && details[0].type == Forms::FieldType::Link
+              && details[1].type == Forms::FieldType::Value && details[2].type == Forms::FieldType::Image, "link, value and image types");
+        if (details.size() != 3) return;
+        check(details[0].open == "game-media" && details[0].status == "game:mediaSummary", "link open and status");
+        check(details[2].rows == 6 && details[1].rows == 4, "image rows, and the default");
+
+        // Focus is remembered by position, sections' children included
+        checkEqual(std::to_string(Forms::fieldIndex(*form, &details[1])), "5", "position of a field in a section");
+        check(Forms::fieldAt(*form, 5) == &details[1] && Forms::fieldAt(*form, 3) == &form->fields[3], "field at a position");
+        check(Forms::fieldAt(*form, 7) == nullptr && Forms::fieldIndex(*form, nullptr) == -1, "out of range");
+    });
+
+    run("a results list says when it isn't showing everything", [&] {
+        Forms::Rows rows;
+        rows.items.resize(200);
+        rows.total = 200;
+        checkEqual(Forms::rowsNote(rows), "", "all shown");
+        rows.total = 5312;
+        checkEqual(Forms::rowsNote(rows), "Showing 200 of 5,312. Refine the search to see the rest.", "some shown");
+        rows.total = 1234567;
+        check(Forms::rowsNote(rows).find("of 1,234,567.") != std::string::npos, "millions");
     });
 
     run("form elements, attributes and entities", [&] {
@@ -231,5 +355,94 @@ void runFormsTests()
         ManagerModel model(config);
         checkEqual(model.get("info:source:settings:layout"), "settings2.conf", "override file named");
         checkEqual(model.get("info:source:settings:hideMouse"), "", "settings.conf isn't mentioned");
+    });
+
+    // --- Navigation -----------------------------------------------------------
+
+    run("screens stack up, and Back returns to where you were", [&] {
+        Navigator nav;
+        check(nav.empty() && !nav.current(), "closed at first");
+        nav.open("manage");
+        Forms::Focus onGames;
+        onGames.field = 2;
+        onGames.scroll = 40.0f;
+        nav.push("games", {}, onGames);
+        Forms::Focus onRow;
+        onRow.field = 1;
+        onRow.item = "pacman";
+        nav.push("game", { { "id", "pacman" } }, onRow);
+        check(nav.depth() == 3 && nav.current()->form == "game" && nav.current()->params.at("id") == "pacman", "three deep");
+
+        check(nav.back(), "back to games");
+        const Navigator::Frame* games = nav.current();
+        check(games->form == "games" && games->focus.field == 1 && games->focus.item == "pacman", "focus on the row that was chosen");
+        check(nav.back() && nav.current()->focus.field == 2 && nav.current()->focus.scroll == 40.0f, "back to manage, scrolled as it was");
+        check(!nav.back() && nav.empty(), "back from the first screen closes");
+
+        // Opening starts again
+        nav.open("manage");
+        nav.push("games", {}, {});
+        nav.open("sources");
+        check(nav.depth() == 1 && nav.current()->form == "sources", "open starts a new stack");
+
+        for (size_t i = 0; i < Navigator::maxDepth + 5; i++) {
+            nav.push("game", {}, {});
+        }
+        check(nav.depth() == Navigator::maxDepth, "depth is limited");
+    });
+
+    run("the Settings key opens, switches to and closes Settings", [&] {
+        Navigator nav;
+        check(nav.toggle("settings") && nav.depth() == 1 && nav.current()->form == "settings", "opens");
+        check(!nav.toggle("settings") && nav.empty(), "closes");
+        nav.open("manage");
+        nav.push("games", {}, {});
+        check(nav.toggle("settings") && nav.depth() == 1 && nav.current()->form == "settings", "switches from another screen");
+    });
+
+    run("providers serve their prefix with the screen's parameters", [&] {
+        std::string root = makeRoot("providers");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        auto owned = std::make_unique<GameProvider>();
+        GameProvider* games = owned.get();
+        check(model.addProvider(std::move(owned)), "added");
+        check(!model.addProvider(std::make_unique<GameProvider>()), "a prefix is served once");
+        check(!model.addProvider(std::make_unique<SettingsProvider>()), "built-in prefixes can't be taken");
+
+        model.setScreen("game", { { "id", "pacman" } });
+        checkEqual(games->entered, "game:pacman", "told about the screen");
+        checkEqual(model.get("param:id"), "pacman", "param binding");
+        checkEqual(model.get("param:missing"), "", "missing param");
+        checkEqual(model.get("game:title"), "Game pacman", "get, with the params");
+        model.set("game:notes", "Classic");
+        checkEqual(games->values["notes"], "Classic", "set, without the prefix");
+        check(model.options("game:genres").size() == 1, "options");
+        check(model.options("layouts").front().second == "Built-in", "built-in options still work");
+
+        Forms::Rows rows = model.rows("game:search", 200);
+        check(rows.items.size() == 200 && rows.total == 5312, "rows, limited by the provider");
+        rows = model.rows("game:careless", 3);
+        check(rows.items.size() == 3 && rows.total == 10, "rows over the limit are cut, and counted");
+        check(model.rows("info:collections", 10).items.empty(), "no rows for other bindings");
+
+        checkEqual(model.actionProblem("game.save"), "", "action allowed");
+        checkEqual(model.actionProblem("game.fly"), "Unknown action game.fly", "unknown provider action");
+        checkEqual(model.actionProblem("nobody.save"), "Unknown action nobody.save", "unknown prefix");
+
+        // An action moves on after success: the manager opens game-media with id and tab
+        Forms::Model::Result saved = model.runAction("game.save");
+        check(saved.ok && saved.open == "game-media" && saved.params.at("tab") == "logo", "action opens a screen");
+        Forms::Params next = Forms::mergeParams(model.screen().params, saved.params);
+        check(next.at("id") == "pacman" && next.at("tab") == "logo", "the opened screen keeps the current params");
+
+        model.setScreen("games", {});
+        check(!model.runAction("game.save").ok, "the screen's params decide");
+
+        Forms::Model::Result opened = model.runAction("open.systems");
+        check(opened.ok && opened.open == "systems", "open.<form>");
+        Forms::Model::Result back = model.runAction("back");
+        check(back.ok && back.back && back.open.empty(), "back");
     });
 }

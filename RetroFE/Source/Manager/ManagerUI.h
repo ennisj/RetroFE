@@ -17,6 +17,7 @@
 
 #include "FormView.h"
 #include "ManagerModel.h"
+#include "Navigator.h"
 #include "../Catalog/Service.h"
 #include "../Forms/Form.h"
 #include "../Graphics/Component/FormWidget.h"
@@ -32,11 +33,14 @@ class FontCache;
 class Page;
 struct ImGuiContext;
 
-// The management screens (Settings, Manage, Catalog sources and packages), shown over the current page.
-// Each screen is a form (see Forms/Form.h). It's drawn as a RetroFE page with a
-// <form> element, styled by layouts/<layout>/forms/<id>/layout.xml or
-// forms/layout.xml, or the built-in form page, and driven by RetroFE's
-// controls. formsRenderer = imgui draws the forms with Dear ImGui instead.
+// The management screens (Settings, Manage and its sections, Catalog sources
+// and packages), shown over the current page. Each screen is a form (see
+// Forms/Form.h) opened by id, e.g. "settings", "manage", "sources"; screens
+// open further screens over themselves, and Back returns (see Navigator.h).
+// A screen is drawn as a RetroFE page with a <form> element, styled by
+// layouts/<layout>/forms/<id>/layout.xml or forms/layout.xml, or the built-in
+// form page, and driven by RetroFE's controls. formsRenderer = imgui draws the
+// forms with Dear ImGui instead.
 // While a text field is edited an on-screen keyboard page is shown
 // (forms/keyboard/layout.xml or the built-in one) unless onScreenKeyboard = no;
 // typing on a real keyboard puts it away.
@@ -44,9 +48,6 @@ struct ImGuiContext;
 class ManagerUI
 {
 public:
-    // The screens opened from the Home menu and the Catalog
-    enum class Screen { Settings, Manage, Sources, Package };
-
     explicit ManagerUI(Configuration& config);
     ~ManagerUI();
 
@@ -54,14 +55,23 @@ public:
     void deInitialize();
 
     bool isOpen() const { return open_; }
-    void open(Screen screen);
+
+    // Opens a form by id with its parameters, as the only screen: Back closes it
+    void open(const std::string& form, const Forms::Params& params = {});
+
+    // Opens a form over the current screen; Back returns to it
+    void push(const std::string& form, const Forms::Params& params = {});
+
+    // Returns to the previous screen, or closes the manager from the first one
+    void back();
+
     void close();
 
     // The Catalog, which keeps working while the screens are closed; null before initialize()
     Catalog::Service* catalog() { return catalog_.get(); }
 
     // Opens the details of a package from the Catalog list
-    void openPackage(const std::string& id);
+    void openPackage(const std::string& id) { open("package", { { "id", id } }); }
 
     // True once after Catalog installs or removals finished, having added
     // collections they installed to the Main menu: RetroFE should reload
@@ -96,9 +106,11 @@ public:
 
 private:
     void drawWindow();
-    void loadForms();
     void startCatalog();
+    const Forms::Form* form(const std::string& id);
+    void show();   // shows the navigator's current screen
     void handleResult(const Forms::Model::Result& result);
+    void setStatus(const std::string& message, bool isError);
     bool buildPage();
     void destroyPage();
     void handleWidgetResults();
@@ -119,8 +131,10 @@ private:
     Configuration& config_;
     std::unique_ptr<Catalog::Service> catalog_;   // destroyed after model_, which points to it
     ManagerModel model_;
+    bool providersAdded_ = false;
     FormView view_;
-    std::map<Screen, std::unique_ptr<Forms::Form>> forms_;
+    Navigator nav_;
+    std::map<std::string, std::unique_ptr<Forms::Form>> forms_;   // by id, loaded when first opened; null if it can't be
 
     ImGuiContext* context_ = nullptr;
     SDL_Window* window_ = nullptr;
@@ -130,7 +144,6 @@ private:
     bool open_ = false;
     bool locked_ = false;
     bool focusNext_ = false;   // give the panel keyboard/gamepad focus on the next frame
-    Screen screen_ = Screen::Settings;
     bool reloadRequested_ = false;
     int cursorWasShown_ = SDL_ENABLE;
 

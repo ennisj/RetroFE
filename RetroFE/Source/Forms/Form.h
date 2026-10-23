@@ -15,6 +15,8 @@
  */
 #pragma once
 
+#include <cstddef>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,9 +38,16 @@
 //   </form>
 //
 // The built-in forms are compiled in; a layout can replace one with
-// layouts/<layout>/forms/<id>.xml.
+// layouts/<layout>/forms/<id>.xml. Forms are loaded by id when first opened.
+//
+// Screens open other screens: a link, a row of a results list, or an action's
+// Result pushes a form by id with parameters (e.g. id=<game>), and Back
+// returns. The form's bindings read them as param:<name>.
 namespace Forms
 {
+    // A screen's parameters, e.g. { "id": "pacman" }
+    using Params = std::map<std::string, std::string>;
+
     enum class FieldType
     {
         Section,   // a titled group of fields
@@ -51,7 +60,11 @@ namespace Forms
         Choice,    // one of a list of options
         List,      // read-only list of values
         Note,      // read-only text
-        Button     // runs an action
+        Button,    // runs an action
+        Results,   // selectable rows from the model; Select opens a form for the row
+        Link,      // opens another form with the same parameters
+        Value,     // read-only label and value, hidden when empty
+        Image      // an image file whose path comes from the model
     };
 
     struct Field
@@ -69,9 +82,14 @@ namespace Forms
         std::string options;      // Choice: name of the option source
         std::string filterName;   // File: e.g. "Programs"
         std::string pattern;      // File: e.g. "*.exe;*.bat"
-        std::string empty;        // List: text shown when there's nothing in it
+        std::string empty;        // List, Results: text shown when there's nothing in it
+        std::string open;         // Link, Results: id of the form to open
+        std::string param;        // Results: parameter the chosen row's id is passed as (default "id")
+        bool live = false;        // Text: the model gets every change while editing, e.g. for a search box
         int min = 0;
         int max = 0;
+        int limit = 200;          // Results: at most this many rows
+        int rows = 4;             // Image: height in rows
         std::vector<Field> children;
     };
 
@@ -81,6 +99,29 @@ namespace Forms
         std::string title;
         std::string titleBind;    // model key whose value replaces the title when set
         std::vector<Field> fields;
+    };
+
+    // One row of a Results field
+    struct Row
+    {
+        std::string id;       // passed to the opened form as its param
+        std::string label;
+        std::string detail;   // shown on the right, e.g. a year or a status
+        std::string image;    // optional thumbnail, an absolute path
+    };
+
+    struct Rows
+    {
+        std::vector<Row> items;   // at most the limit asked for
+        size_t total = 0;         // how many there are in all
+    };
+
+    // Where the user was on a form, so returning to it puts them back there
+    struct Focus
+    {
+        int field = -1;        // the focused field's position in the form (see fieldIndex)
+        std::string item;      // in a Results field, the focused row's id
+        float scroll = 0.0f;
     };
 
     // Values and actions a form is bound to
@@ -98,6 +139,10 @@ namespace Forms
         // Values of a List field
         virtual std::vector<std::string> list(const std::string& key) = 0;
 
+        // Rows of a Results field, at most limit of them. Called every frame
+        // while the form is shown, so keep it quick (e.g. cache by search text).
+        virtual Rows rows(const std::string& key, size_t limit) { (void)key; (void)limit; return {}; }
+
         // (value, label) pairs for a Choice field's option source
         virtual std::vector<std::pair<std::string, std::string>> options(const std::string& source) = 0;
 
@@ -109,12 +154,32 @@ namespace Forms
             bool ok = false;
             std::string message;
             bool reload = false;  // RetroFE has to reload to show the change
+
+            // After success, go to another screen: open pushes that form with
+            // the current screen's parameters overlaid with params; back
+            // returns to the previous screen. The message is shown on the
+            // screen it ends up on.
+            std::string open;
+            Params params;
+            bool back = false;
         };
         virtual Result runAction(const std::string& action) = 0;
     };
 
     // "yes", "true", "on" and "1" in any case
     bool isTruthy(const std::string& value);
+
+    // Fields are numbered in document order, sections' children included,
+    // so a focus can be remembered without pointers. -1 / nullptr when not found.
+    int fieldIndex(const Form& form, const Field* field);
+    const Field* fieldAt(const Form& form, int index);
+
+    // What a Results field says when it isn't showing every row, e.g.
+    // "Showing 200 of 5,312. Refine the search to see the rest.", or ""
+    std::string rowsNote(const Rows& rows);
+
+    // The parameters of a form opened from one with current: current's, overlaid with added
+    Params mergeParams(const Params& current, const Params& added);
 
     // Whether a field's enabledWhen condition holds
     bool isEnabled(const Field& field, Model& model);
@@ -134,6 +199,9 @@ namespace Forms
 
     // XML of a built-in form, or nullptr (see BuiltinForms.cpp)
     const char* builtinForm(const std::string& id);
+
+    // Ids of every built-in form
+    std::vector<std::string> builtinFormIds();
 
     // The layout's version of a form if it has one, otherwise the built-in one
     std::unique_ptr<Form> load(const std::string& id, const std::string& layoutName);
