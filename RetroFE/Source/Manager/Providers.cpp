@@ -38,6 +38,7 @@
 // emulators
 
 // themes
+#include "Themes/ThemeProvider.h"
 
 void Manager::registerProviders(ManagerModel& model, const Services& services)
 {
@@ -55,4 +56,5 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     // emulators
 
     // themes
+    model.addProvider(Themes::makeProvider(services));
 }

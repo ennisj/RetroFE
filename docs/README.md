@@ -29,6 +29,7 @@ additional artwork like video, box art, screenshots, etc.
 - Layouts
     -   [. General Layout Structure](PLAYGROUND.md)
     -   [. Layouts](LAYOUTS.md)
+    -   [. The theme editor](THEME_EDITOR.md)
 
 
 # These are just dev notes I needed to put somewhere

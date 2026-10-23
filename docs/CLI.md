@@ -24,6 +24,7 @@ All settings available in `settings.conf` can also be passed via the command lin
 | `-C`           | `--createconfig`     | Generate a default `settings.conf` and a `README.md`                               |
 | `-dump`        | `--dumpproperties`   | Dump current settings to `properties.txt`                                          |
 | `-gstdotdebug` | `--gstdotdebug`      | Enable GStreamer DOT graph generation for debugging                                |
+| `-theme-check` | `--theme-check`      | Check a theme against this RetroFE and exit (0 fine, 1 problems, 2 couldn't check) <br>Usage: `--theme-check [layoutName] {reportFile}`. See [THEME_EDITOR.md](THEME_EDITOR.md) |
 
 ## ⚙️ Passing Configuration via CLI
 You can pass any configuration setting using key-value pairs:

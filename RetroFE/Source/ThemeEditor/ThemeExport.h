@@ -70,6 +70,10 @@ namespace ThemeEditor
         std::string fontLicense;    // its licence text; empty = the one compiled in
         std::string themeDir;       // the theme's folder name; "" = themeFolderName(project name)
         bool checkLayouts = true;   // run checkLayoutXml over each page, issues become warnings
+        // A project without a splash page still gets a splash.xml: RetroFE
+        // won't start on a layout that has none. It shows the theme's name.
+        // ThemeStore turns it off when the folder has a hand-made splash.xml.
+        bool splashFallback = true;
     };
 
     // The full save: project.xml, every page generated with animations on and

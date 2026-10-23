@@ -230,8 +230,17 @@ namespace ThemeEditor
         const bool textWheel = !ghostStyle && !fontSizePx.empty();
         std::string styleDefaults;
         if (!ghostStyle) {
+            // This engine draws a text fallback (an item without art) only
+            // with a fontSize (Text scales by it; unset is -1, so nothing
+            // shows): a logo wheel gets one sized to its slots
+            std::string textSize = fontSizePx;
+            if (textSize.empty()) {
+                int count = slots < MENU_SLOTS_MIN ? MENU_SLOTS_MIN : (slots > MENU_SLOTS_MAX ? MENU_SLOTS_MAX : slots);
+                int basis = vertical ? h / count : h / 3;
+                textSize = std::to_string(basis * 2 / 5 < 12 ? 12 : basis * 2 / 5);
+            }
             // Escaped: these come from free text vars, spliced in before expandText runs
-            if (!fontSizePx.empty()) styleDefaults += " fontSize=\"" + xmlEscape(fontSizePx) + "\"";
+            styleDefaults += " fontSize=\"" + xmlEscape(textSize) + "\"";
             if (!fontColor.empty()) styleDefaults += " fontColor=\"" + xmlEscape(fontColor) + "\"";
         }
         // Idle dim: one second into menu idle each unselected item dims; the

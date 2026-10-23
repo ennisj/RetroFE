@@ -16,6 +16,8 @@
 #include "ManagerUI.h"
 #include "FileDialog.h"
 #include "Setup.h"
+#include "Themes/ThemeProvider.h"
+#include "Themes/app/ThemeEditorScreen.h"
 #include "../Builtin/Builtin.h"
 #include "../Database/Configuration.h"
 #include "../Database/GlobalOpts.h"
@@ -235,6 +237,11 @@ void ManagerUI::deInitialize()
     if (open_) {
         close();
     }
+    retireScreen();
+    for (auto& screen : retired_) {
+        screen->shutdown();
+    }
+    retired_.clear();
     destroyPage();
     view_.freeImages();
     view_.setRenderer(nullptr);
@@ -299,7 +306,13 @@ bool ManagerUI::mayLeave(bool everything)
     }
     std::string warning;
     for (const Manager::Screen& screen : leaving) {
-        warning = model_.leaving(screen);
+        // leaving[0] is the current screen, the only one that can draw itself
+        if (screen_ && &screen == &leaving.front()) {
+            warning = screen_->leaving();
+        }
+        if (warning.empty()) {
+            warning = model_.leaving(screen);
+        }
         if (!warning.empty()) {
             break;
         }
@@ -311,6 +324,9 @@ bool ManagerUI::mayLeave(bool everything)
     // Asked once already: leave, dropping the changes
     if (leaveWarned_) {
         leaveWarned_ = false;
+        if (screen_) {
+            screen_->discard();
+        }
         for (const Manager::Screen& screen : leaving) {
             model_.discard(screen);
         }
@@ -349,6 +365,7 @@ void ManagerUI::show()
     // The old screen goes first: a text field still being edited there is cancelled on its own screen
     destroyPage();
     view_.discardImages();
+    retireScreen();
 
     bool wasOpen = open_;
     status_.clear();
@@ -364,6 +381,12 @@ void ManagerUI::show()
     const Forms::Form* shown = form(frame->form);
     if (shown) {
         Forms::applyDefaults(*shown, model_);
+    }
+
+    // A screen that draws itself (the theme editor) does so whatever formsRenderer says
+    if (showImGuiScreen(*frame)) {
+        navHeld_.fill(true);
+        return;
     }
 
     // Draw it as a layout page unless asked for ImGui, or the page can't be built
@@ -390,12 +413,44 @@ void ManagerUI::close()
     open_ = false;
     destroyPage();
     view_.discardImages();
+    retireScreen();
     SDL_ShowCursor(cursorWasShown_);
 
     // Changes that asked for a reload once the user was done
     if (reloadWhenClosed_) {
         reloadWhenClosed_ = false;
         reloadRequested_ = true;
+    }
+}
+
+bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
+{
+    if (frame.form != Themes::editorForm) {
+        return false;
+    }
+    ThemeEditorScreen::Context context;
+    context.config = &config_;
+    context.window = window_;
+    context.renderer = renderer_;
+    context.fontCache = fontCache_;
+    context.scale = scale_;
+    context.root = Configuration::absolutePath;
+    context.loadCollection = loadCollection_;
+    context.currentCollection = currentCollection_;
+    context.requestReload = [this] { reloadWhenClosed_ = true; };
+    auto id = frame.params.find("id");
+    screen_ = std::make_unique<ThemeEditorScreen>(context, id != frame.params.end() ? id->second : "");
+    SDL_ShowCursor(SDL_ENABLE);
+    return true;
+}
+
+void ManagerUI::retireScreen()
+{
+    // Not deleted here: this can run inside the render pass (a button's
+    // result), and a screen frees textures and pages. update() does it.
+    if (screen_) {
+        screen_->retire();
+        retired_.push_back(std::move(screen_));
     }
 }
 
@@ -579,6 +634,9 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
     // Escape goes back, unless it's being used to leave a text field
     if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat && !ImGui::GetIO().WantTextInput) {
+        if (screen_ && screen_->escape()) {
+            return true;   // it closed a dialog or cancelled a drag
+        }
         if (!view_.cancelConfirm()) {
             requestBack();
         }
@@ -641,11 +699,22 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
 
 void ManagerUI::update(float dt)
 {
+    // Screens left since the last frame free their pages and textures here, outside the render pass
+    for (auto& screen : retired_) {
+        screen->shutdown();
+    }
+    retired_.clear();
     if (!open_) {
         return;
     }
     model_.update(dt);
-    if (page_) {
+    if (screen_) {
+        screen_->update(dt);
+        if (screen_->takeBack()) {
+            requestBack();
+        }
+    }
+    else if (page_) {
         page_->update(dt);
         if (keyboardPage_) {
             keyboardPage_->update(dt);
@@ -708,6 +777,9 @@ void ManagerUI::setStatus(const std::string& message, bool isError)
     if (widget_) {
         widget_->setStatus(message, isError);
     }
+    if (screen_ && !message.empty()) {
+        screen_->setStatus(message, isError);
+    }
 }
 
 void ManagerUI::drawPage()
@@ -717,6 +789,9 @@ void ManagerUI::drawPage()
         if (keyboardPage_) {
             keyboardPage_->draw();
         }
+    }
+    if (open_ && screen_) {
+        screen_->drawTargets();   // e.g. the theme editor's preview page, into its own texture
     }
 }
 
@@ -730,7 +805,12 @@ void ManagerUI::render()
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    drawWindow();
+    if (screen_) {
+        screen_->draw();
+    }
+    else {
+        drawWindow();
+    }
 
     ImGui::Render();
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer_);

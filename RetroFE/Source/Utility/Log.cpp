@@ -29,6 +29,13 @@ std::streambuf* Logger::cerrStream_ = nullptr;
 std::streambuf* Logger::coutStream_ = nullptr;
 std::mutex Logger::writeMutex_;
 Configuration* Logger::config_ = nullptr;
+Logger::Tap Logger::tap_;
+
+void Logger::setTap(Tap tap)
+{
+    std::scoped_lock lock(writeMutex_);
+    tap_ = std::move(tap);
+}
 
 bool Logger::initialize(std::string file, Configuration* config)
 {
@@ -63,6 +70,9 @@ void Logger::deInitialize()
 void Logger::write(Zone zone, const std::string& component, const std::string& message)
 {
     std::scoped_lock lock(writeMutex_); // Ensures thread safety
+    if (tap_) {
+        tap_(zone, component, message);
+    }
 
     std::string zoneStr(zoneToString(zone)); // Explicit conversion from string_view to string
 

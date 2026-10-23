@@ -42,6 +42,7 @@ std::vector<bool>           SDL::mirror_;
 int                         SDL::numScreens_ = 1;
 int                         SDL::numDisplays_ = 1;
 int                         SDL::screenCount_;
+bool                        SDL::hiddenWindows_ = false;
 
 // Initialize SDL
 bool SDL::initialize(Configuration& config)
@@ -107,6 +108,8 @@ bool SDL::initialize(Configuration& config)
 		bool windowBorder = false;
 		bool windowResize = false;
 		Uint32 windowFlags = SDL_WINDOW_OPENGL;
+		if (hiddenWindows_)
+			windowFlags |= SDL_WINDOW_HIDDEN;
 		std::string screenIndex = std::to_string(screenNum);
 		config.getProperty(OPTION_WINDOWBORDER, windowBorder);
 		if (!windowBorder)
@@ -284,7 +287,9 @@ bool SDL::initialize(Configuration& config)
 		}
 		else
 		{
-			if (screenNum == mainScreen)
+			// A window shown without taking focus (or not shown at all) leaves the user's mouse alone
+			bool leaveMouse = hiddenWindows_ || SDL_GetHintBoolean(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, SDL_FALSE);
+			if (screenNum == mainScreen && !leaveMouse)
 			{
 #ifndef __APPLE__
 				// If not MacOS, warp cursor top right

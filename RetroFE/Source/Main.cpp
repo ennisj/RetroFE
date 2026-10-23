@@ -22,6 +22,7 @@
 #include "Database/GlobalOpts.h"
 #include "Collection/CollectionInfoBuilder.h"
 #include "Execute/Launcher.h"
+#include "Manager/Themes/app/ThemesApp.h"
 #include "Utility/Log.h"
 #include "Utility/Utils.h"
 #include "RetroFE.h"
@@ -245,6 +246,27 @@ int main(int argc, char** argv)
                 return 0;
             }
         }
+        else if ((param == "--theme-check" || param == "-theme-check") && argc > 2) {
+            // Checks a theme against this RetroFE and exits: 0 fine, 1 problems, 2 couldn't check
+#ifdef WIN32
+            Utils::setEnvVar("GST_PLUGIN_PATH", Utils::combinePath(Configuration::absolutePath, "retrofe"));
+#endif
+            gst_debug_set_default_threshold(GST_LEVEL_ERROR);
+            gst_init(nullptr, nullptr);
+            if (!ImportConfiguration(&config)) {
+                std::cout << std::endl << "The configuration doesn't load" << std::endl;
+                return 2;
+            }
+            // The check reads what PageBuilder logs, so logging has to be on
+            std::string logLevel;
+            if (!config.getProperty(OPTION_LOG, logLevel) || logLevel.empty()) {
+                config.setProperty(OPTION_LOG, "ERROR,WARNING,NOTICE");
+                config.StartLogging(&config);
+            }
+            int status = Themes::runThemeCheck(config, argv[2], argc > 3 ? argv[3] : "");
+            Logger::deInitialize();
+            return status;
+        }
         else if (param == "-createconfig" ||
             param == "--createconfig" ||
             param == "-C") {
@@ -314,6 +336,7 @@ int main(int argc, char** argv)
             std::cout << "  -sc  -showconfig         Print a list of current settings" << std::endl;
             std::cout << "  -C   -createconfig       Create a settings.conf with default values and a readme" << std::endl;
             std::cout << "       -dump               Dump current settings to properties.txt" << std::endl;
+            std::cout << "       -theme-check        Check a theme against this RetroFE              [layoutName] {reportFile}" << std::endl;
             std::cout << std::endl;
             std::cout << "  -{key} {value}           RetroFE supports passing all settings as command line options for greater flexibility" << std::endl;
             std::cout << "                           i.e. -log DEBUG -vSync true would filter logging to just debug and enable vSync" << std::endl;

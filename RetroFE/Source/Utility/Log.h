@@ -17,6 +17,7 @@
 
 #include <string>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <streambuf>
 #include <iostream>
@@ -40,7 +41,14 @@ public:
     static bool isLevelEnabled(const std::string& zone, const std::string& component);
     static constexpr std::string_view zoneToString(Zone zone);
     static void deInitialize();
+
+    // Sees every line written while it's set, e.g. to collect what a page
+    // build logged (the theme editor's preview, --theme-check). Called under
+    // the log's lock, so it mustn't log itself. Empty to remove it.
+    using Tap = std::function<void(Zone zone, const std::string& component, const std::string& message)>;
+    static void setTap(Tap tap);
 private:
+    static Tap tap_;
     static std::streambuf* cerrStream_;
     static std::streambuf* coutStream_;
     static std::ofstream writeFileStream_;

@@ -223,6 +223,12 @@ namespace ThemeEditor
         }
         SaveInputs in = inputs;
         if (in.themeDir.empty()) in.themeDir = folder;   // pages refer to the folder they're in
+        {
+            // A splash.xml somebody wrote by hand stays: no automatic one over it
+            std::error_code ec;
+            const fs::path splash = fs::path(layoutsRoot) / folder / "splash.xml";
+            if (fs::exists(splash, ec) && !isEditorMarker(firstLine(splash))) in.splashFallback = false;
+        }
         const SavePlan plan = buildSavePlan(p, lib, in);
         if (!plan.ok()) {
             error = plan.errors[0];
