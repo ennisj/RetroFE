@@ -12,7 +12,7 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 |----------|--------------|
 | Catalog  | Packages you can install from your sources (see [The Catalog](#the-catalog)) |
 | Settings | Display, menu and video settings |
-| Manage   | Add collections, see what's installed, and open Catalog sources |
+| Manage   | Games, menus, systems, videos, emulators and themes, plus what the Catalog installed and its sources |
 | Browse   | Opens `firstCollection`, your usual top menu. Back returns to Home. |
 
 `homeMenu` is on for a bare install and in the `settings.conf` the setup
@@ -21,7 +21,8 @@ as before. Kiosk mode always skips Home.
 
 F10 opens Settings from anywhere, switches to it from another screen, and
 closes it again; change the key with `manager` in `controls.conf`. Back or
-Escape closes a screen.
+Escape returns to the screen you came from, where you left it, and closes the
+first one.
 
 Home is a collection built into RetroFE, so a layout styles it like any other:
 `layouts/<layout>/collections/Home/layout/layout.xml`, with artwork named after
@@ -86,9 +87,18 @@ index files on disk work.
 ## Settings and Manage screens
 
 Each screen is a **form**: fields bound to settings or other values. Up and
-Down move between fields; Left and Right change a switch, number or choice;
-Select edits text, picks a folder or file, or presses a button. While editing
-text, type and press Enter to keep it or Escape to cancel; Ctrl+V pastes.
+Down move between fields; Left and Right change a switch, number or choice,
+or page through a list of results; Select edits text, picks a folder or file,
+presses a button, or opens a link or a result. While editing text, type and
+press Enter to keep it or Escape to cancel; Ctrl+V pastes.
+
+**Manage** links to a screen for each part of your setup: Games, Menus,
+Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
+its Sources, and removing a package). Most of these say "Coming soon" for
+now. **Systems** lists your systems and adds one: point RetroFE at a folder of
+games and the emulator that runs them, and it reloads with the new system
+under Browse. On a bare install Manage opens by itself and says where to
+start.
 
 Settings writes each value to the file RetroFE actually reads it from:
 `settings.conf`, `settings1.conf` to `settings15.conf`, or
@@ -100,8 +110,9 @@ layout. Values set in an override file say so ("Set in settings1.conf").
 A screen is drawn as a page from your layout, so it can use backgrounds,
 images, video, text and animations like any other page. RetroFE looks for:
 
-1. `layouts/<layout>/forms/<screen>/layout.xml` for one screen (`settings`,
-   `manage`, `sources` or `package`)
+1. `layouts/<layout>/forms/<screen>/layout.xml` for one screen, by form id:
+   `settings`, `manage`, `sources`, `package`, `games`, `menus`, `systems`,
+   `videos`, `emulators`, `themes`, or any screen those open
 2. `layouts/<layout>/forms/layout.xml` for all of them
 3. otherwise its built-in form page
 
@@ -131,6 +142,8 @@ The page places the form with a `<form>` element:
 | `noteAlpha` | Opacity of help text and notes (default 0.55) |
 | `disabledAlpha` | Opacity of fields that can't be changed right now (default 0.35) |
 | `onText`, `offText` | How switches read (default `On` / `Off`) |
+| `rowDetailColor`, `rowDetailAlpha` | Color and opacity of a result's detail on the right (default `fontColor` at 0.7) |
+| `linkMarker` | Text at the right of a link (default `>`; empty for none) |
 | `title` | `no` hides the screen's title |
 | `hints` | `no` hides the controls hint at the bottom |
 
@@ -174,8 +187,9 @@ with a `<keyboard>` element; it's drawn over the screen being edited:
 ### Changing what a screen contains
 
 The fields themselves are also XML. RetroFE's built-in screens are in
-`RetroFE/Source/Forms/BuiltinForms.cpp`; a layout can replace one with
-`layouts/<layout>/forms/<screen>.xml`:
+`RetroFE/Source/Forms/BuiltinForms.cpp` and, for the Manage sections,
+`RetroFE/Source/Manager/<Section>/<Section>Forms.cpp`; a layout can replace
+one with `layouts/<layout>/forms/<screen>.xml`:
 
 ```xml
 <form id="settings" title="Settings">
@@ -193,13 +207,17 @@ The fields themselves are also XML. RetroFE's built-in screens are in
 |---------|-------|
 | `section` | A titled group of fields |
 | `actions` | Buttons |
-| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`) |
+| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
 | `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |
 | `list` | A read-only list (`empty` is shown when there's nothing in it) |
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
-| `button` | Runs an `action` |
+| `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
+| `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
+| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
+| `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right |
+| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
 under it), `status` (a value shown under it), `enabledWhen` (a value that must
@@ -207,30 +225,61 @@ be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
 (the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
 a value to use as the title when it has one, e.g. `bind="package:name"`.
 
+#### Screens and parameters
+
+A screen can open other screens: a `link`, a row of `results`, or an action.
+Each opened screen goes on top of the one it came from, and Back returns.
+Screens can have **parameters**: choosing a row from
+`<results bind="game:search" open="game"/>` opens the `game` form with
+`id` (and, say, `collection`) set to that game, and a `link` from there
+passes them on. A row opens only its own parameters, never the current
+screen's, so nothing carries over from an unrelated screen. Forms read them
+as `param:<name>`, e.g. `<value label="Id" bind="param:id"/>`.
+
+A screen with unsaved changes can ask before you leave it (Back, Escape,
+F10 or closing): it says so once, and leaving again drops the changes.
+Removing a package or a source asks you to confirm first.
+
 `bind` says what a field shows and changes:
 
 - `settings:<key>`: a setting from `settings.conf`. Changes are kept until
   `settings.save`. `default` is the value RetroFE uses when no file sets it.
-- `draft:<key>`: input for an action, such as a new collection's name.
+- `draft:<key>`: input for an action, such as a new system's name.
   `default` is its starting value.
+- `param:<name>`: the screen's parameters (read-only).
 - `info:<key>`: read-only: `info:collections`, `info:sources`,
   `info:installed` and `info:catalogWarnings` (lists), `info:romCount`,
-  `info:catalogStatus`, `info:removalStatus`, and `info:hasSources`,
-  `info:hasInstalled` and `info:sourceIsFolder` for `visibleWhen`.
-- `package:<key>`: the package chosen in the Catalog: `name`, `summary`,
-  `description`, `installedStatus`, `requires`, `checksum` (a warning when the
-  source gives none), `progress`, and `canInstall`, `canUpdate`, `canRemove`
-  and `isBusy` for `visibleWhen`.
+  `info:catalogStatus`, `info:removalStatus`, and `info:hasCollections`,
+  `info:hasSources`, `info:hasInstalled` and `info:sourceIsFolder` for
+  `visibleWhen`.
+- `package:<key>`: the Catalog package the screen is about (`param:id`):
+  `name`, `summary`, `description`, `installedStatus`, `requires`, `checksum`
+  (a warning when the source gives none), `progress`, and `canInstall`,
+  `canUpdate`, `canRemove` and `isBusy` for `visibleWhen`.
+- Other prefixes, such as `game:`, come from the Manage sections that provide
+  them; see [design/manage-forms.md](design/manage-forms.md).
 
 Actions:
 
 | Action | Does |
 |--------|------|
 | `settings.save` | Writes the changed settings |
-| `collection.create` | Creates a collection from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
-| `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the chosen package |
+| `collection.create` | Creates a system (collection) from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
+| `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the package the screen is about |
 | `package.removeInstalled` | Removes the installed package `draft:removePackage` |
 | `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on. A layout's form can't give these a `default`. |
 | `source.remove` | Removes `draft:removeSource` |
 | `catalog.refresh` | Reads the sources again |
-| `open.sources` | Opens the Sources screen |
+| `open.<form>` | Opens a screen with this screen's parameters, like a `link`, e.g. `open.sources` |
+| `back` | Returns to the previous screen, e.g. for a Done button |
+
+### For developers: providers
+
+Each Manage section serves its own bindings through a **provider**
+(`RetroFE/Source/Manager/Provider.h`): a `game` provider answers `game:title`,
+`game:search` rows, `options="game:genres"` and actions like `game.save`, and
+gets the screen's parameters with every call. An action can open a screen or
+go back once it succeeds, a provider can object to leaving a screen with
+unsaved changes, and it can ask RetroFE to reload once the manager closes.
+How to add a section, its forms and its provider is in
+[design/manage-forms.md](design/manage-forms.md).

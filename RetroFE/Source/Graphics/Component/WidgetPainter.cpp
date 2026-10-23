@@ -64,6 +64,11 @@ void WidgetPainter::begin(const ViewInfo& owner)
 
 void WidgetPainter::text(const std::string& text, float x, float y, float maxWidth, float fontSize, bool focused, float alpha)
 {
+    textWith(focused ? focusFont_ : font_, text, x, y, maxWidth, fontSize, alpha);
+}
+
+void WidgetPainter::textWith(FontManager* font, const std::string& text, float x, float y, float maxWidth, float fontSize, float alpha)
+{
     if (text.empty() || !owner_ || !font_) {
         return;
     }
@@ -74,7 +79,7 @@ void WidgetPainter::text(const std::string& text, float x, float y, float maxWid
     component->setText(text);
 
     ViewInfo& view = component->baseViewInfo;
-    view.font = focused ? focusFont_ : font_;
+    view.font = font ? font : font_;
     view.X = x;
     view.Y = y;
     view.FontSize = fontSize;
@@ -98,6 +103,17 @@ void WidgetPainter::rect(float x, float y, float w, float h, SDL_Color color, fl
     SDL_FRect rect{ x, y, w, h };
     ViewInfo view = *owner_;
     SDL::renderCopyF(solid_, alpha * owner_->Alpha, nullptr, &rect, view,
+                     page_.getLayoutWidthByMonitor(owner_->Monitor), page_.getLayoutHeightByMonitor(owner_->Monitor));
+}
+
+void WidgetPainter::texture(SDL_Texture* texture, float x, float y, float w, float h, float alpha)
+{
+    if (!texture || !owner_) {
+        return;
+    }
+    SDL_FRect rect{ x, y, w, h };
+    ViewInfo view = *owner_;
+    SDL::renderCopyF(texture, alpha * owner_->Alpha, nullptr, &rect, view,
                      page_.getLayoutWidthByMonitor(owner_->Monitor), page_.getLayoutHeightByMonitor(owner_->Monitor));
 }
 

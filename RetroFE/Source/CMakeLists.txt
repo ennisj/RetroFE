@@ -233,6 +233,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Graphics/ComponentItemBinding.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/Container.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/FormWidget.h"
+	"${RETROFE_DIR}/Source/Graphics/Component/TextureCache.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/KeyboardWidget.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/WidgetPainter.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/Component.h"
@@ -261,13 +262,17 @@ set(RETROFE_HEADERS
     "${RETROFE_DIR}/Source/Video/VideoPool.h"
    	"${RETROFE_DIR}/Source/Graphics/ComponentItemBindingBuilder.h"
 	"${RETROFE_DIR}/Source/Graphics/ViewInfo.h"
+	"${RETROFE_DIR}/Source/Forms/BuiltinForms.h"
 	"${RETROFE_DIR}/Source/Forms/Form.h"
 	"${RETROFE_DIR}/Source/Forms/SettingsFile.h"
+	"${RETROFE_DIR}/Source/Manager/EditBuffer.h"
 	"${RETROFE_DIR}/Source/Manager/FileDialog.h"
 	"${RETROFE_DIR}/Source/Manager/FormView.h"
 	"${RETROFE_DIR}/Source/Manager/Home.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerModel.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.h"
+	"${RETROFE_DIR}/Source/Manager/Navigator.h"
+	"${RETROFE_DIR}/Source/Manager/Provider.h"
 	"${RETROFE_DIR}/Source/Manager/Setup.h"
 	"${RETROFE_DIR}/Source/RetroFE.h"
 	"${RETROFE_DIR}/Source/SDL.h"
@@ -308,6 +313,7 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Graphics/ComponentItemBinding.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/Container.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/FormWidget.cpp"
+	"${RETROFE_DIR}/Source/Graphics/Component/TextureCache.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/KeyboardWidget.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/WidgetPainter.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/Component.cpp"
@@ -344,11 +350,25 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Manager/FormView.cpp"
 	"${RETROFE_DIR}/Source/Manager/ManagerModel.cpp"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.cpp"
+	"${RETROFE_DIR}/Source/Manager/Navigator.cpp"
+	"${RETROFE_DIR}/Source/Manager/Providers.cpp"
 	"${RETROFE_DIR}/Source/Manager/Setup.cpp"
 	"${RETROFE_DIR}/Source/RetroFE.cpp"
 	"${RETROFE_DIR}/Source/SDL.cpp"
 	"${SQLITE3_ROOT}/sqlite3.c"
 )
+
+# The Manage sections (Manager/Games, Manager/Systems...), one folder each, so
+# a section can add files without touching this list. Files in a section's
+# folder are built into retrofe_tests too, so they mustn't need SDL or
+# graphics code; those go in its app/ subfolder, which only RetroFE builds.
+# A section's tests.cmake, if any, adds what its files need to the tests
+# (list(APPEND RETROFE_TEST_EXTRA_SOURCES ...)).
+file(GLOB RETROFE_MANAGER_SECTION_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/*.cpp")
+file(GLOB RETROFE_MANAGER_SECTION_APP_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/app/*.cpp")
+file(GLOB RETROFE_MANAGER_SECTION_HEADERS CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/*.h" "${RETROFE_DIR}/Source/Manager/*/app/*.h")
+list(APPEND RETROFE_SOURCES ${RETROFE_MANAGER_SECTION_SOURCES} ${RETROFE_MANAGER_SECTION_APP_SOURCES})
+list(APPEND RETROFE_HEADERS ${RETROFE_MANAGER_SECTION_HEADERS})
 
 # Dear ImGui, used by the management UI
 set(IMGUI_BACKEND_SOURCES
@@ -373,10 +393,15 @@ endif()
 # Unit tests for code that doesn't need SDL: cmake -DRETROFE_BUILD_TESTS=ON, then run retrofe_tests
 option(RETROFE_BUILD_TESTS "Build the retrofe_tests unit tests" OFF)
 if(RETROFE_BUILD_TESTS)
-	add_executable(retrofe_tests
-		"${RETROFE_DIR}/Tests/TestsMain.cpp"
-		"${RETROFE_DIR}/Tests/FormsTests.cpp"
-		"${RETROFE_DIR}/Tests/CatalogTests.cpp"
+	# Every Tests/*.cpp, so a new test file needs no edit here (see Test::Suite in TestSupport.h)
+	file(GLOB RETROFE_TEST_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Tests/*.cpp")
+	set(RETROFE_TEST_EXTRA_SOURCES)
+	file(GLOB RETROFE_MANAGER_SECTION_TEST_LISTS CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/tests.cmake")
+	foreach(list_file ${RETROFE_MANAGER_SECTION_TEST_LISTS})
+		include(${list_file})
+	endforeach()
+	set(RETROFE_TEST_ALL_SOURCES
+		${RETROFE_TEST_SOURCES}
 		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
@@ -392,10 +417,15 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Forms/Form.cpp"
 		"${RETROFE_DIR}/Source/Forms/SettingsFile.cpp"
 		"${RETROFE_DIR}/Source/Manager/ManagerModel.cpp"
+		"${RETROFE_DIR}/Source/Manager/Navigator.cpp"
 		"${RETROFE_DIR}/Source/Manager/Setup.cpp"
+		${RETROFE_MANAGER_SECTION_SOURCES}
+		${RETROFE_TEST_EXTRA_SOURCES}
 		"${RETROFE_DIR}/Source/Utility/Log.cpp"
 		"${RETROFE_DIR}/Source/Utility/Utils.cpp"
 	)
+	list(REMOVE_DUPLICATES RETROFE_TEST_ALL_SOURCES)
+	add_executable(retrofe_tests ${RETROFE_TEST_ALL_SOURCES})
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
 	# The Catalog tests extract and write zip archives
 	if(WIN32)

@@ -24,6 +24,8 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace Test
 {
@@ -74,6 +76,20 @@ namespace Test
         test();
         std::cout << (failures == before ? "ok   " : "FAIL ") << name << std::endl;
     }
+
+    // More tests, without editing TestsMain.cpp: a file in Tests/ declares
+    //   static Test::Suite games("games", [] { Test::run("...", [] { ... }); });
+    // and is built in by CMake's Tests/*.cpp glob. Suites run after the others, by name.
+    inline std::vector<std::pair<std::string, std::function<void()>>>& suites()
+    {
+        static std::vector<std::pair<std::string, std::function<void()>>> all;
+        return all;
+    }
+
+    struct Suite
+    {
+        Suite(const std::string& name, std::function<void()> tests) { suites().emplace_back(name, std::move(tests)); }
+    };
 }
 
 void runFormsTests();
