@@ -15,6 +15,9 @@
  */
 #include "Setup.h"
 #include "../Database/Configuration.h"
+#include "../Database/GlobalOpts.h"
+#include "../Library/Backups.h"
+#include "../Library/Edits.h"
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 #include <algorithm>
@@ -29,6 +32,7 @@ namespace fs = std::filesystem;
 namespace
 {
     const char* const mainCollection = "Main";
+    Configuration* liveConfig = nullptr;
 
     std::string collectionsPath()
     {
@@ -82,83 +86,52 @@ namespace
 namespace Setup
 {
 
+void setConfiguration(Configuration* config)
+{
+    liveConfig = config;
+}
+
+std::string firstCollection()
+{
+    // RetroFE's own value (settings files plus any command-line override) when it's running
+    if (liveConfig) {
+        std::string first;
+        liveConfig->getProperty(OPTION_FIRSTCOLLECTION, first);
+        return first.empty() ? mainCollection : first;
+    }
+    return Library::MenuFiles::topMenu(Configuration::absolutePath);
+}
+
+std::string topMenu()
+{
+    return Library::MenuFiles::menuForNewCollections(Configuration::absolutePath, firstCollection());
+}
+
+std::string checkName(const std::string& name)
+{
+    std::string problem = Library::MenuFiles::checkChildName(Utils::trimEnds(name));
+    return problem.empty() ? "" : "That system name won't work: " + problem;
+}
+
 bool addToMainMenu(const std::string& name, std::string& error)
 {
-    std::string mainPath = Utils::combinePath(collectionsPath(), mainCollection);
-    fs::create_directories(mainPath);
-
-    std::string settingsFile = Utils::combinePath(mainPath, "settings.conf");
-    if (!fs::exists(settingsFile) && !writeFile(settingsFile, "list.menuSort = yes\n", error)) {
+    error = checkName(name);
+    if (!error.empty()) {
         return false;
     }
-
-    std::string menuFile = Utils::combinePath(mainPath, "menu.txt");
-    std::ifstream existing(menuFile, std::ios::binary);
-    std::string content((std::istreambuf_iterator<char>(existing)), std::istreambuf_iterator<char>());
-    existing.close();
-
-    std::istringstream lines(content);
-    std::string line;
-    while (std::getline(lines, line)) {
-        if (Utils::trimEnds(Utils::filterComments(line)) == name) {
-            return true;
-        }
+    // The top menu can't list itself
+    std::string top = topMenu();
+    if (Utils::toLower(name) == Utils::toLower(top)) {
+        return true;
     }
-
-    std::ofstream menu(menuFile, std::ios::binary | std::ios::app);
-    if (!menu) {
-        error = "Could not write " + menuFile;
-        return false;
-    }
-    // Match the file's line endings, and don't join the new entry onto a last line that has no line break
-    const char* newline = content.find("\r\n") != std::string::npos ? "\r\n" : "\n";
-    if (!content.empty() && content.back() != '\n') {
-        menu << newline;
-    }
-    menu << name << newline;
-    LOG_INFO("Setup", "Added " + name + " to " + menuFile);
-    return true;
+    Library::Backups backups(Configuration::absolutePath);
+    return Library::MenuFiles::add(Configuration::absolutePath, top, name, -1, &backups, error);
 }
 
 bool removeFromMainMenu(const std::string& name, std::string& error)
 {
-    std::string menuFile = Utils::combinePath(collectionsPath(), mainCollection, "menu.txt");
-    std::ifstream existing(menuFile, std::ios::binary);
-    if (!existing) {
-        return true;
-    }
-    std::string content((std::istreambuf_iterator<char>(existing)), std::istreambuf_iterator<char>());
-    existing.close();
-
-    // Keep every other line as it was, line endings included
-    std::string kept;
-    bool removed = false;
-    size_t start = 0;
-    while (start < content.size()) {
-        size_t end = content.find('\n', start);
-        end = end == std::string::npos ? content.size() : end + 1;
-        std::string line = content.substr(start, end - start);
-        std::string text = line.substr(0, line.find_first_of("\r\n"));
-        if (Utils::trimEnds(Utils::filterComments(text)) == name) {
-            removed = true;
-        }
-        else {
-            kept += line;
-        }
-        start = end;
-    }
-    if (!removed) {
-        return true;
-    }
-    // Binary, so the lines' own endings are written as they were read
-    std::ofstream menu(menuFile, std::ios::binary | std::ios::trunc);
-    menu << kept;
-    if (!menu) {
-        error = "Could not write " + menuFile;
-        return false;
-    }
-    LOG_INFO("Setup", "Removed " + name + " from " + menuFile);
-    return true;
+    Library::Backups backups(Configuration::absolutePath);
+    return Library::MenuFiles::remove(Configuration::absolutePath, topMenu(), name, &backups, error);
 }
 
 bool hasSettingsFile()
@@ -170,9 +143,10 @@ std::vector<std::string> listCollections()
 {
     std::vector<std::string> names;
     std::error_code ec;
+    std::string top = topMenu();
     for (const auto& entry : fs::directory_iterator(collectionsPath(), ec)) {
         std::string name = entry.path().filename().string();
-        if (entry.is_directory() && !name.empty() && name[0] != '_' && name != mainCollection) {
+        if (entry.is_directory() && !name.empty() && name[0] != '_' && name != top) {
             names.push_back(name);
         }
     }
@@ -213,8 +187,9 @@ std::string validate(const NewCollection& collection)
     if (name[0] == '_' || name[0] == '.') {
         return "The name can't start with _ or a dot.";
     }
-    if (Utils::toLower(name) == Utils::toLower(mainCollection)) {
-        return "\"Main\" is the menu RetroFE starts on. Pick another name.";
+    std::string top = topMenu();
+    if (Utils::toLower(name) == Utils::toLower(top)) {
+        return "\"" + top + "\" is the menu new systems are listed in. Pick another name.";
     }
     if (fs::exists(Utils::combinePath(collectionsPath(), name))) {
         return "A system called \"" + name + "\" already exists.";

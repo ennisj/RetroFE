@@ -17,6 +17,7 @@
 #include "Launcher.h"
 #include "../RetroFE.h"
 #include "../Collection/Item.h"
+#include "../Library/Properties.h"
 #include "../Utility/Log.h"
 #include "../Database/Configuration.h"
 #include "../Utility/Utils.h"
@@ -1464,7 +1465,11 @@ void Launcher::keepRendering(std::atomic<bool>& stop_thread, Page& currentPage) 
 bool Launcher::launcherName(std::string& launcherName, std::string collection)
 {
 	// find the launcher for the particular item 
-	if (std::string launcherKey = "collections." + collection + ".launcher"; !config_.getProperty(launcherKey, launcherName)) {
+	std::string launcherKey = "collections." + collection + ".launcher";
+	bool found = config_.getProperty(launcherKey, launcherName);
+	// Fork-compat (OneSauce data): the first of "launcher = a, b, c"
+	launcherName = Library::firstLauncher(launcherName);
+	if (!found) {
 		std::stringstream ss;
 
 		ss << "Launch failed. Could not find a configured launcher for collection \""

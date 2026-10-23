@@ -42,11 +42,14 @@ ManagerUI::ManagerUI(Configuration& config)
     : config_(config)
     , model_(config)
 {
+    // Setup reads firstCollection as RetroFE uses it (command-line overrides included)
+    Setup::setConfiguration(&config_);
 }
 
 ManagerUI::~ManagerUI()
 {
     deInitialize();
+    Setup::setConfiguration(nullptr);
 }
 
 bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache* fontCache)
@@ -204,7 +207,8 @@ bool ManagerUI::takeCatalogChanges()
         LOG_ERROR("Manager", error);
     }
     for (const std::string& name : changes.addedCollections) {
-        if (name != "Main" && !Setup::addToMainMenu(name, error)) {
+        // (addToMainMenu skips the top menu itself)
+        if (!Setup::addToMainMenu(name, error)) {
             LOG_ERROR("Manager", error);
         }
     }

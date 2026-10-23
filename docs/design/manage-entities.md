@@ -57,7 +57,8 @@ parallel.
 A shared **library** layer reads what RetroFE reads (collections, menus,
 items and metadata, media folders, launchers, layouts) and writes changes the
 way RetroFE expects them, preserving comments and formatting as
-`SettingsFile` already does. Indexing runs off the UI thread.
+`SettingsFile` already does. Indexing runs off the UI thread. Its API, for
+the screen authors, is in [manage-library.md](manage-library.md).
 
 ## Rules that apply to every screen
 
