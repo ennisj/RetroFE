@@ -2168,10 +2168,11 @@ bool RetroFE::run()
 					autoPlaylist = "favorites";
 				}
 
-				// Check if we should return to remembered playlist
+				// Check if we should return to remembered playlist; Home always comes back where it was left
 				bool rememberMenu = false;
 				config_.getProperty(OPTION_REMEMBERMENU, rememberMenu);
-				bool returnToRememberedPlaylist = rememberMenu && 
+				bool isHome = homeMenu_ && collectionName == Home::collectionName;
+				bool returnToRememberedPlaylist = (rememberMenu || isHome) &&
 					lastMenuPlaylists_.find(collectionName) != lastMenuPlaylists_.end();
 
 				// Set appropriate playlist
@@ -2335,7 +2336,9 @@ bool RetroFE::run()
 
 			if (currentPage_)
 			{
-				if (!splashMode && !paused_)
+				// Attract mode shows off games, so it doesn't run on the Home menu
+				bool onHome = homeMenu_ && currentPage_->getCollectionName() == Home::collectionName;
+				if (!splashMode && !paused_ && !onHome)
 				{
 					int attractReturn = attract_.update(deltaTime, *currentPage_);
 					if (!kioskLock_ && attractReturn == 1) // Change playlist
@@ -2373,7 +2376,7 @@ bool RetroFE::run()
 						state = RETROFE_ATTRACT_LAUNCH_ENTER;
 					}
 				}
-				if (menuMode_ || manager_.isOpen())
+				if (menuMode_ || manager_.isOpen() || onHome)
 				{
 					attract_.reset();
 				}
