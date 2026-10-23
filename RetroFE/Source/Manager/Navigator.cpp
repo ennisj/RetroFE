@@ -28,8 +28,9 @@ void Navigator::push(const std::string& form, const Forms::Params& params, const
         return;
     }
     frames_.back().focus = leaving;
-    if (frames_.size() >= maxDepth) {
-        frames_.erase(frames_.begin());
+    // Too deep: forget the oldest screen but the first, so Back still ends where it started
+    if (frames_.size() >= maxDepth && frames_.size() > 1) {
+        frames_.erase(frames_.begin() + 1);
     }
     frames_.push_back(Frame{ form, params, {} });
 }

@@ -68,6 +68,16 @@ public:
     // not added, if the prefix is built in or taken.
     bool addProvider(std::unique_ptr<Manager::Provider> provider);
 
+    // Leaving a screen: a provider's warning, or "" (see Provider::leaving)
+    std::string leaving(const Manager::Screen& screen);
+    // The user left anyway: providers drop their unsaved changes
+    void discard(const Manager::Screen& screen);
+
+    // Every frame while the manager is open
+    void update(float dt);
+
+    unsigned generation() override;
+
     // Writes settings.conf from the built-in defaults if there isn't one, so a
     // bare install that now has content keeps its settings (Home included)
     bool ensureSettingsFile(std::string& error) { return settings_.ensureExists(initialSettings(), error); }

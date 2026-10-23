@@ -73,6 +73,7 @@ namespace Forms
         std::string label;
         std::string bind;         // model key the value is read from and written to
         std::string action;       // Button: action to run
+        std::string confirm;      // Button: asks this first, e.g. "Delete this game?"; a second Select runs it
         std::string hint;         // placeholder shown while empty
         std::string help;         // fixed text shown under the field
         std::string status;       // model key whose value is shown under the field
@@ -101,13 +102,17 @@ namespace Forms
         std::vector<Field> fields;
     };
 
-    // One row of a Results field
+    // One row of a Results field. Choosing it opens the field's form with
+    // params, plus id as the field's param (default "id") unless params sets
+    // that already. A record that needs more than an id to find it passes the
+    // rest in params, e.g. a game's collection.
     struct Row
     {
-        std::string id;       // passed to the opened form as its param
+        std::string id;
         std::string label;
         std::string detail;   // shown on the right, e.g. a year or a status
         std::string image;    // optional thumbnail, an absolute path
+        Params params;
     };
 
     struct Rows
@@ -120,7 +125,7 @@ namespace Forms
     struct Focus
     {
         int field = -1;        // the focused field's position in the form (see fieldIndex)
-        std::string item;      // in a Results field, the focused row's id
+        std::string item;      // in a Results field, the focused row (see rowKey)
         float scroll = 0.0f;
     };
 
@@ -139,9 +144,14 @@ namespace Forms
         // Values of a List field
         virtual std::vector<std::string> list(const std::string& key) = 0;
 
-        // Rows of a Results field, at most limit of them. Called every frame
-        // while the form is shown, so keep it quick (e.g. cache by search text).
+        // Rows of a Results field, at most limit of them. Called whenever the
+        // screen is rebuilt, so keep it quick (e.g. cache by search text).
         virtual Rows rows(const std::string& key, size_t limit) { (void)key; (void)limit; return {}; }
+
+        // Changes when values changed by themselves (not through set or an
+        // action), so a screen shows them straight away. Screens also refresh
+        // a few times a second regardless.
+        virtual unsigned generation() { return 0; }
 
         // (value, label) pairs for a Choice field's option source
         virtual std::vector<std::pair<std::string, std::string>> options(const std::string& source) = 0;
@@ -153,17 +163,45 @@ namespace Forms
         {
             bool ok = false;
             std::string message;
-            bool reload = false;  // RetroFE has to reload to show the change
+
+            // RetroFE has to reload to show the change: the manager closes and
+            // RetroFE reloads now. To reload once the user closes the manager
+            // instead, providers call Services::requestReload.
+            bool reload = false;
 
             // After success, go to another screen: open pushes that form with
-            // the current screen's parameters overlaid with params; back
-            // returns to the previous screen. The message is shown on the
-            // screen it ends up on.
+            // params, plus the current screen's when keepParams (params win);
+            // back returns to the previous screen. The message is shown on
+            // the screen it ends up on. A link opens with keepParams, a
+            // results row without it, so a row always opens its own record.
             std::string open;
             Params params;
+            bool keepParams = false;
             bool back = false;
         };
         virtual Result runAction(const std::string& action) = 0;
+    };
+
+    // A button with confirm="...": the first Select arms it, a second one runs
+    // it; anything else in between disarms it
+    class Confirm
+    {
+    public:
+        // Select on a button: true when its action should run now
+        bool select(const Field& button)
+        {
+            if (button.confirm.empty() || armed_ == &button) {
+                armed_ = nullptr;
+                return true;
+            }
+            armed_ = &button;
+            return false;
+        }
+        void cancel() { armed_ = nullptr; }
+        const Field* armed() const { return armed_; }
+
+    private:
+        const Field* armed_ = nullptr;
     };
 
     // "yes", "true", "on" and "1" in any case
@@ -178,8 +216,16 @@ namespace Forms
     // "Showing 200 of 5,312. Refine the search to see the rest.", or ""
     std::string rowsNote(const Rows& rows);
 
-    // The parameters of a form opened from one with current: current's, overlaid with added
-    Params mergeParams(const Params& current, const Params& added);
+    // The parameters a row of a Results field opens its form with: the row's
+    // params, and its id as the field's param unless they set that already.
+    // Nothing comes from the current screen, so a row always opens its own record.
+    Params rowParams(const Field& results, const Row& row);
+
+    // Identifies a row within its list, for keeping it focused: its id and params
+    std::string rowKey(const Row& row);
+
+    // The parameters of the screen result opens, from a screen with current ones
+    Params openParams(const Params& current, const Model::Result& result);
 
     // Whether a field's enabledWhen condition holds
     bool isEnabled(const Field& field, Model& model);

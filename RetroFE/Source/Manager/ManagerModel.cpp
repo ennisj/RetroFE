@@ -121,6 +121,40 @@ bool ManagerModel::addProvider(std::unique_ptr<Manager::Provider> provider)
     return true;
 }
 
+std::string ManagerModel::leaving(const Manager::Screen& screen)
+{
+    for (auto& [prefix, provider] : providers_) {
+        std::string warning = provider->leaving(screen);
+        if (!warning.empty()) {
+            return warning;
+        }
+    }
+    return "";
+}
+
+void ManagerModel::discard(const Manager::Screen& screen)
+{
+    for (auto& [prefix, provider] : providers_) {
+        provider->discard(screen);
+    }
+}
+
+void ManagerModel::update(float dt)
+{
+    for (auto& [prefix, provider] : providers_) {
+        provider->update(dt);
+    }
+}
+
+unsigned ManagerModel::generation()
+{
+    unsigned sum = 0;
+    for (auto& [prefix, provider] : providers_) {
+        sum += provider->generation();
+    }
+    return sum;
+}
+
 Manager::Provider* ManagerModel::provider(const std::string& key, char separator, std::string& rest) const
 {
     if (providers_.empty()) {
@@ -588,6 +622,7 @@ Forms::Model::Result ManagerModel::runAction(const std::string& action)
         result.message = actionProblem(action);
         result.ok = result.message.empty();
         result.open = name;
+        result.keepParams = true;   // like a link
         result.back = action == "back";
         return result;
     }

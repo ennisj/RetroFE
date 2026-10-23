@@ -215,9 +215,9 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
 | `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
-| `button` | Runs an `action` |
+| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
 | `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right |
-| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` with the row's id as the parameter `param` (default `id`). `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
+| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
 under it), `status` (a value shown under it), `enabledWhen` (a value that must
@@ -231,8 +231,14 @@ A screen can open other screens: a `link`, a row of `results`, or an action.
 Each opened screen goes on top of the one it came from, and Back returns.
 Screens can have **parameters**: choosing a row from
 `<results bind="game:search" open="game"/>` opens the `game` form with
-`id` set to that game, and a `link` from there passes `id` on. Forms read
-them as `param:<name>`, e.g. `<value label="Id" bind="param:id"/>`.
+`id` (and, say, `collection`) set to that game, and a `link` from there
+passes them on. A row opens only its own parameters, never the current
+screen's, so nothing carries over from an unrelated screen. Forms read them
+as `param:<name>`, e.g. `<value label="Id" bind="param:id"/>`.
+
+A screen with unsaved changes can ask before you leave it (Back, Escape,
+F10 or closing): it says so once, and leaving again drops the changes.
+Removing a package or a source asks you to confirm first.
 
 `bind` says what a field shows and changes:
 
@@ -264,7 +270,7 @@ Actions:
 | `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on. A layout's form can't give these a `default`. |
 | `source.remove` | Removes `draft:removeSource` |
 | `catalog.refresh` | Reads the sources again |
-| `open.<form>` | Opens a screen, e.g. `open.sources` |
+| `open.<form>` | Opens a screen with this screen's parameters, like a `link`, e.g. `open.sources` |
 | `back` | Returns to the previous screen, e.g. for a Done button |
 
 ### For developers: providers
@@ -273,5 +279,7 @@ Each Manage section serves its own bindings through a **provider**
 (`RetroFE/Source/Manager/Provider.h`): a `game` provider answers `game:title`,
 `game:search` rows, `options="game:genres"` and actions like `game.save`, and
 gets the screen's parameters with every call. An action can open a screen or
-go back once it succeeds. How to add a section, its forms and its provider is
-in [design/manage-forms.md](design/manage-forms.md).
+go back once it succeeds, a provider can object to leaving a screen with
+unsaved changes, and it can ask RetroFE to reload once the manager closes.
+How to add a section, its forms and its provider is in
+[design/manage-forms.md](design/manage-forms.md).

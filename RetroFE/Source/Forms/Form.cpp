@@ -68,6 +68,7 @@ namespace
             field.label = attribute(node, "label");
             field.bind = attribute(node, "bind");
             field.action = attribute(node, "action");
+            field.confirm = attribute(node, "confirm");
             field.hint = attribute(node, "hint");
             field.help = attribute(node, "help");
             field.status = attribute(node, "status");
@@ -217,13 +218,35 @@ std::string rowsNote(const Rows& rows)
          + ". Refine the search to see the rest.";
 }
 
-Params mergeParams(const Params& current, const Params& added)
+Params rowParams(const Field& results, const Row& row)
 {
+    Params params = row.params;
+    std::string name = results.param.empty() ? "id" : results.param;
+    if (!params.count(name)) {
+        params[name] = row.id;
+    }
+    return params;
+}
+
+Params openParams(const Params& current, const Model::Result& result)
+{
+    if (!result.keepParams) {
+        return result.params;
+    }
     Params params = current;
-    for (const auto& [name, value] : added) {
+    for (const auto& [name, value] : result.params) {
         params[name] = value;
     }
     return params;
+}
+
+std::string rowKey(const Row& row)
+{
+    std::string key = row.id;
+    for (const auto& [name, value] : row.params) {
+        key += '\x1f' + name + '=' + value;
+    }
+    return key;
 }
 
 std::unique_ptr<Form> parse(const std::string& xml, std::string& error)

@@ -76,7 +76,7 @@ const char* const manageForm = R"(
   <section label="Remove a package" visibleWhen="info:hasInstalled">
     <choice label="Package" bind="draft:removePackage" options="installed"/>
     <note value="Puts back files it replaced, and keeps files you've changed since."/>
-    <button label="Remove package" action="package.removeInstalled"/>
+    <button label="Remove package" action="package.removeInstalled" confirm="Remove this package?"/>
   </section>
 </form>
 )";
@@ -99,7 +99,7 @@ const char* const sourcesForm = R"(
   </section>
   <section label="Remove a source" visibleWhen="info:hasSources">
     <choice label="Source" bind="draft:removeSource" options="sources"/>
-    <button label="Remove source" action="source.remove"/>
+    <button label="Remove source" action="source.remove" confirm="Remove this source?"/>
   </section>
   <actions>
     <button label="Check for updates" action="catalog.refresh"/>
@@ -119,7 +119,7 @@ const char* const packageForm = R"(
   <actions>
     <button label="Install" action="package.install" visibleWhen="package:canInstall"/>
     <button label="Update" action="package.install" visibleWhen="package:canUpdate"/>
-    <button label="Remove" action="package.remove" visibleWhen="package:canRemove"/>
+    <button label="Remove" action="package.remove" visibleWhen="package:canRemove" confirm="Remove this package?"/>
     <button label="Stop" action="package.cancel" visibleWhen="package:isBusy"/>
   </actions>
 </form>

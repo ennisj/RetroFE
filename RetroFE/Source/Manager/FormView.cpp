@@ -21,53 +21,38 @@
 #include "misc/cpp/imgui_stdlib.h"
 #include <algorithm>
 #include <cstdint>
-#include <filesystem>
-
-#if __has_include(<SDL2/SDL_image.h>)
-#include <SDL2/SDL_image.h>
-#elif __has_include(<SDL2_image/SDL_image.h>)
-#include <SDL2_image/SDL_image.h>
-#else
-#include <SDL_image.h>
-#endif
 
 using Forms::Field;
 using Forms::FieldType;
 
-FormView::~FormView()
+void FormView::setRenderer(SDL_Renderer* renderer)
 {
-    freeImages();
+    pictures_.setRenderer(renderer);
 }
 
 void FormView::freeImages()
 {
-    for (auto& [path, texture] : textures_) {
-        if (texture) {
-            SDL_DestroyTexture(texture);
-        }
-    }
-    textures_.clear();
+    pictures_.clear();
+    discard_ = false;
 }
 
-SDL_Texture* FormView::texture(const std::string& path)
+void FormView::reset()
 {
-    auto found = textures_.find(path);
-    if (found != textures_.end()) {
-        return found->second;
-    }
-    SDL_Texture* texture = nullptr;
-    std::error_code ec;
-    if (renderer_ && std::filesystem::is_regular_file(path, ec)) {
-        texture = IMG_LoadTexture(renderer_, path.c_str());
-        if (!texture) {
-            LOG_WARNING("Forms", "Can't load " + path + ": " + IMG_GetError());
-        }
-    }
-    textures_[path] = texture;
-    return texture;
+    confirm_.cancel();
+    editing_ = nullptr;
+    result_.reset();
 }
 
-void FormView::open(const std::string& form, const Forms::Params& params)
+bool FormView::cancelConfirm()
+{
+    if (!confirm_.armed()) {
+        return false;
+    }
+    confirm_.cancel();
+    return true;
+}
+
+void FormView::open(const std::string& form, const Forms::Params& params, bool keepParams)
 {
     if (form.empty()) {
         return;
@@ -76,6 +61,7 @@ void FormView::open(const std::string& form, const Forms::Params& params)
     result.ok = true;
     result.open = form;
     result.params = params;
+    result.keepParams = keepParams;
     result_ = result;
 }
 
@@ -83,9 +69,39 @@ void FormView::draw(const Forms::Form& form, Forms::Model& model)
 {
     if (discard_) {
         freeImages();
-        discard_ = false;
     }
+    pictures_.beginFrame(2);
     drawFields(form.fields, model);
+}
+
+// Text is edited in a buffer and given to the model when the field is left,
+// so Escape cancels; a live field's model gets every change
+bool FormView::inputText(const Field& field, Forms::Model& model, float width)
+{
+    // While this field is edited ImGui works on editBuffer_, otherwise on a copy of the model's value
+    bool editingThis = editing_ == &field;
+    std::string shown = editingThis ? std::string() : model.get(field.bind);
+    std::string& text = editingThis ? editBuffer_ : shown;
+    ImGui::SetNextItemWidth(width);
+    bool changed = ImGui::InputTextWithHint("##value", field.hint.c_str(), &text);
+    if (ImGui::IsItemActivated()) {
+        editing_ = &field;
+        editOriginal_ = model.get(field.bind);
+        editBuffer_ = text;   // including anything typed this frame
+    }
+    if (editing_ == &field && changed && field.live) {
+        model.set(field.bind, editBuffer_);
+    }
+    if (ImGui::IsItemDeactivated() && editing_ == &field) {
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            model.set(field.bind, editBuffer_);
+        }
+        else if (field.live) {
+            model.set(field.bind, editOriginal_);   // cancelled
+        }
+        editing_ = nullptr;
+    }
+    return changed;
 }
 
 std::optional<Forms::Model::Result> FormView::takeResult()
@@ -192,16 +208,11 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         break;
     }
 
-    case FieldType::Text: {
+    case FieldType::Text:
         label(field);
-        std::string value = model.get(field.bind);
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputTextWithHint("##value", field.hint.c_str(), &value)) {
-            model.set(field.bind, value);
-        }
+        inputText(field, model, -FLT_MIN);
         drawNotes(field, model);
         break;
-    }
 
     case FieldType::Folder:
     case FieldType::File:
@@ -356,7 +367,7 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
             const Forms::Row& row = rows.items[static_cast<size_t>(i)];
             ImGui::PushID(i);
             if (ImGui::Selectable(row.label.c_str())) {
-                open(field.open, { { field.param, row.id } });
+                open(field.open, Forms::rowParams(field, row), false);
             }
             if (!row.detail.empty()) {
                 ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(row.detail.c_str()).x);
@@ -371,7 +382,7 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
 void FormView::drawLink(const Field& field, Forms::Model& model)
 {
     if (ImGui::Selectable(field.label.c_str())) {
-        open(field.open, {});
+        open(field.open, {}, true);
     }
     std::string status = field.status.empty() ? "" : model.get(field.status);
     if (!status.empty()) {
@@ -391,7 +402,13 @@ void FormView::drawLink(const Field& field, Forms::Model& model)
 void FormView::drawImage(const Field& field, Forms::Model& model)
 {
     std::string path = model.get(field.bind);
-    SDL_Texture* picture = path.empty() ? nullptr : texture(path);
+    if (path.empty()) {
+        return;
+    }
+    // rows high, keeping its shape, and no wider than the window; loaded at that size
+    float height = std::max(1, field.rows) * ImGui::GetTextLineHeightWithSpacing();
+    float available = ImGui::GetContentRegionAvail().x - (field.label.empty() ? 0.0f : labelWidth());
+    SDL_Texture* picture = pictures_.get(path, static_cast<int>(available), static_cast<int>(height), true);
     int w = 0;
     int h = 0;
     if (!picture || SDL_QueryTexture(picture, nullptr, nullptr, &w, &h) != 0 || w <= 0 || h <= 0) {
@@ -401,10 +418,7 @@ void FormView::drawImage(const Field& field, Forms::Model& model)
         ImGui::TextUnformatted(field.label.c_str());
         ImGui::SameLine(labelWidth());
     }
-    // rows high, keeping its shape, and no wider than the window
-    float height = std::max(1, field.rows) * ImGui::GetTextLineHeightWithSpacing();
     float width = height * static_cast<float>(w) / static_cast<float>(h);
-    float available = ImGui::GetContentRegionAvail().x;
     if (width > available && available > 0.0f) {
         height *= available / width;
         width = available;
@@ -420,11 +434,7 @@ void FormView::drawPath(const Field& field, Forms::Model& model, bool folder)
     float browseWidth = ImGui::CalcTextSize(browseLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f;
     bool canBrowse = FileDialog::isSupported();
 
-    std::string value = model.get(field.bind);
-    ImGui::SetNextItemWidth(canBrowse ? -(browseWidth + ImGui::GetStyle().ItemSpacing.x) : -FLT_MIN);
-    if (ImGui::InputTextWithHint("##value", field.hint.c_str(), &value)) {
-        model.set(field.bind, value);
-    }
+    inputText(field, model, canBrowse ? -(browseWidth + ImGui::GetStyle().ItemSpacing.x) : -FLT_MIN);
     if (canBrowse) {
         ImGui::SameLine();
         if (ImGui::Button(browseLabel)) {
@@ -448,8 +458,23 @@ void FormView::drawButton(const Field& field, Forms::Model& model, bool inRow)
         ImGui::Spacing();
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth());
     }
+    // A button with confirm="" asks first, with Yes and No in its place
+    if (confirm_.armed() == &field) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(field.confirm.c_str());
+        ImGui::SameLine();
+        if (ImGui::Button("Yes") && confirm_.select(field) && problem.empty()) {
+            result_ = model.runAction(field.action);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("No")) {
+            confirm_.cancel();
+        }
+        return;
+    }
+
     ImGui::BeginDisabled(!problem.empty());
-    if (ImGui::Button(field.label.c_str())) {
+    if (ImGui::Button(field.label.c_str()) && confirm_.select(field)) {
         result_ = model.runAction(field.action);
     }
     ImGui::EndDisabled();

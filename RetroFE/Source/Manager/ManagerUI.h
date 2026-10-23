@@ -56,13 +56,16 @@ public:
 
     bool isOpen() const { return open_; }
 
-    // Opens a form by id with its parameters, as the only screen: Back closes it
+    // Opens a form by id with its parameters, as the only screen: Back closes it.
+    // Does nothing (and logs why) if there's no such form.
     void open(const std::string& form, const Forms::Params& params = {});
 
-    // Opens a form over the current screen; Back returns to it
-    void push(const std::string& form, const Forms::Params& params = {});
+    // Opens a form over the current screen; Back returns to it. False, with
+    // an error shown on the current screen, if there's no such form.
+    bool push(const std::string& form, const Forms::Params& params = {});
 
-    // Returns to the previous screen, or closes the manager from the first one
+    // Returns to the previous screen, or closes the manager from the first
+    // one, without asking providers (see requestBack)
     void back();
 
     void close();
@@ -98,8 +101,10 @@ public:
     // Draws an ImGui screen onto the window. Call while holding SDL::getMutex().
     void render();
 
-    // True once after changes were saved that RetroFE has to reload to show
-    bool takeReloadRequest();   // waits while a Catalog install is running
+    // True once after changes were saved that RetroFE has to reload to show:
+    // straight away for Result::reload, after the manager closes for
+    // Services::requestReload. Waits while a Catalog install is running.
+    bool takeReloadRequest();
 
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);
@@ -109,6 +114,13 @@ private:
     void startCatalog();
     const Forms::Form* form(const std::string& id);
     void show();   // shows the navigator's current screen
+
+    // The user asked to leave the current screen (or every screen): asks the
+    // providers, and warns once if they object (Provider::leaving)
+    bool mayLeave(bool everything);
+    bool requestBack();
+    bool requestClose();
+
     void handleResult(const Forms::Model::Result& result);
     void setStatus(const std::string& message, bool isError);
     bool buildPage();
@@ -145,6 +157,8 @@ private:
     bool locked_ = false;
     bool focusNext_ = false;   // give the panel keyboard/gamepad focus on the next frame
     bool reloadRequested_ = false;
+    bool reloadWhenClosed_ = false;   // Services::requestReload was called
+    bool leaveWarned_ = false;        // a provider objected to leaving; doing it again leaves
     int cursorWasShown_ = SDL_ENABLE;
 
     std::string status_;

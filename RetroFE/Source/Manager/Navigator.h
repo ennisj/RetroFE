@@ -32,8 +32,11 @@ public:
         Forms::Focus focus;    // saved when another screen is opened over it
     };
 
-    // Most screens deep; opening another drops the oldest
+    // Most screens deep; opening another drops the oldest but the first
     static constexpr size_t maxDepth = 32;
+
+    // Every screen, first to current
+    const std::vector<Frame>& frames() const { return frames_; }
 
     bool empty() const { return frames_.empty(); }
     size_t depth() const { return frames_.size(); }

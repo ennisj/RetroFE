@@ -17,6 +17,7 @@
 
 #include "../Forms/Form.h"
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,10 +66,27 @@ namespace Manager
         // The manager is opening: re-read anything cached, it may have changed while closed
         virtual void refresh() {}
 
-        // A screen became current, opened or returned to with Back. Typically:
+        // A screen became current, opened or returned to with Back. Every
+        // provider is told about every screen, so check screen.form. Typically:
         // load the record param:id names into an edit buffer, keeping unsaved
-        // edits when it's the record already loaded.
+        // edits when it's the record already loaded (see EditBuffer.h).
         virtual void enter(const Screen& screen) { (void)screen; }
+
+        // The user is leaving screen (Back, Escape, the Settings key, closing).
+        // Return "" to let them, or a warning such as "You have unsaved
+        // changes. Save them, or leave again to discard them." to stop them
+        // once: doing it again leaves, after calling discard(screen). When
+        // the manager closes, every open screen is asked, newest first.
+        virtual std::string leaving(const Screen& screen) { (void)screen; return ""; }
+        virtual void discard(const Screen& screen) { (void)screen; }
+
+        // Called every frame while the manager is open, for work done a bit at
+        // a time (e.g. scanning a folder). Keep each call short.
+        virtual void update(float dt) { (void)dt; }
+
+        // Bump this when values change by themselves (e.g. update() found
+        // more), so the screen shows them straight away
+        virtual unsigned generation() const { return 0; }
 
         virtual std::string get(const std::string& key, const Screen& screen) = 0;
 
@@ -89,8 +107,9 @@ namespace Manager
             return {};
         }
 
-        // At most limit rows, with the total there would be. Called every
-        // frame while shown: cache the matches, e.g. by search text.
+        // At most limit rows, with the total there would be. Called each time
+        // the screen is rebuilt (on input, and a few times a second): cache
+        // the matches, e.g. by search text.
         virtual Forms::Rows rows(const std::string& key, size_t limit, const Screen& screen)
         {
             (void)key; (void)limit; (void)screen;
@@ -112,7 +131,9 @@ namespace Manager
             return "Unknown action " + prefix() + "." + action;
         }
 
-        // Set Result::open / params / back to move to another screen after success
+        // Set Result::open / params / back to move to another screen after
+        // success. The opened screen gets Result::params, plus this screen's
+        // when Result::keepParams is set.
         virtual Forms::Model::Result runAction(const std::string& action, const Screen& screen)
         {
             Forms::Model::Result result;
@@ -126,6 +147,10 @@ namespace Manager
     {
         Configuration& config;
         Catalog::Service* catalog = nullptr;   // may be null
+
+        // RetroFE should reload to show a change (e.g. a game's new title),
+        // once the user closes the manager rather than straight away
+        std::function<void()> requestReload = [] {};
     };
 
     // Adds every provider to the model (Providers.cpp)

@@ -16,13 +16,15 @@
 #pragma once
 
 #include "Component.h"
+#include "TextureCache.h"
 #include "WidgetPainter.h"
 #include "../../Forms/Form.h"
 #include <SDL2/SDL.h>
-#include <map>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class FontManager;
@@ -105,11 +107,21 @@ public:
     std::string& editText() { return editBuffer_; }
     void finishEditing(bool keep);
 
+    // A live field's model gets the text being edited; call after the
+    // on-screen keyboard changed it (typed text does this itself)
+    void sendLiveText();
+
+    // The screen is rebuilt from the model on input, when the model's
+    // generation changes, and a few times a second; this rebuilds it on the
+    // next draw, e.g. after setting a value from outside
+    void invalidate() { stale_ = true; }
+
+    // Shown under the form until the next action, e.g. a result or a warning
     void setStatus(const std::string& message, bool isError);
     std::optional<Browse> takeBrowse();
 
     // An action's result, or a link or result row asking to open a form
-    // (Result::open with the parameters it adds)
+    // (Result::open with its parameters)
     std::optional<Forms::Model::Result> takeResult();
 
     void allocateGraphicsMemory() override;
@@ -119,7 +131,7 @@ public:
 private:
     enum class RowKind
     {
-        Title, Header, Field, Note, Status,
+        Title, Header, Field, Note,
         Item,     // a row of a Results field
         Value,    // a Value field, or a further line of its value
         Image,    // an Image field, spanning `span` rows
@@ -130,9 +142,11 @@ private:
         RowKind kind = RowKind::Note;
         const Forms::Field* field = nullptr;
         std::string text;
-        std::string item;       // Item: the result's id
+        std::string value;      // Field: what it shows, read when the rows were built
+        std::string item;       // Item: Forms::rowKey of the result
         std::string detail;     // Item: shown on the right
         std::string image;      // Item: thumbnail; Image: the picture
+        Forms::Params params;   // Item: what choosing it opens its form with
         int span = 1;           // Image: rows it covers
         bool thumbnail = false; // Item: leave room for thumbnails in this list
         bool focusable = false;
@@ -147,23 +161,21 @@ private:
     void addValue(const Forms::Field& field);
     void addImage(const Forms::Field& field);
     void addWrapped(RowKind kind, const std::string& text, bool indent, bool isError = false);
+    const std::vector<std::string>& wrap(const std::string& text, float width);
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
     void pageResults(int direction);
     void activate(const Row& row);
     void change(const Forms::Field& field, int direction);
     void startEditing(const Forms::Field& field);
-    void sendLiveText();
-    std::string valueText(const Forms::Field& field, bool focused);
+    std::string valueText(const Forms::Field& field);
     std::string hintText() const;
     float contentWidth() const;
     float rowHeight() const;
     float labelWidth() const;
     float fontSize() const;
+    float pixelScale() const;   // screen pixels per layout unit, for sizing pictures
 
-    // Images by path, loaded when first drawn; nullptr if it can't be loaded
-    SDL_Texture* texture(const std::string& path);
-    void freeTextures();
     void drawPicture(SDL_Texture* texture, float x, float y, float maxWidth, float maxHeight);
 
     WidgetPainter painter_;
@@ -173,11 +185,17 @@ private:
     Forms::Model* model_ = nullptr;
 
     std::vector<Row> rows_;
+    std::vector<std::string> statusLines_;   // status_, wrapped; drawn above the hints
+    bool stale_ = true;           // rows_ need building again
+    uint32_t builtAt_ = 0;        // SDL ticks
+    unsigned generation_ = 0;     // the model's, when built
+    std::unordered_map<std::string, std::vector<std::string>> wrapped_;   // by width and text
     int focus_ = -1;              // index into rows_
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
-    std::string focusedItem_;     // and in a results list, the row's id
+    std::string focusedItem_;     // and in a results list, the row's key
     float scroll_ = 0.0f;
     int pageRows_ = 10;           // rows that fit, for paging through results
+    Forms::Confirm confirm_;
 
     bool canBrowse_ = false;
     bool backCloses_ = true;
@@ -194,5 +212,5 @@ private:
     std::optional<Forms::Model::Result> result_;
 
     std::unique_ptr<Image> focusImage_;
-    std::map<std::string, SDL_Texture*> textures_;
+    TextureCache pictures_;
 };

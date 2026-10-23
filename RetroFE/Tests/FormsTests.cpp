@@ -21,6 +21,7 @@
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Forms/SettingsFile.h"
+#include "../Source/Manager/EditBuffer.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Navigator.h"
 #include "../Source/Manager/Provider.h"
@@ -40,20 +41,37 @@ namespace
     {
     public:
         std::string entered;   // the last screen entered
-        std::map<std::string, std::string> values;
+        Manager::EditBuffer edits;
+        unsigned found = 0;    // what update() has found so far
 
         std::string prefix() const override { return "game"; }
 
-        void enter(const Manager::Screen& screen) override { entered = screen.form + ":" + screen.param("id"); }
+        void enter(const Manager::Screen& screen) override
+        {
+            entered = screen.form + ":" + screen.param("id");
+            if (screen.form == "game" && screen.param("id") != edits.id()) {
+                edits.load(screen.param("id"), { { "notes", "" } });
+            }
+        }
+
+        std::string leaving(const Manager::Screen& screen) override
+        {
+            return screen.form == "game" && edits.isDirty() ? "Unsaved changes." : "";
+        }
+
+        void discard(const Manager::Screen&) override { edits.reset(); }
+
+        void update(float) override { found++; }
+        unsigned generation() const override { return found; }
 
         std::string get(const std::string& key, const Manager::Screen& screen) override
         {
-            return key == "title" ? "Game " + screen.param("id") : values[key];
+            return key == "title" ? "Game " + screen.param("id") : edits.get(key);
         }
 
         void set(const std::string& key, const std::string& value, const Manager::Screen&) override
         {
-            values[key] = value;
+            edits.set(key, value);
         }
 
         Forms::Rows rows(const std::string& key, size_t limit, const Manager::Screen&) override
@@ -86,9 +104,11 @@ namespace
             result.message = actionProblem(action, screen);
             result.ok = result.message.empty();
             if (result.ok) {
+                edits.commit();
                 result.message = "Saved.";
                 result.open = "game-media";
                 result.params["tab"] = "logo";
+                result.keepParams = true;
             }
             return result;
         }
@@ -249,6 +269,63 @@ void runFormsTests()
         check(Forms::rowsNote(rows).find("of 1,234,567.") != std::string::npos, "millions");
     });
 
+    run("what an opened screen's parameters are", [&] {
+        Forms::Field results;
+        results.type = Forms::FieldType::Results;
+        results.param = "id";
+        Forms::Row row{ "pacman", "Pac-Man", "", "", { { "collection", "Arcade" } } };
+        Forms::Params opened = Forms::rowParams(results, row);
+        check(opened.size() == 2 && opened.at("id") == "pacman" && opened.at("collection") == "Arcade", "a row passes its id and params");
+        row.params["id"] = "other";
+        checkEqual(Forms::rowParams(results, row).at("id"), "other", "the row's own id param wins");
+        Forms::Row sameId{ "pacman", "", "", "", { { "collection", "Namco" } } };
+        check(Forms::rowKey(Forms::Row{ "pacman", "", "", "", { { "collection", "Arcade" } } }) != Forms::rowKey(sameId), "rows are told apart by their params too");
+
+        // A row opens only what it says; a link keeps the screen's params
+        Forms::Params current = { { "id", "dkong" }, { "tab", "logo" } };
+        Forms::Model::Result fromRow;
+        fromRow.params = { { "id", "pacman" } };
+        check(Forms::openParams(current, fromRow) == fromRow.params, "nothing leaks from the current screen");
+        Forms::Model::Result fromLink;
+        fromLink.keepParams = true;
+        check(Forms::openParams(current, fromLink) == current, "a link keeps them");
+        fromLink.params = { { "tab", "video" } };
+        checkEqual(Forms::openParams(current, fromLink).at("tab"), "video", "and what it adds wins");
+    });
+
+    run("a button with confirm runs on the second Select", [&] {
+        Forms::Field remove;
+        remove.type = Forms::FieldType::Button;
+        remove.confirm = "Delete this game?";
+        Forms::Field save;
+        save.type = Forms::FieldType::Button;
+        Forms::Confirm confirm;
+        check(confirm.select(save), "no confirm: runs at once");
+        check(!confirm.select(remove) && confirm.armed() == &remove, "first Select asks");
+        check(confirm.select(remove) && !confirm.armed(), "second Select runs");
+        check(!confirm.select(remove), "asks again next time");
+        confirm.cancel();
+        check(!confirm.select(remove), "moving away disarmed it");
+        check(confirm.select(save) && !confirm.armed(), "another button runs, and disarms");
+    });
+
+    run("an edit buffer knows when there's something to save", [&] {
+        Manager::EditBuffer edits;
+        edits.load("pacman", { { "title", "Pac-Man" }, { "year", "1980" } });
+        check(!edits.isDirty() && edits.id() == "pacman", "clean when loaded");
+        edits.set("title", "Puck Man");
+        edits.set("notes", "");
+        check(edits.isDirty() && edits.changes().size() == 1, "one change; an empty new value isn't one");
+        edits.set("title", "Pac-Man");
+        check(!edits.isDirty(), "setting it back isn't a change");
+        edits.set("year", "1981");
+        edits.reset();
+        checkEqual(edits.get("year"), "1980", "reset");
+        edits.set("year", "1981");
+        edits.commit();
+        check(!edits.isDirty() && edits.get("year") == "1981", "committed");
+    });
+
     run("form elements, attributes and entities", [&] {
         auto form = Forms::parse(R"(
             <form id="t" title="Test">
@@ -386,9 +463,15 @@ void runFormsTests()
         check(nav.depth() == 1 && nav.current()->form == "sources", "open starts a new stack");
 
         for (size_t i = 0; i < Navigator::maxDepth + 5; i++) {
-            nav.push("game", {}, {});
+            nav.push("game", { { "id", std::to_string(i) } }, {});
         }
         check(nav.depth() == Navigator::maxDepth, "depth is limited");
+        check(nav.frames().front().form == "sources", "the first screen is kept");
+        checkEqual(nav.current()->params.at("id"), std::to_string(Navigator::maxDepth + 4), "and the newest");
+        while (nav.depth() > 1) {
+            nav.back();
+        }
+        checkEqual(nav.current()->form, "sources", "so Back still ends where it started");
     });
 
     run("the Settings key opens, switches to and closes Settings", [&] {
@@ -417,7 +500,7 @@ void runFormsTests()
         checkEqual(model.get("param:missing"), "", "missing param");
         checkEqual(model.get("game:title"), "Game pacman", "get, with the params");
         model.set("game:notes", "Classic");
-        checkEqual(games->values["notes"], "Classic", "set, without the prefix");
+        checkEqual(games->edits.get("notes"), "Classic", "set, without the prefix");
         check(model.options("game:genres").size() == 1, "options");
         check(model.options("layouts").front().second == "Built-in", "built-in options still work");
 
@@ -431,17 +514,32 @@ void runFormsTests()
         checkEqual(model.actionProblem("game.fly"), "Unknown action game.fly", "unknown provider action");
         checkEqual(model.actionProblem("nobody.save"), "Unknown action nobody.save", "unknown prefix");
 
+        // Unsaved changes: leaving warns; leaving anyway discards them
+        Manager::Screen game{ "game", { { "id", "pacman" } } };
+        checkEqual(model.leaving(game), "Unsaved changes.", "leaving with unsaved changes");
+        checkEqual(model.leaving(Manager::Screen{ "games", {} }), "", "other screens don't mind");
+        model.discard(game);
+        checkEqual(model.leaving(game), "", "discarded");
+        checkEqual(model.get("game:notes"), "", "back to the saved value");
+
         // An action moves on after success: the manager opens game-media with id and tab
+        model.set("game:notes", "Classic");
         Forms::Model::Result saved = model.runAction("game.save");
         check(saved.ok && saved.open == "game-media" && saved.params.at("tab") == "logo", "action opens a screen");
-        Forms::Params next = Forms::mergeParams(model.screen().params, saved.params);
-        check(next.at("id") == "pacman" && next.at("tab") == "logo", "the opened screen keeps the current params");
+        Forms::Params next = Forms::openParams(model.screen().params, saved);
+        check(next.at("id") == "pacman" && next.at("tab") == "logo", "keepParams keeps the current params");
+        checkEqual(model.leaving(game), "", "saved, so nothing to warn about");
+
+        unsigned before = model.generation();
+        model.update(0.016f);
+        check(model.generation() != before, "update() runs, and changes show through generation()");
 
         model.setScreen("games", {});
         check(!model.runAction("game.save").ok, "the screen's params decide");
 
-        Forms::Model::Result opened = model.runAction("open.systems");
-        check(opened.ok && opened.open == "systems", "open.<form>");
+        model.setScreen("game", { { "id", "pacman" } });
+        Forms::Model::Result opened = model.runAction("open.game-media");
+        check(opened.ok && opened.open == "game-media" && opened.keepParams, "open.<form> works like a link");
         Forms::Model::Result back = model.runAction("back");
         check(back.ok && back.back && back.open.empty(), "back");
     });

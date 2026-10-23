@@ -19,15 +19,7 @@
 #include "../../Utility/Log.h"
 #include "../../Utility/Utils.h"
 #include <algorithm>
-#include <filesystem>
-
-#if __has_include(<SDL2/SDL_image.h>)
-#include <SDL2/SDL_image.h>
-#elif __has_include(<SDL2_image/SDL_image.h>)
-#include <SDL2_image/SDL_image.h>
-#else
-#include <SDL_image.h>
-#endif
+#include <cmath>
 
 using Forms::Field;
 using Forms::FieldType;
@@ -63,8 +55,15 @@ namespace
         }
     }
 
-    // Images kept per form; more than this and they're all dropped and reloaded as drawn
-    constexpr size_t maxTextures = 96;
+    // The screen is rebuilt at least this often, for values that change by
+    // themselves, such as Catalog progress
+    constexpr uint32_t refreshMs = 250;
+
+    // New thumbnails loaded per frame, so paging through a list doesn't stall
+    constexpr int thumbnailsPerFrame = 2;
+
+    // Wrapped texts remembered; more and they're all forgotten
+    constexpr size_t maxWrapped = 1024;
 }
 
 FormWidget::FormWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor)
@@ -92,7 +91,9 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     focusedItem_.clear();
     scroll_ = 0.0f;
     status_.clear();
+    confirm_.cancel();
     rows_.clear();
+    stale_ = true;
 }
 
 Forms::Focus FormWidget::focus() const
@@ -115,12 +116,14 @@ void FormWidget::restoreFocus(const Forms::Focus& focus)
     focusedItem_ = focus.item;
     scroll_ = focus.scroll;
     rows_.clear();
+    stale_ = true;
 }
 
 void FormWidget::allocateGraphicsMemory()
 {
     Component::allocateGraphicsMemory();
     painter_.allocateGraphicsMemory(baseViewInfo.Monitor);
+    pictures_.setRenderer(SDL::getRenderer(baseViewInfo.Monitor));
     if (!style_.focusImage.empty() && !focusImage_) {
         focusImage_ = std::make_unique<Image>(style_.focusImage, "", page, baseViewInfo.Monitor, false);
         focusImage_->allocateGraphicsMemory();
@@ -131,17 +134,18 @@ void FormWidget::freeGraphicsMemory()
 {
     Component::freeGraphicsMemory();
     painter_.freeGraphicsMemory();
+    pictures_.clear();
     if (focusImage_) {
         focusImage_->freeGraphicsMemory();
         focusImage_.reset();
     }
-    freeTextures();
 }
 
 void FormWidget::setStatus(const std::string& message, bool isError)
 {
     status_ = message;
     statusIsError_ = isError;
+    stale_ = true;
 }
 
 std::optional<FormWidget::Browse> FormWidget::takeBrowse()
@@ -156,59 +160,6 @@ std::optional<Forms::Model::Result> FormWidget::takeResult()
     std::optional<Forms::Model::Result> result = result_;
     result_.reset();
     return result;
-}
-
-// --- Images ------------------------------------------------------------------
-
-SDL_Texture* FormWidget::texture(const std::string& path)
-{
-    auto found = textures_.find(path);
-    if (found != textures_.end()) {
-        return found->second;
-    }
-    if (textures_.size() >= maxTextures) {
-        freeTextures();
-    }
-    SDL_Texture* texture = nullptr;
-    std::error_code ec;
-    if (std::filesystem::is_regular_file(path, ec)) {
-        SDL_LockMutex(SDL::getMutex());
-        texture = IMG_LoadTexture(SDL::getRenderer(baseViewInfo.Monitor), path.c_str());
-        SDL_UnlockMutex(SDL::getMutex());
-        if (texture) {
-            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-        }
-        else {
-            LOG_WARNING("Forms", "Can't load " + path + ": " + IMG_GetError());
-        }
-    }
-    textures_[path] = texture;
-    return texture;
-}
-
-void FormWidget::freeTextures()
-{
-    SDL_LockMutex(SDL::getMutex());
-    for (auto& [path, texture] : textures_) {
-        if (texture) {
-            SDL_DestroyTexture(texture);
-        }
-    }
-    SDL_UnlockMutex(SDL::getMutex());
-    textures_.clear();
-}
-
-// Fits the picture in the box, keeping its shape, at the box's top left
-void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWidth, float maxHeight)
-{
-    int w = 0;
-    int h = 0;
-    if (!picture || SDL_QueryTexture(picture, nullptr, nullptr, &w, &h) != 0 || w <= 0 || h <= 0
-        || maxWidth <= 0.0f || maxHeight <= 0.0f) {
-        return;
-    }
-    float scale = std::min(maxWidth / static_cast<float>(w), maxHeight / static_cast<float>(h));
-    painter_.texture(picture, x, y, w * scale, h * scale, 1.0f);
 }
 
 // --- Layout ------------------------------------------------------------------
@@ -235,10 +186,36 @@ float FormWidget::labelWidth() const
     return style_.labelWidth > 0 ? style_.labelWidth : contentWidth() * 0.4f;
 }
 
+float FormWidget::pixelScale() const
+{
+    int width = 0;
+    int height = 0;
+    SDL_Renderer* renderer = SDL::getRenderer(baseViewInfo.Monitor);
+    int layoutWidth = page.getLayoutWidthByMonitor(baseViewInfo.Monitor);
+    int layoutHeight = page.getLayoutHeightByMonitor(baseViewInfo.Monitor);
+    if (!renderer || SDL_GetRendererOutputSize(renderer, &width, &height) != 0 || layoutWidth <= 0 || layoutHeight <= 0) {
+        return 1.0f;
+    }
+    return std::max(1.0f, std::max(static_cast<float>(width) / layoutWidth, static_cast<float>(height) / layoutHeight));
+}
+
+const std::vector<std::string>& FormWidget::wrap(const std::string& text, float width)
+{
+    std::string key = std::to_string(std::lround(width)) + '\x1f' + text;
+    auto found = wrapped_.find(key);
+    if (found != wrapped_.end()) {
+        return found->second;
+    }
+    if (wrapped_.size() >= maxWrapped) {
+        wrapped_.clear();
+    }
+    return wrapped_.emplace(key, painter_.wrap(text, width, fontSize())).first->second;
+}
+
 void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, bool isError)
 {
     float width = indent ? contentWidth() - labelWidth() : contentWidth();
-    for (const std::string& line : painter_.wrap(text, width, fontSize())) {
+    for (const std::string& line : wrap(text, width)) {
         Row row;
         row.kind = kind;
         row.text = line;
@@ -269,11 +246,13 @@ void FormWidget::addResults(const Field& field)
     }
     bool thumbnails = std::any_of(results.items.begin(), results.items.end(),
                                   [](const Forms::Row& item) { return !item.image.empty(); });
+    rows_.reserve(rows_.size() + results.items.size());
     for (Forms::Row& item : results.items) {
         Row row;
         row.kind = RowKind::Item;
         row.field = &field;
-        row.item = std::move(item.id);
+        row.item = Forms::rowKey(item);
+        row.params = Forms::rowParams(field, item);
         row.text = std::move(item.label);
         row.detail = std::move(item.detail);
         row.image = std::move(item.image);
@@ -291,7 +270,7 @@ void FormWidget::addValue(const Field& field)
     }
     // The first line goes next to the label, the rest under it
     bool first = true;
-    for (const std::string& line : painter_.wrap(value, contentWidth() - labelWidth(), fontSize())) {
+    for (const std::string& line : wrap(value, contentWidth() - labelWidth())) {
         Row row;
         row.kind = RowKind::Value;
         row.field = first ? &field : nullptr;
@@ -308,14 +287,22 @@ void FormWidget::addValue(const Field& field)
 void FormWidget::addImage(const Field& field)
 {
     std::string path = model_->get(field.bind);
-    if (path.empty() || !texture(path)) {
+    if (path.empty()) {
         return;
     }
+    // Loaded at the size it's drawn at; hidden when it can't be loaded (it's tried again later)
     Row row;
     row.kind = RowKind::Image;
     row.field = &field;
     row.image = path;
     row.span = std::max(1, field.rows);
+    float scale = pixelScale();
+    float width = field.label.empty() ? contentWidth() : contentWidth() - labelWidth();
+    TextureCache::State state = TextureCache::State::Missing;
+    pictures_.get(path, static_cast<int>(width * scale), static_cast<int>(row.span * rowHeight() * scale), true, &state);
+    if (state != TextureCache::State::Ready) {
+        return;
+    }
     rows_.push_back(row);
     for (int i = 1; i < row.span; i++) {
         Row spacer;
@@ -362,6 +349,13 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             Row row;
             row.kind = RowKind::Field;
             row.field = &field;
+            row.value = std::to_string(values.size()) + ": ";
+            for (size_t i = 0; i < values.size() && i < 3; i++) {
+                row.value += (i ? ", " : "") + values[i];
+            }
+            if (values.size() > 3) {
+                row.value += ", ...";
+            }
             rows_.push_back(row);
             break;
         }
@@ -382,11 +376,16 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             Row row;
             row.kind = RowKind::Field;
             row.field = &field;
+            row.value = valueText(field);
             row.enabled = Forms::isEnabled(field, *model_);
             row.focusable = isInteractive(field.type) && row.enabled;
             rows_.push_back(row);
 
             if (field.type == FieldType::Button) {
+                if (confirm_.armed() == &field) {
+                    addWrapped(RowKind::Note, field.confirm + " Select again to confirm.", true, true);
+                    break;
+                }
                 std::string problem = model_->actionProblem(field.action);
                 if (!problem.empty()) {
                     addWrapped(RowKind::Note, problem, true);
@@ -417,10 +416,14 @@ void FormWidget::addFields(const std::vector<Field>& fields)
 
 void FormWidget::buildRows()
 {
+    stale_ = false;
+    builtAt_ = SDL_GetTicks();
     rows_.clear();
+    statusLines_.clear();
     if (!form_ || !model_) {
         return;
     }
+    generation_ = model_->generation();
     std::string titleText = Forms::title(*form_, *model_);
     if (style_.showTitle && !titleText.empty()) {
         Row title;
@@ -430,7 +433,7 @@ void FormWidget::buildRows()
     }
     addFields(form_->fields);
     if (!status_.empty()) {
-        addWrapped(RowKind::Status, status_, false, statusIsError_);
+        statusLines_ = wrap((statusIsError_ ? "! " : "") + status_, contentWidth());
     }
 
     // Keep the same field, and result, focused while rows come and go around it.
@@ -477,11 +480,15 @@ void FormWidget::keepFocusVisible(float visibleHeight)
         }
         float topY = top * rowHeight();
         float bottomY = (focus_ + 1) * rowHeight();
+        // And a confirm question or a problem under it
+        for (size_t below = static_cast<size_t>(focus_) + 1; below < rows_.size() && rows_[below].kind == RowKind::Note && rows_[below].indent; below++) {
+            bottomY += rowHeight();
+        }
         if (topY < scroll_) {
             scroll_ = topY;
         }
         if (bottomY > scroll_ + visibleHeight) {
-            scroll_ = bottomY - visibleHeight;
+            scroll_ = std::min(topY, bottomY - visibleHeight);
         }
         // At the first field, show everything above it
         bool firstFocusable = std::none_of(rows_.begin(), rows_.begin() + focus_, [](const Row& r) { return r.focusable; });
@@ -544,14 +551,24 @@ bool FormWidget::navigate(Nav nav)
         justFinishedEditing_ = false;
         return true;
     }
-    if (rows_.empty()) {
+    if (stale_ || rows_.empty()) {
         buildRows();
     }
+    stale_ = true;   // whatever happens next shows on the next draw
 
     const Row* row = focus_ >= 0 ? &rows_[focus_] : nullptr;
     const Field* field = row ? row->field : nullptr;
     static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back" };
     LOG_DEBUG("Forms", std::string(names[static_cast<int>(nav)]) + " on " + (field ? field->label : "nothing"));
+
+    // Anything but confirming disarms a button waiting for confirmation; Back only does that
+    if (confirm_.armed() && !(nav == Nav::Select && field == confirm_.armed())) {
+        confirm_.cancel();
+        if (nav == Nav::Back) {
+            return true;
+        }
+    }
+
     switch (nav) {
     case Nav::Up:
         moveFocus(-1);
@@ -612,7 +629,7 @@ void FormWidget::activate(const Row& row)
         change(field, 1);
         break;
     case FieldType::Button:
-        if (model_->actionProblem(field.action).empty()) {
+        if (model_->actionProblem(field.action).empty() && confirm_.select(field)) {
             result_ = model_->runAction(field.action);
         }
         break;
@@ -623,7 +640,10 @@ void FormWidget::activate(const Row& row)
             open.ok = true;
             open.open = field.open;
             if (field.type == FieldType::Results) {
-                open.params[field.param] = row.item;
+                open.params = row.params;
+            }
+            else {
+                open.keepParams = true;
             }
             result_ = open;
         }
@@ -675,17 +695,18 @@ void FormWidget::startEditing(const Field& field)
     editBuffer_ = model_->get(field.bind);
     editOriginal_ = editBuffer_;
     liveSent_ = editBuffer_;
+    stale_ = true;
     LOG_DEBUG("Forms", "Editing " + field.label);
     textInputWasActive_ = SDL_IsTextInputActive() == SDL_TRUE;
     SDL_StartTextInput();
 }
 
-// A live field's model sees the text as it's typed, from either keyboard
 void FormWidget::sendLiveText()
 {
     if (editing_ && focusedField_ && focusedField_->live && model_ && editBuffer_ != liveSent_) {
         liveSent_ = editBuffer_;
         model_->set(focusedField_->bind, editBuffer_);
+        stale_ = true;
     }
 }
 
@@ -696,6 +717,7 @@ void FormWidget::finishEditing(bool keep)
     }
     editing_ = false;
     justFinishedEditing_ = true;
+    stale_ = true;
     if (!textInputWasActive_) {
         SDL_StopTextInput();
     }
@@ -765,36 +787,20 @@ bool FormWidget::handleTextEvent(const SDL_Event& e)
 
 // --- Drawing -----------------------------------------------------------------
 
-std::string FormWidget::valueText(const Field& field, bool focused)
+// What a field shows, read when the rows are built
+std::string FormWidget::valueText(const Field& field)
 {
-    if (editing_ && focused) {
-        // Keep the end in view while typing, e.g. the folder at the end of a long path
-        return painter_.tail(editBuffer_ + "_", contentWidth() - labelWidth(), fontSize());
-    }
     switch (field.type) {
     case FieldType::Toggle:
         return Forms::isTruthy(model_->get(field.bind)) ? style_.onText : style_.offText;
-    case FieldType::Number: {
-        std::string value = model_->get(field.bind);
-        return focused ? "< " + value + " >" : value;
-    }
     case FieldType::Choice: {
         std::string value = model_->get(field.bind);
-        std::string label = value;
         for (const auto& [optionValue, optionLabel] : model_->options(field.options)) {
             if (optionValue == value) {
-                label = optionLabel;
+                return optionLabel;
             }
         }
-        return focused ? "< " + label + " >" : label;
-    }
-    case FieldType::List: {
-        std::vector<std::string> values = model_->list(field.bind);
-        std::string text = std::to_string(values.size()) + ": ";
-        for (size_t i = 0; i < values.size() && i < 3; i++) {
-            text += (i ? ", " : "") + values[i];
-        }
-        return values.size() > 3 ? text + ", ..." : text;
+        return value;
     }
     case FieldType::Link:
         return field.status.empty() ? "" : model_->get(field.status);
@@ -812,6 +818,9 @@ std::string FormWidget::hintText() const
     }
     const Row* row = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) ? &rows_[focus_] : nullptr;
     const Field* field = row ? row->field : nullptr;
+    if (field && confirm_.armed() == field) {
+        return "Select: " + field->label + "   Anything else: cancel";
+    }
     std::string hint;
     if (row && row->kind == RowKind::Item) {
         hint = field && !field->open.empty() ? "Select: open   Left/Right: page" : "Left/Right: page";
@@ -832,6 +841,19 @@ std::string FormWidget::hintText() const
     return (hint.empty() ? "" : hint + "   ") + (backCloses_ ? "Back: close" : "Back: return");
 }
 
+// Fits the picture in the box, keeping its shape, at the box's top left
+void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWidth, float maxHeight)
+{
+    int w = 0;
+    int h = 0;
+    if (!picture || SDL_QueryTexture(picture, nullptr, nullptr, &w, &h) != 0 || w <= 0 || h <= 0
+        || maxWidth <= 0.0f || maxHeight <= 0.0f) {
+        return;
+    }
+    float scale = std::min(maxWidth / static_cast<float>(w), maxHeight / static_cast<float>(h));
+    painter_.texture(picture, x, y, w * scale, h * scale, 1.0f);
+}
+
 void FormWidget::draw()
 {
     Component::draw();
@@ -840,9 +862,11 @@ void FormWidget::draw()
         return;
     }
 
-    // Typing on the on-screen keyboard changes the text between frames
-    sendLiveText();
-    buildRows();
+    // Rebuilt after input, when the model says something changed, and now and then
+    if (stale_ || model_->generation() != generation_ || SDL_GetTicks() - builtAt_ >= refreshMs) {
+        buildRows();
+    }
+    pictures_.beginFrame(thumbnailsPerFrame);
     painter_.begin(baseViewInfo);
 
     const float size = fontSize();
@@ -852,13 +876,15 @@ void FormWidget::draw()
     const float width = contentWidth();
     const float height = (baseViewInfo.Height > 0 ? baseViewInfo.Height
         : static_cast<float>(page.getLayoutHeightByMonitor(baseViewInfo.Monitor)) - baseViewInfo.Y) - padding * 2.0f;
-    const float hintsHeight = style_.showHints ? rowHeight() : 0.0f;
-    const float visible = height - hintsHeight;
     const float row = rowHeight();
+    const float hintsHeight = style_.showHints ? row : 0.0f;
+    const float statusHeight = statusLines_.size() * row;
+    const float visible = height - hintsHeight - statusHeight;
     const float textOffset = (row - size) / 2.0f;
     const float valueX = left + labelWidth();
     const float valueWidth = width - labelWidth();
     const float gap = size * 0.5f;
+    const float scale = pixelScale();
 
     pageRows_ = std::max(1, static_cast<int>(visible / row) - 1);
     keepFocusVisible(visible);
@@ -897,10 +923,9 @@ void FormWidget::draw()
             painter_.text(r.text, left, textY, width, size * 0.85f, false, 0.7f);
             break;
         case RowKind::Note:
-            painter_.text(r.text, r.indent ? valueX : left, textY, r.indent ? valueWidth : width, size * 0.85f, false, style_.noteAlpha);
-            break;
-        case RowKind::Status:
-            painter_.text((r.isError ? "! " : "") + r.text, left, textY, width, size, false, 1.0f);
+            // isError marks a question that needs an answer, e.g. a confirmation
+            painter_.text((r.isError ? "! " : "") + r.text, r.indent ? valueX : left, textY, r.indent ? valueWidth : width,
+                          size * 0.85f, false, r.isError ? 1.0f : style_.noteAlpha);
             break;
         case RowKind::Value:
             if (r.field) {
@@ -913,7 +938,9 @@ void FormWidget::draw()
             if (r.thumbnail) {
                 float thumbWidth = row * 1.4f;
                 if (!r.image.empty()) {
-                    drawPicture(texture(r.image), x, y + row * 0.08f, thumbWidth, row * 0.84f);
+                    SDL_Texture* thumbnail = pictures_.get(r.image, static_cast<int>(thumbWidth * scale),
+                                                           static_cast<int>(row * 0.84f * scale), false);
+                    drawPicture(thumbnail, x, y + row * 0.08f, thumbWidth, row * 0.84f);
                 }
                 x += thumbWidth + gap;
             }
@@ -932,9 +959,12 @@ void FormWidget::draw()
             if (labelled) {
                 painter_.text(field.label, left, textY, labelWidth(), size, false, 1.0f);
             }
-            // Shrinks rather than overlapping the hints when its last rows are scrolled out
+            // Loaded at the size addImage asked for; drawn smaller when its last rows are scrolled out
+            float boxWidth = labelled ? valueWidth : width;
+            SDL_Texture* picture = pictures_.get(r.image, static_cast<int>(boxWidth * scale),
+                                                 static_cast<int>(r.span * row * scale), true);
             float boxHeight = std::min(r.span * row, top + visible - y) - row * 0.1f;
-            drawPicture(texture(r.image), labelled ? valueX : left, y + row * 0.05f, labelled ? valueWidth : width, boxHeight);
+            drawPicture(picture, labelled ? valueX : left, y + row * 0.05f, boxWidth, boxHeight);
             break;
         }
         case RowKind::Spacer:
@@ -949,8 +979,16 @@ void FormWidget::draw()
                 painter_.text(style_.linkMarker, left + width - markerWidth, textY, markerWidth, size, focused, alpha);
                 fieldValueWidth -= markerWidth + gap;
             }
-            std::string value = valueText(field, focused);
-            if (value.empty() && !field.hint.empty() && !(editing_ && focused)) {
+            bool editingThis = editing_ && focused;
+            std::string value = r.value;
+            if (editingThis) {
+                // Keep the end in view while typing, e.g. the folder at the end of a long path
+                value = painter_.tail(editBuffer_ + "_", valueWidth, size);
+            }
+            else if (focused && (field.type == FieldType::Number || field.type == FieldType::Choice)) {
+                value = "< " + value + " >";
+            }
+            if (value.empty() && !field.hint.empty() && !editingThis) {
                 painter_.text(field.hint, valueX, textY, fieldValueWidth, size, false, style_.noteAlpha * alpha);
             }
             else {
@@ -961,6 +999,12 @@ void FormWidget::draw()
         }
     }
 
+    // The last result or warning stays in view above the hints
+    float statusY = top + visible;
+    for (const std::string& line : statusLines_) {
+        painter_.text(line, left, statusY + textOffset, width, size, false, 1.0f);
+        statusY += row;
+    }
     if (style_.showHints) {
         painter_.text(hintText(), left, top + height - hintsHeight + textOffset, width, size * 0.85f, false, style_.noteAlpha);
     }

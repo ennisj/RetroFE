@@ -16,8 +16,8 @@
 #pragma once
 
 #include "../Forms/Form.h"
+#include "../Graphics/Component/TextureCache.h"
 #include <SDL2/SDL.h>
-#include <map>
 #include <optional>
 #include <string>
 
@@ -25,12 +25,10 @@
 class FormView
 {
 public:
-    ~FormView();
-
     void setScale(float scale) { scale_ = scale; }
 
     // Where <image> fields are loaded; they're drawn only once this is set
-    void setRenderer(SDL_Renderer* renderer) { renderer_ = renderer; }
+    void setRenderer(SDL_Renderer* renderer);
 
     // Frees the images loaded so far, before the renderer goes
     void freeImages();
@@ -38,6 +36,12 @@ public:
     // The same at the start of the next draw(), for when the screen changes
     // during a frame whose draw data still uses them
     void discardImages() { discard_ = true; }
+
+    // A new screen: forgets the text being edited and any button waiting for confirmation
+    void reset();
+
+    // Disarms a button waiting for confirmation; false if none was
+    bool cancelConfirm();
 
     void draw(const Forms::Form& form, Forms::Model& model);
 
@@ -68,14 +72,17 @@ private:
     void drawImage(const Forms::Field& field, Forms::Model& model);
     void drawNotes(const Forms::Field& field, Forms::Model& model);
     void label(const Forms::Field& field);
-    void open(const std::string& form, const Forms::Params& params);
-    SDL_Texture* texture(const std::string& path);
+    bool inputText(const Forms::Field& field, Forms::Model& model, float width);
+    void open(const std::string& form, const Forms::Params& params, bool keepParams);
     float labelWidth() const { return 170.0f * scale_; }
 
     float scale_ = 1.0f;
-    SDL_Renderer* renderer_ = nullptr;
-    std::map<std::string, SDL_Texture*> textures_;   // by path; nullptr if it can't be loaded
+    TextureCache pictures_;
     bool discard_ = false;
+    Forms::Confirm confirm_;
+    const Forms::Field* editing_ = nullptr;   // the text field being edited
+    std::string editBuffer_;
+    std::string editOriginal_;
     std::optional<Browse> browse_;
     std::optional<Forms::Model::Result> result_;
 };

@@ -123,7 +123,9 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
     forms_.clear();
     startCatalog();
     if (!providersAdded_) {
-        Manager::registerProviders(model_, Manager::Services{ config_, catalog_.get() });
+        Manager::Services services{ config_, catalog_.get() };
+        services.requestReload = [this] { reloadWhenClosed_ = true; };
+        Manager::registerProviders(model_, services);
         providersAdded_ = true;
     }
     LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open Settings");
@@ -228,17 +230,28 @@ void ManagerUI::open(const std::string& form, const Forms::Params& params)
     if (!context_) {
         return;
     }
+    if (!this->form(form)) {
+        LOG_ERROR("Manager", "Can't open " + form + ": there's no such form");
+        return;
+    }
     nav_.open(form, params);
     show();
 }
 
-void ManagerUI::push(const std::string& form, const Forms::Params& params)
+bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 {
     if (!context_) {
-        return;
+        return false;
+    }
+    // A form that doesn't exist (e.g. a typo in open="") is reported where the user is
+    if (!this->form(form)) {
+        LOG_ERROR("Manager", "Can't open " + form + ": there's no such form");
+        setStatus("This screen isn't available (" + form + "). Check the log for details.", true);
+        return false;
     }
     nav_.push(form, params, widget_ ? widget_->focus() : Forms::Focus{});
     show();
+    return true;
 }
 
 void ManagerUI::back()
@@ -249,6 +262,59 @@ void ManagerUI::back()
     else {
         close();
     }
+}
+
+bool ManagerUI::mayLeave(bool everything)
+{
+    // The current screen, or every screen when the manager is closing
+    std::vector<Manager::Screen> leaving;
+    const std::vector<Navigator::Frame>& frames = nav_.frames();
+    for (auto frame = frames.rbegin(); frame != frames.rend(); ++frame) {
+        leaving.push_back(Manager::Screen{ frame->form, frame->params });
+        if (!everything) {
+            break;
+        }
+    }
+    std::string warning;
+    for (const Manager::Screen& screen : leaving) {
+        warning = model_.leaving(screen);
+        if (!warning.empty()) {
+            break;
+        }
+    }
+    if (warning.empty()) {
+        leaveWarned_ = false;
+        return true;
+    }
+    // Asked once already: leave, dropping the changes
+    if (leaveWarned_) {
+        leaveWarned_ = false;
+        for (const Manager::Screen& screen : leaving) {
+            model_.discard(screen);
+        }
+        return true;
+    }
+    leaveWarned_ = true;
+    setStatus(warning, true);
+    return false;
+}
+
+bool ManagerUI::requestBack()
+{
+    if (!mayLeave(nav_.depth() <= 1)) {
+        return false;
+    }
+    back();
+    return true;
+}
+
+bool ManagerUI::requestClose()
+{
+    if (!mayLeave(true)) {
+        return false;
+    }
+    close();
+    return true;
 }
 
 void ManagerUI::show()
@@ -264,6 +330,8 @@ void ManagerUI::show()
 
     bool wasOpen = open_;
     status_.clear();
+    leaveWarned_ = false;
+    view_.reset();
     focusNext_ = true;
     open_ = true;
     if (!wasOpen) {
@@ -293,6 +361,7 @@ void ManagerUI::show()
 void ManagerUI::close()
 {
     nav_.clear();
+    leaveWarned_ = false;
     if (!open_) {
         return;
     }
@@ -300,6 +369,12 @@ void ManagerUI::close()
     destroyPage();
     view_.discardImages();
     SDL_ShowCursor(cursorWasShown_);
+
+    // Changes that asked for a reload once the user was done
+    if (reloadWhenClosed_) {
+        reloadWhenClosed_ = false;
+        reloadRequested_ = true;
+    }
 }
 
 bool ManagerUI::buildPage()
@@ -439,8 +514,9 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     }
     // Kiosk mode keeps people out of Settings, where they could turn it off
     if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_ && !locked_) {
-        // Opens Settings, or closes it; from another screen it switches to Settings
-        if (!e.key.repeat) {
+        // Opens Settings, or closes it; from another screen it switches to
+        // Settings. Either way the screens open now are left.
+        if (!e.key.repeat && mayLeave(true)) {
             nav_.toggle(settingsForm) ? show() : close();
         }
         return true;
@@ -470,8 +546,10 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
         }
         // Escape always goes back, whatever the controls say
         if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) {
+            // Escape is usually the Back control too: this press is dealt with here, not again in navigate()
+            navHeld_[5] = true;
             if (!widget_->navigate(FormWidget::Nav::Back)) {
-                back();
+                requestBack();
             }
             return true;
         }
@@ -482,7 +560,9 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
     // Escape goes back, unless it's being used to leave a text field
     if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat && !ImGui::GetIO().WantTextInput) {
-        back();
+        if (!view_.cancelConfirm()) {
+            requestBack();
+        }
         return true;
     }
     ImGui_ImplSDL2_ProcessEvent(&e);
@@ -522,10 +602,17 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
                 widget_->finishEditing(result == KeyboardWidget::Result::Done);
                 syncKeyboard();
             }
+            else {
+                widget_->sendLiveText();   // a key was pressed
+            }
             continue;
         }
+        // Back after a warning about leaving leaves; anything else and it warns again
+        if (navs[i] != FormWidget::Nav::Back) {
+            leaveWarned_ = false;
+        }
         if (!widget_->navigate(navs[i])) {
-            back();
+            requestBack();
         }
         else {
             syncKeyboard();   // a Select may have started editing
@@ -538,6 +625,7 @@ void ManagerUI::update(float dt)
     if (!open_) {
         return;
     }
+    model_.update(dt);
     if (page_) {
         page_->update(dt);
         if (keyboardPage_) {
@@ -562,6 +650,7 @@ void ManagerUI::handleWidgetResults()
             : FileDialog::pickFile(window_, browse->title, browse->filterName, browse->pattern, path);
         if (chosen) {
             model_.set(browse->bind, path);
+            widget_->invalidate();
         }
     }
     if (auto result = widget_->takeResult()) {
@@ -578,11 +667,15 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
     }
     // After success an action can move to another screen, which then shows its message
     if (result.ok && result.back) {
-        back();
+        if (!requestBack()) {
+            return;   // it says why
+        }
     }
     else if (result.ok && !result.open.empty()) {
         const Navigator::Frame* frame = nav_.current();
-        push(result.open, Forms::mergeParams(frame ? frame->params : Forms::Params{}, result.params));
+        if (!push(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result))) {
+            return;
+        }
     }
     if (open_) {
         setStatus(result.message, !result.ok);
@@ -708,10 +801,10 @@ void ManagerUI::drawWindow()
 
     // Navigating replaces the form being drawn, so only once the window is done
     if (!keepOpen) {
-        close();
+        requestClose();
     }
     else if (goBack) {
-        back();
+        requestBack();
     }
     else if (result) {
         handleResult(*result);
