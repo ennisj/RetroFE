@@ -14,33 +14,12 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../../Forms/BuiltinForms.h"
+#include "SystemForms.h"
 
-// The Systems screens, opened from Manage. For now: the systems there are
-// (collection folders) and adding one (collection.create, see ManagerModel.h).
-namespace
-{
-
-const char* const systemsForm = R"(
-<form id="systems" title="Systems">
-  <note value="Coming soon: change a system's games folder, emulator and artwork."/>
-  <list label="Systems" bind="info:collections" empty="No systems yet. Add your first one below."/>
-  <section label="Add a system">
-    <note value="Point RetroFE at a folder of games and the emulator that runs them. It reloads with the new system under Browse."/>
-    <text label="Name" bind="draft:name" hint="e.g. Arcade"/>
-    <folder label="Games folder" bind="draft:romPath" hint="Not chosen yet" status="info:romCount"/>
-    <text label="File extensions" bind="draft:extensions" hint="e.g. zip,7z" default="zip"/>
-    <file label="Emulator" bind="draft:executable" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd"/>
-    <text label="Arguments" bind="draft:arguments" default="&quot;%ITEM_FILEPATH%&quot;" help="%ITEM_FILEPATH% is replaced with the game's file"/>
-    <button label="Add system" action="collection.create"/>
-  </section>
-</form>
-)";
-
-}
-
+// The Systems screens, opened from Manage: "systems", "system" and the
+// "system-..." screens below it, served by SystemProvider (prefix "system").
+// Their templates are shared with Videos (SystemForms.cpp).
 Forms::BuiltinTable Forms::systemsForms()
 {
-    return {
-        { "systems", systemsForm },
-    };
+    return Manager::systemForms(false);
 }

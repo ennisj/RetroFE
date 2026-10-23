@@ -22,8 +22,9 @@
 // rebuilds the index in the background and marks "changes pending").
 // RetroFE itself only sees changes after it reloads.
 //
-// Never written here: executable, arguments, list.path or any other path key,
-// and menu lines are only added, removed or moved one at a time.
+// Never written here: executable, arguments, list.path or any other path key
+// of an existing file (a new launcher file is written whole, once), and menu
+// lines are only added, removed or moved one at a time.
 
 #include "Backups.h"
 #include "Index.h"
@@ -90,6 +91,38 @@ namespace Library
         EditResult removeMenuChild(const Index& index, const std::string& menu, const std::string& child);
         EditResult moveMenuChild(const Index& index, const std::string& menu, const std::string& child, int position);
 
+        // New collections that hold no games of their own, listed under parent
+        // (a menu, or the top menu even before it exists; never a collection of
+        // games, LB9). Both write settings.conf (list.menuSort = yes) and
+        // info.conf (title = name); a menu gets an empty menu.txt, a merged
+        // collection an empty <source>.sub (every game of that system).
+        // Empty when parent may get menu entries (a menu.txt or menu/ menu, a
+        // collection with no games, entries or sources yet, or the top menu
+        // before its folder exists), otherwise why not
+        static std::string checkMenuParent(const Index& index, const std::string& parent);
+        // Naming the top menu itself (when it doesn't exist yet) makes it, listed nowhere.
+        // A failure after writing undoes what was written; files lists what was touched.
+        EditResult createMenu(const Index& index, const std::string& name, const std::string& parent);
+        EditResult createMerged(const Index& index, const std::string& name, const std::string& parent,
+                                const std::string& source);
+        // A merged collection's sources: adding writes an empty <source>.sub
+        // (every game), also to a collection with nothing yet; removing takes
+        // the .sub out (kept in the backups); respelling renames a .sub spelt
+        // differently from its system's folder, keeping its lines
+        EditResult addSubSource(const Index& index, const std::string& merged, const std::string& source);
+        EditResult removeSubSource(const Index& index, const std::string& merged, const std::string& source);
+        EditResult respellSubSource(const Index& index, const std::string& merged, const std::string& source);
+        // Deletes a menu, merged collection or one with nothing yet: no games,
+        // only settings, info, menu files, .sub files, artwork, lastplayed and
+        // an empty favorites list. Its entries move up into each menu that
+        // listed it (in its place); it's taken out of those menus; every file
+        // is moved to the backups. The top menu, reserved names and anything
+        // listed by a menu.xml or collectionLaunchers menu can't go.
+        // checkDeleteMenu says why not, or "". A failure part way says which
+        // files were touched (EditResult::files).
+        static std::string checkDeleteMenu(const Index& index, const std::string& name);
+        EditResult deleteMenu(const Index& index, const std::string& name);
+
         // --- Playlists and merged collections ------------------------------------------
         // A playlist of collection (playlists/<name>.txt). The game is named by its
         // own collection; entries for another collection's game are "_<C>:<name>".
@@ -97,6 +130,17 @@ namespace Library
                                  const std::string& gameCollection, const std::string& game);
         EditResult removeFromPlaylist(const Index& index, const std::string& collection, const std::string& playlist,
                                       const std::string& gameCollection, const std::string& game);
+
+        // Whole playlists of a collection. Names RetroFE gives a meaning (all,
+        // favorites/favourites, lastplayed) are refused. The folder is read
+        // afresh, so a playlist made since the index was built counts. A rename
+        // may change only the case; a deleted or renamed file's original is
+        // kept in the backups.
+        static bool isReservedPlaylist(const std::string& name);
+        EditResult createPlaylist(const Index& index, const std::string& collection, const std::string& playlist);
+        EditResult renamePlaylist(const Index& index, const std::string& collection, const std::string& playlist,
+                                  const std::string& newName);
+        EditResult deletePlaylist(const Index& index, const std::string& collection, const std::string& playlist);
 
         // A merged collection's <source>.sub. An empty .sub shows every game of the
         // source, so adding to it is refused, and removing the last entry removes the file.
@@ -110,6 +154,34 @@ namespace Library
         EditResult replaceMedia(const MediaSlot& slot, const std::string& file);
         // Removes the slot's own file; refused when the slot only shows a fallback
         EditResult clearMedia(const MediaSlot& slot);
+        // Writes a text slot's own <basename>.txt (a game's story, say) with
+        // text as given. Refused for image and video slots and for empty text
+        // (clearMedia removes the file).
+        EditResult writeMediaText(const MediaSlot& slot, const std::string& text);
+
+        // --- Launchers ---------------------------------------------------------------
+        // A new launcher is written whole, as launchers.<os>/<name>.conf (os =
+        // the index's). Existing launcher files are never changed: a name
+        // that's taken (in any case) is refused.
+        struct NewLauncher
+        {
+            std::string name;
+            std::string executable;
+            std::string arguments;          // may be empty
+            std::string currentDirectory;   // empty: RetroFE uses the executable's folder
+        };
+        // Empty when name can be a new launcher's name, otherwise why not:
+        // the rules for the name itself (a plain-ASCII file name, no = , ; %,
+        // not a Windows device name such as con or aux.v2) ...
+        static std::string checkLauncherName(const std::string& name);
+        // ... and no clash, ignoring case, with any launcher's id in any scope
+        // (a collection or local launcher of that name would be found first)
+        // or with a "<collection>.<x>" local launcher name
+        static std::string checkNewLauncherName(const Index& index, const std::string& name);
+        EditResult addLauncher(const Index& index, const NewLauncher& launcher);
+        // Removes a launcher's file, only when no system (default or
+        // alternative) and no game uses it. The original is kept in the backups.
+        EditResult removeLauncher(const Index& index, LauncherScope scope, const std::string& id);
 
         // Puts a file changed here back as it was before the first change
         EditResult restoreOriginal(const std::string& file);
@@ -117,6 +189,9 @@ namespace Library
     private:
         // Makes RetroFE re-import meta/ (and the overrides) on its next start
         void requestMetadataImport();
+        // createMenu ("" source) and createMerged
+        EditResult createListed(const Index& index, const std::string& name, const std::string& parent,
+                                const std::string& source);
 
         std::string root_;
         Backups backups_;
@@ -147,5 +222,8 @@ namespace Library
                     Backups* backups, std::string& error, bool* removed = nullptr);
         bool move(const std::string& root, const std::string& menu, const std::string& child, int position,
                   Backups* backups, std::string& error);
+        // Re-spells an entry as the folder is spelt (removes entry, adds folderName at its position)
+        bool respell(const std::string& root, const std::string& menu, const std::string& entry,
+                     const std::string& folderName, int position, Backups* backups, std::string& error);
     }
 }

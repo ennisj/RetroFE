@@ -28,14 +28,18 @@
 // so sections added at the same time merge without conflicts.
 
 // games
+#include "Games/GameProvider.h"
 
 // menus
+#include "Menus/MenuProvider.h"
 
 // systems
+#include "Systems/SystemProvider.h"
 
-// videos
+// videos (the Systems provider, worded and filtered for video collections)
 
 // emulators
+#include "Emulators/EmulatorProvider.h"
 
 // themes
 
@@ -45,14 +49,19 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     (void)services;
 
     // games
+    model.addProvider(std::make_unique<Manager::GameProvider>(services));
 
     // menus
+    model.addProvider(std::make_unique<Manager::MenuProvider>(services));
 
     // systems
+    model.addProvider(std::make_unique<SystemProvider>(services, false));
 
     // videos
+    model.addProvider(std::make_unique<SystemProvider>(services, true));
 
     // emulators
+    model.addProvider(std::make_unique<EmulatorProvider>(services));
 
     // themes
 }

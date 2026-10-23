@@ -171,6 +171,43 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 
 ---
 
+### M12. Round 2 screen decisions — Decided
+Each section's agent chose these; the alternatives are in brackets.
+- **Games: story text is edited on one line**, with ` | ` between paragraphs
+  [read-only plus replace-from-file; a multi-line field, which forms don't
+  have yet]. A story that already contains `|` can only be replaced from a
+  file, so nothing is rewritten by accident. A multi-line text field would
+  remove this limit (later).
+- **Games: favourites are per page.** RetroFE keeps favourites in the list of
+  the page you were on, so a game shown in a merged collection has a
+  favourite toggle for each page that shows it [only its own system's list,
+  which merged pages never read].
+- **Games: file lookups run in the background** (media slots, search
+  thumbnails), so slow USB drives don't stall the screen.
+- **Systems: delete only empty systems made here.** A system can be deleted
+  when its folder holds only settings, art and playlists, its games folder
+  isn't inside it, and no `menu.xml` lists it; the whole folder moves to
+  `manage/backups/deleted/` [never delete; delete anything empty].
+- **Systems: playlists RetroFE won't show** (because of `cyclePlaylist`) are
+  pointed out, with a one-step "Show it in RetroFE".
+- **Videos:** collections marked `type = videos` appear only under Videos;
+  "This is a video collection" on a system's Info screen moves it. New video
+  collections share one `VideoPlayer` launcher (VLC or mpv).
+- **Menus: deleting a menu moves its entries up** into the menus that list it,
+  in its place [refuse unless empty; delete the entries too]. Menus listed by
+  a `menu.xml` or `collectionLaunchers` can't be changed here (writing a
+  `menu.txt` would hide the XML).
+- **Menus: every entry and source has its own screen** [buttons on the list
+  with a "selected entry" choice], which works better with a controller.
+- **Menus: a new menu gets `settings.conf`, `info.conf` and `menu.txt`**;
+  without `settings.conf` RetroFE logs an error at start.
+- **Emulators: existing launchers stay read-only**; "Duplicate and edit" opens
+  the add form filled in [edit launchers made in Manage until used]. New
+  launchers write paths inside RetroFE's folder as `%RETROFE_PATH%\…`, and
+  names must be plain ASCII (RetroFE reads launcher file names in the ANSI
+  code page) and can't shadow another launcher (RetroFE looks up local, then
+  collection, then global launchers).
+
 ## Catalog
 
 ### C1. This fork from GitHub — Decided (publishing is Open)
