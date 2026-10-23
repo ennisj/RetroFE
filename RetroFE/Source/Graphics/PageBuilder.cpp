@@ -1104,6 +1104,8 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		style.disabledAlpha = number(componentXml, "disabledAlpha", style.disabledAlpha);
 		style.onText = text(componentXml, "onText", style.onText);
 		style.offText = text(componentXml, "offText", style.offText);
+		style.rowDetailAlpha = number(componentXml, "rowDetailAlpha", style.rowDetailAlpha);
+		style.linkMarker = text(componentXml, "linkMarker", style.linkMarker);
 		style.showTitle = flag(componentXml, "title", style.showTitle);
 		style.showHints = flag(componentXml, "hints", style.showHints);
 		if (const xml_attribute<>* image = componentXml->first_attribute("focusImage")) {
@@ -1112,6 +1114,10 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 
 		auto* form = new FormWidget(*page, font, focusFont, formMonitor);
 		form->setStyle(style);
+		if (componentXml->first_attribute("rowDetailColor")) {
+			SDL_Color detailColor = color(componentXml, "rowDetailColor", SDL_Color{ 255, 255, 255, 255 });
+			form->setDetailFont(addFont(componentXml, nullptr, formMonitor, &detailColor));
+		}
 		buildViewInfo(componentXml, form->baseViewInfo);
 		loadTweens(form, componentXml);
 		page->addComponent(form);

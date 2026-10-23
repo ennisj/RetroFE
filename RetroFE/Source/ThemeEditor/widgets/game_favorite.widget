@@ -1,0 +1,34 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: type=isFavorite resolves yes/no art in ReloadableMedia.
+[widget]
+id = game_favorite
+name = Favorite Star
+category = media
+color = E7C84C
+summary = The favourite indicator for the highlighted game.
+info = type=isFavorite - mode=commonlayout - art per favourite state (yes/no)
+w = 48
+h = 48
+minw = 16
+minh = 16
+layer = 16
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[var]
+token = RIGHTALIGN
+name = Anchor Right Edge
+type = bool
+default = false
+
+[fragment]
+<reloadableImage id="{{ID}}" type="isFavorite" mode="commonlayout" {{?RIGHTALIGN}}xOrigin="right" x="{{X2}}" {{/RIGHTALIGN}}{{!RIGHTALIGN}}xOrigin="left" x="{{X}}" {{/RIGHTALIGN}}y="{{Y}}" yOrigin="top" width="{{W}}" maxHeight="{{H}}" menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableImage>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

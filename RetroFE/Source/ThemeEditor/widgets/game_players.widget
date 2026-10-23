@@ -1,0 +1,41 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+[widget]
+id = game_players
+name = Game Players
+category = text
+color = 6FE0B8
+glyph = P
+summary = Selected game's player count.
+info = type=numberPlayers
+w = 122
+h = 54
+minw = 40
+minh = 16
+layer = 12
+
+[var]
+token = AUTOFIT
+name = Auto Fit Text
+type = bool
+default = true
+
+[var]
+token = SCROLLUPDATE
+name = Update While Scrolling
+type = bool
+default = true
+
+[var]
+token = RIGHTALIGN
+name = Anchor Right Edge
+type = bool
+default = false
+
+[fragment]
+<reloadableText id="{{ID}}" type="numberPlayers" {{?RIGHTALIGN}}x="{{X2}}" xOrigin="right" {{/RIGHTALIGN}}{{!RIGHTALIGN}}x="{{X}}" xOrigin="left" {{/RIGHTALIGN}}y="{{CY}}" yOrigin="center" {{?HASFONT}}font="{{FONT}}" {{/HASFONT}}{{?HASFONTCOLOR}}fontColor="{{FONTCOLOR}}" {{/HASFONTCOLOR}}fontSize="{{FS}}" maxHeight="{{H}}" {{?AUTOFIT}}maxWidth="{{W}}" {{/AUTOFIT}}menuScrollReload="{{SCROLLUPDATE:true:false}}" alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableText>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

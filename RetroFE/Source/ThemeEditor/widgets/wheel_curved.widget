@@ -1,0 +1,64 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: menu modes are the ones PageBuilder::buildMenu reads; the default
+# is no mode (collection items fall back to their system art by themselves).
+[widget]
+id = wheel_curved
+name = Curved Logo Wheel
+category = menu
+color = 4C8BE0
+summary = The scrolling wheel with its centre slots bulging into the screen.
+info = menu type=custom - imageType=logo - arced columns
+w = 360
+h = 980
+minw = 120
+minh = 240
+layer = 14
+menu = true
+arc = 40
+
+[var]
+token = TEXTFALLBACK
+name = Text Fallback
+type = bool
+default = true
+
+[var]
+token = IMAGETYPE
+name = Art Type
+type = text
+default = logo
+options = logo|screenshot|artwork_front|artwork_front_s|title|background|marquee|video|story|fanart
+
+[var]
+token = MODE
+name = Art Source Mode
+type = text
+default =
+options = -|layout|common|commonlayout
+
+[var]
+token = WHEELFONTSIZE
+name = Text Size (px)
+type = text
+default =
+numeric = true
+step = 2
+min = 0
+max = 200
+
+[var]
+token = WHEELFONTCOLOR
+name = Text Color
+type = text
+default =
+
+[var]
+token = WHEELSELCOLOR
+name = Selected Text Color
+type = text
+default =
+
+[fragment]
+<menu id="{{ID}}" type="custom" imageType="{{IMAGETYPE}}" mode="{{MODE}}" orientation="vertical" scrollTime="{{SCROLLTIME}}" minScrollTime="0.06"{{?HASACCEL}} scrollAcceleration="{{SCROLLACCEL}}"{{/HASACCEL}} {{?TEXTFALLBACK}}textFallback="true" {{/TEXTFALLBACK}}layer="{{LAYER}}">
+  {{MENU_ITEMS}}
+</menu>

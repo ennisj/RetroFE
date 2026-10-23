@@ -16,6 +16,7 @@
 
 #include "Video/GStreamerVideo.h"
 #include "Builtin/Builtin.h"
+#include "Catalog/SelfUpdate.h"
 #include "Database/Configuration.h"
 #include "Database/DB.h"
 #include "Database/GlobalOpts.h"
@@ -114,6 +115,24 @@ static void sendEnterKey() {
 
 int main(int argc, char** argv)
 {
+    // An interrupted update of RetroFE itself is finished or undone before anything else
+    // (catalog-sources.md, "Updating RetroFE in place"); if it put the old files back,
+    // start again so they're what runs
+    std::string executable = Catalog::currentExecutable();
+    Catalog::StartupRecovery recovery = Catalog::recoverAtStart(executable);
+    if (recovery.restart) {
+        std::string error;
+        if (Catalog::relaunch(executable, argv, error)) {
+            return 0;
+        }
+        // This process loaded the files that were just put back: don't carry on half old, half new
+        Catalog::showMessage("RetroFE update", "RetroFE put its previous version back after an interrupted update, "
+                             "but couldn't start it again (" + error + "). Please start RetroFE again.", 60);
+        return 1;
+    }
+    // Anything recovery has to say goes to the log, and to the Catalog's problems
+    // (a message box here would hold up a cabinet without a keyboard)
+
     Configuration::initialize();
     Configuration config;
     std::string dbPath = Utils::combinePath(Configuration::absolutePath, "meta.db");
@@ -340,6 +359,13 @@ int main(int argc, char** argv)
                 }
                 exit(EXIT_FAILURE);
             }
+            // What the update check at start found, now that there's a log
+            for (const auto& [level, text] : recovery.log) {
+                if (level == "error") LOG_ERROR("Catalog", text);
+                else if (level == "warning") LOG_WARNING("Catalog", text);
+                else LOG_NOTICE("Catalog", text);
+            }
+            recovery.log.clear();
             RetroFE p(config);
             if (p.run()) // Check if we need to reboot after running
                 config.clearProperties();
@@ -349,6 +375,27 @@ int main(int argc, char** argv)
     }
     catch (std::exception& e) {
         LOG_ERROR("EXCEPTION", e.what());
+    }
+
+    // RetroFE updated itself: everything is shut down, so start the new version
+    std::string relaunchExecutable;
+    if (Catalog::takeRelaunch(relaunchExecutable)) {
+        std::string error;
+        if (Catalog::relaunch(relaunchExecutable, argv, error)) {
+            LOG_NOTICE("RetroFE", "Starting the updated RetroFE");
+        }
+        else {
+            LOG_ERROR("RetroFE", error);
+            Catalog::showMessage("RetroFE was updated", "RetroFE was updated, but couldn't start again by itself. Please start it again.\n" + error, 60);
+        }
+    }
+
+    // An update that left no program folder (both folder renames kept failing):
+    // one more try, and if that fails too, the user has to know before RetroFE is gone
+    std::string missing = Catalog::checkProgramFolderAtExit(executable);
+    if (!missing.empty()) {
+        LOG_ERROR("RetroFE", missing);
+        Catalog::showMessage("RetroFE update", missing, 0);
     }
 
     Logger::deInitialize();

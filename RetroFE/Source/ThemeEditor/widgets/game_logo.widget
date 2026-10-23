@@ -1,0 +1,20 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# A preset over game_art: fragment, animations and attributes come from it.
+# Changed: no layout_preferred mode (the game's own media), no Transform Video.
+[widget]
+id = game_logo
+base = game_art
+name = Game Logo
+category = media
+color = E7C84C
+summary = Selected game's logo art.
+info = game_art preset - type=logo - the game's own art
+w = 400
+h = 300
+minw = 40
+minh = 24
+layer = 9
+
+[var]
+token = IMAGETYPE
+default = logo

@@ -14,7 +14,7 @@ list(APPEND CMAKE_MODULE_PATH "${RETROFE_DIR}/CMake")
 # Ensure versioning.h is generated before compiling
 add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/autogen/versioning.h"
-    COMMAND ${CMAKE_COMMAND} -P "${RETROFE_DIR}/CMake/Versioning.cmake"
+    COMMAND ${CMAKE_COMMAND} "-DRETROFE_RELEASE_VERSION=${RETROFE_RELEASE_VERSION}" -P "${RETROFE_DIR}/CMake/Versioning.cmake"
     COMMENT "Generating versioning.h"
 )
 # Create a custom target to generate versioning.h
@@ -233,6 +233,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Graphics/ComponentItemBinding.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/Container.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/FormWidget.h"
+	"${RETROFE_DIR}/Source/Graphics/Component/TextureCache.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/KeyboardWidget.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/WidgetPainter.h"
 	"${RETROFE_DIR}/Source/Graphics/Component/Component.h"
@@ -261,13 +262,17 @@ set(RETROFE_HEADERS
     "${RETROFE_DIR}/Source/Video/VideoPool.h"
    	"${RETROFE_DIR}/Source/Graphics/ComponentItemBindingBuilder.h"
 	"${RETROFE_DIR}/Source/Graphics/ViewInfo.h"
+	"${RETROFE_DIR}/Source/Forms/BuiltinForms.h"
 	"${RETROFE_DIR}/Source/Forms/Form.h"
 	"${RETROFE_DIR}/Source/Forms/SettingsFile.h"
+	"${RETROFE_DIR}/Source/Manager/EditBuffer.h"
 	"${RETROFE_DIR}/Source/Manager/FileDialog.h"
 	"${RETROFE_DIR}/Source/Manager/FormView.h"
 	"${RETROFE_DIR}/Source/Manager/Home.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerModel.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.h"
+	"${RETROFE_DIR}/Source/Manager/Navigator.h"
+	"${RETROFE_DIR}/Source/Manager/Provider.h"
 	"${RETROFE_DIR}/Source/Manager/Setup.h"
 	"${RETROFE_DIR}/Source/RetroFE.h"
 	"${RETROFE_DIR}/Source/SDL.h"
@@ -308,6 +313,7 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Graphics/ComponentItemBinding.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/Container.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/FormWidget.cpp"
+	"${RETROFE_DIR}/Source/Graphics/Component/TextureCache.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/KeyboardWidget.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/WidgetPainter.cpp"
 	"${RETROFE_DIR}/Source/Graphics/Component/Component.cpp"
@@ -330,11 +336,13 @@ set(RETROFE_SOURCES
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+	"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Http.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Index.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+	"${RETROFE_DIR}/Source/Catalog/SelfUpdate.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Service.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 	"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"
@@ -344,11 +352,25 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Manager/FormView.cpp"
 	"${RETROFE_DIR}/Source/Manager/ManagerModel.cpp"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.cpp"
+	"${RETROFE_DIR}/Source/Manager/Navigator.cpp"
+	"${RETROFE_DIR}/Source/Manager/Providers.cpp"
 	"${RETROFE_DIR}/Source/Manager/Setup.cpp"
 	"${RETROFE_DIR}/Source/RetroFE.cpp"
 	"${RETROFE_DIR}/Source/SDL.cpp"
 	"${SQLITE3_ROOT}/sqlite3.c"
 )
+
+# The Manage sections (Manager/Games, Manager/Systems...), one folder each, so
+# a section can add files without touching this list. Files in a section's
+# folder are built into retrofe_tests too, so they mustn't need SDL or
+# graphics code; those go in its app/ subfolder, which only RetroFE builds.
+# A section's tests.cmake, if any, adds what its files need to the tests
+# (list(APPEND RETROFE_TEST_EXTRA_SOURCES ...)).
+file(GLOB RETROFE_MANAGER_SECTION_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/*.cpp")
+file(GLOB RETROFE_MANAGER_SECTION_APP_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/app/*.cpp")
+file(GLOB RETROFE_MANAGER_SECTION_HEADERS CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/*.h" "${RETROFE_DIR}/Source/Manager/*/app/*.h")
+list(APPEND RETROFE_SOURCES ${RETROFE_MANAGER_SECTION_SOURCES} ${RETROFE_MANAGER_SECTION_APP_SOURCES})
+list(APPEND RETROFE_HEADERS ${RETROFE_MANAGER_SECTION_HEADERS})
 
 # Dear ImGui, used by the management UI
 set(IMGUI_BACKEND_SOURCES
@@ -370,19 +392,69 @@ if(MSVC)
 endif()
 
 ##############################################################
+# Theme editor core (Source/ThemeEditor): no SDL, no ImGui windows. A static
+# library so retrofe and retrofe_tests share one build of it (and of its
+# generated sources).
+set(THEME_EDITOR_WIDGETS_DIR "${RETROFE_DIR}/Source/ThemeEditor/widgets")
+file(GLOB THEME_EDITOR_WIDGET_FILES CONFIGURE_DEPENDS "${THEME_EDITOR_WIDGETS_DIR}/*.widget")
+set(THEME_EDITOR_WIDGETS_SOURCE "${CMAKE_BINARY_DIR}/autogen/ThemeEditorWidgets.cpp")
+add_custom_command(
+    OUTPUT "${THEME_EDITOR_WIDGETS_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -DINPUT_DIR=${THEME_EDITOR_WIDGETS_DIR} -DOUTPUT=${THEME_EDITOR_WIDGETS_SOURCE} -P "${RETROFE_DIR}/CMake/EmbedWidgets.cmake"
+    DEPENDS ${THEME_EDITOR_WIDGET_FILES} "${RETROFE_DIR}/CMake/EmbedWidgets.cmake"
+    COMMENT "Embedding the theme editor's widgets"
+)
+set(THEME_EDITOR_FONT_LICENSE_FILE "${RETROFE_DIR}/ThirdParty/fonts/LICENSE-Apache-2.0.txt")
+set(THEME_EDITOR_FONT_LICENSE_SOURCE "${CMAKE_BINARY_DIR}/autogen/ThemeEditorFontLicense.cpp")
+add_custom_command(
+    OUTPUT "${THEME_EDITOR_FONT_LICENSE_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -DINPUT=${THEME_EDITOR_FONT_LICENSE_FILE} -DOUTPUT=${THEME_EDITOR_FONT_LICENSE_SOURCE} -DSYMBOL=theme_editor_font_license -P "${RETROFE_DIR}/CMake/EmbedFile.cmake"
+    DEPENDS "${THEME_EDITOR_FONT_LICENSE_FILE}" "${RETROFE_DIR}/CMake/EmbedFile.cmake"
+    COMMENT "Embedding the bundled font's licence"
+)
+add_library(retrofe_theme_editor STATIC
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorCanvas.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/EditorNav.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/LetterTiles.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/LetterTiles.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeExport.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeExport.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeGenerate.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeGenerate.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeProject.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeProject.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeStore.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/ThemeStore.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/WidgetDefs.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/WidgetDefs.h"
+	"${THEME_EDITOR_WIDGETS_SOURCE}"
+	"${THEME_EDITOR_FONT_LICENSE_SOURCE}"
+)
+target_link_libraries(retrofe_theme_editor ${ZLIB_LIBRARIES})
+
+##############################################################
 # Unit tests for code that doesn't need SDL: cmake -DRETROFE_BUILD_TESTS=ON, then run retrofe_tests
 option(RETROFE_BUILD_TESTS "Build the retrofe_tests unit tests" OFF)
 if(RETROFE_BUILD_TESTS)
-	add_executable(retrofe_tests
-		"${RETROFE_DIR}/Tests/TestsMain.cpp"
-		"${RETROFE_DIR}/Tests/FormsTests.cpp"
-		"${RETROFE_DIR}/Tests/CatalogTests.cpp"
+	# Every Tests/*.cpp, so a new test file needs no edit here (see Test::Suite in TestSupport.h)
+	file(GLOB RETROFE_TEST_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Tests/*.cpp")
+	set(RETROFE_TEST_EXTRA_SOURCES)
+	file(GLOB RETROFE_MANAGER_SECTION_TEST_LISTS CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Manager/*/tests.cmake")
+	foreach(list_file ${RETROFE_MANAGER_SECTION_TEST_LISTS})
+		include(${list_file})
+	endforeach()
+	set(RETROFE_TEST_ALL_SOURCES
+		${RETROFE_TEST_SOURCES}
 		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+		"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Index.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Package.cpp"
+		"${RETROFE_DIR}/Source/Catalog/SelfUpdate.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Service.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
@@ -392,11 +464,22 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Forms/Form.cpp"
 		"${RETROFE_DIR}/Source/Forms/SettingsFile.cpp"
 		"${RETROFE_DIR}/Source/Manager/ManagerModel.cpp"
+		"${RETROFE_DIR}/Source/Manager/Navigator.cpp"
 		"${RETROFE_DIR}/Source/Manager/Setup.cpp"
+		${RETROFE_MANAGER_SECTION_SOURCES}
+		${RETROFE_TEST_EXTRA_SOURCES}
 		"${RETROFE_DIR}/Source/Utility/Log.cpp"
 		"${RETROFE_DIR}/Source/Utility/Utils.cpp"
 	)
+	list(REMOVE_DUPLICATES RETROFE_TEST_ALL_SOURCES)
+	add_executable(retrofe_tests ${RETROFE_TEST_ALL_SOURCES})
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
+	# The theme editor tests read the bundled font and check the layout
+	# vocabulary against PageBuilder.cpp and Tween.cpp in the source tree
+	target_link_libraries(retrofe_tests retrofe_theme_editor)
+	target_compile_definitions(retrofe_tests PRIVATE
+		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
+		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
 	# The Catalog tests extract and write zip archives
 	if(WIN32)
 		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES} winhttp)
@@ -415,6 +498,7 @@ set(LIBRARY_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORC
 include_directories(${RETROFE_INCLUDE_DIRS})
 add_executable(retrofe  ${RETROFE_SOURCES} ${RETROFE_HEADERS})
 add_dependencies(retrofe GenerateVersioningHeader)
+target_link_libraries(retrofe retrofe_theme_editor)
 
 find_library(WEBPDEMUX_LIBRARY
     NAMES webpdemux

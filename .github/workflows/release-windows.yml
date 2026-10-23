@@ -1,0 +1,118 @@
+name: Windows Release
+
+# Pushing a version tag (v2504.3, or v2504.3-beta.1 for a pre-release) builds
+# RetroFE for Windows and attaches RetroFE-<version>-windows-x64.zip to that
+# tag's GitHub release, creating the release if there isn't one yet.
+#
+# The archive holds retrofe/ (retrofe.exe and its DLLs), RetroFE.lnk, and the
+# layouts listed in RELEASE_LAYOUTS under layouts/. The Catalog's GitHub
+# sources offer it as an update of RetroFE itself (docs/design/catalog-sources.md),
+# so the asset name and that layout matter: <name>-<version>-windows-x64.zip,
+# with the program under retrofe/.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  # Layouts from Package/Environment/Common/layouts to ship, separated by ";"
+  # (e.g. "Aeon Nox"). Empty ships the program alone; see docs/DECISIONS.md L4
+  # about layout fonts before adding any.
+  RELEASE_LAYOUTS: ""
+
+jobs:
+  release:
+    runs-on: windows-2022
+    name: Build and release for Windows
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Read the version from the tag
+        id: version
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The tag is only ever read from the environment, and checked before use
+          $tag = $env:TAG
+          if ($tag -notmatch '^[vV][0-9][0-9A-Za-z.+_-]{0,63}$') {
+            throw "The tag isn't a version such as v2504.3"
+          }
+          $version = $tag.Substring(1)
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$(if ($version.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+      - name: Install GStreamer
+        run: |
+          choco install -y gstreamer --version 1.24.11
+          choco install -y gstreamer-devel --version 1.24.11
+
+      - name: Configure
+        # RETROFE_RELEASE_VERSION makes the build report the tag's version, which
+        # is what the Catalog compares with releases when offering updates
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=D:\gstreamer\1.0\msvc_x86_64 "-DRETROFE_RELEASE_VERSION=$env:VERSION" -S .\RetroFE\Source
+
+      - name: Build RetroFE
+        run: |
+          cmake --build RetroFE/Build --config Release --target retrofe
+
+      - name: Package
+        id: package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $version = $env:VERSION
+          $out = "dist\RetroFE"
+          New-Item -ItemType Directory -Force "$out\retrofe" | Out-Null
+          Copy-Item -Recurse -Path "Package\Environment\Windows\retrofe\*" -Destination "$out\retrofe" -Exclude ".gitignore"
+          Copy-Item "RetroFE\Build\Release\retrofe.exe" "$out\retrofe\retrofe.exe"
+          Copy-Item "Package\Environment\Windows\RetroFE.lnk" $out
+          foreach ($layout in ($env:RELEASE_LAYOUTS -split ';' | Where-Object { $_.Trim() })) {
+            $name = $layout.Trim()
+            $from = "Package\Environment\Common\layouts\$name"
+            if (-not (Test-Path $from)) { throw "No layout $from" }
+            New-Item -ItemType Directory -Force "$out\layouts" | Out-Null
+            Copy-Item -Recurse $from "$out\layouts\$name"
+          }
+          $name = "RetroFE-$version-windows-x64.zip"
+          $zip = "dist\$name"
+          Compress-Archive -Path "$out\*" -DestinationPath $zip
+          # The checksum beside it, in sha256sum's format: the Catalog uses it if GitHub's digest is missing
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$zip.sha256" -Value "$hash  $name" -NoNewline -Encoding ascii
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "SHA-256 $hash"
+
+      - name: Create or update the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: |
+          $tag = $env:TAG
+          if ($tag -notmatch '^[vV][0-9][0-9A-Za-z.+_-]{0,63}$') { throw "The tag isn't a version" }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            $options = @('--title', "RetroFE $env:VERSION", '--generate-notes', '--verify-tag')
+            if ($env:PRERELEASE -eq 'true') { $options += '--prerelease' }
+            gh release create $tag @options
+            if ($LASTEXITCODE -ne 0) { throw "Could not create the release" }
+          }
+          # GitHub also records each asset's SHA-256 digest, which the Catalog checks first
+          gh release upload $tag $env:ZIP "$($env:ZIP).sha256" --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Could not upload the archive" }

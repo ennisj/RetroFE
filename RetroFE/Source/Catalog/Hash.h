@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 // Checksums for verifying downloads and recording installed files.
@@ -54,6 +55,7 @@ namespace Catalog
     };
 
     // Hash of a whole file, or "" if it can't be read
-    std::string sha256File(const std::string& path);
-    std::string md5File(const std::string& path);
+    // Opened by path, so names outside the system code page work on Windows
+    std::string sha256File(const std::filesystem::path& path);
+    std::string md5File(const std::filesystem::path& path);
 }

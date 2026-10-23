@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Index.h"
+#include "GitHub.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
@@ -74,6 +75,13 @@ namespace
         package.kind = lower(stringField(entry, "kind"));
         if (package.kind.empty()) {
             package.kind = "other";
+        }
+        // Only GitHub sources update RetroFE itself, which nothing else may pretend to be
+        if (package.kind == "app") {
+            return prefix + "updates RetroFE itself (kind \"app\"), which only GitHub sources may offer";
+        }
+        if (lower(package.id) == Catalog::appPackageId) {
+            return prefix + "the id \"" + package.id + "\" is RetroFE's own";
         }
         package.version = stringField(entry, "version");
         package.description = stringField(entry, "description");

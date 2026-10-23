@@ -1,0 +1,50 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Changed: menu modes are the ones PageBuilder::buildMenu reads (no system,
+# systemlayout, menu or layout_preferred); the default is no mode.
+[widget]
+id = art_strip
+name = Game Art Wheel
+category = menu
+color = D08FB8
+glyph = ::
+summary = A ribbon of neighbouring games' box art; the selected slot is hidden.
+info = menu artwork_front_s - menuIndex=0 - selected hidden, edges faded
+w = 1400
+h = 266
+minw = 300
+minh = 60
+layer = 6
+menu = true
+strip = true
+
+[var]
+token = IMAGETYPE
+name = Art Type
+type = text
+default = artwork_front_s
+options = logo|screenshot|artwork_front|artwork_front_s|title|background|marquee|video|story|fanart
+
+[var]
+token = TEXTFALLBACK
+name = Text Fallback
+type = bool
+default = false
+
+[var]
+token = ORIENT
+name = Scroll Direction
+type = text
+default = vertical
+options = vertical|horizontal
+
+[var]
+token = ARTMODE
+name = Art Mode
+type = text
+default =
+options = -|layout|common|commonlayout
+
+[fragment]
+<menu id="{{ID}}" type="custom" menuIndex="0" imageType="{{IMAGETYPE}}" mode="{{ARTMODE}}" orientation="{{ORIENT}}" scrollTime="{{SCROLLTIME}}" minScrollTime="0.06"{{?HASACCEL}} scrollAcceleration="{{SCROLLACCEL}}"{{/HASACCEL}} {{?TEXTFALLBACK}}textFallback="true" {{/TEXTFALLBACK}}{{!TEXTFALLBACK}}textFallback="no" {{/TEXTFALLBACK}}layer="{{LAYER}}">
+  {{MENU_ITEMS}}
+</menu>

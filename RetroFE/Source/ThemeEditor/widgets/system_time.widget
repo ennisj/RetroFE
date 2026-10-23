@@ -1,0 +1,37 @@
+# RetroFE theme editor widget (from One Saucier; see docs/design/theme-editor.md)
+# Unchanged: everything it writes is read by this engine's PageBuilder.
+# Round 72: time broken out of Game Metadata (operator) -- the clock is a
+# SYSTEM fact, not game metadata, and themes place it as its own element.
+[widget]
+id = system_time
+name = System Time
+category = text
+color = 6FB8E0
+glyph = TM
+summary = The live clock (the engine's time text slot).
+info = reloadableText type=time
+w = 240
+h = 54
+minw = 40
+minh = 16
+layer = 12
+
+[var]
+token = AUTOFIT
+name = Auto Fit Text
+type = bool
+default = true
+
+[var]
+token = RIGHTALIGN
+name = Anchor Right Edge
+type = bool
+default = false
+
+[fragment]
+<reloadableText id="{{ID}}" type="time" {{?RIGHTALIGN}}x="{{X2}}" xOrigin="right" {{/RIGHTALIGN}}{{!RIGHTALIGN}}x="{{X}}" xOrigin="left" {{/RIGHTALIGN}}y="{{CY}}" yOrigin="center" {{?HASFONT}}font="{{FONT}}" {{/HASFONT}}{{?HASFONTCOLOR}}fontColor="{{FONTCOLOR}}" {{/HASFONTCOLOR}}fontSize="{{FS}}" maxHeight="{{H}}" {{?AUTOFIT}}maxWidth="{{W}}" {{/AUTOFIT}}alpha="{{ALPHA}}" layer="{{LAYER}}">
+  {{ANIM_DEFAULTS}}
+</reloadableText>
+
+[animDefaults]
+<onEnter><set duration="0.25"><animate type="alpha" from="0" to="{{ALPHA}}" algorithm="easeoutquadratic"/></set></onEnter>

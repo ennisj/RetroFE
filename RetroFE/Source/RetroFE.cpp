@@ -16,6 +16,7 @@
 
 #include "RetroFE.h"
 #include "Builtin/Builtin.h"
+#include "Catalog/SelfUpdate.h"
 #include "Manager/Home.h"
 #include "Manager/Setup.h"
 #include "Collection/CollectionInfo.h"
@@ -796,7 +797,7 @@ bool RetroFE::run()
 				// Nothing set up yet: start in the manager
 				if (!Setup::hasSettingsFile() || Setup::listCollections().empty())
 				{
-					manager_.open(ManagerUI::Screen::Manage);
+					manager_.open("manage");
 				}
 
 				splashMode = false;
@@ -2305,7 +2306,9 @@ bool RetroFE::run()
 			if (currentPage_->isGraphicsIdle())
 			{
 				l.LEDBlinky(2);
-				l.exitScript();
+				// Restarting into an update isn't leaving RetroFE (exit.bat may shut the machine down)
+				if (!Catalog::relaunchPending())
+					l.exitScript();
 				running = false;
 			}
 			break;
@@ -2427,7 +2430,13 @@ bool RetroFE::run()
 			// Catalog installs show up once the user is back on Home and nothing's left to do
 			bool backHome = homeMenu_ && state == RETROFE_IDLE && !manager_.isOpen() &&
 				currentPage_ && currentPage_->getCollectionName() == Home::collectionName;
-			if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
+			if (manager_.takeRestartRequest())
+			{
+				// RetroFE updated itself: exit, and main() starts the new version
+				reboot_ = false;
+				state = RETROFE_QUIT_REQUEST;
+			}
+			else if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
 			{
 				// Reload everything so the changes show up
 				reboot_ = true;
@@ -3193,7 +3202,7 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 				{
 					// Catalog items are packages: show the chosen one's details
 					if (nextPageItem_->name == Home::catalogSourcesItem)
-						manager_.open(ManagerUI::Screen::Sources);
+						manager_.open("sources");
 					else
 						manager_.openPackage(nextPageItem_->name);
 				}
@@ -3367,11 +3376,11 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 	}
 	if (item->name == Home::settings)
 	{
-		manager_.open(ManagerUI::Screen::Settings);
+		manager_.open("settings");
 	}
 	else if (item->name == Home::manage)
 	{
-		manager_.open(ManagerUI::Screen::Manage);
+		manager_.open("manage");
 	}
 	else if (item->name == Home::catalog)
 	{
@@ -3382,7 +3391,7 @@ RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
 			nextPageName_ = Home::catalogCollectionName;
 			return RETROFE_NEXT_PAGE_REQUEST;
 		}
-		manager_.open(ManagerUI::Screen::Sources);
+		manager_.open("sources");
 	}
 	return RETROFE_IDLE;
 }

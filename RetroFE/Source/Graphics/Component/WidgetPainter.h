@@ -43,7 +43,14 @@ public:
     void begin(const ViewInfo& owner);
 
     void text(const std::string& text, float x, float y, float maxWidth, float fontSize, bool focused, float alpha);
+
+    // The same in another font of the same face, e.g. another color; null means the normal font
+    void textWith(FontManager* font, const std::string& text, float x, float y, float maxWidth, float fontSize, float alpha);
+
     void rect(float x, float y, float w, float h, SDL_Color color, float alpha);
+
+    // Draws a texture the caller owns, stretched to the box
+    void texture(SDL_Texture* texture, float x, float y, float w, float h, float alpha);
 
     float textWidth(const std::string& text, float fontSize) const;
 
