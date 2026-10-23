@@ -53,7 +53,8 @@ namespace
         writeFile(root + "/emu/cores/snes.dll", "x");
         writeFile(launchers + "retro.conf",
                   "# RetroArch\r\nexecutable = %RETROFE_PATH%/emu/retroarch.exe\r\narguments = -L cores/fceumm.dll \"%ITEM_FILEPATH%\"\r\n");
-        writeFile(launchers + "notepad.conf", "executable = emu/missing.exe\narguments = \"%ITEM_FILEPATH%\"\nreboot = yes\n");
+        // %RETROFE_PATH%: a bare relative path with a folder is "Windows only" elsewhere, not missing
+        writeFile(launchers + "notepad.conf", "executable = %RETROFE_PATH%/emu/missing.exe\narguments = \"%ITEM_FILEPATH%\"\nreboot = yes\n");
         writeFile(launchers + "spare.conf", "executable = emu/retroarch.exe\n");
 
         writeFile(root + "/collections/Arcade/settings.conf", "list.extensions = zip\nlauncher = retro, notepad, nowhere\n");

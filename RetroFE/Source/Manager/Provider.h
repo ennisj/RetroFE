@@ -160,6 +160,17 @@ namespace Manager
         // RetroFE should reload to show a change (e.g. a game's new title),
         // once the user closes the manager rather than straight away
         std::function<void()> requestReload = [] {};
+
+        // Start a game as RetroFE does from a page: collection is its own
+        // system, game its name. After a successful action the manager closes
+        // (asking about unsaved changes like Close does; asking again for the
+        // same game leaves them), RetroFE reloads first when changes are
+        // waiting, launches it with the usual launcher (per-game overrides
+        // included), and then opens Manage on that game again. Null where
+        // games can't be started (tests). launchProblem says why a launch
+        // can't be asked for now (a reload is due while the Catalog installs), or "".
+        std::function<void(const std::string& collection, const std::string& game)> requestLaunch{};
+        std::function<std::string()> launchProblem{};
     };
 
     // Adds every provider to the model (Providers.cpp)

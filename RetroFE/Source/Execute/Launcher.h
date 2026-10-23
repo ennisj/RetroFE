@@ -28,6 +28,8 @@ class Launcher
 public:
     explicit Launcher(Configuration &c, RetroFE &retroFe);
     bool run(std::string collection, Item *collectionItem, Page *currentPage = NULL, bool isAttractMode = false);
+    // Why the last run() didn't start the game (a sentence), or "" when it did
+    const std::string& failure() const { return failure_; }
     void startScript();
     void exitScript();
 	void LEDBlinky( int command, std::string collection = "", Item *collectionItem = NULL);
@@ -44,4 +46,5 @@ private:
     bool execute(std::string executable, std::string args, std::string currentDirectory, bool wait = true, Page* currentPage = nullptr, bool isAttractMode = false, Item* collectionItem = nullptr);
     Configuration &config_;
     RetroFE &retroFeInstance_;
+    std::string failure_;
 };

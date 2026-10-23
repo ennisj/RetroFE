@@ -69,6 +69,14 @@ namespace Library
         std::map<std::string, std::string> metadataOverrides(const Index& index, const std::string& collection,
                                                              const std::string& game) const;
 
+        // Hides a game of a system from RetroFE's lists, or shows it again, with
+        // the system's exclude list (exclude.txt, or the file list.excludeFile
+        // names, LB12). game is the item name; the lines are its files' names
+        // without the extension, exactly as spelt (what RetroFE matches), or the
+        // name itself for a listed game with no file. Hiding needs a game shown
+        // now; showing removes every line naming it.
+        EditResult setGameHidden(const Index& index, const std::string& collection, const std::string& game, bool hidden);
+
         // --- Collection settings ----------------------------------------------------
         // Keys a screen may change, and nothing else
         static const std::vector<std::string>& editableSettings();   // settings.conf keys

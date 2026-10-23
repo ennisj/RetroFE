@@ -27,7 +27,9 @@ const char* const gamesForm = R"(
   <text label="Search" bind="game:query" live="yes" hint="Name or title"/>
   <choice label="In" bind="game:filter" options="game:filters"
           help="A system, a merged collection, or a menu: a menu covers everything below it."/>
-  <toggle label="Only games without metadata" bind="game:onlyNoMetadata"/>
+  <toggle label="Only games without metadata" bind="game:onlyNoMetadata" visibleWhen="!game:onlyHidden"/>
+  <toggle label="Only hidden games" bind="game:onlyHidden"
+          help="Games whose system's exclude list keeps RetroFE from showing them. Open one to show it again."/>
   <results bind="game:search" open="game" limit="100" empty="No games match."/>
 </form>
 )";
@@ -36,6 +38,7 @@ const char* const gamesForm = R"(
 const char* const gameForm = R"(
 <form id="game" title="Game" bind="game:title">
   <note bind="game:notFound"/>
+  <note bind="game:hiddenNote"/>
   <image bind="game:image" rows="4"/>
   <value label="System" bind="game:system"/>
   <value label="File" bind="game:file"/>
@@ -44,6 +47,8 @@ const char* const gameForm = R"(
   <value label="Manufacturer" bind="game:manufacturer"/>
   <value label="Genre" bind="game:genre"/>
   <value label="Players" bind="game:players"/>
+  <value label="Played" bind="game:played"/>
+  <value label="Time played" bind="game:timePlayed"/>
   <value label="Favourite" bind="game:favourite"/>
   <value label="Also shown in" bind="game:shownIn"/>
   <link label="Metadata" open="game-metadata" status="game:metadataStatus" visibleWhen="game:isFound"/>
@@ -51,6 +56,12 @@ const char* const gameForm = R"(
   <link label="Media" open="game-media" status="game:mediaStatus" visibleWhen="game:isFound"/>
   <link label="Playlists and collections" open="game-playlists" status="game:playlistsStatus" visibleWhen="game:isFound"/>
   <link label="Description" open="game-description" status="game:descriptionStatus" visibleWhen="game:isFound"/>
+  <actions>
+    <button label="Start this game" action="game.launch" visibleWhen="game:isFound"/>
+    <button label="Hide this game" action="game.hide" visibleWhen="game:isFound"
+            confirm="Hide it? Its system's exclude list will name it, so RetroFE stops showing it."/>
+    <button label="Show this game again" action="game.unhide" visibleWhen="game:isHidden"/>
+  </actions>
   <value label="Folder" bind="game:folder"/>
 </form>
 )";
@@ -171,10 +182,8 @@ const char* const descriptionForm = R"(
 <form id="game-description" title="Description" bind="game:screenTitle">
   <note bind="game:notFound"/>
   <note bind="game:story:status"/>
-  <note bind="game:story:preview"/>
-  <note bind="game:story:note"/>
-  <text label="Story" bind="game:story:text" visibleWhen="game:story:canEdit" hint="No story text yet"
-        help="One line per paragraph: a | starts a new one."/>
+  <text label="Story" bind="game:story:text" multiline="yes" rows="8" visibleWhen="game:story:canEdit"
+        hint="No story text yet"/>
   <actions>
     <button label="Save" action="game.saveStory"/>
     <button label="Reset" action="game.resetStory" visibleWhen="game:isStoryDirty"/>

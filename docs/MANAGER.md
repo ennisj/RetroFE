@@ -151,16 +151,21 @@ Each screen is a **form**: fields bound to settings or other values. Up and
 Down move between fields; Left and Right change a switch, number or choice,
 or page through a list of results; Select edits text, picks a folder or file,
 presses a button, or opens a link or a result. While editing text, type and
-press Enter to keep it or Escape to cancel; Ctrl+V pastes.
+press Enter to keep it or Escape to cancel; Ctrl+V pastes. In a multi-line
+field (a game's story), Enter starts a new line and **Ctrl+Enter** keeps the
+text; the arrows, Home, End, Page Up and Page Down move the cursor, and
+Delete removes the character after it.
 
 **Manage** links to a screen for each part of your setup: Games, Menus,
 Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
 its Sources, and removing a package).
 
 **Games** searches every installed game by name or title, in one system or
-merged collection or under a menu, optionally only games without metadata.
-Choosing a game shows its facts and artwork, with a screen for each thing you
-can change:
+merged collection or under a menu, optionally only games without metadata,
+or only hidden games. Choosing a game shows its facts and artwork (with how
+often it was played, when last, and for how long, from
+`collections/playCount.txt` and `timeSpent.txt`), with a screen for each
+thing you can change:
 
 - **Metadata**: title, year, manufacturer, developer, genre, players, rating,
   score and clone of. Changes are kept in `manage/metadata/<type>.xml`, so a
@@ -175,8 +180,25 @@ can change:
   (a fallback can't be cleared), or put back what it had before.
 - **Playlists and collections**: favourite on or off, add to or take out of a
   playlist, and show it in a merged collection or take it out (`<system>.sub`).
-- **Description**: the story text (`medium_artwork/story/<game>.txt`), edited
-  on one line where ` | ` starts a new paragraph, or replaced from a file.
+- **Description**: the story text (`medium_artwork/story/<game>.txt`) in a
+  multi-line field, or replaced from a file. Lines you didn't change keep
+  their exact bytes and line endings; new lines get the file's own.
+
+The game's screen also has:
+
+- **Start this game**: closes Manage and starts the game the way its system's
+  page does: its own launcher choice included, and last played (the system's
+  `playlists/lastplayed.txt`), play count and time played kept as for any
+  launch. When changes made in Manage are waiting, RetroFE reloads first, so
+  the game starts with them; while a Catalog install is running it can't
+  reload, so the button says to wait. A missing program is pointed out
+  before starting. When the game exits, Manage opens again on the game,
+  saying why if it couldn't start. With unsaved changes on an open screen,
+  the first press says so and the second leaves them and starts the game.
+- **Hide this game**: adds it to its system's exclude list (`exclude.txt`,
+  or the file `list.excludeFile` names), so RetroFE stops listing it. Hidden
+  games are found with **Only hidden games** on Games; their screen has
+  **Show this game again**, which takes them out of the list.
 
 Every change keeps the original in `manage/backups/` first, and RetroFE shows
 it after it reloads, when you leave Manage.
@@ -380,8 +402,11 @@ ImGui instead, for example while developing.
 Editing a text, number or path field shows an on-screen keyboard, so you can
 type with a gamepad or arcade controls: the directions move between keys,
 Select presses one, Back cancels. Shift switches to capitals and symbols, and
-number fields get a number pad. Typing on a real keyboard puts the on-screen
-one away for that edit; finish with Enter or cancel with Escape. Set
+number fields get a number pad. A multi-line field adds a **New line** key and
+a row of cursor keys (`<-`, `->`, **Line up**, **Line down**); **Done** keeps
+the text, and the box at the top shows the line the cursor is on. Typing on a
+real keyboard puts the on-screen one away for that edit; finish with Enter
+(Ctrl+Enter in a multi-line field) or cancel with Escape. Set
 `onScreenKeyboard = no` to never show it.
 
 A layout styles it with `layouts/<layout>/forms/keyboard/layout.xml`, a page
@@ -432,7 +457,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 |---------|-------|
 | `section` | A titled group of fields |
 | `actions` | Buttons |
-| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. |
+| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. `multiline="yes"` makes `text` several lines, `rows` high (default 4), wrapped at spaces, with "..." when there's more than fits; the value keeps a `\n` between lines. |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
 | `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |

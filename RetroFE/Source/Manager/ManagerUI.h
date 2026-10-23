@@ -17,6 +17,7 @@
 
 #include "FormView.h"
 #include "ImGuiScreen.h"
+#include "LaunchQueue.h"
 #include "ManagerModel.h"
 #include "Navigator.h"
 #include "../Catalog/Service.h"
@@ -30,6 +31,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 class CollectionInfo;
@@ -118,6 +120,17 @@ public:
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);
 
+    // A game Manage asked to start (Services::requestLaunch, "Start this game")
+    using LaunchRequest = Manager::LaunchQueue::Request;
+    // True once, with the request, after the manager closed for it. Not while
+    // a reload is due: the request outlives RetroFE's reload (it's kept for
+    // the next ManagerUI), so the game starts with the changes made in Manage.
+    // A reload that can't happen (a Catalog install) drops it (LaunchQueue).
+    bool takeLaunchRequest(LaunchRequest& request);
+    // After the game: Manage opens again on its screen (Manage > Games > the
+    // game), saying it's back, or problem when it couldn't be started
+    void returnFromLaunch(const LaunchRequest& request, const std::string& problem);
+
     // The page RetroFE draws collections with ("layout", or a randomLayout one
     // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
     void setLayoutPage(const std::string& page) { layoutPage_ = page; }
@@ -187,6 +200,8 @@ private:
     bool reloadWhenClosed_ = false;   // Services::requestReload was called
     bool leaveWarned_ = false;        // a provider objected to leaving; doing it again leaves
     int cursorWasShown_ = SDL_ENABLE;
+    // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
+    inline static Manager::LaunchQueue launches_;
 
     std::string status_;
     bool statusIsError_ = false;
