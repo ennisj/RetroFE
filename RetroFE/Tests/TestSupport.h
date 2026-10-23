@@ -18,6 +18,11 @@
 // A minimal test harness for retrofe_tests: checks count failures, run()
 // names a test, and each test gets a fresh folder.
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -47,12 +52,26 @@ namespace Test
         check(actual == expected, what + ": expected \"" + expected + "\", got \"" + actual + "\"");
     }
 
+    // This run's own folder under %TEMP%/retrofe_tests: one per process, so
+    // test runs from several worktrees at once can't delete each other's files.
+    // TestsMain removes it at the end.
+    inline std::filesystem::path runFolder()
+    {
+#ifdef _WIN32
+        static const std::filesystem::path folder = std::filesystem::temp_directory_path() / "retrofe_tests" / std::to_string(_getpid());
+#else
+        static const std::filesystem::path folder = std::filesystem::temp_directory_path() / "retrofe_tests" / std::to_string(getpid());
+#endif
+        return folder;
+    }
+
     // A fresh, empty folder per test
     inline std::string makeRoot(const std::string& name)
     {
-        std::filesystem::path root = std::filesystem::temp_directory_path() / "retrofe_tests" / name;
-        std::filesystem::remove_all(root);
-        std::filesystem::create_directories(root);
+        std::filesystem::path root = runFolder() / name;
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+        std::filesystem::create_directories(root, ec);
         return root.string();
     }
 

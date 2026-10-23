@@ -37,6 +37,7 @@
 // videos
 
 // emulators
+#include "Emulators/EmulatorProvider.h"
 
 // themes
 
@@ -55,6 +56,7 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     // videos
 
     // emulators
+    model.addProvider(std::make_unique<EmulatorProvider>(services));
 
     // themes
 }
