@@ -1,7 +1,7 @@
 # Catalog: content sources, download and install
 
-**Status:** draft, 2026-10-22. Reviewed; see [Decisions](#decisions). One
-question is still open. Nothing here is built yet.
+**Status:** draft, 2026-10-22. Reviewed; see [Decisions](#decisions).
+Nothing here is built yet.
 
 The Catalog is the Home menu's place for getting content: browse what's
 available, install it, and keep it up to date. This document proposes how
@@ -252,13 +252,16 @@ Copied deliberately, with One Saucier itself unchanged:
 2. **The catalog folder is configurable** with `catalogPath`, defaulting to
    `catalog/` under the root.
 3. **No 7-Zip for now.** ZIP only.
-4. *Open:* whether sources can suggest other sources. See below.
+4. **Sources can't suggest other sources, for now** (option A below). Every
+   source is added by hand; suggestions can be revisited later.
 5. **No emulator packages yet.** Phase 1 covers collections, layouts and
    media; emulators come later.
 6. **OnesaUCE content keeps its `version.txt` markers** when installed
    through the `archiveorg` adapter.
 
-## Open question: can a source suggest other sources?
+## Background: could a source suggest other sources?
+
+*Decided: option A for now. Kept here for when this is revisited.*
 
 **The problem it solves.** Every source has to be added before the Catalog
 shows anything, and on a cabinet that means typing a URL on the on-screen
@@ -303,7 +306,7 @@ The options:
 - Once added, a suggested source's own suggestions show too. Every step is a
   user's choice, so there's no automatic chain.
 
-**A related way to avoid typing,** independent of the above: when a USB
-stick or folder has a `sources.conf` (or an index file) at its top level,
-Manage → Sources could offer "Add sources from E:\". That works without any
-network and without suggestions.
+**A related way to avoid typing,** independent of the above and not yet
+decided: when a USB stick or folder has a `sources.conf` (or an index file) at
+its top level, Manage → Sources could offer "Add sources from E:\". That works
+without any network and without suggestions. It isn't part of phase 1.
