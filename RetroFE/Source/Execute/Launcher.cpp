@@ -17,6 +17,7 @@
 #include "Launcher.h"
 #include "../RetroFE.h"
 #include "../Collection/Item.h"
+#include "../Library/Files.h"
 #include "../Library/Properties.h"
 #include "../Utility/Log.h"
 #include "../Database/Configuration.h"
@@ -734,6 +735,17 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 	std::filesystem::path exePath(executable);
 	if (!exePath.is_absolute()) {
 		exePath = std::filesystem::absolute(exePath);
+		// A bare program name (e.g. cmd.exe) that isn't in RetroFE's folder is
+		// looked up on the system path, as a command prompt would
+		// (Library::findProgram, the same lookup Manage's Emulators screen uses)
+		std::error_code ec;
+		if (!std::filesystem::exists(exePath, ec)) {
+			std::string found = Library::findProgram(executable);
+			if (!found.empty()) {
+				LOG_INFO("Launcher", executable + " isn't in RetroFE's folder; using " + found + " from the system path");
+				exePath = found;
+			}
+		}
 	}
 
 	std::filesystem::path currDir(currentDirectory);
@@ -783,8 +795,16 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 
 		// Construct command line
 		std::string commandLine = "\"" + exePathStr + "\"";
-		if (!args.empty()) {
-			commandLine += " " + args;
+		std::string runArgs = args;
+		if (Library::iequals(exePath.filename().string(), "cmd.exe")) {
+			// cmd /c drops the first and last quote when there are more than two
+			runArgs = Library::cmdArguments(args);
+			if (runArgs != args) {
+				LOG_INFO("Launcher", "Quoted the command for cmd.exe /c: " + runArgs);
+			}
+		}
+		if (!runArgs.empty()) {
+			commandLine += " " + runArgs;
 		}
 
 		LOG_INFO("Launcher", "Command line to be executed: " + commandLine);

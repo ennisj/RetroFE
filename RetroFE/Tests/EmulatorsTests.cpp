@@ -300,6 +300,28 @@ static Test::Suite emulators("emulators", [] {
         checkEqual(f.model->get("emulator:newName"), "retro copy 2", "the next copy gets another name");
     });
 
+    run("emulators: a copy of a launcher that restarts RetroFE restarts it too", [] {
+        std::string root = makeInstall("emu-duplicate-reboot");
+        writeFile(root + "/launchers." + os() + "/Switch.conf",
+                  "executable = cmd.exe\narguments = /c switch.bat\nreboot = yes\n");
+        Fixture f(root);
+        f.model->setScreen("emulator", { { "id", "Switch" }, { "scope", "global" } });
+        Forms::Model::Result duplicate = f.model->runAction("emulator.duplicate");
+        check(duplicate.ok, "duplicated: " + duplicate.message);
+        f.model->setScreen("emulator-new", duplicate.params);
+        checkEqual(f.model->get("emulator:newReboot"), "yes", "the copy restarts RetroFE as the original does");
+        Forms::Model::Result created = f.model->runAction("emulator.create");
+        check(created.ok, "created: " + created.message);
+        check(contains(readFile(root + "/launchers." + os() + "/Switch copy.conf"), "reboot = yes"), "written to the copy");
+
+        f.model->setScreen("emulator-new", {});
+        f.model->set("emulator:newName", "Plain");
+        f.model->set("emulator:newExecutable", "cmd.exe");
+        Forms::Model::Result plain = f.model->runAction("emulator.create");
+        check(plain.ok, "created: " + plain.message);
+        check(!contains(readFile(root + "/launchers." + os() + "/Plain.conf"), "reboot"), "a new launcher doesn't restart RetroFE");
+    });
+
     run("emulators: only unused launchers can be deleted", [] {
         std::string root = makeInstall("emu-delete");
         Fixture f(root);

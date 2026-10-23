@@ -424,7 +424,7 @@ void EmulatorProvider::set(const std::string& key, const std::string& value, con
         query_ = value;
     }
     else if (key == "newName" || key == "newExecutable" || key == "newPreset" || key == "newCore"
-             || key == "newArguments" || key == "newWorkingFolder") {
+             || key == "newArguments" || key == "newWorkingFolder" || key == "newReboot") {
         std::string field = draftField(key);
         draft_.set(field, field == "arguments" ? value : Utils::trimEnds(value));
     }
@@ -557,6 +557,7 @@ std::map<std::string, std::string> EmulatorProvider::draftDefaults(const Manager
     values["preset"] = "custom";
     values["arguments"] = def.arguments;
     values["workingFolder"] = def.currentDirectory;
+    values["reboot"] = def.reboot ? "yes" : "no";   // e.g. a theme switcher that needs RetroFE to restart
     return values;
 }
 
@@ -641,6 +642,7 @@ Forms::Model::Result EmulatorProvider::create()
     launcher.executable = draftExecutable();
     launcher.arguments = draftArguments();
     launcher.currentDirectory = Emulators::portablePath(index->options.root, draft_.get("workingFolder"), index->options.os);
+    launcher.reboot = Forms::isTruthy(draft_.get("reboot"));
     Library::EditResult edit = services_.editor->addLauncher(*index, launcher);
     result.message = edit.message;
     if (!edit.ok) {

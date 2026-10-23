@@ -214,6 +214,13 @@ bool ConfFile::save(std::string& error, Backups* backups)
     if (!dirty_ && exists_) {
         return true;
     }
+    // Read as missing, but something has created it since (another editor of
+    // the same file): writing would replace that file with this copy's lines
+    std::error_code ec;
+    if (!exists_ && fs::exists(path_, ec)) {
+        error = path_ + " was created by something else meanwhile, so it wasn't overwritten. Try again.";
+        return false;
+    }
     if (backups && !backups->beforeChange(path_, error)) {
         return false;
     }
@@ -313,6 +320,16 @@ bool ConfLayers::ensureExists(size_t index, const std::string& initialContent, s
 {
     ConfFile& file = files_[index];
     if (file.exists()) {
+        return true;
+    }
+    // The flag is from the last load: another editor (e.g. a second
+    // SettingsFile) may have created the file since. Then read it, never replace it
+    std::error_code ec;
+    if (fs::exists(file.path(), ec)) {
+        if (!file.load(&error)) {
+            return false;
+        }
+        reindex();
         return true;
     }
     // Templates are written with the platform's line endings

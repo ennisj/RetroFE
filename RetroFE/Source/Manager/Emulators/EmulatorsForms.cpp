@@ -27,11 +27,11 @@ const char* const emulatorsForm = R"(
   <note bind="emulator:status"/>
   <text label="Search" bind="emulator:query" live="yes" hint="Launcher, program or system"/>
   <results bind="emulator:search" open="emulator" empty="No launchers match."/>
+  <link label="Add a launcher" open="emulator-new"/>
   <section label="Used but not defined" visibleWhen="emulator:hasUnresolved">
     <note bind="emulator:unresolvedNote"/>
     <results bind="emulator:unresolved" open="emulator-new" param="name"/>
   </section>
-  <link label="Add a launcher" open="emulator-new"/>
 </form>
 )";
 
@@ -94,6 +94,7 @@ const char* const emulatorNewForm = R"(
   <text label="Custom arguments" bind="emulator:newArguments" hint="e.g. &quot;%ITEM_FILEPATH%&quot;" visibleWhen="emulator:isCustom"
         help="%ITEM_FILEPATH% is the game's file, %ITEM_NAME% its name, %ITEM_DIRECTORY% its folder (ending in a separator: in quotes, write &quot;%ITEM_DIRECTORY%.&quot;)."/>
   <folder label="Working folder" bind="emulator:newWorkingFolder" hint="The program's folder"/>
+  <toggle label="Restarts RetroFE" bind="emulator:newReboot" help="RetroFE restarts once the program exits, e.g. after one that switches the theme."/>
   <value label="Runs" bind="emulator:newCommand"/>
   <button label="Create launcher" action="emulator.create"/>
 </form>

@@ -91,7 +91,7 @@ const char* const launcherForm = R"(
 const char* const infoForm = R"(
 <form id="{p}-info" title="Info" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <text label="Title" bind="{p}:infoTitle" hint="{nameHint}"/>
+  <text label="Title" bind="{p}:infoTitle" hint="e.g. {nameHint}"/>
   <text label="Manufacturer" bind="{p}:manufacturer"/>
   <text label="Year" bind="{p}:year"/>
   <text label="Genre" bind="{p}:genre"/>
