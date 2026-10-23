@@ -155,8 +155,34 @@ press Enter to keep it or Escape to cancel; Ctrl+V pastes.
 
 **Manage** links to a screen for each part of your setup: Games, Menus,
 Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
-its Sources, and removing a package). Most of these say "Coming soon" for
-now. **Systems** lists your systems and adds one: point RetroFE at a folder of
+its Sources, and removing a package). Some of these say "Coming soon" for
+now.
+
+**Games** searches every installed game by name or title, in one system or
+merged collection or under a menu, optionally only games without metadata.
+Choosing a game shows its facts and artwork, with a screen for each thing you
+can change:
+
+- **Metadata**: title, year, manufacturer, developer, genre, players, rating,
+  score and clone of. Changes are kept in `manage/metadata/<type>.xml`, so a
+  content update doesn't undo them; each changed field can be put back to the
+  shipped value.
+- **Launcher**: another installed launcher for this game only, or the
+  system's (which removes `collections/<system>/launchers/<game>.conf`).
+  Names that aren't installed are pointed out.
+- **Media**: every kind of art, video and text, saying whether the game has its
+  own file, shows a fallback (from its title, its parent or the collection's
+  default) or has nothing. Replace one from a file, clear the game's own file
+  (a fallback can't be cleared), or put back what it had before.
+- **Playlists and collections**: favourite on or off, add to or take out of a
+  playlist, and show it in a merged collection or take it out (`<system>.sub`).
+- **Description**: the story text (`medium_artwork/story/<game>.txt`), edited
+  on one line where ` | ` starts a new paragraph, or replaced from a file.
+
+Every change keeps the original in `manage/backups/` first, and RetroFE shows
+it after it reloads, when you leave Manage.
+
+**Systems** lists your systems and adds one: point RetroFE at a folder of
 games and the emulator that runs them, and it reloads with the new system
 under Browse. On a bare install Manage opens by itself and says where to
 start.

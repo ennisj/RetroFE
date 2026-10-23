@@ -110,6 +110,10 @@ namespace Library
         EditResult replaceMedia(const MediaSlot& slot, const std::string& file);
         // Removes the slot's own file; refused when the slot only shows a fallback
         EditResult clearMedia(const MediaSlot& slot);
+        // Writes a text slot's own <basename>.txt (a game's story, say) with
+        // text as given. Refused for image and video slots and for empty text
+        // (clearMedia removes the file).
+        EditResult writeMediaText(const MediaSlot& slot, const std::string& text);
 
         // Puts a file changed here back as it was before the first change
         EditResult restoreOriginal(const std::string& file);

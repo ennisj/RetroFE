@@ -28,6 +28,7 @@
 // so sections added at the same time merge without conflicts.
 
 // games
+#include "Games/GameProvider.h"
 
 // menus
 
@@ -45,6 +46,7 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
     (void)services;
 
     // games
+    model.addProvider(std::make_unique<Manager::GameProvider>(services));
 
     // menus
 

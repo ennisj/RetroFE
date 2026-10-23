@@ -243,6 +243,7 @@ After a successful write, call `indexer.changed("what")`.
 | `addToPlaylist(index, collection, playlist, gameCollection, game)` / `removeFromPlaylist` | `collections/<c>/playlists/<name>.txt` | A game of another collection is written as `_<C>:<name>`. The game must be on that page. `all` and `lastplayed` are refused. An entry covered by `*` can't be removed. |
 | `addToSub(index, merged, source, game)` / `removeFromSub` | `collections/<merged>/<source>.sub` | An empty .sub already shows everything, so adding is a no-op and removing one game is refused. Removing the last entry deletes the file. |
 | `replaceMedia(slot, file)` / `clearMedia(slot)` | The slot's own folder, as `<basename>.<ext>`, with the extension lower-cased | The file kind must fit the slot. The slot's other files of that kind are moved aside. Clearing is refused when the slot only shows a fallback. Nothing is ever written into a fallback's folder. |
+| `writeMediaText(slot, text)` | A text slot's own `<basename>.txt` (a game's story), with the text as given | Text slots only; empty text is refused (use `clearMedia`). An existing own file keeps its spelling. |
 | `restoreOriginal(file)` | Puts back the copy kept before the first change, or deletes a file that didn't exist then | |
 
 **Clearing metadata.** `MetadataOverrides::shipped` reads the game's row the

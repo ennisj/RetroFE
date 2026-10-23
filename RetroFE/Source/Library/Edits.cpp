@@ -1049,6 +1049,33 @@ EditResult Editor::clearMedia(const MediaSlot& slot)
     return result;
 }
 
+EditResult Editor::writeMediaText(const MediaSlot& slot, const std::string& text)
+{
+    if (slot.kind != MediaKind::Text) {
+        return EditResult::fail("The " + slot.type + " isn't a text slot.");
+    }
+    if (slot.directory.empty() || slot.basename.empty()) {
+        return EditResult::fail("This slot has no folder to put a file in.");
+    }
+    if (Utils::trimEnds(text).empty()) {
+        return EditResult::fail("The text is empty; clear the " + slot.type + " instead.");
+    }
+    if (text.size() > 256 * 1024) {
+        return EditResult::fail("The text is too long (at most 256 KB).");
+    }
+    // An existing own file keeps its spelling (the file system may ignore case)
+    std::string target = Utils::combinePath(slot.directory, slot.basename + ".txt");
+    std::vector<std::string> existing = slotFiles(slot.directory, slot.basename, acceptedExtensions(MediaKind::Text));
+    if (!existing.empty()) {
+        target = existing.front();
+    }
+    std::string error;
+    if (!backups_.beforeChange(target, error) || !writeFileAtomic(target, text, error)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, "Saved the " + slot.type + ".", { target } };
+}
+
 EditResult Editor::restoreOriginal(const std::string& file)
 {
     std::string error;
