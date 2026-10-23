@@ -16,20 +16,45 @@ License: distributed with RetroFE under the GNU General Public License v3.0
 (LICENSE.txt at the root of the repository). The fonts have their own
 licenses, listed below and kept in fonts/.
 
+Provenance of upstream's assets:
+  - images/wall.png, floor.png, infobar1.png, infobar2.png, bar.png, topbar.png,
+    system_info_bg.png, system_info_overlay.png and video_overlay.png follow the look
+    of the Aeon Nox skin for Kodi by BigNoid (github.com/BigNoid/Aeon-Nox). That skin
+    is not GPL: its LICENSE.txt says Creative Commons Attribution-ShareAlike 3.0 United
+    States (2011 to January 2014) and Creative Commons Attribution-NonCommercial-
+    ShareAlike 4.0 International (since January 2014). Upstream RetroFE doesn't say
+    whether these images were copied from the skin or redrawn, or from which version;
+    it ships them in its GPL-3.0 repository with the credit in credits.txt.
+  - video/intro.mp4 (the splash video: "RETRO FE" lettering over Earth footage, with
+    audio): provenance unknown, shipped by upstream RetroFE. Its rights are not
+    documented anywhere upstream.
+  - sounds/*.wav: shipped by upstream RetroFE; their origin isn't documented either.
+
 
 Fonts
 -----
-  BebasNeue.ttf                Bebas Neue 2.000, Dharma Type. SIL Open Font License 1.1
-                               (fonts/OFL-BebasNeue.txt). From github.com/google/fonts,
-                               ofl/bebasneue, commit 1e42f687f08eac15a39bde41db3d32198d269067.
+  BebasNeue.ttf                Bebas Neue 2.000, Dharma Type. SIL Open Font License 1.1.
+                               github.com/google/fonts ofl/bebasneue, commit
+                               1e42f687f08eac15a39bde41db3d32198d269067.
   OpenSans.ttf                 Open Sans 3.003, Condensed Regular: the static wdth=75 wght=400
-                               instance of OpenSans[wdth,wght].ttf from github.com/google/fonts,
+                               instance of OpenSans[wdth,wght].ttf from github.com/google/fonts
                                ofl/opensans, commit db398e70ce14719a0c99da39fd257c0c75dfae02,
-                               made with fontTools. SIL Open Font License 1.1 (fonts/OFL-OpenSans.txt).
-  Oswald-Regular.ttf,          Oswald 2.002, vernon adams, unchanged from upstream.
-  Oswald-Bold.ttf              SIL Open Font License 1.1 (fonts/OFL-Oswald.txt).
-  RobotoCondensed-Regular.ttf  Roboto Condensed 2.001201, Google, unchanged from upstream.
-                               Apache License 2.0 (fonts/LICENSE-RobotoCondensed.txt).
+                               made with fontTools. SIL Open Font License 1.1.
+  Oswald-Regular.ttf,          Oswald 2.002, vernon adams, unchanged from upstream: byte for byte
+  Oswald-Bold.ttf              the files in github.com/google/fonts ofl/oswald at commit
+                               90abd17b4f97671435798b6147b698aa9087612f. SIL Open Font License 1.1.
+  RobotoCondensed-Regular.ttf  Roboto Condensed 2.001201, Google, unchanged from upstream: byte
+                               for byte the file in github.com/google/fonts apache/robotocondensed
+                               at commit 90abd17b4f97671435798b6147b698aa9087612f.
+                               Apache License 2.0.
+
+The license files in fonts/ are copied byte for byte from the same places
+(fonts/.gitattributes keeps Git from changing their line endings):
+  OFL-BebasNeue.txt              google/fonts ofl/bebasneue/OFL.txt at 1e42f687
+  OFL-OpenSans.txt               google/fonts ofl/opensans/OFL.txt at db398e70
+  OFL-Oswald.txt                 google/fonts ofl/oswald/OFL.txt at 90abd17b
+  LICENSE-RobotoCondensed.txt    google/fonts apache/robotocondensed/LICENSE.txt at 90abd17b
+  COPYRIGHT-RobotoCondensed.txt  google/fonts apache/robotocondensed/COPYRIGHT.txt at 90abd17b
 
 
 What this fork changed
@@ -39,10 +64,14 @@ Upstream drew systems (menu 0) and games (menu 1) on one page; the two views are
 now separate pages:
 
   layout.xml, layout 4x3.xml      The games view (information wall, box art), used by
-                                  every collection without a page of its own. It now
-                                  shows with onEnter as well as onMenuEnter.
-  collections/Main/layout/        The systems view (one logo per collection) for Browse.
-                                  Collections without a logo show their name.
+                                  every collection of games without a page of its own.
+                                  It now shows with onEnter as well as onMenuEnter, and
+                                  its labels (Publisher, Genre...) only show with a value.
+  collections/_menu/layout/       The systems view (one logo per collection). RetroFE
+                                  uses it for any collection whose items are all
+                                  collections, such as Main (Browse) or a "Consoles"
+                                  menu, unless it has a page of its own. Collections
+                                  without a logo show their name.
   collections/Home/layout/        Home (Catalog, Settings, Manage, Browse) in the systems
                                   style, with a logo, icon, tagline and description per
                                   item under collections/Home/medium_artwork/.
@@ -50,9 +79,15 @@ now separate pages:
                                   source and version in the info panel, and an icon and
                                   text for the Sources item under
                                   collections/Catalog/medium_artwork/.
-  forms/layout.xml                Settings, Manage and Sources, on the theme's info panel.
+  forms/layout.xml                Settings, Manage, Sources and the other screens, on the
+                                  theme's info panel.
   forms/package/layout.xml        A package, leaving the Catalog's info panel visible.
   forms/keyboard/layout.xml       The on-screen keyboard.
+  "layout 4x3.xml"                A 4:3 version of each page above, for randomLayout =
+                                  layout 4x3.
+
+These pages are generated from upstream's layout.xml and "layout 4x3.xml" by
+Scripts/aeon-nox/gen_layouts.py in the RetroFE repository.
 
 Also:
   - Fonts: BebasNeue.ttf was version 1.002 under the Dharma Type EULA, which doesn't
@@ -62,12 +97,24 @@ Also:
     Hebrew). fonts/MC360.ttf, actually Ubuntu Condensed 0.80 under the Ubuntu Font
     Licence (shipped without it), is removed; the games view's story text uses
     Roboto Condensed instead. License texts added for every font.
-  - New artwork, drawn for the fork: images/background.png (behind every page, where
-    upstream was black), images/form_focus.png (the focused row on form pages), and
-    the Home logos and icons and the Sources icon (Bebas Neue for the logo text).
+  - New artwork, all of it made by Scripts/aeon-nox/gen_images.py in the RetroFE
+    repository, which draws it with Pillow from rectangles, ellipses, arcs and
+    polygons whose coordinates are written in the script. No icon font, icon set or
+    traced artwork was used; the shapes are the usual metaphors (a download arrow
+    over a tray, a gear, sliders, a grid of tiles, a stack of disks). The script
+    regenerates these files byte for byte:
+      images/background.png        behind every page, where upstream was black
+      images/form_focus.png        the focused row on form pages
+      collections/Home/medium_artwork/logo/*.png    Home's logos: an icon and the
+                                   item's name in Bebas Neue (OFL)
+      collections/Home/medium_artwork/icon/*.png    Home's icons
+      collections/Catalog/medium_artwork/icon/Catalog Sources.png
   - Games view: the top bar names the collection in text (upstream showed its system
     logo, which collections made in RetroFE don't have); "ITEMS" and the count no
     longer overlap; titles without box art use Oswald; MC360 replaced as above.
+  - Systems view: names without a logo use Bebas Neue at a size that fits between
+    logos; the video's black backing is gone, and the Browse icon shows faintly where
+    a system has no video.
   - Images and sounds on collection pages are referenced relative to their folder
     (../../../images/...), so RetroFE doesn't log an error before falling back.
   - XML tidied so the files are well-formed: mismatched closing tags fixed, comment

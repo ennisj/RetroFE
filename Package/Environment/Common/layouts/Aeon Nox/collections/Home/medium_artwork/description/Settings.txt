@@ -1,1 +1,1 @@
-Window or full screen, which layout to use, whether RetroFE starts here on Home, and video playback. F10 opens Settings from anywhere.
+Window or full screen, which layout to use, whether RetroFE starts here on Home, and video playback. The Settings key opens it from anywhere, too.

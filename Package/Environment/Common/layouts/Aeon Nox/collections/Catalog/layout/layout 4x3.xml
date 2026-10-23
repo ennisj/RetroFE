@@ -127,28 +127,6 @@
     </reloadableText>
 
 
-    <!-- ============================================================================================================================= -->
-    <!-- Main menu reloadable art & text -->
-    <!-- ============================================================================================================================= -->
-
-
-    <!-- video_background -->
-    <image src="../../../images/black.png" alpha="0" x="1300" y="220" width="360" height="280" xOrigin="center" yOrigin="center" layer="8">
-        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
-        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
-        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
-        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
-        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
-        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
-        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
-        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
-        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
-        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
-        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
-        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </image>
-
-
     <!-- video_overlay -->
     <image src="../../../images/video_overlay.png" alpha="0" x="center" y="220" width="1400" xOrigin="center" yOrigin="center" layer="11">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
@@ -243,7 +221,7 @@
 
     <!-- Logo Menu -->
     <menu type="custom" imageType="logo" scrollTime=".2" scrollAcceleration=".02" minScrollTime="0.1" orientation="horizontal" textFallback="true" x="0" width="center" y="910">
-        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="400" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="64" fontSize="64" layer="12"/>
+        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="470" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="48" fontSize="48" layer="12"/>
         <item xOffset="-1500" alpha="0"/>
         <item xOffset="-1000">
             <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
@@ -315,32 +293,7 @@
     </reloadableVideo>
 
 
-    <!-- Kind and version: packages carry them as genre and year -->
-    <reloadableText type="genre" textFormat="uppercase" alpha="0" x="140" y="280" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
-        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
-        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
-        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
-        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
-        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
-        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
-        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
-    </reloadableText>
-
-
-    <reloadableText type="year" singlePrefix="Version " pluralPrefix="Version " alpha="0" x="140" y="325" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="30" loadFontSize="30" fontColor="ffffff" layer="10">
-        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
-        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
-        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
-        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
-        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
-        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
-        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
-    </reloadableText>
-
-
-    <!-- The Sources item has no kind or version; it has text of its own: collections/Catalog/medium_artwork/tagline/Catalog Sources.txt -->
+    <!-- A line under the title for the Sources item: collections/Catalog/medium_artwork/tagline/Catalog Sources.txt -->
     <reloadableScrollingText type="tagline" mode="layout" alpha="0" x="140" y="250" width="980" height="64" xOrigin="left" yOrigin="top" font="fonts/Oswald-Regular.ttf" fontSize="46" loadFontSize="46" fontColor="ffffff" direction="vertical" startPosition="0" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>

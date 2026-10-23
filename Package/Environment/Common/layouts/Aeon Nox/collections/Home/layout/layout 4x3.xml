@@ -204,7 +204,7 @@
 
     <!-- Logo Menu -->
     <menu type="custom" mode="layout" imageType="logo" scrollTime=".2" scrollAcceleration=".02" minScrollTime="0.1" orientation="horizontal" textFallback="true" x="0" width="center" y="910">
-        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="400" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="64" fontSize="64" layer="12"/>
+        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="470" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="48" fontSize="48" layer="12"/>
         <item xOffset="-1500" alpha="0"/>
         <item xOffset="-1000" alpha="0"/>
         <item xOffset="-500">
@@ -285,7 +285,7 @@
 
 
     <!-- Controls -->
-    <text value="Left/Right: choose     Select: open     F10: Settings" alpha="0" x="80" y="683" xOrigin="left" yOrigin="center" fontSize="34" loadFontSize="34" fontColor="dedede" layer="10">
+    <text value="Left/Right: choose     Select: open" alpha="0" x="80" y="683" xOrigin="left" yOrigin="center" fontSize="34" loadFontSize="34" fontColor="dedede" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="0.75"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="0.75"/></set></onMenuEnter>

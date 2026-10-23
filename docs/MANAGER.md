@@ -177,6 +177,11 @@ images, video, text and animations like any other page. RetroFE looks for:
 2. `layouts/<layout>/forms/layout.xml` for all of them
 3. otherwise its built-in form page
 
+When collections are drawn with another page, such as `layout 4x3` from
+`randomLayout = layout 4x3`, RetroFE first looks for
+`forms/<screen>/layout 4x3.xml`, then `forms/layout 4x3.xml`, then the two
+`layout.xml` files above. The keyboard does the same in `forms/keyboard/`.
+
 The page places the form with a `<form>` element:
 
 ```xml
@@ -348,29 +353,51 @@ How to add a section, its forms and its provider is in
 ## The default layout: Aeon Nox
 
 RetroFE's default layout is **Aeon Nox**, David Horowitz's theme after Kodi's
-Aeon Nox skin: the built-in settings, and the `settings.conf` RetroFE creates,
-say `layout = Aeon Nox`. When that folder isn't installed, RetroFE uses its
-built-in pages. `layouts/Aeon Nox/NOTICE.txt` says where it comes from and what
-this fork changed. It styles everything above, so it's a working example:
+Aeon Nox skin. The built-in settings RetroFE runs on when there's no
+`settings.conf` say `layout = Aeon Nox`, and so does the `settings.conf` it
+creates from them (ManagerModel's `initialSettings`, when Settings or Manage
+first saves something). An existing `settings.conf` without a `layout` line
+gets RetroFE's built-in pages, as before, and so does any install where the
+`layouts/Aeon Nox` folder isn't there. `layouts/Aeon Nox/NOTICE.txt` says
+where the theme comes from and what this fork changed. It styles everything
+above, so it's a working example:
 
 | File in `layouts/Aeon Nox/` | Draws |
 |-----------------------------|-------|
-| `layout.xml` | A collection's games: the information wall and box art. Every collection without a page of its own uses it. |
-| `collections/Main/layout/layout.xml` | Browse: one logo per collection, or its name when there's no logo |
-| `collections/Home/layout/layout.xml` | Home, in the same style as Browse |
+| `layout.xml` | A collection's games: the information wall and box art. Every collection of games without a page of its own uses it. |
+| `collections/_menu/layout/layout.xml` | Menus of collections, such as Browse: one logo per collection, or its name when there's no logo (see below) |
+| `collections/Home/layout/layout.xml` | Home, in the same style |
 | `collections/Home/medium_artwork/` | Home's artwork and text: `logo/`, `icon/`, `tagline/` and `description/`, each with a file per item (`Catalog.png`, `Catalog.txt`...) |
 | `collections/Catalog/layout/layout.xml` | The Catalog: package logos, with kind, source and version in the info panel |
 | `collections/Catalog/medium_artwork/` | An icon and text for the Sources item (`Catalog Sources.png`, `.txt`), which has no package artwork |
-| `forms/layout.xml` | Settings, Manage and Sources |
+| `forms/layout.xml` | Settings, Manage, Sources and the other screens |
 | `forms/package/layout.xml` | A package: the form takes the top of the screen, so the Catalog's info panel stays visible below it |
 | `forms/keyboard/layout.xml` | The on-screen keyboard |
 | `layout 4x3.xml` next to each `layout.xml` | 4:3 versions, used with `randomLayout = layout 4x3` |
 
+The pages are generated from upstream's theme by `Scripts/aeon-nox/`.
+
+### Which page a collection gets
+
+Every collection, Home and the Catalog included, is a page of its own. RetroFE
+takes it from the first of these that the layout has:
+
+1. `collections/<collection>/layout/`, the collection's own pages
+2. `collections/_menu/layout/`, when the collection is a **menu**: it has items
+   and they're all collections (from `menu.txt` or `menu/`), like Main, a
+   "Consoles" menu or Home. A menu that's still empty is drawn like a collection
+   of games.
+3. the layout's own folder
+
+The collection's `layoutFromAnotherCollection` setting still wins over all of
+these. In each folder RetroFE uses `layout.xml`, or the page `randomLayout`
+picked (`layout 4x3.xml`...), falling back to the layout's own folder for a
+page the folder doesn't have.
+
 Things worth knowing when you make your own:
 
-- Every collection, Home and the Catalog included, is a page of its own with its
-  list at `menuIndex` 0, and a page starts with `onEnter`. Tweens that only use
-  `onMenuEnter` for a deeper menu never run.
+- A page's list is at `menuIndex` 0, and a page starts with `onEnter`. Tweens
+  that only use `onMenuEnter` for a deeper menu never run.
 - Home's items and the Sources item are built in, so their artwork comes from the
   layout: `mode="layout"` on a `<menu>`, `reloadableImage` or
   `reloadableScrollingText` reads
@@ -385,4 +412,7 @@ Things worth knowing when you make your own:
   of the Catalog page visible behind the form, as `forms/package/layout.xml` does.
 - A label that should only appear with its value can be the value's prefix
   (`singlePrefix` and `pluralPrefix`) padded with spaces and cut off by
-  `maxWidth`; the Catalog page does this for Kind, Source and Version.
+  `maxWidth`; the Catalog's Kind, Source and Version and the games page's
+  Publisher, Genre and the rest do this.
+- Text stops at `maxWidth`, even mid-word, so leave names room: Aeon Nox draws
+  names without a logo at 48 px in 460 px, its logos being 480 px apart.

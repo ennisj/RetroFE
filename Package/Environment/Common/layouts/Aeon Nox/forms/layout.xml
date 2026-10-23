@@ -10,12 +10,10 @@
     <image src="../images/topbar.png" x="0" y="0" width="1920" height="50" layer="1"/>
     <text value="RETROFE" x="24" y="25" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="46" loadFontSize="46" fontColor="75c8f7" layer="2"/>
 
-    <!-- Panel: the theme's info panel and its frame, stretched. The images have a
-         transparent margin (12 px of 811 x 214) that grows with them, so they're drawn
-         larger than the panel you see (x 232-1688, y 70-1040). -->
-    <image src="../images/system_info_bg.png" x="center" y="555" width="1500" height="1092" xOrigin="center" yOrigin="center" layer="2"/>
-    <image src="../images/system_info_overlay.png" x="center" y="555" width="1500" height="1092" xOrigin="center" yOrigin="center" layer="4"/>
+    <!-- Panel: the theme's info panel and its frame, stretched (seen at x 232-1688, y 70-1040) -->
+    <image src="../images/system_info_bg.png" x="960" y="555" width="1500" height="1093" xOrigin="center" yOrigin="center" layer="2"/>
+    <image src="../images/system_info_overlay.png" x="960" y="555" width="1500" height="1093" xOrigin="center" yOrigin="center" layer="4"/>
 
-    <form x="center" y="555" width="1400" height="930" xOrigin="center" yOrigin="center" labelWidth="460" font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff" rowHeight="50" focusImage="../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35" backgroundColor="000000" backgroundAlpha="0" layer="3"/>
+    <form x="960" y="555" width="1400" height="930" xOrigin="center" yOrigin="center" labelWidth="460" font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff" rowHeight="50" focusImage="../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35" backgroundColor="000000" backgroundAlpha="0" layer="3"/>
 
 </layout>

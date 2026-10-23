@@ -83,70 +83,70 @@
     </image>
 
 
-    <!-- "Publisher:" -->
-    <text value="Publisher:" alpha="0" x="145" y="135" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
+    <!-- Labels on the wall, shown only when the game has a value (the label is the value's prefix, cut off by maxWidth) -->
+    <reloadableText type="manufacturer" singlePrefix="Publisher:                                                            " pluralPrefix="Publisher:                                                            " maxWidth="300" alpha="0" x="145" y="135" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
         <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
         <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </text>
+    </reloadableText>
 
 
     <!-- "Developer:" -->
-    <text value="Developer:" alpha="0" x="620" y="135" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
+    <reloadableText type="developer" singlePrefix="Developer:                                                            " pluralPrefix="Developer:                                                            " maxWidth="300" alpha="0" x="620" y="135" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
         <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
         <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </text>
+    </reloadableText>
 
 
     <!-- "Genre:" -->
-    <text value="Genre:" alpha="0" x="145" y="215" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
+    <reloadableText type="genre" singlePrefix="Genre:                                                            " pluralPrefix="Genre:                                                            " maxWidth="300" alpha="0" x="145" y="215" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
         <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
         <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </text>
+    </reloadableText>
 
 
     <!-- "Rating:" -->
-    <text value="Rating:" alpha="0" x="620" y="215" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
+    <reloadableText type="rating" singlePrefix="Rating:                                                            " pluralPrefix="Rating:                                                            " maxWidth="300" alpha="0" x="620" y="215" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
         <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
         <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </text>
+    </reloadableText>
 
 
     <!-- "Year:" -->
-    <text value="Year:" alpha="0" x="145" y="298" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
+    <reloadableText type="year" singlePrefix="Year:                                                            " pluralPrefix="Year:                                                            " maxWidth="300" alpha="0" x="145" y="298" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
         <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
         <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </text>
+    </reloadableText>
 
 
     <!-- "Score:" -->
-    <text value="Score:" alpha="0" x="620" y="298" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
+    <reloadableText type="score" singlePrefix="Score:                                                            " pluralPrefix="Score:                                                            " maxWidth="300" alpha="0" x="620" y="298" xOrigin="left" yOrigin="center" fontSize="40" loadFontSize="40" fontColor="75c8f7" layer="10">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
         <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
         <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </text>
+    </reloadableText>
 
 
     <!-- ============================================================================================================================= -->

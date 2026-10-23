@@ -5,17 +5,17 @@
      its info panel. (A form page has no selected item of its own, so it can't show the
      package's artwork itself.) -->
 
-    <!-- Cover the Catalog's top half (the background squashed to fit) -->
+    <!-- Cover the Catalog's top part (the background squashed to fit) -->
     <image src="../../images/background.png" x="0" y="0" width="1920" height="655" layer="0"/>
 
     <!-- Top bar (no clock: a form page has no selected item, which reloadableText needs) -->
     <image src="../../images/topbar.png" x="0" y="0" width="1920" height="50" layer="1"/>
     <text value="CATALOG" x="24" y="25" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="46" loadFontSize="46" fontColor="75c8f7" layer="2"/>
 
-    <!-- Panel (seen at y 70-640; the images' transparent margin grows with them) -->
-    <image src="../../images/system_info_bg.png" x="center" y="34" width="1600" height="642" xOrigin="center" yOrigin="top" layer="2"/>
-    <image src="../../images/system_info_overlay.png" x="center" y="34" width="1600" height="642" xOrigin="center" yOrigin="top" layer="4"/>
+    <!-- Panel (seen at x 184-1736, y 70-640) -->
+    <image src="../../images/system_info_bg.png" x="960" y="355" width="1599" height="642" xOrigin="center" yOrigin="center" layer="2"/>
+    <image src="../../images/system_info_overlay.png" x="960" y="355" width="1599" height="642" xOrigin="center" yOrigin="center" layer="4"/>
 
-    <form x="center" y="88" width="1500" height="540" xOrigin="center" yOrigin="top" labelWidth="420" font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff" rowHeight="50" focusImage="../../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35" backgroundColor="000000" backgroundAlpha="0" layer="3"/>
+    <form x="960" y="88" width="1500" height="540" xOrigin="center" yOrigin="top" labelWidth="420" font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff" rowHeight="50" focusImage="../../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35" backgroundColor="000000" backgroundAlpha="0" layer="3"/>
 
 </layout>

@@ -113,6 +113,10 @@ public:
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);
 
+    // The page RetroFE draws collections with ("layout", or a randomLayout one
+    // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
+    void setLayoutPage(const std::string& page) { layoutPage_ = page; }
+
 private:
     void drawWindow();
     void startCatalog();
@@ -167,4 +171,5 @@ private:
 
     std::string status_;
     bool statusIsError_ = false;
+    std::string layoutPage_ = "layout";
 };

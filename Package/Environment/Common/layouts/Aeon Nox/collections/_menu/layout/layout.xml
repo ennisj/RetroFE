@@ -1,6 +1,6 @@
-<layout width="1600" height="1200" font="fonts/OpenSans.ttf" loadFontSize="36" fontColor="dedede">
+<layout width="1920" height="1080" font="fonts/OpenSans.ttf" loadFontSize="36" fontColor="dedede">
 
-<!-- Aeon Nox: the Main menu (Browse), one logo per collection -->
+<!-- Aeon Nox: a menu of collections, such as Main (Browse): one logo per collection. RetroFE uses collections/_menu/layout for any collection whose items are all collections, unless it has a page of its own. -->
 
     <!-- ============================================================================================================================= -->
     <!-- Sounds -->
@@ -20,7 +20,7 @@
 
 
     <!-- Background (the fork adds it: upstream is black where there is no fanart) -->
-    <image src="../../../images/background.png" x="0" y="0" width="1600" height="1200" layer="0"/>
+    <image src="../../../images/background.png" x="0" y="0" width="1920" height="1080" layer="0"/>
 
 
     <!-- ============================================================================================================================= -->
@@ -62,19 +62,19 @@
 
 
     <!-- Info Bar Top -->
-    <!--0 to 765 for half bar or 0 to 1558 for full bar-->
-    <image src="../../../images/infobar1.png" alpha="0" x="1558" y="center" xOrigin="right" yOrigin="center" layer="9">
+    <!--0 to 920 for half bar or 0 to 1878 for full bar-->
+    <image src="../../../images/infobar1.png" alpha="0" x="1878" y="center" xOrigin="right" yOrigin="center" layer="9">
         <onEnter>
             <set duration=".50">
                 <animate type="alpha"               to="1"  />
-                <animate type="y"     from="center" to="510"/>
+                <animate type="y"     from="center" to="440"/>
             </set>
         </onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>
             <set duration=".50">
                 <animate type="alpha"               to="1"  />
-                <animate type="y"     from="center" to="510"/>
+                <animate type="y"     from="center" to="440"/>
             </set>
         </onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
@@ -89,14 +89,14 @@
         <onEnter>
             <set duration=".50">
                 <animate type="alpha" from="0"      to="1"  />
-                <animate type="y"     from="center" to="685"/>
+                <animate type="y"     from="center" to="628"/>
             </set>
         </onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>
             <set duration=".50">
                 <animate type="alpha" from="0"      to="1"  />
-                <animate type="y"     from="center" to="685"/>
+                <animate type="y"     from="center" to="628"/>
             </set>
         </onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
@@ -107,18 +107,18 @@
 
     <!-- Time -->
     <!-- With seconds = %I:%M:%S %p / Without seconds = %I:%M %p -->
-    <reloadableText type="time" timeFormat="%I:%M:%S %p" alpha="0" x="1360" y="center" xOrigin="left" yOrigin="center" fontSize="42" loadFontSize="42" fontColor="75c8f7" layer="10">
+    <reloadableText type="time" timeFormat="%I:%M:%S %p" alpha="0" x="1682" y="center" xOrigin="left" yOrigin="center" fontSize="42" loadFontSize="42" fontColor="75c8f7" layer="10">
         <onEnter>
             <set duration=".50">
                 <animate type="alpha"               to="1"  />
-                <animate type="y"     from="center" to="515"/>
+                <animate type="y"     from="center" to="450"/>
             </set>
         </onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>
             <set duration=".50">
                 <animate type="alpha"               to="1"  />
-                <animate type="y"     from="center" to="515"/>
+                <animate type="y"     from="center" to="450"/>
             </set>
         </onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
@@ -129,18 +129,18 @@
 
     <!-- Date -->
     <!-- http://www.cplusplus.com/reference/ctime/strftime/ -->
-    <reloadableText type="time" alpha="0" timeFormat="%A, %B %d, %Y" x="1340" y="center" xOrigin="right" yOrigin="center" fontSize="42" loadFontSize="42" layer="10">
+    <reloadableText type="time" alpha="0" timeFormat="%A, %B %d, %Y" x="1668" y="center" xOrigin="right" yOrigin="center" fontSize="42" loadFontSize="42" layer="10">
         <onEnter>
             <set duration=".50">
                 <animate type="alpha"               to="1"  />
-                <animate type="y"     from="center" to="515"/>
+                <animate type="y"     from="center" to="450"/>
             </set>
         </onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>
             <set duration=".50">
                 <animate type="alpha"                 to="1"  />
-                <animate type="y"       from="center" to="515"/>
+                <animate type="y"       from="center" to="450"/>
             </set>
         </onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
@@ -149,30 +149,8 @@
     </reloadableText>
 
 
-    <!-- ============================================================================================================================= -->
-    <!-- Main menu reloadable art & text -->
-    <!-- ============================================================================================================================= -->
-
-
-    <!-- video_background -->
-    <image src="../../../images/black.png" alpha="0" x="1300" y="220" width="360" height="280" xOrigin="center" yOrigin="center" layer="8">
-        <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
-        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
-        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
-        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
-        <onMenuJumpEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onMenuJumpEnter>
-        <onMenuJumpExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onMenuJumpExit>
-        <onPlaylistEnter>  <set duration=".1"><animate type="alpha" to="1"/></set></onPlaylistEnter>
-        <onPlaylistExit>   <set duration=".1"><animate type="alpha" to="0"/></set></onPlaylistExit>
-        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
-        <onHighlightExit>  <set duration=".1"><animate type="alpha" to="0"/></set></onHighlightExit>
-        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
-        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
-    </image>
-
-
     <!-- video_overlay -->
-    <image src="../../../images/video_overlay.png" alpha="0" x="center" y="220" width="1400" xOrigin="center" yOrigin="center" layer="11">
+    <image src="../../../images/video_overlay.png" alpha="0" x="center" y="220" xOrigin="center" yOrigin="center" layer="11">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -189,7 +167,7 @@
 
 
     <!-- Rectangular cropped video -->
-    <reloadableVideo imageType="screenshot" alpha="0" x="700" y="220" width="1920" maxHeight="2560" xOrigin="center" yOrigin="center" containerX="128" containerY="80" containerWidth="1000" containerHeight="280" layer="9">
+    <reloadableVideo imageType="screenshot" alpha="0" x="758" y="220" width="1920" maxHeight="2560" xOrigin="center" yOrigin="center" containerX="165" containerY="70" containerWidth="1186" containerHeight="300" layer="9">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -208,7 +186,7 @@
     <!-- text_overlay -->
 
 
-    <reloadableText type="title" alpha="0" x="140" y="220" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Bold.ttf" fontSize="80" loadFontSize="80" fontColor="ffffff" layer="10">
+    <reloadableText type="title" alpha="0" x="180" y="220" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Bold.ttf" fontSize="80" loadFontSize="80" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -224,7 +202,7 @@
     </reloadableText>
 
 
-    <reloadableText type="manufacturer" alpha="0" x="140" y="280" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="manufacturer" alpha="0" x="180" y="280" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -240,7 +218,7 @@
     </reloadableText>
 
 
-    <reloadableText type="year" alpha="0" x="140" y="320" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="30" loadFontSize="30" fontColor="ffffff" layer="10">
+    <reloadableText type="year" alpha="1" x="180" y="320" maxWidth="900" height="40" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="30" loadFontSize="30" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -257,7 +235,7 @@
 
 
     <!-- Scrolling text containing the Horizontal story -->
-    <reloadableScrollingText type="story" alpha="1" x="80" y="683" width="1530" height="35" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="35" loadFontSize="35" fontColor="f2f2f2" direction="horizontal" scrollingSpeed="100" startPosition="1820" startTime="1" layer="10">
+    <reloadableScrollingText type="story" alpha="1" x="110" y="623" width="1850" height="35" xOrigin="left" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="35" loadFontSize="35" fontColor="f2f2f2" direction="horizontal" scrollingSpeed="100" startPosition="1820" startTime="1" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -281,7 +259,7 @@
     <!-- Device Text overlay -->
 
 
-    <reloadableText type="lb_manufacturer" alpha="0" x="750" y="845" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+    <reloadableText type="lb_manufacturer" alpha="0" x="750" y="730" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -297,7 +275,7 @@
     </reloadableText>
 
 
-    <reloadableText type="manufacturer" alpha="0" x="980" y="845" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="manufacturer" alpha="0" x="1000" y="730" maxWidth="700" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -313,7 +291,7 @@
     </reloadableText>
 
 
-    <reloadableText type="lb_type" alpha="0" x="750" y="895" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+    <reloadableText type="lb_type" alpha="0" x="750" y="780" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -329,7 +307,7 @@
     </reloadableText>
 
 
-    <reloadableText type="type" alpha="0" x="1000" y="980" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="type" alpha="0" x="1000" y="780" maxWidth="700" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -345,7 +323,7 @@
     </reloadableText>
 
 
-    <reloadableText type="lb_generation" alpha="0" x="750" y="945" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+    <reloadableText type="lb_generation" alpha="0" x="750" y="830" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -361,7 +339,7 @@
     </reloadableText>
 
 
-    <reloadableText type="generation" alpha="0" x="980" y="945" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="generation" alpha="0" x="1000" y="830" maxWidth="700" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -377,7 +355,7 @@
     </reloadableText>
 
 
-    <reloadableText type="lb_year" alpha="0" x="750" y="995" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+    <reloadableText type="lb_year" alpha="0" x="750" y="880" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -393,7 +371,7 @@
     </reloadableText>
 
 
-    <reloadableText type="year" alpha="0" x="995" y="995" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="year" alpha="0" x="1000" y="880" maxWidth="700" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -409,7 +387,7 @@
     </reloadableText>
 
 
-    <reloadableText type="lb_media" alpha="0" x="750" y="1045" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+    <reloadableText type="lb_media" alpha="0" x="750" y="930" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -425,7 +403,7 @@
     </reloadableText>
 
 
-    <reloadableText type="media" alpha="0" x="980" y="1045" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="media" alpha="0" x="1000" y="930" maxWidth="700" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -441,7 +419,7 @@
     </reloadableText>
 
 
-    <reloadableText type="lb_cpu" alpha="0" x="750" y="1095" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
+    <reloadableText type="lb_cpu" alpha="0" x="750" y="980" maxWidth="250" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="75c8f7" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -457,7 +435,7 @@
     </reloadableText>
 
 
-    <reloadableText type="cpu" alpha="0" x="980" y="1095" maxWidth="570" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
+    <reloadableText type="cpu" alpha="0" x="1000" y="980" maxWidth="700" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -474,7 +452,7 @@
 
 
     <!-- Device image -->
-    <reloadableImage type="device" alpha="0" x="350" y="975" maxWidth="500" height="330" xOrigin="center" yOrigin="center" layer="11">
+    <reloadableImage type="device" alpha="0" x="480" y="855" maxWidth="490" height="340" xOrigin="center" yOrigin="center" layer="11">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -508,7 +486,7 @@
 
 
     <!-- Device image container -->
-    <reloadableImage type="device" x="center" y="975" width="2000" maxHeight="4000" xOrigin="center" yOrigin="center" containerX="75" containerY="805" containerWidth="1450" containerHeight="340" layer="9">
+    <reloadableImage type="device" x="center" y="855" width="2000" maxHeight="4000" xOrigin="center" yOrigin="center" containerX="235" containerY="685" containerWidth="1450" containerHeight="340" layer="9">
         <onEnter>          <set duration=".1"><animate type="alpha" to="0.3"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="0.3"/></set></onMenuEnter>
@@ -548,9 +526,9 @@
 
     <!-- Logo Menu -->
     <menu type="custom" imageType="logo" scrollTime=".2" scrollAcceleration=".02" minScrollTime="0.1" orientation="horizontal" textFallback="true" x="0" width="center" y="910">
-        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="400" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="64" fontSize="64" layer="12"/>
-        <item xOffset="-1500" alpha="0"/>
-        <item xOffset="-1000">
+        <itemDefaults alpha="0.2" x="center" y="center" maxWidth="460" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="48" fontSize="48" layer="12"/>
+        <item xOffset="-1440" alpha="0"/>
+        <item xOffset="-1440">
             <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
             <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
             <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
@@ -558,7 +536,15 @@
             <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
             <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
         </item>
-        <item xOffset="-500">
+        <item xOffset="-960">
+            <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
+            <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
+            <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
+            <onMenuExit>       <set duration=".1"><animate type="alpha"          to="0"  /></set></onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
+        </item>
+        <item xOffset="-480">
             <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
             <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
             <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
@@ -583,7 +569,7 @@
             <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"/></set></onGameEnter>
             <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="1"/></set></onGameExit>
         </item>
-        <item xOffset="500">
+        <item xOffset="480">
             <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
             <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
             <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
@@ -591,7 +577,7 @@
             <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
             <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
         </item>
-        <item xOffset="1000">
+        <item xOffset="960">
             <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
             <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
             <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
@@ -599,12 +585,31 @@
             <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
             <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
         </item>
-        <item xOffset="1500" alpha="0"/>
+        <item xOffset="1440">
+            <onEnter>          <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onEnter>
+            <onExit>           <set duration=".1"><animate type="alpha"          to="0"  /></set></onExit>
+            <onMenuEnter>      <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onMenuEnter>
+            <onMenuExit>       <set duration=".1"><animate type="alpha"          to="0"  /></set></onMenuExit>
+            <onGameEnter>      <set duration=".1"><animate type="alpha"          to="0"  /></set></onGameEnter>
+            <onGameExit>       <set duration=".1"><animate type="alpha" from="0" to="0.2"/></set></onGameExit>
+        </item>
+        <item xOffset="1440" alpha="0"/>
     </menu>
 
 
+    <!-- Under the video (layer 9), so it only shows for systems without one -->
+    <image src="../../Home/medium_artwork/icon/Browse.png" x="1555" y="220" maxWidth="360" maxHeight="260" alpha="0" xOrigin="center" yOrigin="center" layer="8">
+        <onEnter>          <set duration=".1"><animate type="alpha" to="0.35"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="0.35"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="0.35"/></set></onGameExit>
+    </image>
+
+
     <!-- Main video -->
-    <reloadableVideo imageType="screenshot" alpha="1" x="1300" y="220" width="360" maxHeight="280" xOrigin="center" yOrigin="center" layer="9">
+    <reloadableVideo imageType="screenshot" alpha="1" x="1555" y="220" width="400" maxHeight="300" xOrigin="center" yOrigin="center" layer="9">
         <onEnter>          <set duration=".1"><animate type="alpha" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
@@ -621,12 +626,12 @@
 
 
     <!-- Playlist -->
-    <reloadableImage type="playlist" mode="common" alpha="0" x="940" y="500" xOrigin="center" yOrigin="top" maxHeight="30" layer="19">
+    <reloadableImage type="playlist" mode="common" alpha="0" x="1150" y="430" xOrigin="center" yOrigin="top" maxHeight="40" layer="19">
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>
             <set duration=".50">
                 <animate type="alpha" from="0"   to="0"  />
-                <animate type="y"                to="500"/>
+                <animate type="y"                to="430"/>
             </set>
         </onMenuEnter>
         <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"  /></set></onMenuExit>

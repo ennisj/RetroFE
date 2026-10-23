@@ -15,6 +15,7 @@
 */
 
 #include "PageBuilder.h"
+#include "LayoutPages.h"
 #include "Page.h"
 #include "ViewInfo.h"
 #include "Component/Container.h"
@@ -93,17 +94,8 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		layoutPath = Utils::combinePath(Configuration::absolutePath, "menu");
 	}
 	else if (!collectionName.empty()) {
-		// Attempt to set layoutPath to the collection-specific path
-		std::string collectionLayoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", collectionName, "layout");
-
-		// Check if the collection-specific layout directory exists
-		if (std::filesystem::exists(collectionLayoutPath)) {
-			layoutPath = collectionLayoutPath;
-		}
-		else {
-			// If it doesn't exist, fall back to the default layout path
-			layoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
-		}
+		// The collection's own pages, else _menu's for a menu of collections, else the layout's
+		layoutPath = LayoutPages::collectionFolder(layoutPathDefault, collectionName, menuCollection_);
 	}
 	else {
 		// Default case, likely for splash page or general layouts

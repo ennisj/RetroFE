@@ -19,6 +19,7 @@
 #include "../Builtin/Builtin.h"
 #include "../Database/Configuration.h"
 #include "../Database/GlobalOpts.h"
+#include "../Graphics/LayoutPages.h"
 #include "../Graphics/Page.h"
 #include "../Graphics/PageBuilder.h"
 #include "../Utility/Log.h"
@@ -406,19 +407,16 @@ bool ManagerUI::buildPage()
         return false;
     }
 
-    // The layout styles a screen with forms/<id>/layout.xml, or all of them with forms/layout.xml
+    // The layout styles a screen with forms/<id>/<page>.xml, or all of them with
+    // forms/<page>.xml, for the page collections are drawn with (LayoutPages::formFile)
     std::string layoutName;
     config_.getProperty(OPTION_LAYOUT, layoutName);
     std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
-    std::string screenFile = Utils::combinePath(formsPath, frame->form, "layout.xml");
-    std::string sharedFile = Utils::combinePath(formsPath, "layout.xml");
+    std::string file = layoutName.empty() ? "" : LayoutPages::formFile(formsPath, frame->form, layoutPage_);
 
     PageBuilder builder(layoutName, "layout", config_, fontCache_);
-    if (!layoutName.empty() && std::filesystem::exists(screenFile)) {
-        builder.setLayoutFile(screenFile);
-    }
-    else if (!layoutName.empty() && std::filesystem::exists(sharedFile)) {
-        builder.setLayoutFile(sharedFile);
+    if (!file.empty()) {
+        builder.setLayoutFile(file);
     }
     else {
         builder.setLayoutXml(Builtin::layoutXml("form"), formsPath);
@@ -468,10 +466,10 @@ bool ManagerUI::openKeyboard()
     std::string layoutName;
     config_.getProperty(OPTION_LAYOUT, layoutName);
     std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
-    std::string file = Utils::combinePath(formsPath, "keyboard", "layout.xml");
+    std::string file = layoutName.empty() ? "" : LayoutPages::keyboardFile(formsPath, layoutPage_);
 
     PageBuilder builder(layoutName, "layout", config_, fontCache_);
-    if (!layoutName.empty() && std::filesystem::exists(file)) {
+    if (!file.empty()) {
         builder.setLayoutFile(file);
     }
     else {
