@@ -669,6 +669,7 @@ void runSelfUpdateTests()
         FakeInstall install = makeInstall("self-update-files");
         makeZip(install.root + "/share/up.zip", updateEntries);
         SelfUpdater updater(install.catalog, install.app);
+        updater.sleep = [](int) {};
         // Something has a file in the program folder open
         updater.renameFile = [&](const fs::path& from, const fs::path& to) {
             if (fs::is_directory(from) && from.filename() == "retrofe") return false;
@@ -691,18 +692,25 @@ void runSelfUpdateTests()
 
         // File by file: the new a.dll can't be moved in
         SelfUpdater files(install.catalog, install.app);
+        files.sleep = [](int) {};
         files.folderSwap = false;
-        files.renameFile = [](const fs::path& from, const fs::path& to) {
-            if (to.filename() == "a.dll" && from.filename() == "a.dll.new") return false;
+        int tries = 0;
+        files.renameFile = [&](const fs::path& from, const fs::path& to) {
+            if (to.filename() == "a.dll" && from.filename() == "a.dll.new") {
+                tries++;
+                return false;
+            }
             return plainRename(from, to);
         };
         check(!files.apply(appPackage("2.0"), install.root + "/share/up.zip", error) && error.find("Nothing was changed") != std::string::npos,
               "failed, saying nothing changed: " + error);
         checkUnchanged(install, "a.dll failed");
+        check(tries == files.renameTries, "the rename was tried " + std::to_string(files.renameTries) + " times first, not given up at once");
         check(!fs::exists(install.catalog + "/installed/retrofe.json"), "not recorded");
 
         // File by file: the program itself, last, can't be moved aside
         SelfUpdater last(install.catalog, install.app);
+        last.sleep = [](int) {};
         last.folderSwap = false;
         last.renameFile = [](const fs::path& from, const fs::path& to) {
             return !(from.filename() == "retrofe.exe" && to.filename() == "retrofe.exe.old") && plainRename(from, to);
@@ -712,6 +720,7 @@ void runSelfUpdateTests()
 
         // Whole folder: a layout file can't be swapped, before the folder is
         SelfUpdater layout(install.catalog, install.app);
+        layout.sleep = [](int) {};
         layout.renameFile = [](const fs::path& from, const fs::path& to) {
             return !(to.filename() == "layout.xml" && from.filename() == "layout.xml.new") && plainRename(from, to);
         };
@@ -1042,6 +1051,7 @@ void runSelfUpdateTests()
         FakeInstall install = makeInstall("self-update-preparing-fallback");
         makeZip(install.root + "/share/up.zip", updateEntries);
         SelfUpdater updater(install.catalog, install.app);
+        updater.sleep = [](int) {};
         updater.renameFile = [&](const fs::path& from, const fs::path& to) {
             return !(fs::is_directory(from) && from.filename() == "retrofe") && plainRename(from, to);
         };
@@ -1056,7 +1066,7 @@ void runSelfUpdateTests()
     });
 
     run("names outside the system code page are hashed and put back too", [&] {
-        fs::path root = fs::temp_directory_path() / "retrofe_tests" / fs::u8path(u8"self-update-日本-ü");
+        fs::path root = runFolder() / fs::u8path(u8"self-update-日本-ü");
         fs::remove_all(root);
         auto put = [](const fs::path& path, const std::string& text) {
             fs::create_directories(path.parent_path());
