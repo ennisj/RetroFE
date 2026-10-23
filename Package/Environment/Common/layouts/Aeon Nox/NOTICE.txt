@@ -89,6 +89,14 @@ now separate pages:
 These pages are generated from upstream's layout.xml and "layout 4x3.xml" by
 Scripts/aeon-nox/gen_layouts.py in the RetroFE repository.
 
+Written by hand for this fork, from the theme's images and fonts:
+
+  collections/_videos/layout/     Video collections (info.conf type = videos): the list
+                                  and the selected video playing beside it (layout.xml),
+                                  and player.xml, where RetroFE plays a video full
+                                  screen for a collection with play = here. Each also
+                                  as a 4:3 version.
+
 Also:
   - Fonts: BebasNeue.ttf was version 1.002 under the Dharma Type EULA, which doesn't
     allow redistribution; replaced with the OFL release. OpenSans.ttf was an

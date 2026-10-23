@@ -422,11 +422,13 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:canDelete"), "yes", "made here, so it can be deleted");
     });
 
-    run("videos: adding a video collection makes a VideoPlayer launcher", [] {
+    run("videos: adding a video collection with an external player makes a VideoPlayer launcher", [] {
         Fixture f("sys-add-video");
         writeFile(f.root + "/roms/Music/song.mp4", "x");
         writeFile(f.root + "/vlc.exe", "x");
         f.open("video-add", {});
+        checkEqual(f.model.get("video:addIsNewLauncher"), "no", "plays in RetroFE by default: no player needed");
+        f.model.set("video:addPlay", "launcher");
         checkEqual(f.model.get("video:addIsNewLauncher"), "yes", "no player yet, so a new one");
         f.model.set("video:addName", "Music");
         f.model.set("video:addFolder", Utils::combinePath(f.root, "roms", "Music"));
@@ -437,7 +439,8 @@ static void runSystemsTests()
         check(created.ok && created.open == "video", "created: " + created.message);
         std::string launcher = readFile(f.root + "/launchers." + os() + "/VideoPlayer.conf");
         check(contains(launcher, "vlc.exe") && contains(launcher, "%ITEM_FILEPATH%"), "player launcher: " + launcher);
-        checkEqual(readFile(f.root + "/collections/Music/info.conf"), "type = videos" + std::string(Library::defaultNewline()), "marked");
+        std::string nl = Library::defaultNewline();
+        checkEqual(readFile(f.root + "/collections/Music/info.conf"), "type = videos" + nl + "play = launcher" + nl, "marked");
         check(contains(readFile(f.root + "/collections/Music/settings.conf"), "launcher = VideoPlayer"), "uses it");
         f.open("videos", {});
         check(has(f.ids("video:search"), "Music"), "listed in Videos");

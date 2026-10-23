@@ -25,5 +25,6 @@ python Scripts/aeon-nox/gen_images.py "Package/Environment/Common/layouts/Aeon N
 ```
 
 Everything else in the folder (fonts and their licenses, upstream's images, sounds
-and video, `credits.txt`, `readme.txt`, `NOTICE.txt`) is kept as it is; NOTICE.txt
-says where each file comes from.
+and video, `credits.txt`, `readme.txt`, `NOTICE.txt`, and the hand-written
+`collections/_videos/` pages) is kept as it is; NOTICE.txt says where each file
+comes from.

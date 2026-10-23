@@ -169,11 +169,38 @@ launcher.
 ### Videos
 
 Stock RetroFE has no video collections. A **video collection** is a system
-whose extensions are video types and whose launcher is a player (or, later, a
-layout that plays the item in-page with jukebox mode). Videos reuses the
-Systems screens with a video preset: extensions `mp4,mkv,avi`, a "Video
-player" launcher, and video previews in Media. The Videos list shows only
-collections marked as video collections (`info.conf: type = videos`).
+whose extensions are video types, marked `info.conf: type = videos`. Its
+`info.conf: play` says how its videos play:
+
+- `play = here`: **in RetroFE**. Select opens a full-screen player page
+  instead of a launcher (`Graphics/VideoPlayback`, reusing the GStreamer
+  video component). New video collections made in Manage play here.
+- `play = launcher`, or no `play` line: **with an external player**, its
+  launcher (e.g. the shared `VideoPlayer`, VLC or mpv), as before. Video
+  collections made before the setting keep working this way.
+
+Videos reuses the Systems screens with a video preset (extensions
+`mp4,mkv,avi`). The Videos list shows only collections marked
+`type = videos`.
+
+| Link | Shows / edits | Writes |
+|------|---------------|--------|
+| Details | As for systems, plus **Plays** (in RetroFE / with an external player; which extensions RetroFE can't play) | read-only |
+| Playback (the Launcher screen) | **Plays**: In RetroFE / With an external player; the video player (a launcher) when external | `info.conf play =`, `settings.conf launcher =` |
+| Add a video collection | **Plays** (default In RetroFE: no player program needed); the player choice and program only for an external player | `settings.conf`, `info.conf type = videos` and `play =`, `launchers.<os>/VideoPlayer.conf` only for a new external player |
+| Check | For one that plays here: no launcher findings; extensions RetroFE's player can't open (it plays mp4, avi, mkv, mp3, wav, flac) | — |
+
+**Pages.** A video collection without a page of its own uses the layout's
+`collections/_videos/layout/` (before `_menu`, the same rule:
+`LayoutPages::collectionFolder`), else the layout's main page; with no layout
+installed, the built-in video list. Its own files are its `video` media
+(`collections.<c>.media.video` defaults to its first `list.path`, unless that
+is set or it has a `medium_artwork/video` folder), so a `reloadableVideo
+type="video"` previews the selected video. The player page is
+`collections/<c>/layout/player.xml`, then `collections/_videos/layout/player.xml`
+(`player 4x3.xml` for the page `layout 4x3`), else the built-in one; it needs a
+`<menu>` (it can be invisible) that RetroFE fills with the list the collection's
+page shows, and a `reloadableVideo type="video" jukebox="true"`.
 
 ### Emulators (launchers)
 

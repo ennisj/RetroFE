@@ -23,6 +23,7 @@
 #include "Collection/CollectionInfoBuilder.h"
 #include "Collection/Item.h"
 #include "Collection/MenuParser.h"
+#include "Collection/VideoCollections.h"
 #include "Control/UserInput.h"
 #include "Database/Configuration.h"
 #include "Database/GlobalOpts.h"
@@ -76,7 +77,7 @@ RetroFE::RetroFE(Configuration& c)
 	: initialized(false), initializeError(false), initializeThread(NULL), config_(c), db_(NULL), metadb_(NULL),
 	input_(config_), currentPage_(NULL), keyInputDisable_(0), currentTime_(0), lastLaunchReturnTime_(0),
 	keyLastTime_(0), keyDelayTime_(.3f), reboot_(false), kioskLock_(false), paused_(false), buildInfo_(false),
-	collectionInfo_(false), gameInfo_(false), manager_(c)
+	collectionInfo_(false), gameInfo_(false), manager_(c), player_(c, &fontcache_)
 {
 	menuMode_ = false;
 	attractMode_ = false;
@@ -132,7 +133,11 @@ void RetroFE::render()
 	}
 
 	// Step 2: Draw the current page onto the render target (textures)
-	if (currentPage_)
+	if (player_.isOpen())
+	{
+		player_.draw();  // a video collection's video, in place of its page
+	}
+	else if (currentPage_)
 	{
 		currentPage_->draw();  // Draws onto the currently set render targets (textures)
 	}
@@ -649,8 +654,9 @@ bool RetroFE::run()
 					{
 						// Manage asked to start a game (after any reload it needed)
 						ManagerUI::LaunchRequest launch;
-						launchedFromManager = manager_.takeLaunchRequest(launch);
-						state = launchedFromManager ? launchFromManager(launch) : processUserInput(currentPage_);
+						launchedFromManager = !player_.isOpen() && manager_.takeLaunchRequest(launch);
+						state = launchedFromManager ? launchFromManager(launch)
+							: player_.isOpen() ? processPlayerInput() : processUserInput(currentPage_);
 					}
 					// launchExit() set it after a game from Manage: keep that pause for held keys
 					if (!launchedFromManager)
@@ -1431,6 +1437,7 @@ bool RetroFE::run()
 					}
 					PageBuilder pb(layoutName, getLayoutFileName(), config_, &fontcache_);
 					pb.setMenuCollection(isMenuCollection(info));
+					pb.setVideoCollection(VideoCollections::isVideoCollection(config_, nextPageName));
 
 					bool defaultToCurrentLayout = false;
 					if (std::string settingPrefix = "collections." + currentPage_->getCollectionName() + ".";
@@ -1981,6 +1988,14 @@ bool RetroFE::run()
 			if (currentPage_->isIdle())
 			{
 				nextPageItem_ = currentPage_->getSelectedItem();
+				// Attract mode doesn't start a video collection that plays in RetroFE
+				if (nextPageItem_ && nextPageItem_->collectionInfo &&
+					VideoCollections::playsHere(config_, nextPageItem_->collectionInfo->name))
+				{
+					currentPage_->exitGame();
+					state = RETROFE_LAUNCH_EXIT;
+					break;
+				}
 				launchEnter();
 
 				l.LEDBlinky(3, nextPageItem_->collectionInfo->name, nextPageItem_);
@@ -2395,11 +2410,18 @@ bool RetroFE::run()
 						state = RETROFE_ATTRACT_LAUNCH_ENTER;
 					}
 				}
-				if (menuMode_ || manager_.isOpen() || onHome)
+				if (menuMode_ || manager_.isOpen() || onHome || player_.isOpen())
 				{
 					attract_.reset();
 				}
-				currentPage_->update(deltaTime);
+				if (player_.isOpen())
+				{
+					player_.update(deltaTime);  // the list page is freed while a video plays
+				}
+				else
+				{
+					currentPage_->update(deltaTime);
+				}
 				SDL_PumpEvents();
 				// Update keystate at 30Hz, unless the manager has the keyboard
 				if (!manager_.isOpen() && currentTime_ - lastInputUpdateTime >= inputUpdateInterval)
@@ -3220,6 +3242,24 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 					else
 						manager_.openPackage(nextPageItem_->name);
 				}
+				else if (nextPageItem_->leaf && !menuMode_ && nextPageItem_->collectionInfo &&
+					VideoCollections::playsHere(config_, nextPageItem_->collectionInfo->name))
+				{
+					// A video collection that plays in RetroFE: its player page, not its launcher
+					std::string layoutName;
+					config_.getProperty("collections." + page->getCollectionName() + ".layout", layoutName);
+					if (layoutName.empty())
+					{
+						config_.getProperty(OPTION_LAYOUT, layoutName);
+					}
+					page->playSelect();
+					if (player_.open(*page, layoutName, getLayoutFileName()))
+					{
+						playerKeysHeld_.clear();
+						playerKeysHeld_[UserInput::KeyCodeSelect] = true;   // the press that opened it
+					}
+					keyLastTime_ = currentTime_;
+				}
 				else if (nextPageItem_->leaf)
 				{
 					if (menuMode_)
@@ -3310,6 +3350,56 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 	return state;
 }
 
+// While a video collection's video plays (VideoPlayback): Select pauses, Left
+// and Right go to the previous or next video, Up and Down seek, the skip keys
+// jump a minute, Back returns to the list. Each acts once per press.
+RetroFE::RETROFE_STATE RetroFE::processPlayerInput()
+{
+	SDL_Event e;
+	while (SDL_PollEvent(&e))
+	{
+		input_.update(e);
+	}
+	if (input_.keystate(UserInput::KeyCodeQuit))
+	{
+		player_.close();
+		return RETROFE_QUIT_REQUEST;
+	}
+	static const std::pair<UserInput::KeyCode_E, int> keys[] = {
+		{ UserInput::KeyCodeBack, -1 },
+		{ UserInput::KeyCodeSelect, static_cast<int>(VideoPlayback::Command::TogglePause) },
+		{ UserInput::KeyCodePause, static_cast<int>(VideoPlayback::Command::TogglePause) },
+		{ UserInput::KeyCodeRight, static_cast<int>(VideoPlayback::Command::Next) },
+		{ UserInput::KeyCodeLeft, static_cast<int>(VideoPlayback::Command::Previous) },
+		{ UserInput::KeyCodeDown, static_cast<int>(VideoPlayback::Command::SeekForward) },
+		{ UserInput::KeyCodeUp, static_cast<int>(VideoPlayback::Command::SeekBack) },
+		{ UserInput::KeyCodeSkipForward, static_cast<int>(VideoPlayback::Command::JumpForward) },
+		{ UserInput::KeyCodeSkipBackward, static_cast<int>(VideoPlayback::Command::JumpBack) },
+	};
+	int command = -2;   // the first key pressed since the last frame
+	for (const auto& [key, action] : keys)
+	{
+		bool down = input_.keystate(key);
+		if (down && !playerKeysHeld_[key] && command == -2)
+		{
+			command = action;
+		}
+		playerKeysHeld_[key] = down;
+	}
+	if (command == -1)
+	{
+		player_.close();
+		input_.resetStates();
+		keyLastTime_ = currentTime_;   // the list waits a moment before acting on keys (Back still held)
+	}
+	else if (command >= 0)
+	{
+		attract_.reset();
+		player_.command(static_cast<VideoPlayback::Command>(command));
+	}
+	return RETROFE_IDLE;
+}
+
 // A collection whose items are all collections, like Main: layouts can draw
 // these with collections/_menu/layout (LayoutPages::collectionFolder)
 bool RetroFE::isMenuCollection(const CollectionInfo* info)
@@ -3333,6 +3423,7 @@ Page* RetroFE::loadPage(const std::string& collectionName, const CollectionInfo*
 	}
 	PageBuilder pb(layoutName, getLayoutFileName(), config_, &fontcache_);
 	pb.setMenuCollection(isMenuCollection(info));
+	pb.setVideoCollection(VideoCollections::isVideoCollection(config_, collectionName));
 	Page* page = pb.buildPage(collectionName);
 	if (!page)
 	{
@@ -3493,6 +3584,13 @@ RetroFE::RETROFE_STATE RetroFE::launchFromManager(const ManagerUI::LaunchRequest
 			+ " doesn't list it any more. See log.txt.");
 		return RETROFE_IDLE;
 	}
+	if (VideoCollections::playsHere(config_, request.collection))
+	{
+		delete info;
+		manager_.returnFromLaunch(request, request.game + " plays in RetroFE: open " + request.collection
+			+ " from Browse to watch it.");
+		return RETROFE_IDLE;
+	}
 	LOG_INFO("RetroFE", "Starting " + request.collection + "/" + request.game + " from Manage");
 
 	Launcher l(config_, *this);
@@ -3541,6 +3639,9 @@ CollectionInfo* RetroFE::getCollection(const std::string& collectionName, bool a
 	// Check if subcollections should be merged or split
 	bool subsSplit = false;
 	config_.getProperty(OPTION_SUBSSPLIT, subsSplit);
+
+	// A video collection's own videos are its video media, for the page's preview
+	VideoCollections::useItemsAsVideoMedia(config_, collectionName);
 
 	// Build the collection
 	CollectionInfoBuilder cib(config_, *metadb_);

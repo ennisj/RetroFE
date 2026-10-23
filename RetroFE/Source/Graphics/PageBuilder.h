@@ -56,6 +56,11 @@ public:
     // the layout's collections/_menu/layout pages, when there are some
     void setMenuCollection(bool isMenu) { menuCollection_ = isMenu; }
 
+    // The collection is a video collection (info.conf type = videos): without
+    // a page of its own it uses collections/_videos/layout, else the built-in
+    // video list when no layout is installed
+    void setVideoCollection(bool isVideos) { videoCollection_ = isVideos; }
+
     // The <form> and <keyboard> components created by buildPage
     const std::vector<FormWidget*>& formWidgets() const { return formWidgets_; }
     const std::vector<KeyboardWidget*>& keyboardWidgets() const { return keyboardWidgets_; }
@@ -83,6 +88,7 @@ private:
     std::vector<FormWidget*> formWidgets_;
     std::vector<KeyboardWidget*> keyboardWidgets_;
     bool menuCollection_{ false };
+    bool videoCollection_{ false };
 
     std::string layoutKey;
     std::string layoutPage;

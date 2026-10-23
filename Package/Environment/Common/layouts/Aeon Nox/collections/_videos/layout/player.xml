@@ -1,0 +1,46 @@
+<layout width="1920" height="1080" font="fonts/OpenSans.ttf" loadFontSize="36" fontColor="ffffff">
+
+<!-- Aeon Nox: where a video collection's videos play when its info.conf says play = here. RetroFE draws this page in
+     place of the collection's page and gives it the list that page shows: the menu (not shown) follows the video
+     playing, so reloadableVideo and the texts show it. jukebox="true" lets Select pause the video and tells RetroFE
+     when it ends (it then plays the next one). Left/Right: previous/next, Up/Down: seek, Back: the list. -->
+
+    <image src="../../../images/black.png" x="0" y="0" width="1920" height="1080" layer="0"/>
+
+    <reloadableVideo type="video" jukebox="true" x="center" y="center" width="1920" maxHeight="1080" xOrigin="center" yOrigin="center" layer="1"/>
+
+    <!-- The list it moves through -->
+    <menu type="custom" orientation="horizontal" textFallback="true">
+        <item x="0" y="0" alpha="0" fontSize="10" selected="true" layer="2"/>
+    </menu>
+
+    <!-- Title and position, shown for a few seconds when a video starts -->
+    <image src="../../../images/topbar.png" x="0" y="0" width="stretch" height="110" alpha=".85" layer="3">
+        <onEnter>          <set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from=".85" to="0"/></set></onEnter>
+        <onHighlightEnter> <set duration=".01"><animate type="alpha" to=".85"/></set><set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from=".85" to="0"/></set></onHighlightEnter>
+    </image>
+    <reloadableText type="title" x="40" y="55" maxWidth="1400" xOrigin="left" yOrigin="center" font="fonts/Oswald-Bold.ttf" fontSize="60" loadFontSize="60" fontColor="75c8f7" layer="4">
+        <onEnter>          <set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onEnter>
+        <onHighlightEnter> <set duration=".01"><animate type="alpha" to="1"/></set><set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onHighlightEnter>
+    </reloadableText>
+    <reloadableText type="collectionIndexSize" singlePrefix="VIDEO  " pluralPrefix="VIDEO  " x="1880" y="55" xOrigin="right" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="48" loadFontSize="48" layer="4">
+        <onEnter>          <set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onEnter>
+        <onHighlightEnter> <set duration=".01"><animate type="alpha" to="1"/></set><set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onHighlightEnter>
+    </reloadableText>
+
+    <!-- Bottom bar under the time and the keys, shown with the title -->
+    <image src="../../../images/topbar.png" x="0" y="1080" width="stretch" height="80" yOrigin="bottom" alpha=".85" layer="3">
+        <onEnter>          <set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from=".85" to="0"/></set></onEnter>
+        <onHighlightEnter> <set duration=".01"><animate type="alpha" to=".85"/></set><set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from=".85" to="0"/></set></onHighlightEnter>
+    </image>
+
+    <!-- Paused, and the time -->
+    <reloadableText type="isPaused" x="center" y="center" xOrigin="center" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="120" loadFontSize="120" fontColor="75c8f7" layer="4"/>
+    <reloadableText type="current" x="40" y="1045" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="40" loadFontSize="40" alpha=".7" layer="4"/>
+    <reloadableText type="duration" x="1880" y="1045" xOrigin="right" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="40" loadFontSize="40" alpha=".7" layer="4"/>
+    <text value="SELECT  PAUSE      LEFT / RIGHT  PREVIOUS / NEXT      UP / DOWN  SEEK      BACK  LIST" x="center" y="1045" xOrigin="center" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="36" loadFontSize="36" layer="4">
+        <onEnter>          <set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from=".6" to="0"/></set></onEnter>
+        <onHighlightEnter> <set duration=".01"><animate type="alpha" to=".6"/></set><set duration="4"><animate type="nop"/></set><set duration="1"><animate type="alpha" from=".6" to="0"/></set></onHighlightEnter>
+    </text>
+
+</layout>
