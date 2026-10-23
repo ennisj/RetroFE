@@ -22,8 +22,9 @@
 // rebuilds the index in the background and marks "changes pending").
 // RetroFE itself only sees changes after it reloads.
 //
-// Never written here: executable, arguments, list.path or any other path key,
-// and menu lines are only added, removed or moved one at a time.
+// Never written here: executable, arguments, list.path or any other path key
+// of an existing file (a new launcher file is written whole, once), and menu
+// lines are only added, removed or moved one at a time.
 
 #include "Backups.h"
 #include "Index.h"
@@ -110,6 +111,24 @@ namespace Library
         EditResult replaceMedia(const MediaSlot& slot, const std::string& file);
         // Removes the slot's own file; refused when the slot only shows a fallback
         EditResult clearMedia(const MediaSlot& slot);
+
+        // --- Launchers ---------------------------------------------------------------
+        // A new launcher is written whole, as launchers.<os>/<name>.conf (os =
+        // the index's). Existing launcher files are never changed: a name
+        // that's taken (in any case) is refused.
+        struct NewLauncher
+        {
+            std::string name;
+            std::string executable;
+            std::string arguments;          // may be empty
+            std::string currentDirectory;   // empty: RetroFE uses the executable's folder
+        };
+        // Empty when name can be a new launcher's name, otherwise why not
+        static std::string checkLauncherName(const std::string& name);
+        EditResult addLauncher(const Index& index, const NewLauncher& launcher);
+        // Removes a launcher's file, only when no system (default or
+        // alternative) and no game uses it. The original is kept in the backups.
+        EditResult removeLauncher(const Index& index, LauncherScope scope, const std::string& id);
 
         // Puts a file changed here back as it was before the first change
         EditResult restoreOriginal(const std::string& file);

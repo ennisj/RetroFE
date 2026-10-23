@@ -188,6 +188,22 @@ not defined ("unresolved").
 
 Later: RetroArch core detection and the core-wide settings tiles.
 
+**Built (round 2)**, in `Manager/Emulators/` (provider prefix `emulator`):
+
+| Form | Shows |
+|------|-------|
+| `emulators` | Search over every launcher (name, program, system). Rows: the name; where it's defined (Global, `<C>`'s own file, `<C>`, local), the program's file name ("(missing)" when it isn't there) and "N systems, M games". Then **Used but not defined**: names a system (default or alternative) or game asks for, each opening the add form with that name. A link to add a launcher. |
+| `emulator` (`id`, `scope` = global, collection or local) | Name, where it's defined, program and whether it's found (relative paths are relative to RetroFE's folder; `%RETROFE_PATH%` is expanded; a bare name is looked up on the system path; per-game programs and another platform's launchers aren't checked), arguments, working folder, restart. Links: **Used by** and **The file**. Actions: **Duplicate and edit**, **Delete launcher** (only when nothing uses it, confirmed). |
+| `emulator-users` | The systems that use it by default (or through their own launcher file) or as an alternative, opening `system` with `id`; the games that pick it, opening `game` with `collection` + `id`. |
+| `emulator-file` | The conf file as read-only notes, comments included. |
+| `emulator-new` (`name`, or `from` + `fromScope`) | Name, program (file field: type with Right, or browse), arguments from a preset (`"%ITEM_FILEPATH%"`, RetroArch `-L "<core>" "%ITEM_FILEPATH%"` with a core file field, MAME `%ITEM_NAME% -rompath "%ITEM_DIRECTORY%"`) or custom text, working folder, and the command it will run. Paths inside RetroFE's folder are written as `%RETROFE_PATH%\...`. Creates `launchers.<os>/<name>.conf` through `Editor::addLauncher`, then goes back. |
+
+Existing launchers stay read-only, as in One Saucier: the details screen says
+so and offers **Duplicate and edit**, which opens the add form filled in from
+the launcher (arguments as custom text, name "`<name>` copy"), so the copy can
+be changed before it exists. Deferred: RetroArch core detection and settings
+tiles, and payload checks beyond "the program exists".
+
 ### Themes
 
 **Find:** installed layouts with facts (resolution, made with the editor or by

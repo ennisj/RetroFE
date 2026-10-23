@@ -1049,6 +1049,155 @@ EditResult Editor::clearMedia(const MediaSlot& slot)
     return result;
 }
 
+// --- Launchers ----------------------------------------------------------------------
+
+namespace
+{
+    // Systems using a launcher (as their default or an alternative) and games picking it
+    void launcherUsers(const Index& index, int launcher, size_t& systems, size_t& games)
+    {
+        std::vector<int> users;
+        games = 0;
+        for (const LauncherUse& use : index.launcherUses) {
+            if (use.launcher != launcher) {
+                continue;
+            }
+            if (use.game.empty()) {
+                users.push_back(use.collection);
+            }
+            else {
+                games++;
+            }
+        }
+        for (size_t c = 0; c < index.collections.size(); c++) {
+            for (const std::string& alternative : index.collections[c].launcher.alternatives) {
+                if (index.findLauncher(alternative) == launcher) {
+                    users.push_back(static_cast<int>(c));
+                }
+            }
+        }
+        std::sort(users.begin(), users.end());
+        systems = static_cast<size_t>(std::unique(users.begin(), users.end()) - users.begin());
+    }
+
+    std::string count(size_t n, const std::string& one, const std::string& many)
+    {
+        return std::to_string(n) + " " + (n == 1 ? one : many);
+    }
+
+    // A value written into a new launcher file: one line, and no '#', which RetroFE reads as a comment
+    std::string checkLauncherValue(const std::string& value, const std::string& what)
+    {
+        return value.find_first_of("#\r\n") == std::string::npos ? "" : "The " + what + " can't contain # or a line break.";
+    }
+}
+
+std::string Editor::checkLauncherName(const std::string& name)
+{
+    std::string problem = checkFileName(name, "launcher");
+    if (!problem.empty()) {
+        return problem;
+    }
+    // '=' and ',' would break "launcher = a, b" lines, '%' looks like a variable
+    if (name.find_first_of("=,;%") != std::string::npos) {
+        return "A launcher name can't contain = , ; or %.";
+    }
+    if (name.size() > 64) {
+        return "A launcher name can be 64 characters at most.";
+    }
+    if (name.back() == '.') {
+        return "A launcher name can't end with a dot.";
+    }
+    static const std::vector<std::string> reserved = { "con", "prn", "aux", "nul",
+        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
+    if (std::find(reserved.begin(), reserved.end(), toLower(name)) != reserved.end()) {
+        return "\"" + name + "\" is a name Windows keeps for itself.";
+    }
+    return "";
+}
+
+EditResult Editor::addLauncher(const Index& index, const NewLauncher& launcher)
+{
+    const std::string& name = launcher.name;
+    std::string problem = checkLauncherName(name);
+    if (!problem.empty()) {
+        return EditResult::fail(problem);
+    }
+    for (const LauncherDef& def : index.launchers) {
+        if (def.scope == LauncherScope::Global && iequals(def.name, name)) {
+            return EditResult::fail("There's already a launcher called \"" + def.name + "\".");
+        }
+    }
+    std::string executable = Utils::trimEnds(launcher.executable);
+    std::string arguments = Utils::trimEnds(launcher.arguments);
+    std::string directory = Utils::trimEnds(launcher.currentDirectory);
+    if (executable.empty()) {
+        return EditResult::fail("Choose the program the launcher runs.");
+    }
+    for (const auto& [value, what] : { std::make_pair(executable, "program"), std::make_pair(arguments, "arguments"),
+                                       std::make_pair(directory, "working folder") }) {
+        problem = checkLauncherValue(value, what);
+        if (!problem.empty()) {
+            return EditResult::fail(problem);
+        }
+    }
+
+    std::string os = index.options.os.empty() ? Utils::getOSType() : index.options.os;
+    std::string folder = Utils::combinePath(root_, "launchers." + os);
+    std::string file = Utils::combinePath(folder, name + ".conf");
+    // The folder may have changed since the snapshot: refuse any spelling of the file
+    std::error_code ec;
+    if (fs::is_directory(folder, ec)) {
+        for (const auto& entry : fs::directory_iterator(folder, ec)) {
+            std::string existing;
+            if (narrowName(entry.path().filename(), existing) && iequals(existing, name + ".conf")) {
+                return EditResult::fail("There's already a launcher file called " + existing + ".");
+            }
+        }
+    }
+
+    std::string newline = defaultNewline();
+    std::string content = "executable = " + executable + newline;
+    if (!arguments.empty()) {
+        content += "arguments = " + arguments + newline;
+    }
+    if (!directory.empty()) {
+        content += "currentDirectory = " + directory + newline;
+    }
+    std::string error;
+    if (!backups_.beforeChange(file, error) || !writeFileAtomic(file, content, error)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, "Created the launcher " + name + ".", { file } };
+}
+
+EditResult Editor::removeLauncher(const Index& index, LauncherScope scope, const std::string& id)
+{
+    int launcher = index.findLauncher(scope, id);
+    if (launcher < 0) {
+        return EditResult::fail("There's no launcher called \"" + id + "\".");
+    }
+    const LauncherDef& def = index.launchers[static_cast<size_t>(launcher)];
+    size_t systems = 0;
+    size_t games = 0;
+    launcherUsers(index, launcher, systems, games);
+    if (systems > 0 || games > 0) {
+        std::string users = systems > 0 && games > 0
+            ? count(systems, "system", "systems") + " and " + count(games, "game", "games")
+            : systems > 0 ? count(systems, "system", "systems") : count(games, "game", "games");
+        return EditResult::fail(def.id + " is still used by " + users + ". Give them another launcher first.");
+    }
+    if (!isInside(def.file, root_)) {
+        return EditResult::fail(def.file + " isn't in RetroFE's folder, so it's left alone.");
+    }
+    std::string error;
+    if (!backups_.removeKeepingOriginal(def.file, error)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, "Deleted the launcher " + def.id + ". Its program stays on the drive.", { def.file } };
+}
+
 EditResult Editor::restoreOriginal(const std::string& file)
 {
     std::string error;

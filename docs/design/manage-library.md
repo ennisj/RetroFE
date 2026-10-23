@@ -243,6 +243,8 @@ After a successful write, call `indexer.changed("what")`.
 | `addToPlaylist(index, collection, playlist, gameCollection, game)` / `removeFromPlaylist` | `collections/<c>/playlists/<name>.txt` | A game of another collection is written as `_<C>:<name>`. The game must be on that page. `all` and `lastplayed` are refused. An entry covered by `*` can't be removed. |
 | `addToSub(index, merged, source, game)` / `removeFromSub` | `collections/<merged>/<source>.sub` | An empty .sub already shows everything, so adding is a no-op and removing one game is refused. Removing the last entry deletes the file. |
 | `replaceMedia(slot, file)` / `clearMedia(slot)` | The slot's own folder, as `<basename>.<ext>`, with the extension lower-cased | The file kind must fit the slot. The slot's other files of that kind are moved aside. Clearing is refused when the slot only shows a fallback. Nothing is ever written into a fallback's folder. |
+| `addLauncher(index, NewLauncher{name, executable, arguments, currentDirectory})` | A new `launchers.<os>/<name>.conf` (os = the index's), written whole | `checkLauncherName`: a file name, no `= , ; %`, at most 64 characters, not a Windows device name. Refused when a global launcher or a file of that name exists in any case (checked on disk too). Values are one line without `#`. An existing launcher file is never changed. |
+| `removeLauncher(index, scope, id)` | Removes that launcher's file (global, collection or local) into the backups | Only when no system uses it as its default or an alternative and no game picks it. |
 | `restoreOriginal(file)` | Puts back the copy kept before the first change, or deletes a file that didn't exist then | |
 
 **Clearing metadata.** `MetadataOverrides::shipped` reads the game's row the
@@ -257,7 +259,7 @@ way RetroFE's import builds it: `meta/hyperlist`, then `meta/mamelist`, then
 
 Safety rules that hold for all of these:
 - **Never edited:** `executable`, `arguments`, `list.path` and any other path
-  key. Menu lines are only ever added, removed or moved one at a time.
+  key of an existing file (`addLauncher` writes a new launcher file whole). Menu lines are only ever added, removed or moved one at a time.
 - **Atomic and durable:** writes go to a temp file. It's flushed to the disk
   (`FlushFileBuffers`, or `fsync`) and then renamed into place
   (`MOVEFILE_WRITE_THROUGH`, or rename plus an fsync of the folder). A power cut
