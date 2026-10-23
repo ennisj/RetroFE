@@ -169,8 +169,8 @@ namespace Manager
         // included), and then opens Manage on that game again. Null where
         // games can't be started (tests). launchProblem says why a launch
         // can't be asked for now (a reload is due while the Catalog installs), or "".
-        std::function<void(const std::string& collection, const std::string& game)> requestLaunch;
-        std::function<std::string()> launchProblem;
+        std::function<void(const std::string& collection, const std::string& game)> requestLaunch{};
+        std::function<std::string()> launchProblem{};
     };
 
     // Adds every provider to the model (Providers.cpp)

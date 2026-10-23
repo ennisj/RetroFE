@@ -255,7 +255,11 @@ void runCatalogTests()
         checkEqual(resolveLocation("https://h.org/x/catalog.json?v=2", "./a.zip"), "https://h.org/x/a.zip", "query and ./");
         checkEqual(resolveLocation("https://h.org/x/catalog.json", "/a.zip"), "https://h.org/a.zip", "host-relative");
         checkEqual(resolveLocation("https://h.org/x/catalog.json", "https://cdn.org/a.zip"), "https://cdn.org/a.zip", "absolute");
+#ifdef _WIN32
         checkEqual(resolveLocation("C:\\packs\\catalog.json", "art\\a.png"), (fs::path("C:\\packs") / "art\\a.png").lexically_normal().string(), "file path");
+#else
+        checkEqual(resolveLocation("/packs/catalog.json", "art/a.png"), "/packs/art/a.png", "file path");
+#endif
     });
 
     run("ids and paths that could escape are refused", [&] {

@@ -607,7 +607,9 @@ std::string ManagerModel::catalogProblem(const std::string& action)
         return Forms::isTruthy(drafts_["sourceTrusted"]) ? "" : "Confirm that you trust this source.";
     }
     if (action == "source.addRetroFE") {
-        if (const Catalog::SourceConfig* existing = retrofeSource(catalog_->sources())) {
+        // sources() returns a copy: keep it alive while existing points into it
+        std::vector<Catalog::SourceConfig> sources = catalog_->sources();
+        if (const Catalog::SourceConfig* existing = retrofeSource(sources)) {
             return "RetroFE's releases are already a source: " + existing->name + ".";
         }
         return Forms::isTruthy(drafts_["retrofeTrusted"]) ? "" : "Confirm that you trust this source.";
