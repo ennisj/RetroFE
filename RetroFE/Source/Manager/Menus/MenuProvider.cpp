@@ -213,6 +213,11 @@ std::string MenuProvider::pageName(int collection)
     if (!layout) {
         return "RetroFE's built-in page";
     }
+    // layoutFromAnotherCollection wins over the collection's own page and the menu page
+    std::string borrowed = index_->properties.getOr("collections." + r.name + ".layoutFromAnotherCollection");
+    if (!borrowed.empty()) {
+        return borrowed + "'s page in " + layout->name + " (layoutFromAnotherCollection)";
+    }
     const auto& pages = layout->collectionLayouts;
     if (std::find(pages.begin(), pages.end(), r.name) != pages.end()) {
         return "Its own page in " + layout->name + " (collections/" + r.name + ")";
@@ -231,6 +236,12 @@ std::string MenuProvider::entryProblem(int menu, size_t i, bool brief)
 {
     const CollectionRecord& m = index_->collections[static_cast<size_t>(menu)];
     const MenuEntry& e = m.children[i];
+    size_t times = static_cast<size_t>(std::count_if(m.children.begin(), m.children.end(),
+                                                     [&](const MenuEntry& other) { return other.entry == e.entry; }));
+    if (times > 1) {
+        return brief ? "listed " + std::to_string(times) + " times"
+                     : "Listed " + std::to_string(times) + " times: RetroFE shows it that often. Removing it takes out every line.";
+    }
     if (e.collection < 0) {
         return brief ? "no such folder" : "Missing: there's no collections/" + e.entry + " folder.";
     }
@@ -264,6 +275,15 @@ int MenuProvider::entryPosition(const Screen& screen)
         return -1;
     }
     std::string wanted = screen.param("entry");
+    // A row passes its position too, so a line listed twice opens the one chosen
+    // (until a change moves it; then the first line of that name)
+    std::string at = screen.param("position");
+    if (!at.empty() && at.find_first_not_of("0123456789") == std::string::npos && at.size() < 6) {
+        size_t i = static_cast<size_t>(std::stoul(at));
+        if (i < r->children.size() && r->children[i].entry == wanted) {
+            return static_cast<int>(i);
+        }
+    }
     for (size_t i = 0; i < r->children.size(); i++) {
         if (r->children[i].entry == wanted) {
             return static_cast<int>(i);
@@ -333,7 +353,8 @@ void MenuProvider::buildTree()
     }
     for (size_t c = 0; c < index_->collections.size(); c++) {
         const CollectionRecord& r = index_->collections[c];
-        if (r.reserved || reached.count(static_cast<int>(c)) || !(r.is(KindMenu) || r.is(KindMerged))) {
+        // Menus, merged collections, and ones with nothing yet (which can become either)
+        if (r.reserved || reached.count(static_cast<int>(c)) || !(r.is(KindMenu) || r.is(KindMerged) || r.kinds == 0)) {
             continue;
         }
         Forms::Row out;
@@ -450,13 +471,15 @@ const MenuProvider::Options& MenuProvider::parentMenus()
     }
     parentsBuilt_ = true;
     parents_.clear();
+    // The same rule the Editor applies (Editor::checkMenuParent), top menu first
     int top = index_->findCollection(index_->topMenu);
-    parents_.emplace_back(top >= 0 ? index_->collections[static_cast<size_t>(top)].name : index_->topMenu,
-                          (top >= 0 ? index_->collections[static_cast<size_t>(top)].name : index_->topMenu) + " (Browse)");
+    std::string topName = top >= 0 ? index_->collections[static_cast<size_t>(top)].name : index_->topMenu;
+    if (Editor::checkMenuParent(*index_, topName).empty()) {
+        parents_.emplace_back(topName, topName + " (Browse)");
+    }
     for (size_t c = 0; c < index_->collections.size(); c++) {
         const CollectionRecord& r = index_->collections[c];
-        bool editable = r.menuSource == MenuSource::MenuTxt || r.menuSource == MenuSource::MenuFolder;
-        if (static_cast<int>(c) == top || !editable || iequals(r.name, "Home") || iequals(r.name, "Catalog")) {
+        if (static_cast<int>(c) == top || r.reserved || !Editor::checkMenuParent(*index_, r.name).empty()) {
             continue;
         }
         parents_.emplace_back(r.name, r.name);
@@ -610,14 +633,10 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
         if (!services_.library) {
             return "The library isn't available.";
         }
-        Indexer::Status status = services_.library->status();
-        if (!idx) {
-            if (status.state == Indexer::State::Failed) {
-                return "Couldn't read your collections: " + status.error;
-            }
-            return "Reading your collections... " + std::to_string(static_cast<int>(std::lround(status.progress * 100))) + "%";
-        }
-        return status.state == Indexer::State::Building ? "Updating..." : "";
+        return statusText(services_.library->status(), idx != nullptr);
+    }
+    if (key == "isFailed") {
+        return yesNo(services_.library && services_.library->status().state == Indexer::State::Failed);
     }
     if (key == "isReady") {
         return yesNo(idx != nullptr);
@@ -663,6 +682,16 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
             }
         }
         return parents.empty() ? "" : parents.front().first;
+    }
+    if (key == "newParentProblem") {
+        // Opened from a menu's Actions: it must be one that can list collections
+        // (never fall back to another menu without saying so)
+        std::string id = screen.param("id");
+        if (!newParent_.empty() || id.empty()) {
+            return parentMenus().empty() ? "There's no menu a new one could go in." : "";
+        }
+        std::string problem = Editor::checkMenuParent(*idx, id);
+        return problem.empty() ? "" : problem + " Choose another menu above.";
     }
     if (key == "newSource") {
         return choice(newSource_, systems());
@@ -712,6 +741,13 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     }
     if (key == "isMerged") {
         return yesNo(r->is(KindMerged));
+    }
+    // Nothing yet (no games, entries or sources): it can become a menu or a merged collection
+    if (key == "showEntries") {
+        return yesNo(r->is(KindMenu) || r->kinds == 0);
+    }
+    if (key == "showSources") {
+        return yesNo(r->is(KindMerged) || r->kinds == 0);
     }
     if (key == "isSystem") {
         return yesNo(r->is(KindSystem));
@@ -827,7 +863,7 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     }
 
     // menu-source
-    if (key == "sourceName" || key == "sourceShows" || key == "sourceFile" || key == "sourceProblem") {
+    if (key == "sourceName" || key == "sourceShows" || key == "sourceFile" || key == "sourceProblem" || key == "sourceMisspelt") {
         const SubSource* sub = nullptr;
         for (const SubSource& s : r->subs) {
             if (s.source == screen.param("source")) {
@@ -836,7 +872,10 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
         }
         if (!sub) {
             return key == "sourceProblem" ? (building() ? "Updating..." : r->name + " has no " + screen.param("source") + ".sub any more.")
-                 : key == "sourceName" ? screen.param("source") : "";
+                 : key == "sourceName" ? screen.param("source") : key == "sourceMisspelt" ? "no" : "";
+        }
+        if (key == "sourceMisspelt") {
+            return yesNo(sub->collection >= 0 && !sub->exactCase);
         }
         if (key == "sourceName") {
             return sub->source;
@@ -946,8 +985,7 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
         return note + ". Its files are kept in manage/backups.";
     }
     if (key == "canHaveChildren") {
-        return yesNo(r->menuSource == MenuSource::MenuTxt || r->menuSource == MenuSource::MenuFolder
-                     || (!r->is(KindSystem) && !r->is(KindMerged)));
+        return yesNo(Editor::checkMenuParent(*idx, r->name).empty());
     }
     return "";
 }
@@ -1030,6 +1068,7 @@ Forms::Rows MenuProvider::rows(const std::string& key, size_t limit, const Scree
                 std::string problem = entryProblem(c, i, true);
                 row.detail = problem.empty() ? summary(e.collection) : problem;
                 row.params["id"] = r.name;
+                row.params["position"] = std::to_string(i);
                 entryRows_.push_back(std::move(row));
             }
         }
@@ -1101,18 +1140,39 @@ std::vector<std::pair<std::string, std::string>> MenuProvider::options(const std
 
 // --- Actions --------------------------------------------------------------------------------
 
+std::string MenuProvider::statusText(const Indexer::Status& status, bool hasIndex)
+{
+    if (status.state == Indexer::State::Failed) {
+        return (hasIndex ? "Couldn't re-read your collections: " : "Couldn't read your collections: ") + status.error
+            + (hasIndex ? " What's shown may be out of date, so changes wait until they're read again." : "");
+    }
+    if (!hasIndex) {
+        return "Reading your collections... " + std::to_string(static_cast<int>(std::lround(status.progress * 100))) + "%";
+    }
+    return status.state == Indexer::State::Building ? "Updating..." : "";
+}
+
+std::string MenuProvider::writeProblemFor(const Indexer::Status& status, bool hasIndex)
+{
+    if (!hasIndex) {
+        return status.state == Indexer::State::Failed ? "Your collections couldn't be read." : "Still reading your collections.";
+    }
+    if (status.state == Indexer::State::Failed) {
+        // The snapshot is older than the files: writing against it could undo changes
+        return "Your collections couldn't be read again after the last change; read them again first.";
+    }
+    if (status.state == Indexer::State::Building) {
+        return "Updating after the last change; one moment.";
+    }
+    return "";
+}
+
 std::string MenuProvider::writeProblem()
 {
     if (!services_.library || !services_.editor) {
         return "Changes can't be made here.";
     }
-    if (!index()) {
-        return "Still reading your collections.";
-    }
-    if (building()) {
-        return "Updating after the last change; one moment.";
-    }
-    return "";
+    return writeProblemFor(services_.library->status(), index() != nullptr);
 }
 
 std::string MenuProvider::actionProblem(const std::string& action, const Screen& screen)
@@ -1120,9 +1180,16 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
     static const std::vector<std::string> known = {
         "addEntry", "moveUp", "moveDown", "removeEntry", "respell", "openEntry", "addSource", "removeSource",
         "save", "reset", "replaceMedium", "clearMedium", "restoreMedium", "create", "delete", "openSystem", "openVia",
+        "respellSource", "retry",
     };
     if (std::find(known.begin(), known.end(), action) == known.end()) {
         return Provider::actionProblem(action, screen);
+    }
+    if (action == "retry") {
+        if (!services_.library) {
+            return "The library isn't available.";
+        }
+        return services_.library->status().state == Indexer::State::Failed ? "" : "Your collections were read fine.";
     }
     if (action == "reset") {
         return edits_.isDirty() ? "" : "No changes to undo.";
@@ -1141,7 +1208,7 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
         if (newKind_ == "merged" && systems().empty()) {
             return "There are no systems whose games it could show.";
         }
-        return "";
+        return get("newParentProblem", screen);
     }
     const CollectionRecord* r = record(screen);
     if (!r) {
@@ -1165,11 +1232,9 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
         return problem;
     }
     if (action == "addEntry") {
-        if (r->menuSource == MenuSource::MenuXml || r->menuSource == MenuSource::CollectionLaunchers) {
-            return "This menu can't be changed here.";
-        }
-        if (r->is(KindSystem) && !r->is(KindMenu)) {
-            return r->name + " has games of its own, so it can't list other collections.";
+        std::string parentProblem = Editor::checkMenuParent(*index_, r->name);
+        if (!parentProblem.empty()) {
+            return parentProblem;
         }
         return addableEntries(screen).empty() ? "Every collection that could go here is listed already." : "";
     }
@@ -1191,6 +1256,10 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
         if (r->menuSource != MenuSource::MenuTxt) {
             return "RetroFE sorts this menu's entries by name, so they can't be moved.";
         }
+        const std::string& text = r->children[static_cast<size_t>(position)].entry;
+        if (std::count_if(r->children.begin(), r->children.end(), [&](const MenuEntry& e) { return e.entry == text; }) > 1) {
+            return "It's listed more than once; remove it and add it again first.";
+        }
         if (action == "moveUp" && position == 0) {
             return "It's first already.";
         }
@@ -1200,10 +1269,14 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
         return "";
     }
     if (action == "addSource") {
-        if (!r->is(KindMerged) || r->is(KindSystem)) {
+        // A merged collection, or one with nothing yet (e.g. after removing its last source)
+        if (r->is(KindSystem) || r->is(KindMenu) || r->reserved) {
             return r->name + " isn't a merged collection.";
         }
         return addableSources(screen).empty() ? "Every system is a source already." : "";
+    }
+    if (action == "respellSource") {
+        return get("sourceMisspelt", screen) == "yes" ? "" : "It's spelt as its system is already.";
     }
     if (action == "removeSource") {
         for (const SubSource& sub : r->subs) {
@@ -1243,7 +1316,8 @@ Forms::Model::Result MenuProvider::finish(const EditResult& edit, const std::str
     Forms::Model::Result result;
     result.ok = edit.ok;
     result.message = edit.message;
-    if (edit.ok && !edit.files.empty()) {
+    // A failure part way can still have changed files: re-read whenever any were touched
+    if (!edit.files.empty()) {
         local_++;
         forget();
         if (services_.library) {
@@ -1258,6 +1332,17 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
     Forms::Model::Result result;
     result.message = actionProblem(action, screen);
     if (!result.message.empty()) {
+        return result;
+    }
+    if (action == "retry") {
+        services_.library->rebuild();
+        local_++;
+        result.ok = true;
+        result.message = "Reading your collections again.";
+        return result;
+    }
+    if (!index_ || !services_.editor) {
+        result.message = "Changes can't be made here.";
         return result;
     }
     const Index& idx = *index_;
@@ -1319,7 +1404,18 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
         return result;
     }
     if (action == "removeEntry") {
-        result = finish(editor.removeMenuChild(idx, name, screen.param("entry")), "menus");
+        const std::string text = screen.param("entry");
+        const auto& children = record(screen)->children;
+        auto times = std::count_if(children.begin(), children.end(), [&](const MenuEntry& e) { return e.entry == text; });
+        result = finish(editor.removeMenuChild(idx, name, text), "menus");
+        if (result.ok && times > 1) {
+            result.message += " It was listed " + std::to_string(times) + " times; every line went.";
+        }
+        result.back = result.ok;
+        return result;
+    }
+    if (action == "respellSource") {
+        result = finish(editor.respellSubSource(idx, name, screen.param("source")), "menus");
         result.back = result.ok;
         return result;
     }
@@ -1331,9 +1427,7 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
         edit.ok = MenuFiles::respell(idx.options.root, record(screen)->name, e->entry, folderName, entryPosition(screen),
                                      &editor.backups(), error);
         edit.message = edit.ok ? "The entry now reads " + folderName + ", as the folder is spelt." : error;
-        if (edit.ok) {
-            edit.files.push_back(record(screen)->folder);
-        }
+        edit.files.push_back(record(screen)->folder);  // a failed add can follow a done remove
         result = finish(edit, "menus");
         result.back = result.ok;
         return result;

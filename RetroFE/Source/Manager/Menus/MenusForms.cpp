@@ -24,6 +24,7 @@ namespace
 const char* const menusForm = R"form(
 <form id="menus" title="Menus">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note bind="menu:browseNote"/>
   <link label="Change what Browse opens" open="settings" visibleWhen="menu:isReady"/>
   <text label="Search" bind="menu:query" live="yes" hint="Name of a menu, merged collection or system"/>
@@ -36,6 +37,7 @@ const char* const menusForm = R"form(
 const char* const menuForm = R"form(
 <form id="menu" title="Menu" bind="menu:title">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note bind="menu:missing"/>
   <button label="Fix it in the menu that lists it" action="menu.openVia" visibleWhen="menu:hasVia"/>
   <image bind="menu:logo" rows="3"/>
@@ -47,8 +49,8 @@ const char* const menuForm = R"form(
   <value label="Games" bind="menu:gameCount"/>
   <value label="Drawn with" bind="menu:page"/>
   <note bind="menu:problems"/>
-  <link label="Entries" open="menu-entries" status="menu:entriesStatus" visibleWhen="menu:isMenu"/>
-  <link label="Sources" open="menu-sources" status="menu:sourcesStatus" visibleWhen="menu:isMerged"/>
+  <link label="Entries" open="menu-entries" status="menu:entriesStatus" visibleWhen="menu:showEntries"/>
+  <link label="Sources" open="menu-sources" status="menu:sourcesStatus" visibleWhen="menu:showSources"/>
   <link label="Info and artwork" open="menu-info" status="menu:infoStatus" visibleWhen="menu:isFound"/>
   <link label="Actions" open="menu-actions" visibleWhen="menu:isFound"/>
   <button label="Open in Systems" action="menu.openSystem" visibleWhen="menu:isSystem"/>
@@ -58,6 +60,7 @@ const char* const menuForm = R"form(
 const char* const menuEntriesForm = R"form(
 <form id="menu-entries" title="Entries" bind="menu:title">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note bind="menu:entriesNote"/>
   <results label="Entries, in order" bind="menu:entries" open="menu-entry" param="entry" empty="No entries yet. Add one below."/>
   <section label="Add an entry">
@@ -70,6 +73,7 @@ const char* const menuEntriesForm = R"form(
 const char* const menuEntryForm = R"form(
 <form id="menu-entry" title="Entry" bind="menu:entryName">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note bind="menu:entryProblem"/>
   <value label="Position" bind="menu:entryPosition"/>
   <value label="Opens" bind="menu:entryOpens"/>
@@ -86,6 +90,7 @@ const char* const menuEntryForm = R"form(
 const char* const menuSourcesForm = R"form(
 <form id="menu-sources" title="Sources" bind="menu:title">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note value="A merged collection shows games of other systems, one .sub file per system. An empty .sub shows all of that system's games."/>
   <results label="Sources" bind="menu:sources" open="menu-source" param="source" empty="No sources: it shows no games."/>
   <section label="Add a source">
@@ -99,9 +104,11 @@ const char* const menuSourcesForm = R"form(
 const char* const menuSourceForm = R"form(
 <form id="menu-source" title="Source" bind="menu:sourceName">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note bind="menu:sourceProblem"/>
   <value label="Shows" bind="menu:sourceShows"/>
   <value label="File" bind="menu:sourceFile"/>
+  <button label="Spell it as the system is" action="menu.respellSource" visibleWhen="menu:sourceMisspelt"/>
   <button label="Remove this source" action="menu.removeSource" confirm="Remove this source? Its games stay in their system."/>
 </form>
 )form";
@@ -109,6 +116,7 @@ const char* const menuSourceForm = R"form(
 const char* const menuInfoForm = R"form(
 <form id="menu-info" title="Info and artwork" bind="menu:title">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <section label="Info (info.conf)">
     <text label="Title" bind="menu:infoTitle" hint="The folder name"/>
     <text label="Manufacturer" bind="menu:infoManufacturer"/>
@@ -126,6 +134,7 @@ const char* const menuInfoForm = R"form(
 const char* const menuMediaForm = R"form(
 <form id="menu-media" title="Artwork" bind="menu:title">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note value="The collection's own artwork, in system_artwork. Menus show it for this entry unless they have their own."/>
   <results bind="menu:media" open="menu-medium" param="type" empty="No artwork slots."/>
 </form>
@@ -134,6 +143,7 @@ const char* const menuMediaForm = R"form(
 const char* const menuMediumForm = R"form(
 <form id="menu-medium" title="Artwork" bind="menu:mediumTitle">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <image bind="menu:mediumImage" rows="5"/>
   <value label="File" bind="menu:mediumFile"/>
   <note bind="menu:mediumText"/>
@@ -154,6 +164,7 @@ const char* const menuMediumForm = R"form(
 const char* const menuActionsForm = R"form(
 <form id="menu-actions" title="Actions" bind="menu:title">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <link label="New menu or merged collection in this one" open="menu-new" visibleWhen="menu:canHaveChildren"/>
   <section label="Delete">
     <note bind="menu:deleteNote"/>
@@ -165,9 +176,11 @@ const char* const menuActionsForm = R"form(
 const char* const menuNewForm = R"form(
 <form id="menu-new" title="New menu or merged collection">
   <note bind="menu:status"/>
+  <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <choice label="Kind" bind="menu:newKind" options="menu:newKinds"/>
   <text label="Name" bind="menu:newName" hint="e.g. Consoles" help="The collection folder's name, and its title to start with."/>
   <choice label="In menu" bind="menu:newParent" options="menu:parentMenus"/>
+  <note bind="menu:newParentProblem"/>
   <choice label="Shows games of" bind="menu:newSource" options="menu:systems" visibleWhen="menu:isNewMerged" help="All of that system's games; add more sources afterwards."/>
   <button label="Create" action="menu.create"/>
 </form>

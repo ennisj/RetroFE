@@ -402,6 +402,193 @@ static void runMenusTests()
         check(contains(rig.get("missing"), "was deleted"), "the details screen left behind says so");
     });
 
+    run("menus: delete with several parents, one a menu folder, one listing it twice", [] {
+        std::string root = makeInstall("menus-delete-parents");
+        writeFile(root + "/collections/Main/menu.txt", "Consoles\r\n# comment\r\nArcade\r\nconsoles\r\n");
+        writeFile(root + "/collections/Folders/menu/Consoles.txt", "");
+        Rig rig(root);
+        rig.screen("menu", { { "id", "Consoles" } });
+        checkEqual(rig.get("parents"), "Folders, Main", "two parents");
+        rig.screen("menu-actions", { { "id", "Consoles" } });
+        Forms::Model::Result deleted = rig.run("delete");
+        check(deleted.ok, "deleted: " + deleted.message);
+        checkEqual(rig.file("collections/Main/menu.txt"), "NES\r\nSNES\r\n# comment\r\nArcade\r\n",
+                   "its entries take its place in Main; every line naming it goes, whatever the spelling");
+        check(rig.exists("collections/Folders/menu/SNES.txt") && rig.exists("collections/Folders/menu/Main.txt")
+              && !rig.exists("collections/Folders/menu/Consoles.txt") && !rig.exists("collections/Folders/menu.txt"),
+              "the menu folder gets menu/<entry>.txt files and loses Consoles.txt, without a menu.txt");
+    });
+
+    run("menus: a menu.xml parent is never turned into a menu.txt", [] {
+        std::string root = makeInstall("menus-xml");
+        writeFile(root + "/collections/Retro/settings.conf", "list.menuSort = yes\n");
+        writeFile(root + "/collections/Retro/menu.xml", "<menu><item collection=\"Spare\"/></menu>");
+        Rig rig(root);
+        rig.screen("menu-actions", { { "id", "Spare" } });
+        check(contains(rig.problem("delete"), "menu.xml"), "deleting what a menu.xml lists is refused: " + rig.problem("delete"));
+        checkEqual(rig.get("canHaveChildren"), "yes", "Spare (menu.txt) can have children");
+        rig.screen("menu-actions", { { "id", "Retro" } });
+        checkEqual(rig.get("canHaveChildren"), "no", "an XML menu can't get new ones here");
+        rig.screen("menu-new", { { "id", "Retro" } });
+        rig.set("newName", "Inside");
+        check(!rig.problem("create").empty() && !hasOption(rig.model->options("menu:parentMenus"), "Retro"),
+              "create refuses rather than silently using another menu: " + rig.problem("create"));
+        rig.screen("menu-entries", { { "id", "Retro" } });
+        check(!rig.problem("addEntry").empty(), "no entries added to it");
+
+        auto index = rig.indexer->index();
+        check(!rig.editor->addMenuChild(*index, "Retro", "Arcade").ok, "the Editor refuses too");
+        std::string error;
+        check(!Library::MenuFiles::add(root, "Retro", "Arcade", -1, nullptr, error) && !rig.exists("collections/Retro/menu.txt"),
+              "and MenuFiles never writes a menu.txt beside a lone menu.xml: " + error);
+    });
+
+    run("menus: a merged collection's last source removed, then a new one, then delete", [] {
+        std::string root = makeInstall("menus-last-source");
+        writeFile(root + "/collections/Blank/info.conf", "title = Blank\n");
+        Rig rig(root);
+        for (const char* source : { "Arcade", "NES" }) {
+            rig.screen("menu-source", { { "id", "Favs" }, { "source", source } });
+            check(rig.run("removeSource").ok, std::string("removed ") + source);
+        }
+        rig.screen("menu", { { "id", "Favs" } });
+        checkEqual(rig.get("kind"), "empty collection", "nothing left");
+        check(rig.get("showSources") == "yes" && rig.get("showEntries") == "yes", "it can become either");
+        rig.screen("menu-sources", { { "id", "Favs" } });
+        check(rig.problem("addSource").empty(), "sources can be added again: " + rig.problem("addSource"));
+        rig.set("addSource", "SNES");
+        check(rig.run("addSource").ok && rig.exists("collections/Favs/SNES.sub"), "SNES added back");
+        rig.screen("menu-actions", { { "id", "Favs" } });
+        check(rig.problem("delete").empty() && rig.run("delete").ok && !rig.exists("collections/Favs"), "and it can be deleted");
+
+        rig.screen("menus");
+        check(findRow(rig.rows("unlisted"), "Blank") != nullptr, "a collection with nothing yet is listed apart");
+        rig.screen("menu-actions", { { "id", "Blank" } });
+        check(rig.problem("delete").empty(), "and can be deleted: " + rig.problem("delete"));
+        checkEqual(rig.get("canHaveChildren"), "yes", "or get entries");
+    });
+
+    run("menus: making the top menu by its own name", [] {
+        std::string root = makeInstall("menus-top-self");
+        writeFile(root + "/settings.conf", "firstCollection = Start\n");
+        Rig rig(root);
+        rig.screen("menu-new");
+        rig.set("newName", "Start");
+        Forms::Model::Result made = rig.run("create");
+        check(made.ok && contains(made.message, "Browse opens it"), "made: " + made.message);
+        check(rig.exists("collections/Start/menu.txt") && rig.file("collections/Start/menu.txt").empty(),
+              "an empty menu, not listing itself");
+    });
+
+    run("menus: a failed re-read is shown and stops changes", [] {
+        Library::Indexer::Status status;
+        status.state = Library::Indexer::State::Failed;
+        status.error = "disk gone";
+        std::string text = Manager::MenuProvider::statusText(status, true);
+        check(contains(text, "Couldn't re-read") && contains(text, "disk gone"), "says so: " + text);
+        check(!Manager::MenuProvider::writeProblemFor(status, true).empty(), "writes wait");
+        check(contains(Manager::MenuProvider::statusText(status, false), "Couldn't read"), "first read failed");
+        status.state = Library::Indexer::State::Building;
+        checkEqual(Manager::MenuProvider::statusText(status, true), "Updating...", "building");
+        check(!Manager::MenuProvider::writeProblemFor(status, true).empty(), "writes wait while building");
+        status.state = Library::Indexer::State::Ready;
+        check(Manager::MenuProvider::statusText(status, true).empty() && Manager::MenuProvider::writeProblemFor(status, true).empty(),
+              "nothing to say when ready");
+
+        Rig rig(makeInstall("menus-retry"));
+        rig.screen("menus");
+        checkEqual(rig.get("isFailed"), "no", "not failed");
+        check(!rig.problem("retry").empty(), "retry only when it failed");
+    });
+
+    run("menus: favorites with entries stop a delete, lastplayed doesn't", [] {
+        std::string root = makeInstall("menus-favorites");
+        writeFile(root + "/collections/Spare/playlists/favorites.txt", "_Arcade:a\n");
+        writeFile(root + "/collections/Spare/playlists/lastplayed.txt", "_Arcade:a\n");
+        Rig rig(root);
+        rig.screen("menu-actions", { { "id", "Spare" } });
+        check(contains(rig.problem("delete"), "favorites.txt"), "favorites someone chose stay: " + rig.problem("delete"));
+        fs::remove(root + "/collections/Spare/playlists/favorites.txt");
+        rig.indexer->changed();
+        rig.indexer->wait(10000);
+        rig.screen("menu-actions", { { "id", "Spare" } });
+        check(rig.problem("delete").empty(), "lastplayed history doesn't: " + rig.problem("delete"));
+        check(rig.run("delete").ok && rig.exists("manage/backups/collections/Spare/playlists/lastplayed.txt"), "kept in the backups");
+    });
+
+#ifdef _WIN32
+    run("menus: a create that can't be listed is undone, so it can be tried again", [] {
+        std::string root = makeInstall("menus-create-rollback");
+        std::string menuTxt = root + "/collections/Main/menu.txt";
+        Rig rig(root);
+        fs::permissions(menuTxt, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write, fs::perm_options::remove);
+        rig.screen("menu-new");
+        rig.set("newName", "Retro");
+        Forms::Model::Result failed = rig.run("create");
+        check(!failed.ok && contains(failed.message, "Nothing was made") && !rig.exists("collections/Retro"),
+              "undone: " + failed.message);
+        fs::permissions(menuTxt, fs::perms::owner_write, fs::perm_options::add);
+        rig.screen("menu-new");
+        rig.set("newName", "Retro");
+        Forms::Model::Result made = rig.run("create");
+        check(made.ok && contains(rig.file("collections/Main/menu.txt"), "Retro"), "a retry works: " + made.message);
+    });
+#endif
+
+    run("menus: names Windows can't use are refused", [] {
+        for (const char* bad : { "con", "Aux.v2", "lpt1", "Retro.", "Retro " }) {
+            check(!Library::MenuFiles::checkChildName(bad).empty(), std::string("refused: ") + bad);
+        }
+        check(Library::MenuFiles::checkChildName("Console").empty() && Library::MenuFiles::checkChildName("Con Games").empty()
+              && Library::MenuFiles::checkChildName("Retro.Picks").empty(), "names that only start like one are fine");
+    });
+
+    run("menus: a .sub spelt differently from its system is renamed, keeping its lines", [] {
+        std::string root = makeInstall("menus-sub-case");
+        writeFile(root + "/collections/Favs/snes.sub", "f\n");
+        Rig rig(root);
+        rig.screen("menu-source", { { "id", "Favs" }, { "source", "snes" } });
+        checkEqual(rig.get("sourceMisspelt"), "yes", "flagged");
+        Forms::Model::Result fixed = rig.run("respellSource");
+        check(fixed.ok && fixed.back, "renamed: " + fixed.message);
+        bool exact = false;
+        for (const auto& entry : fs::directory_iterator(root + "/collections/Favs")) {
+            exact |= entry.path().filename().string() == "SNES.sub";
+        }
+        check(exact && rig.file("collections/Favs/SNES.sub") == "f\n", "SNES.sub with the same lines");
+        rig.screen("menu", { { "id", "Favs" } });
+        check(contains(rig.get("sources"), "SNES (1 game listed)"), "now found: " + rig.get("sources"));
+    });
+
+    run("menus: an entry listed twice", [] {
+        std::string root = makeInstall("menus-duplicate");
+        writeFile(root + "/collections/Main/menu.txt", "Arcade\nConsoles\nArcade\n");
+        Rig rig(root);
+        rig.screen("menu-entries", { { "id", "Main" } });
+        Forms::Rows entries = rig.rows("entries");
+        check(entries.total == 3 && contains(entries.items[2].detail, "listed 2 times")
+              && entries.items[2].params.at("position") == "2", "flagged, and each row is its own line");
+        rig.screen("menu-entry", { { "id", "Main" }, { "entry", "Arcade" }, { "position", "2" } });
+        checkEqual(rig.get("entryPosition"), "3 of 3", "the row's own line");
+        check(contains(rig.problem("moveUp"), "more than once"), "can't be moved");
+        Forms::Model::Result removed = rig.run("removeEntry");
+        check(removed.ok && contains(removed.message, "2 times"), "removing says every line went: " + removed.message);
+        checkEqual(rig.file("collections/Main/menu.txt"), "Consoles\n", "both lines went");
+    });
+
+    run("menus: layoutFromAnotherCollection decides the page", [] {
+        std::string root = makeInstall("menus-page");
+        writeFile(root + "/settings.conf", "firstCollection = Main\nlayout = Neat\n");
+        writeFile(root + "/layouts/Neat/layout.xml", "<layout width=\"1920\" height=\"1080\"/>");
+        writeFile(root + "/layouts/Neat/collections/_menu/layout/layout.xml", "<layout/>");
+        writeFile(root + "/collections/Consoles/settings.conf", "layoutFromAnotherCollection = Arcade\n");
+        Rig rig(root);
+        rig.screen("menu", { { "id", "Main" } });
+        check(contains(rig.get("page"), "menu page"), "Main uses the menu page: " + rig.get("page"));
+        rig.screen("menu", { { "id", "Consoles" } });
+        check(contains(rig.get("page"), "Arcade's page"), "Consoles borrows Arcade's: " + rig.get("page"));
+    });
+
     run("menus: info.conf is edited with Save and Reset", [] {
         Rig rig(makeInstall("menus-info"));
         rig.screen("menu-info", { { "id", "Favs" } });

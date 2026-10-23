@@ -546,6 +546,17 @@ namespace MenuFiles
         if (name[0] == '_' || name[0] == '.') {
             return "The name can't start with _ or a dot.";
         }
+        if (name.back() == '.') {
+            return "The name can't end with a dot.";
+        }
+        // Windows keeps device names for itself, whatever follows the first dot (con.txt, aux.v2)
+        static const std::vector<std::string> devices = { "con", "prn", "aux", "nul",
+            "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+            "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
+        std::string stem = toLower(Utils::trimEnds(name.substr(0, name.find('.'))));
+        if (std::find(devices.begin(), devices.end(), stem) != devices.end()) {
+            return "\"" + name + "\" starts with a name Windows keeps for itself (" + stem + ").";
+        }
         return "";
     }
 
@@ -601,13 +612,20 @@ namespace MenuFiles
         if (newFolder) {
             // As Setup always did: a settings file so RetroFE doesn't report the menu as unreadable
             std::string settings = Utils::combinePath(folder, "settings.conf");
-            if (!writeFileAtomic(settings, std::string("list.menuSort = yes") + defaultNewline(), error)) {
+            if ((backups && !backups->beforeChange(settings, error))
+                || !writeFileAtomic(settings, std::string("list.menuSort = yes") + defaultNewline(), error)) {
                 return false;
             }
         }
 
         std::string menuTxt = Utils::combinePath(folder, "menu.txt");
         std::string menuFolder = Utils::combinePath(folder, "menu");
+        if (!fs::exists(menuTxt, ec) && !fs::is_directory(menuFolder, ec)
+            && fs::exists(Utils::combinePath(folder, "menu.xml"), ec)) {
+            // A menu.txt would win over menu.xml and hide everything it lists
+            error = menu + "'s menu is a menu.xml, which Manage doesn't change; add " + child + " there.";
+            return false;
+        }
         if (!fs::exists(menuTxt, ec) && fs::is_directory(menuFolder, ec)) {
             if (folderEntry(menuFolder, child).empty()) {
                 std::string file = Utils::combinePath(menuFolder, child + ".txt");
@@ -757,6 +775,16 @@ namespace
         }
         return "";
     }
+}
+
+std::string Editor::checkMenuParent(const Index& index, const std::string& parent)
+{
+    std::string spelling;
+    return checkParentMenu(index, parent, spelling);
+}
+
+namespace
+{
 
     // A name for a new collection folder
     std::string checkNewCollectionName(const Index& index, const std::string& name)
@@ -836,20 +864,39 @@ EditResult Editor::createListed(const Index& index, const std::string& name, con
     }
     EditResult result;
     std::string error;
+    // Undoes a half-made collection, so trying again isn't blocked by its folder
+    auto rollBack = [&](const std::string& why) {
+        std::string ignored;
+        for (const std::string& path : result.files) {
+            backups_.removeKeepingOriginal(path, ignored);
+        }
+        std::error_code ec;
+        fs::remove(folder, ec);  // only when empty
+        result.ok = false;
+        result.message = why + " Nothing was made.";
+        return result;
+    };
     for (const auto& [path, content] : files) {
         if (!backups_.beforeChange(path, error) || !writeFileAtomic(path, content, error)) {
-            return EditResult::fail(error.empty() ? "Could not write " + path : error);
+            return rollBack(error.empty() ? "Could not write " + path + "." : error);
         }
         result.files.push_back(path);
     }
+    std::string madeWhat = merged
+        ? "Made " + name + ", showing every game of " + index.collections[static_cast<size_t>(s)].name
+        : "Made the menu " + name;
+    // The top menu made by its own name: Browse opens it, nothing lists it
+    if (iequals(parentName, name)) {
+        result.ok = true;
+        result.message = madeWhat + ". Browse opens it (it's firstCollection).";
+        return result;
+    }
     if (!MenuFiles::add(index.options.root, parentName, name, -1, &backups_, error)) {
-        return EditResult::fail("Made " + name + ", but couldn't list it in " + parentName + ": " + error);
+        return rollBack("Couldn't list " + name + " in " + parentName + ": " + error);
     }
     result.ok = true;
     result.files.push_back(Utils::combinePath(index.options.root, "collections", parentName));
-    result.message = merged
-        ? "Made " + name + ", showing every game of " + index.collections[static_cast<size_t>(s)].name + ", in " + parentName + "."
-        : "Made the menu " + name + " in " + parentName + ".";
+    result.message = madeWhat + ", in " + parentName + ".";
     return result;
 }
 
@@ -860,7 +907,8 @@ EditResult Editor::addSubSource(const Index& index, const std::string& merged, c
     if (!record) {
         return EditResult::fail("There's no collection called \"" + merged + "\".");
     }
-    if (!record->is(KindMerged) || record->is(KindSystem)) {
+    // A merged collection, or one with nothing yet (e.g. its last .sub was removed)
+    if (record->is(KindSystem) || record->is(KindMenu) || record->reserved) {
         return EditResult::fail(record->name + " isn't a merged collection.");
     }
     int s;
@@ -917,6 +965,39 @@ EditResult Editor::removeSubSource(const Index& index, const std::string& merged
     return EditResult{ true, message, { sub->file } };
 }
 
+EditResult Editor::respellSubSource(const Index& index, const std::string& merged, const std::string& source)
+{
+    int m;
+    const CollectionRecord* record = findRecord(index, merged, m);
+    if (!record) {
+        return EditResult::fail("There's no collection called \"" + merged + "\".");
+    }
+    const SubSource* sub = nullptr;
+    for (const SubSource& candidate : record->subs) {
+        if (candidate.source == source) {
+            sub = &candidate;
+        }
+    }
+    if (!sub || sub->collection < 0 || sub->exactCase) {
+        return EditResult::fail(sub ? source + ".sub is spelt as its system already, or names no system." : record->name + " has no " + source + ".sub.");
+    }
+    const std::string& system = index.collections[static_cast<size_t>(sub->collection)].name;
+    std::string target = Utils::combinePath(record->folder, system + ".sub");
+    std::string content;
+    if (!readFile(sub->file, content)) {
+        return EditResult::fail("Could not read " + sub->file + ".");
+    }
+    // The old spelling goes to the backups; the lines come back under the system's spelling.
+    // (On Windows both names are the same file, so this also works as a case-only rename.)
+    std::string error;
+    if (!backups_.removeKeepingOriginal(sub->file, error) || !backups_.beforeChange(target, error)
+        || !writeFileAtomic(target, content, error)) {
+        return EditResult{ false, error, { sub->file, target } };
+    }
+    return EditResult{ true, sub->source + ".sub is now " + system + ".sub, so RetroFE finds " + system + "'s games.",
+                       { sub->file, target } };
+}
+
 std::string Editor::checkDeleteMenu(const Index& index, const std::string& name)
 {
     int c = index.findCollection(name);
@@ -933,10 +1014,19 @@ std::string Editor::checkDeleteMenu(const Index& index, const std::string& name)
     if (record.is(KindSystem)) {
         return record.name + " has games of its own; it can only be deleted from Systems.";
     }
-    if (!record.is(KindMenu) && !record.is(KindMerged)) {
-        return record.name + " isn't a menu or a merged collection.";
+    // Its entries would move up into the menus listing it, and Manage can't
+    // change a menu.xml or a menu built from collectionLaunchers
+    for (int p : record.parents) {
+        const CollectionRecord& parent = index.collections[static_cast<size_t>(p)];
+        if (parent.menuSource == MenuSource::MenuXml) {
+            return parent.name + " lists it from menu.xml; take it out there first.";
+        }
+        if (parent.menuSource == MenuSource::CollectionLaunchers) {
+            return parent.name + " lists it from the collectionLaunchers setting; take it out there first.";
+        }
     }
-    // Only what a menu or merged collection is made of; anything else stops it
+    // Menus, merged collections, and ones with nothing yet (no games, entries or
+    // sources) qualify; only what they're made of may be in the folder
     std::error_code ec;
     fs::path folder(record.folder);
     for (auto it = fs::recursive_directory_iterator(folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
@@ -963,7 +1053,8 @@ std::string Editor::checkDeleteMenu(const Index& index, const std::string& name)
             if (directory && !nested) {
                 continue;
             }
-            if ((file == "favorites.txt" || file == "lastplayed.txt") && fs::file_size(it->path(), ec) == 0) {
+            // lastplayed is history RetroFE writes; favorites someone chose, so only an empty one goes
+            if (file == "lastplayed.txt" || (file == "favorites.txt" && fs::file_size(it->path(), ec) == 0)) {
                 continue;
             }
         }
@@ -1001,15 +1092,27 @@ EditResult Editor::deleteMenu(const Index& index, const std::string& name)
     std::vector<std::string> moved;
     std::vector<std::string> skipped;
 
-    // 1. Each menu listing it gets its entries in its place, then loses it
+    // Files may already have changed when a later step fails: say which, so the index is rebuilt
+    auto failed = [&](const std::string& message) { return EditResult{ false, message, result.files }; };
+
+    // 1. Each menu listing it gets its entries in its place (before its first
+    // line), then loses every line naming it, whatever their spelling
     for (int p : record.parents) {
         const CollectionRecord& parent = index.collections[static_cast<size_t>(p)];
         int position = -1;
+        std::vector<std::string> spellings;
         for (size_t i = 0; i < parent.children.size(); i++) {
-            if (parent.children[i].collection == c && position < 0) {
+            if (parent.children[i].collection != c) {
+                continue;
+            }
+            if (position < 0) {
                 position = static_cast<int>(i);
             }
+            if (std::find(spellings.begin(), spellings.end(), parent.children[i].entry) == spellings.end()) {
+                spellings.push_back(parent.children[i].entry);
+            }
         }
+        result.files.push_back(parent.folder);
         // Inserted before it, so they take its place once it's removed
         int at = position;
         for (const MenuEntry& child : record.children) {
@@ -1031,7 +1134,7 @@ EditResult Editor::deleteMenu(const Index& index, const std::string& name)
                 continue;
             }
             if (!MenuFiles::add(root, parent.name, childRecord.name, at, &backups_, error)) {
-                return EditResult::fail("Could not move " + childRecord.name + " into " + parent.name + ": " + error);
+                return failed("Could not move " + childRecord.name + " into " + parent.name + ": " + error);
             }
             if (at >= 0) {
                 at++;
@@ -1040,10 +1143,11 @@ EditResult Editor::deleteMenu(const Index& index, const std::string& name)
                 moved.push_back(childRecord.name);
             }
         }
-        if (!MenuFiles::remove(root, parent.name, record.name, &backups_, error)) {
-            return EditResult::fail("Could not take " + record.name + " out of " + parent.name + ": " + error);
+        for (const std::string& spelling : spellings) {
+            if (!MenuFiles::remove(root, parent.name, spelling, &backups_, error)) {
+                return failed("Could not take " + record.name + " out of " + parent.name + ": " + error);
+            }
         }
-        result.files.push_back(parent.folder);
     }
 
     // 2. Its files go to the backups, then the empty folders
@@ -1060,7 +1164,7 @@ EditResult Editor::deleteMenu(const Index& index, const std::string& name)
     }
     for (const std::string& file : files) {
         if (!backups_.removeKeepingOriginal(file, error)) {
-            return EditResult::fail("Could not move " + file + " to the backups: " + error);
+            return failed("Could not move " + file + " to the backups: " + error);
         }
         result.files.push_back(file);
     }
@@ -1117,6 +1221,10 @@ EditResult Editor::addMenuChild(const Index& index, const std::string& menu, con
     }
     if (m == c) {
         return EditResult::fail("A menu can't list itself.");
+    }
+    std::string parentProblem = checkMenuParent(index, menuRecord->name);
+    if (!parentProblem.empty()) {
+        return EditResult::fail(parentProblem);
     }
     for (const MenuEntry& entry : menuRecord->children) {
         if (entry.collection == c) {

@@ -19,6 +19,7 @@
 #include "../Provider.h"
 #include "../../Library/Edits.h"
 #include "../../Library/Index.h"
+#include "../../Library/Indexer.h"
 #include "../../Library/Media.h"
 #include <map>
 #include <memory>
@@ -66,6 +67,11 @@ namespace Manager
         std::vector<std::pair<std::string, std::string>> options(const std::string& key, const Screen& screen) override;
         std::string actionProblem(const std::string& action, const Screen& screen) override;
         Forms::Model::Result runAction(const std::string& action, const Screen& screen) override;
+
+        // The status line for an index state (a failed re-read says so, and that
+        // changes wait), and why writes can't run in that state, or ""
+        static std::string statusText(const Library::Indexer::Status& status, bool hasIndex);
+        static std::string writeProblemFor(const Library::Indexer::Status& status, bool hasIndex);
 
     private:
         using Options = std::vector<std::pair<std::string, std::string>>;
