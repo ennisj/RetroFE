@@ -44,9 +44,12 @@ generator only notices new files on the build after the one that finds them).
 | `Manager/Providers.cpp` | Registration: one include line and one `model.addProvider(...)` line per provider, in your section's slots. Keep the blank lines between slots so sections added in parallel merge cleanly. |
 | `Tests/<Section>Tests.cpp` | Unit tests, as a `static Test::Suite` (see `Tests/TestSupport.h`); every `Tests/*.cpp` is built in. |
 
-The Systems placeholder keeps the old "Add a collection" fields (now "Add a
-system", action `collection.create`); the Systems section can replace them
-with its own. The Manage hub links to each section's first form
+The Systems section replaced the old "Add a collection" fields with its own
+`system-add` screen (`system.create`, which adds a parent menu, installed
+launchers and the video preset); `collection.create` still works for layouts
+that use it. Systems and Videos share one provider class and one set of form
+templates (`Manager/Systems/SystemForms.cpp`), registered twice. The Manage
+hub links to each section's first form
 (`BuiltinForms.cpp`, form `manage`); you shouldn't need to change it.
 
 ## Naming

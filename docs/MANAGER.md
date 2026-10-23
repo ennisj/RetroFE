@@ -155,8 +155,7 @@ press Enter to keep it or Escape to cancel; Ctrl+V pastes.
 
 **Manage** links to a screen for each part of your setup: Games, Menus,
 Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
-its Sources, and removing a package). Some of these say "Coming soon" for
-now.
+its Sources, and removing a package).
 
 **Games** searches every installed game by name or title, in one system or
 merged collection or under a menu, optionally only games without metadata.
@@ -182,10 +181,8 @@ can change:
 Every change keeps the original in `manage/backups/` first, and RetroFE shows
 it after it reloads, when you leave Manage.
 
-**Systems** lists your systems and adds one: point RetroFE at a folder of
-games and the emulator that runs them, and it reloads with the new system
-under Browse. On a bare install Manage opens by itself and says where to
-start.
+**Systems** and **Videos** are described [below](#systems-and-videos).
+On a bare install Manage opens by itself and says where to start.
 
 ### Menus
 
@@ -234,6 +231,66 @@ Settings writes each value to the file RetroFE actually reads it from:
 `settings.conf`, `settings1.conf` to `settings15.conf`, or
 `settings_saved.conf`. It only changes that line, keeping comments and
 layout. Values set in an override file say so ("Set in settings1.conf").
+
+### Systems and Videos
+
+**Systems** lists every collection with games of its own: search by name or
+title, or pick a menu to see only the systems below it. Each row shows the
+game count and the launcher. **Add a system** asks for a name, the menu to
+list it in, the games folder (with a count of matching files, and a warning
+when files differ only in the case of their extension), the extensions, and
+either an installed launcher or a new emulator program (written as the
+system's own `launcher.<os>.conf`, as before).
+
+A system's screen shows the menus it's in, its games folder, extensions and
+the launcher in effect (and which file sets it), with a link to each part:
+
+- **Games** opens the Games screen for this system.
+- **Settings**: extensions (tidied: no dots, no duplicates, case kept,
+  because RetroFE compares it), sort by title, show missing games, and the
+  metadata file. Folders are shown, never changed. Save writes only these
+  keys, to the file each comes from, in that file's own style (`true`/`yes`).
+- **Launcher**: the default launcher, from the installed ones. A system's own
+  local launcher is offered as `<system>.<name>`, the name RetroFE looks it up
+  by. A RetroFE Plus list (`launcher = a, b, c`) keeps its alternatives: the
+  one you pick moves to the front. When the system has its own launcher file,
+  the screen says that file decides.
+- **Info**: title, manufacturer, year and genre in `info.conf`; an emptied
+  field is taken out. "This is a video collection" writes `type = videos`,
+  which moves it to Videos.
+- **Media**: the system's own art in `system_artwork` (logo, marquee,
+  device, fanart, video, story and any other file there), each with a
+  preview. Replace one from a file, clear it (only its own file, never art
+  shown from elsewhere), or put back what it had before Manage changed it.
+- **Playlists**: create, rename and delete playlists, and add or take out
+  games. `all`, `favorites` and `lastplayed` (any case) are RetroFE's own and
+  are shown but not changed. RetroFE shows only playlists with games in them
+  and, when `cyclePlaylist` is set, only the ones it names: a playlist screen
+  says so and can add it to the system's `cyclePlaylist`. A playlist named
+  like a sort field (`year`, `playCount`...) is sorted by it.
+- **Check this system**: warnings, as sentences, for a system no menu lists,
+  a games folder that isn't there, no files with its extensions (including
+  ones that differ only in case), include and exclude lists that leave
+  nothing, a missing or uninstalled launcher or its missing program, and no
+  metadata; then a one-line summary. It never changes anything.
+- **Delete this system** appears only for a system that is empty or was added
+  here, isn't a menu or merged collection, isn't listed by a `menu.xml`, whose
+  games folder isn't inside its own folder, and whose folder holds only
+  settings, lists and art. It asks first, moves the whole folder to
+  `manage/backups/deleted/<name> <time>`, then takes it out of its menus (if a
+  menu can't be changed, everything is put back); its games aren't touched.
+
+Every change keeps the original file in `manage/backups` first and takes
+effect when RetroFE reloads, after you close Manage.
+
+**Videos** is the same for **video collections**: systems whose files are
+videos, played by a video player, and marked with `type = videos` in their
+`info.conf`. **Add a video collection** starts with the extensions
+`mp4,mkv,avi` and the launcher `VideoPlayer`; when there's no such launcher
+yet, choose the player program (VLC or mpv get their usual full-screen
+arguments) and Manage writes `launchers.<os>/VideoPlayer.conf`. Video
+collections are listed under Videos, not Systems. Playing videos inside a
+page (jukebox mode) and previewing video art on these screens come later.
 
 ### Styling the screens
 

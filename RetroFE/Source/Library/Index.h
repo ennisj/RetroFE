@@ -142,6 +142,11 @@ namespace Library
         std::vector<SubSource> subs;
 
         std::vector<PlaylistInfo> playlists;
+        // The playlists RetroFE shows, from cyclePlaylist as CollectionInfoBuilder
+        // reads it (the global one for firstCollection, else collections.<c>.cyclePlaylist
+        // when set, else the global one); empty = every playlist that has entries
+        std::vector<std::string> cyclePlaylist;
+        bool cyclePlaylistOwn = false;                // it's the collection's own setting
 
         // System (what RetroFE reads for its own games)
         std::string listPath;                         // as resolved; ';' separates folders
@@ -318,6 +323,10 @@ namespace Library
 
     // Names RetroFE treats specially, which Manage shouldn't offer as ordinary collections
     bool isReservedCollection(const std::string& name);
+
+    // Playlist names RetroFE gives a meaning (all, favorites, lastplayed; any case),
+    // which Manage shows but doesn't change
+    bool isReservedPlaylistName(const std::string& name);
 
     // Media and video file extensions RetroFE plays (lower case)
     const std::vector<std::string>& videoExtensions();
