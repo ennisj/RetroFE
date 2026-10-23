@@ -32,7 +32,7 @@ namespace Builtin
     // Used in place of controls.conf when it doesn't exist
     extern const char* const controls;
 
-    // Layout XML used when the configured layout isn't installed.
-    // Returns nullptr for pages the built-in layout doesn't provide.
-    const char* layoutXml(const std::string& page);
+    // Layout XML used when the configured layout isn't installed, for a page of
+    // a collection ("" for the splash). Returns nullptr for pages it doesn't provide.
+    const char* layoutXml(const std::string& page, const std::string& collection = "");
 }

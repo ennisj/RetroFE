@@ -81,6 +81,7 @@ const global_options::options_entry global_options::s_option_entries[] =
                                        "",         global_options::option_type::STRING,  "Jump to playlist by way of quickList key" },
     { OPTION_CYCLEPLAYLIST,            "",         global_options::option_type::MSTRING,  "Set of playlists that can be cycled through, CSV list of playlist names" },
     { OPTION_FIRSTCOLLECTION,          "",         global_options::option_type::STRING,   "Start on this collection if available" },
+    { OPTION_HOMEMENU,                 "false",    global_options::option_type::BOOLEAN,  "Start on the Home menu (Catalog, Settings, Manage, Browse); Browse goes to firstCollection. Ignored in kiosk mode" },
     { OPTION_CYCLECOLLECTION,          "",         global_options::option_type::MSTRING,  "Set of collections that can be cycled through, CSV list of collection names" },
     { OPTION_LASTPLAYEDSIZE,           "10",       global_options::option_type::INTEGER,  "Size of the auto-generated last played playlist, 0 to disable" },
     { OPTION_LASTPLAYEDSKIPCOLLECTION, "",         global_options::option_type::MSTRING,  "Skip CSV list of collections being added to last played" },

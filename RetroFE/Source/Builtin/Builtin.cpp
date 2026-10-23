@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Builtin.h"
+#include "../Manager/Home.h"
 
 namespace Builtin
 {
@@ -28,6 +29,7 @@ windowBorder = true
 windowResize = true
 hideMouse = no
 firstCollection = Main
+homeMenu = yes
 )";
 
 const char* const controls = R"(
@@ -70,13 +72,29 @@ static const char* const mainLayout = R"(
 </layout>
 )";
 
-const char* layoutXml(const std::string& page)
+// The Home menu as a carousel: left/right to choose
+static const char* const homeLayout = R"(
+<layout width="1280" height="720" loadFontSize="48" fontColor="dedede">
+  <text value="RetroFE" x="center" y="110" xOrigin="center" yOrigin="center" fontSize="56" layer="1"/>
+
+  <menu menuIndex="0" type="custom" orientation="horizontal" textFallback="true" scrollTime=".15" layer="2">
+    <itemDefaults y="370" xOrigin="center" yOrigin="center" fontSize="36" alpha="0.35" layer="2"/>
+    <item x="300"/>
+    <item selected="true" x="640" fontSize="64" alpha="1"/>
+    <item x="980"/>
+  </menu>
+
+  <text value="Left/Right: choose    Enter: select    F10: Settings    Q: quit" x="center" y="675" xOrigin="center" yOrigin="center" fontSize="20" alpha="0.4" layer="1"/>
+</layout>
+)";
+
+const char* layoutXml(const std::string& page, const std::string& collection)
 {
     if (page == "splash") {
         return splashLayout;
     }
     if (page == "layout") {
-        return mainLayout;
+        return collection == Home::collectionName ? homeLayout : mainLayout;
     }
     return nullptr;
 }

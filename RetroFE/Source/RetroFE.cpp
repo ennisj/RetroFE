@@ -16,6 +16,8 @@
 
 #include "RetroFE.h"
 #include "Builtin/Builtin.h"
+#include "Manager/Home.h"
+#include "Manager/Setup.h"
 #include "Collection/CollectionInfo.h"
 #include "Collection/CollectionInfoBuilder.h"
 #include "Collection/Item.h"
@@ -73,7 +75,7 @@ RetroFE::RetroFE(Configuration& c)
 	: initialized(false), initializeError(false), initializeThread(NULL), config_(c), db_(NULL), metadb_(NULL),
 	input_(config_), currentPage_(NULL), keyInputDisable_(0), currentTime_(0), lastLaunchReturnTime_(0),
 	keyLastTime_(0), keyDelayTime_(.3f), reboot_(false), kioskLock_(false), paused_(false), buildInfo_(false),
-	collectionInfo_(false), gameInfo_(false)
+	collectionInfo_(false), gameInfo_(false), manager_(c)
 {
 	menuMode_ = false;
 	attractMode_ = false;
@@ -142,6 +144,12 @@ void RetroFE::render()
 
 		// Render the texture onto the screen
 		SDL_RenderCopy(SDL::getRenderer(i), SDL::getRenderTarget(i), nullptr, nullptr);
+
+		// The manager draws over the main screen at full resolution
+		if (i == 0)
+		{
+			manager_.render();
+		}
 
 		// Present the final result to the screen
 		SDL_RenderPresent(SDL::getRenderer(i));
@@ -285,6 +293,7 @@ void RetroFE::freeGraphicsMemory()
 			currentPage_->deInitializeFonts();
 		}
 
+		manager_.deInitialize();
 		SDL::deInitialize();
 		input_.clearJoysticks();
 	}
@@ -301,6 +310,7 @@ void RetroFE::allocateGraphicsMemory()
 	{
 		SDL::initialize(config_);
 		currentPage_->initializeFonts();
+		manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0));
 	}
 
 	// Allocate textures
@@ -316,6 +326,8 @@ bool RetroFE::deInitialize()
 {
 
 	bool retVal = true;
+
+	manager_.deInitialize();
 
 	// Free textures
 	freeGraphicsMemory();
@@ -376,6 +388,7 @@ bool RetroFE::run()
 		return false;
 	if (!fontcache_.initialize())
 		return false;
+	manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0));
 	SDL_RestoreWindow(SDL::getWindow(0));
 	SDL_RaiseWindow(SDL::getWindow(0));
 	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
@@ -583,6 +596,22 @@ bool RetroFE::run()
 			break;
 		}
 
+		// While the manager is open it takes all input
+		if (manager_.isOpen())
+		{
+			SDL_Event e;
+			while (SDL_PollEvent(&e))
+			{
+				manager_.handleEvent(e);
+			}
+			if (!manager_.isOpen())
+			{
+				// Don't act on keys still held from using the manager
+				input_.resetStates();
+				lastLaunchReturnTime_ = currentTime_;
+			}
+		}
+
 		switch (state)
 		{
 
@@ -592,7 +621,7 @@ bool RetroFE::run()
 			currentPage_->cleanup();
 
 			// Not in splash mode
-			if (currentPage_ && !splashMode)
+			if (currentPage_ && !splashMode && !manager_.isOpen())
 			{
 				// account for when returning from a menu and the previous key was still "stuck"
 				if (lastLaunchReturnTime_ == 0 || (currentTime_ - lastLaunchReturnTime_ > .3))
@@ -666,6 +695,16 @@ bool RetroFE::run()
 				std::string firstCollection = "Main";
 				config_.getProperty(OPTION_FIRSTCOLLECTION, firstCollection);
 
+				// With the Home menu, start there; Browse goes to the first collection
+				bool homeMenu = false;
+				config_.getProperty(OPTION_HOMEMENU, homeMenu);
+				homeMenu_ = homeMenu && !kioskLock_;
+				browseCollection_ = firstCollection;
+				if (homeMenu_)
+				{
+					firstCollection = Home::collectionName;
+				}
+
 				// Load new page with error checking
 				currentPage_ = loadPage(firstCollection);
 				if (!currentPage_) {
@@ -689,7 +728,7 @@ bool RetroFE::run()
 				config_.setProperty("currentCollection", firstCollection);
 
 				// Get collection info with error checking; an empty first collection is fine
-				CollectionInfo* info = getCollection(firstCollection, true);
+				CollectionInfo* info = homeMenu_ ? getHomeCollection() : getCollection(firstCollection, true);
 				if (!info) {
 					LOG_ERROR("RetroFE", "Failed to load collection info for: " + firstCollection);
 					state = RETROFE_QUIT_REQUEST;
@@ -740,6 +779,12 @@ bool RetroFE::run()
 				// Initialize display
 				currentPage_->onNewItemSelected();
 				currentPage_->reallocateMenuSpritePoints();  // Update playlist menu
+
+				// Nothing set up yet: start in the manager
+				if (!Setup::hasSettingsFile() || Setup::listCollections().empty())
+				{
+					manager_.open(ManagerUI::Screen::Manage);
+				}
 
 				splashMode = false;
 				state = RETROFE_LOAD_ART;
@@ -1319,7 +1364,8 @@ bool RetroFE::run()
 			if (currentPage_->isIdle())
 			{
 				state = RETROFE_NEXT_PAGE_MENU_LOAD_ART;
-				std::string nextPageName = nextPageItem_->name;
+				std::string nextPageName = nextPageName_.empty() ? nextPageItem_->name : nextPageName_;
+				nextPageName_.clear();
 				std::string collectionName = currentPage_->getCollectionName();
 				if (currentPage_->getSelectedItem())
 					l.LEDBlinky(8, currentPage_->getSelectedItem()->name, currentPage_->getSelectedItem());
@@ -1334,7 +1380,8 @@ bool RetroFE::run()
 					if (menuMode_)
 						info = getMenuCollection(nextPageName);
 					else
-						info = getCollection(nextPageName);
+						// Browse always opens, even before the first collection exists
+						info = getCollection(nextPageName, homeMenu_ && nextPageName == browseCollection_);
 
 					if (!info)
 					{
@@ -1348,7 +1395,7 @@ bool RetroFE::run()
 					// Load new layout if available
 					// check if collection's assets are in a different theme
 					std::string layoutName;
-					config_.getProperty("collections." + nextPageItem_->name + ".layout", layoutName);
+					config_.getProperty("collections." + nextPageName + ".layout", layoutName);
 					if (layoutName == "")
 					{
 						config_.getProperty(OPTION_LAYOUT, layoutName);
@@ -1363,7 +1410,7 @@ bool RetroFE::run()
 					}
 
 					// try collection name
-					Page* page = pb.buildPage(nextPageItem_->name, defaultToCurrentLayout);
+					Page* page = pb.buildPage(nextPageName, defaultToCurrentLayout);
 					if (page)
 					{
 						if (page->controlsType() != currentPage_->controlsType())
@@ -2313,14 +2360,14 @@ bool RetroFE::run()
 						state = RETROFE_ATTRACT_LAUNCH_ENTER;
 					}
 				}
-				if (menuMode_)
+				if (menuMode_ || manager_.isOpen())
 				{
 					attract_.reset();
 				}
 				currentPage_->update(deltaTime);
 				SDL_PumpEvents();
-				// Update keystate at 30Hz
-				if (currentTime_ - lastInputUpdateTime >= inputUpdateInterval)
+				// Update keystate at 30Hz, unless the manager has the keyboard
+				if (!manager_.isOpen() && currentTime_ - lastInputUpdateTime >= inputUpdateInterval)
 				{
 					input_.updateKeystate();
 					lastInputUpdateTime = currentTime_;
@@ -2354,6 +2401,15 @@ bool RetroFE::run()
 						attractMode_ = attract_.isSet();
 					}
 				}
+			}
+
+			// File dialogs block, so they run here rather than while rendering
+			manager_.update();
+			if (manager_.takeReloadRequest())
+			{
+				// Reload everything so the changes show up
+				reboot_ = true;
+				state = RETROFE_QUIT_REQUEST;
 			}
 
 			render();
@@ -2518,6 +2574,13 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 	SDL_Event e;
 	while (SDL_PollEvent(&e))
 	{
+		// The key that opens the manager; once it's open it reads the rest
+		if (manager_.handleEvent(e))
+		{
+			attract_.reset();
+			return RETROFE_IDLE;
+		}
+
 		// some how !SDL_KEYUP prevents double action
 		input_.update(e);
 		if (e.type == SDL_POLLSENTINEL || (screensaver && ssExitInputs[e.type]))
@@ -3100,7 +3163,11 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 			nextPageItem_ = page->getSelectedItem();
 			if (nextPageItem_)
 			{
-				if (nextPageItem_->leaf)
+				if (homeMenu_ && page->getCollectionName() == Home::collectionName)
+				{
+					state = selectHomeItem(nextPageItem_);
+				}
+				else if (nextPageItem_->leaf)
 				{
 					if (menuMode_)
 					{
@@ -3236,6 +3303,51 @@ Page* RetroFE::loadSplashPage()
 		page->start();
 	}
 	return page;
+}
+
+// Build the Home menu in memory; layouts can still style it as the "Home" collection
+CollectionInfo* RetroFE::getHomeCollection()
+{
+	CollectionInfoBuilder cib(config_, *metadb_);
+	CollectionInfo* collection = cib.buildCollection(Home::collectionName);
+
+	for (const char* name : Home::items)
+	{
+		auto* item = new Item();
+		item->name = name;
+		item->title = name;
+		item->fullTitle = name;
+		item->leaf = false;
+		item->collectionInfo = collection;
+		collection->items.push_back(item);
+	}
+
+	// Keep the menu order rather than sorting
+	cib.addPlaylists(collection);
+	return collection;
+}
+
+// Act on an item chosen from the Home menu
+RetroFE::RETROFE_STATE RetroFE::selectHomeItem(const Item* item)
+{
+	if (item->name == Home::browse)
+	{
+		nextPageName_ = browseCollection_;
+		return RETROFE_NEXT_PAGE_REQUEST;
+	}
+	if (item->name == Home::settings)
+	{
+		manager_.open(ManagerUI::Screen::Settings);
+	}
+	else if (item->name == Home::manage)
+	{
+		manager_.open(ManagerUI::Screen::Manage);
+	}
+	else if (item->name == Home::catalog)
+	{
+		manager_.open(ManagerUI::Screen::Catalog);
+	}
+	return RETROFE_IDLE;
 }
 
 // Load a collection

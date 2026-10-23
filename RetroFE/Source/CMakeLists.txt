@@ -39,6 +39,7 @@ add_custom_command(
 
 set(SQLITE3_ROOT "${RETROFE_THIRD_PARTY_DIR}/sqlite3")
 set(RAPIDXML_ROOT "${RETROFE_THIRD_PARTY_DIR}/rapidxml-1.13")
+set(IMGUI_ROOT "${RETROFE_THIRD_PARTY_DIR}/imgui-1.91.5")
 
 if(WIN32)
     if(MSVC)
@@ -170,6 +171,8 @@ set(RETROFE_INCLUDE_DIRS
     "${WEBP_INCLUDE_DIRS}"
     "${SQLITE3_ROOT}"
     "${RAPIDXML_ROOT}"
+    "${IMGUI_ROOT}"
+    "${IMGUI_ROOT}/backends"
     "${PACDRIVE_ROOT}"
     "/opt/homebrew/lib/glib-2.0/include"
 )
@@ -252,6 +255,10 @@ set(RETROFE_HEADERS
     "${RETROFE_DIR}/Source/Video/VideoPool.h"
    	"${RETROFE_DIR}/Source/Graphics/ComponentItemBindingBuilder.h"
 	"${RETROFE_DIR}/Source/Graphics/ViewInfo.h"
+	"${RETROFE_DIR}/Source/Manager/FileDialog.h"
+	"${RETROFE_DIR}/Source/Manager/Home.h"
+	"${RETROFE_DIR}/Source/Manager/ManagerUI.h"
+	"${RETROFE_DIR}/Source/Manager/Setup.h"
 	"${RETROFE_DIR}/Source/RetroFE.h"
 	"${RETROFE_DIR}/Source/SDL.h"
     "${SQLITE3_ROOT}/sqlite3.h"
@@ -309,10 +316,31 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Video/VideoFactory.cpp"
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
+	"${RETROFE_DIR}/Source/Manager/FileDialog.cpp"
+	"${RETROFE_DIR}/Source/Manager/ManagerUI.cpp"
+	"${RETROFE_DIR}/Source/Manager/Setup.cpp"
 	"${RETROFE_DIR}/Source/RetroFE.cpp"
 	"${RETROFE_DIR}/Source/SDL.cpp"
 	"${SQLITE3_ROOT}/sqlite3.c"
 )
+
+# Dear ImGui, used by the management UI
+set(IMGUI_BACKEND_SOURCES
+	"${IMGUI_ROOT}/backends/imgui_impl_sdl2.cpp"
+	"${IMGUI_ROOT}/backends/imgui_impl_sdlrenderer2.cpp"
+)
+list(APPEND RETROFE_SOURCES
+	"${IMGUI_ROOT}/imgui.cpp"
+	"${IMGUI_ROOT}/imgui_demo.cpp"
+	"${IMGUI_ROOT}/imgui_draw.cpp"
+	"${IMGUI_ROOT}/imgui_tables.cpp"
+	"${IMGUI_ROOT}/imgui_widgets.cpp"
+	${IMGUI_BACKEND_SOURCES}
+)
+# The backends include <SDL.h> rather than <SDL2/SDL.h>
+if(MSVC)
+	set_source_files_properties(${IMGUI_BACKEND_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${SDL2_ROOT}/include/SDL2")
+endif()
 
 set(EXECUTABLE_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORCE)
 set(LIBRARY_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORCE)

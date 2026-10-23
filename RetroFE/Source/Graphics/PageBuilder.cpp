@@ -144,7 +144,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		const char* builtinXml = nullptr;
 		if (useBuiltinLayout) {
 			if (layoutIndex == 0) {
-				builtinXml = Builtin::layoutXml(currentLayoutName == "splash" ? "splash" : "layout");
+				builtinXml = Builtin::layoutXml(currentLayoutName == "splash" ? "splash" : "layout", collectionName);
 			}
 			if (!builtinXml) {
 				continue;

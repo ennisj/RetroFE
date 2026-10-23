@@ -22,6 +22,7 @@
 #include "Database/MetadataDatabase.h"
 #include "Execute/AttractMode.h"
 #include "Graphics/FontCache.h"
+#include "Manager/ManagerUI.h"
 #include "Video/IVideo.h"
 #include "Video/VideoFactory.h"
 #include "Video/GStreamerVideo.h"
@@ -165,6 +166,8 @@ private:
     RETROFE_STATE   processUserInput( Page *page );
     void            update( float dt, bool scrollActive );
     CollectionInfo *getCollection( const std::string& collectionName, bool allowMissing = false );
+    CollectionInfo *getHomeCollection( );
+    RETROFE_STATE   selectHomeItem( const Item *item );
     void updatePageControls(const std::string& type);
     CollectionInfo *getMenuCollection( const std::string& collectionName );
 	void            saveRetroFEState( ) const;
@@ -201,4 +204,8 @@ private:
     std::map<std::string, std::string>  lastMenuPlaylists_;
     std::vector<std::string> cycleVector_;
     std::filesystem::file_time_type lastHiFileModifiedTime_{};
+    ManagerUI          manager_;
+    bool               homeMenu_{ false };
+    std::string        browseCollection_;  // where Home's Browse goes
+    std::string        nextPageName_;      // overrides nextPageItem_->name for the next page
 };

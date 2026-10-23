@@ -74,6 +74,7 @@
 #define OPTION_AUTOPLAYLIST          "autoPlaylist"
 #define OPTION_CYCLEPLAYLIST         "cyclePlaylist"
 #define OPTION_FIRSTCOLLECTION       "firstCollection"
+#define OPTION_HOMEMENU              "homeMenu"
 #define OPTION_CYCLECOLLECTION       "cycleCollection"
 #define OPTION_LASTPLAYEDSIZE         "lastplayedSize"
 #define OPTION_LASTPLAYEDSKIPCOLLECTION "lastPlayedSkipCollection"
@@ -205,6 +206,7 @@ public:
     const char* autoplaylist() { return value(OPTION_AUTOPLAYLIST); }
     const char* cycleplaylist() { return value(OPTION_CYCLEPLAYLIST); }
     const char* firstcollection() { return value(OPTION_FIRSTCOLLECTION); }
+    bool homemenu() { return bool_value(OPTION_HOMEMENU); }
     const char* cyclecollection() { return value(OPTION_CYCLECOLLECTION); }
     int lastplayedsize() { return int_value(OPTION_LASTPLAYEDSIZE); }
     const char* lastplayedskipcollection() { return value(OPTION_LASTPLAYEDSKIPCOLLECTION); }
