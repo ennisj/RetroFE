@@ -21,6 +21,7 @@
 #include <SDL2/SDL.h>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -247,3 +248,16 @@ private:
     size_t scriptAt_ = 0;
     int scriptWait_ = 0;
 };
+
+namespace Themes
+{
+    // The screen for a theme editor form: the widget editor (editorForm) or
+    // the layout-native editor (layoutEditorForm, LayoutEditorScreen.h).
+    // params: id = the theme's folder, page = a page in it (layout editor)
+    std::unique_ptr<Manager::ImGuiScreen> makeEditorScreen(const std::string& form, const ThemeEditorScreen::Context& context,
+                                                           const std::map<std::string, std::string>& params);
+
+    // retrofe -editorScript <file>: its commands, the first time an editor
+    // (either kind) is opened in this session only; false after that
+    bool takeEditorScript(Configuration* config, std::vector<ThemeEditor::EditorCommand>& commands, std::string& path);
+}

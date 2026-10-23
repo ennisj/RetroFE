@@ -24,22 +24,26 @@
 #include <vector>
 
 // The Themes screens: the installed layouts (layouts/<name>/), what each one
-// is, and using, editing, creating, duplicating and deleting them. Editing,
-// duplicating and deleting are for themes made with the theme editor only;
-// a hand-made theme (Aeon Nox included) is never written to.
+// is, and using, editing, creating, duplicating and deleting them.
+// Duplicating and deleting are for themes made with the theme editor only.
+// Edit opens an editor-made theme in the widget editor, and a hand-made one
+// (Aeon Nox included) in the layout-native editor, which changes its pages'
+// existing elements in place, keeping the originals in manage/backups.
 //
 //   theme:list            results: every installed theme (row id = folder)
 //   theme:name, folder, kind, size, pages, widgets, inUse, editNote, problem
 //                         facts about the theme param:id names
-//   theme:isEditor, canEdit, isActive, isHandMade   flags for visibleWhen
+//   theme:isEditor, canEdit, canOpen, isActive, isHandMade   flags for visibleWhen
 //   theme:newName, theme:newOrientation             the New theme screen
 //   options="theme:orientations"
-// Actions: theme.use, theme.edit (opens the theme-editor screen),
-// theme.create, theme.duplicate, theme.delete
+// Actions: theme.use, theme.edit (opens the theme-editor screen, or
+// theme-layout-editor for a hand-made theme), theme.create,
+// theme.duplicate, theme.delete
 namespace Themes
 {
-    // What the editor screen's form id is: ManagerUI draws it with ImGui
+    // What the editor screens' form ids are: ManagerUI draws them with ImGui
     extern const char* const editorForm;
+    extern const char* const layoutEditorForm;
 
     // Where things are, so tests can point the provider at a temporary root
     struct Paths

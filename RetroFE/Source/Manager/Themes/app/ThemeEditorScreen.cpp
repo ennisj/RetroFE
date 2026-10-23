@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ThemeEditorScreen.h"
+#include "LayoutEditorScreen.h"
 #include "ThemesApp.h"
 #include "../ThemeProvider.h"
 #include "../../FileDialog.h"
@@ -175,17 +176,35 @@ ThemeEditorScreen::ThemeEditorScreen(const Context& context, const std::string& 
 
     // retrofe -editorScript <file>: commands to run, one per frame, the
     // first time a theme is opened in this session only
+    Themes::takeEditorScript(ctx_.config, script_, scriptPath_);
+}
+
+bool Themes::takeEditorScript(Configuration* config, std::vector<EditorCommand>& commands, std::string& path)
+{
     static bool scriptUsed = false;
     std::string scriptPath;
-    if (!scriptUsed && ctx_.config && ctx_.config->getProperty("editorScript", scriptPath) && !scriptPath.empty()) {
-        scriptUsed = true;
-        std::ifstream in(scriptPath, std::ios::binary);
-        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        script_ = parseEditorScript(text);
-        scriptPath_ = scriptPath;
-        if (!in) LOG_ERROR("ThemeEditor", "Can't read the editor script " + scriptPath);
-        else LOG_NOTICE("ThemeEditor", "Running " + std::to_string(script_.size()) + " script commands from " + scriptPath);
-    }}
+    if (scriptUsed || !config || !config->getProperty("editorScript", scriptPath) || scriptPath.empty()) return false;
+    scriptUsed = true;
+    std::ifstream in(scriptPath, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    commands = parseEditorScript(text);
+    path = scriptPath;
+    if (!in) LOG_ERROR("ThemeEditor", "Can't read the editor script " + scriptPath);
+    else LOG_NOTICE("ThemeEditor", "Running " + std::to_string(commands.size()) + " script commands from " + scriptPath);
+    return true;
+}
+
+std::unique_ptr<Manager::ImGuiScreen> Themes::makeEditorScreen(const std::string& form, const ThemeEditorScreen::Context& context,
+                                                               const std::map<std::string, std::string>& params)
+{
+    auto param = [&params](const char* key) {
+        auto it = params.find(key);
+        return it != params.end() ? it->second : std::string();
+    };
+    if (form == Themes::editorForm) return std::make_unique<ThemeEditorScreen>(context, param("id"));
+    if (form == Themes::layoutEditorForm) return std::make_unique<LayoutEditorScreen>(context, param("id"), param("page"));
+    return nullptr;
+}
 
 ThemeEditorScreen::~ThemeEditorScreen()
 {

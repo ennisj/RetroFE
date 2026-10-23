@@ -325,7 +325,7 @@ collections). Choosing one shows the details and what you can do with it:
 | Button | What it does |
 |--------|--------------|
 | Use this theme | Sets `layout` in your settings; RetroFE switches to it when you close the manager. Not for a theme without `splash.xml` (RetroFE wouldn't start); a theme made with the editor needs a wheel too. |
-| Edit | Opens the [theme editor](THEME_EDITOR.md). Editor-made themes only. |
+| Edit | Opens the [theme editor](THEME_EDITOR.md): its widgets for an editor-made theme; for a hand-made one, the [layout editor](THEME_EDITOR.md#hand-made-themes-the-layout-editor), which changes the elements its pages already have in place. |
 | Duplicate | Copies the theme as "*name* Copy". Editor-made themes only. |
 | Delete | Deletes the theme's folder, after a second Select. Editor-made themes only, and not the one in use. |
 
@@ -333,9 +333,13 @@ collections). Choosing one shows the details and what you can do with it:
 name and choose landscape (1920 x 1080) or portrait (1080 x 1920). It starts
 empty; Edit it to place a wheel, titles, art and video.
 
-Hand-made themes, Aeon Nox included, can be used but not edited, duplicated
-or deleted here: the editor only changes themes it made, and the screen says
-so.
+Hand-made themes, Aeon Nox included, can be used and edited but not
+duplicated or deleted here. Their details say how Edit works for them: the
+layout editor moves, resizes and changes the attributes of a page's existing
+elements (and can copy or delete one), rewriting only the values changed;
+adding new elements isn't possible yet. The first save of a page keeps its
+original in `manage/backups/layouts/<theme>/`, and *Put back the original*
+restores it.
 
 ### Styling the screens
 

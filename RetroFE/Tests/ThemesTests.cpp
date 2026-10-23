@@ -289,9 +289,13 @@ static Test::Suite themes("themes", [] {
         checkEqual(f.model->get("theme:isActive"), "yes", "active");
         checkEqual(f.model->get("theme:isEditor"), "no", "not editor-made");
         checkEqual(f.model->get("theme:isHandMade"), "yes", "hand-made");
-        check(f.model->get("theme:editNote").find("made by hand") != std::string::npos, "the note says why it can't be edited");
-        check(!f.model->actionProblem("theme.edit").empty(), "a hand-made theme can't be edited");
-        check(!f.model->actionProblem("theme.duplicate").empty(), "or duplicated");
+        check(f.model->get("theme:editNote").find("made by hand") != std::string::npos &&
+              f.model->get("theme:editNote").find("layout editor") != std::string::npos, "the note says how it's edited");
+        checkEqual(f.model->get("theme:canOpen"), "yes", "a hand-made theme can be opened");
+        check(f.model->actionProblem("theme.edit").empty(), "and edited, in the layout editor");
+        Forms::Model::Result edit = f.model->runAction("theme.edit");
+        check(edit.ok && edit.open == Themes::layoutEditorForm && edit.keepParams, "Edit opens the layout-native editor");
+        check(!f.model->actionProblem("theme.duplicate").empty(), "it can't be duplicated");
         check(!f.model->actionProblem("theme.delete").empty(), "or deleted");
         check(!f.model->actionProblem("theme.use").empty(), "the theme in use can't be used again");
         Forms::Model::Result refused = f.model->runAction("theme.delete");
@@ -300,6 +304,7 @@ static Test::Suite themes("themes", [] {
         f.model->setScreen("theme", { { "id", "Empty" } });
         check(!f.model->get("theme:problem").empty(), "a folder without layout.xml says RetroFE can't use it");
         check(!f.model->actionProblem("theme.use").empty(), "and it can't be used");
+        check(f.model->get("theme:canOpen") == "no" && !f.model->actionProblem("theme.edit").empty(), "or edited: it has no pages");
     });
 
     Test::run("New theme creates an editor-made theme and opens it", [] {
