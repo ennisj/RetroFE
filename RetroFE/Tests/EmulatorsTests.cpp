@@ -302,8 +302,14 @@ static Test::Suite emulators("emulators", [] {
 
     run("emulators: a copy of a launcher that restarts RetroFE restarts it too", [] {
         std::string root = makeInstall("emu-duplicate-reboot");
+        // A program on this system's path, so creating a launcher with it is allowed
+#ifdef _WIN32
+        const std::string program = "cmd.exe";
+#else
+        const std::string program = "sh";
+#endif
         writeFile(root + "/launchers." + os() + "/Switch.conf",
-                  "executable = cmd.exe\narguments = /c switch.bat\nreboot = yes\n");
+                  "executable = " + program + "\narguments = /c switch.bat\nreboot = yes\n");
         Fixture f(root);
         f.model->setScreen("emulator", { { "id", "Switch" }, { "scope", "global" } });
         Forms::Model::Result duplicate = f.model->runAction("emulator.duplicate");
@@ -316,7 +322,7 @@ static Test::Suite emulators("emulators", [] {
 
         f.model->setScreen("emulator-new", {});
         f.model->set("emulator:newName", "Plain");
-        f.model->set("emulator:newExecutable", "cmd.exe");
+        f.model->set("emulator:newExecutable", program);
         Forms::Model::Result plain = f.model->runAction("emulator.create");
         check(plain.ok, "created: " + plain.message);
         check(!contains(readFile(root + "/launchers." + os() + "/Plain.conf"), "reboot"), "a new launcher doesn't restart RetroFE");
