@@ -39,6 +39,7 @@
 #endif
 
 std::string Configuration::absolutePath;
+std::string Configuration::layoutsPath_;
 bool Configuration::HardwareVideoAccel = false;
 int Configuration::AvdecMaxThreads = 2;
 int Configuration::AvdecThreadType = 2;
@@ -276,29 +277,44 @@ bool Configuration::getRawProperty(const std::string& key, std::string& value)
 
 bool Configuration::getProperty(const std::string& key, std::string& value)
 {
-    static std::string baseMediaPath = Utils::combinePath(absolutePath, "collections");
-    static std::string baseItemPath = Utils::combinePath(absolutePath, "collections");
-
-    // Optional: If properties might override base paths, check this once
-    static bool basePathsInitialized = false;
-    if (!basePathsInitialized) {
-        getRawProperty("baseMediaPath", baseMediaPath);
-        getRawProperty("baseItemPath", baseItemPath);
-        basePathsInitialized = true;
-    }
-
     bool retVal = getRawProperty(key, value);
-    std::string_view valueView(value);
 
-    // Only perform replacement if necessary
-    if (valueView.find("%BASE_MEDIA_PATH%") != std::string_view::npos) {
+    // Only perform replacement if necessary. The base paths are looked up here
+    // rather than cached on the first call, which could come before settings1..15.conf
+    // had overridden them (OneSauce dev setups do), and the library does the same.
+    if (value.find("%BASE_MEDIA_PATH%") != std::string::npos) {
+        std::string baseMediaPath = Utils::combinePath(absolutePath, "collections");
+        getRawProperty("baseMediaPath", baseMediaPath);
         value = Utils::replace(value, "%BASE_MEDIA_PATH%", baseMediaPath);
     }
-    if (valueView.find("%BASE_ITEM_PATH%") != std::string_view::npos) {
+    if (value.find("%BASE_ITEM_PATH%") != std::string::npos) {
+        std::string baseItemPath = Utils::combinePath(absolutePath, "collections");
+        getRawProperty("baseItemPath", baseItemPath);
         value = Utils::replace(value, "%BASE_ITEM_PATH%", baseItemPath);
     }
-
     return retVal;
+}
+
+std::string Configuration::layoutsPath()
+{
+    return layoutsPath_.empty() ? Utils::combinePath(absolutePath, "layouts") : layoutsPath_;
+}
+
+void Configuration::applyBaseLayoutPath()
+{
+    // Fork compat (OneSauce settings.conf: "Override layouts folder location")
+    layoutsPath_.clear();
+    std::string path;
+    if (getPropertyAbsolutePath("baseLayoutPath", path) && !path.empty()) {
+        std::error_code ec;
+        if (std::filesystem::is_directory(path, ec)) {
+            layoutsPath_ = std::filesystem::path(path).lexically_normal().string();
+            LOG_INFO("Configuration", "Layouts are in " + layoutsPath_ + " (baseLayoutPath)");
+        }
+        else {
+            LOG_WARNING("Configuration", "baseLayoutPath " + path + " isn't a folder; using " + layoutsPath());
+        }
+    }
 }
 
 bool Configuration::getProperty(const std::string& key, int& value)
@@ -414,7 +430,14 @@ std::string Configuration::convertToAbsolutePath(const std::string& prefix, cons
 bool Configuration::getPropertyAbsolutePath(const std::string& key, std::string &value)
 {
     bool retVal = getProperty(key, value);
-    
+
+    // Fork compat (OneSauce settings.conf: baseMediaPath = %RETROFE_PATH%/../..):
+    // %RETROFE_PATH% is the root, as in launchers. After getProperty, so it also
+    // expands inside %BASE_MEDIA_PATH% / %BASE_ITEM_PATH%. Only paths: getProperty stays raw.
+    if (value.find("%RETROFE_PATH%") != std::string::npos) {
+        value = Utils::replace(value, "%RETROFE_PATH%", absolutePath);
+    }
+
     #ifndef WIN32
         // This is a catch me to change dos paths to unix
         // Windows can resolve unix paths but not vice versa

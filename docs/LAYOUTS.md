@@ -12,6 +12,28 @@ folder containing at least the following two main files.
 | /layouts/\<layout name>/           | Folder to store all image files for a particular asset. i.e. \<layout name> = "Default 16x9" |
 | /layouts/\<layout name>/splash.xml | Splash screen to show at startup                                                             |
 | /layouts/\<layout name>/layout.xml | Main layout file to show when frontend is loaded                                             |
+| /layouts/\<layout name>/layout.lua | Instead of a layout.xml (OneSauce themes): RetroFE builds the one XML file its build() names. See below. |
+
+The layouts folder is \<RetroFE root>/layouts, or the folder the
+`baseLayoutPath` setting names (OneSauce installs set it to
+`%RETROFE_PATH%/../../base_assets/layouts`). See
+[ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md).
+
+**layout.lua (fork compat).** Themes written for a newer RetroFE (Aeon
+Nox and LUNA OG in the OneSauce data) use a `layout.lua` in place of a
+`layout.xml`, in the layout's folder or in a collection's `layout`
+folder. RetroFE doesn't run Lua: when a page has no XML file, it reads the
+lua file's `build()` function, and if that function is exactly one
+`pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. "<path>")` call,
+or one call to a function of a `require()`d module in the theme's `lua`
+folder that does that with its argument appended (`luna.build(pageBuilder,
+"<path>")`), it builds that XML file. `layoutPath` is the lua file's
+folder, and image, sound and video paths resolve from there as they would
+for an XML file in that folder. A layout.xml beside the lua file wins.
+Anything else in `build()` (conditions, several builds) isn't guessed at;
+the lua file is skipped with a warning. The lua file's `preUpdate` and
+`postUpdate` hooks are ignored, so a page that relies on them to show or
+hide components shows its components as the XML sets them.
 
 [An example of a
 layout](https://bitbucket.org/teamretro/retrofe/src/default/Package/Environment/Common/layouts/Default%2016x9)
@@ -52,6 +74,7 @@ A layout generally consists of the following structure:
      <reloadableImage/>
      <reloadableText/>
      <reloadableScrollingText/>
+     <scrollingText/>
     </layout>
 
   
@@ -230,6 +253,7 @@ selected item, and supports the following parameters:
 | type                              | The type of image to display: “numberButtons”, “numberPlayers”, “ctrlType”, “numberJoyWays”, “rating”, “score”, “year”, “title”, “developer”, “manufacturer”, “genre”, “playlist”, “collectionName”, “collectionSize”, “collectionIndex”, “collectionIndexSize”, or any type you pick where the title will be used as the name of the file. |
 | mode                              | See mode attribute for more details                                                                                                                                                                                                                                                                                                         |
 | textFallback                      | Set to true to have text displayed of a the item title if an image cannot be loaded                                                                                                                                                                                                                                                         |
+| textFormat                        | "uppercase" or "lowercase" for the textFallback text, as on reloadableText (fork compat).                                                                                                                                                                                                                                                  |
 | font                              | Location of the font (relative to the layout folder).                                                                                                                                                                                                                                                                                       |
 | fontColor                         | Default RGB color of the font (in hex, i.e. “6699AA”).                                                                                                                                                                                                                                                                                      |
 | fontSize                          | Default font size of to display if not specified by a component.                                                                                                                                                                                                                                                                            |
@@ -295,6 +319,23 @@ Example:
     <reloadableScrollingText type="story" alpha="0" x="145" y="355" xOrigin="left" yOrigin="top" width="940" height="215" font="MC360.ttf" fontSize="35" fontColor="f2f2f2" direction="vertical" alignment="justified" scrollingSpeed="15" startPosition="0" startTime="4" endTime="1" alpha="1" layer="7"/> 
 
   
+## \<scrollingText> Parameters
+
+Fork compat (the OneSauce Cafe80s theme). \<scrollingText> scrolls a fixed
+text file, like a reloadableScrollingText of type "file". `src` names the
+file; it resolves like an image's src, against the page's folder and then
+the layout's folder (so `../../collections/_common/text/menu_instruct.txt`
+from a layout in `base_assets/layouts/Cafe80s` is
+`base_assets/collections/_common/text/menu_instruct.txt`). It takes the
+same textFormat, font, direction, scrollingSpeed, startPosition,
+startTime, endTime and alignment parameters as reloadableScrollingText.
+`pauseTime` isn't read.
+
+Example:
+
+    <scrollingText src="../../collections/_common/text/menu_instruct.txt" x="830" y="6" width="555" height="32" fontSize="32" direction="vertical" alignment="left" scrollingSpeed="25" startTime="3" endTime="3" layer="18"/>
+
+  
 ## General Parameters
 
 The other tags all support a general set of parameters:
@@ -328,9 +369,26 @@ The other tags all support a general set of parameters:
 | layer              | Layer on which the item should be displayed: 0 = back, 19 = front                                                                                                           |
 | monitor            | Monitor number on which the element should be displayed, starting from monitor 0.                                                                                           |
 | menuScrollReload   | Reload the art while the menu is scrolling when set to yes/true                                                                                                             |
+| transform          | Draw the component through a perspective quad (fork compat): see below.                                                                                                     |
 
 RetroFE supports 20 layers of images (0-19) to allow items to overlap in
 a controlled fashion.
+
+**transform (fork compat).** OneSauce themes put a game's video or image
+onto a TV or monitor drawn at an angle in the background:
+
+    transform="(x, y), (w, h); (x1, y1), (x2, y2), (x3, y3), (x4, y4)"
+
+The layout rectangle x, y, w, h (in layout coordinates, usually the
+component's own box) is drawn into the quad with corners top-left (x1, y1),
+top-right, bottom-left and bottom-right, with perspective. Whatever the
+component draws inside the rectangle lands in the quad, so x, y, width,
+height, alpha and their animations work as usual. "(x, y, w, h), (x1, y1),
+..." with commas only is read the same way, and a trailing number ("; 50"
+or ", 1") is ignored. A transformed component isn't clipped by a container,
+rotated by angle or reflected, and on a rotated or mirrored screen it is
+drawn without the transform. The "quad (x, y, u, v), ..." form (with
+texture coordinates) isn't supported.
 
 Usage of the x/y/xOffset/yOffset/xOrigin/yOrigin parameters:
 
@@ -437,6 +495,13 @@ than collections/\<collection name>/ directory.
 Mode common and commonlayout use the art in the
 collections/\_common/medium_artwork directory rather than the
 collections/\<collection name>/medium_artwork directory.
+
+Mode layout_preferred (fork compat, reloadableImage/Video/Audio only)
+looks up the same files as no mode, but at each step tries the layout's
+copy first: layouts/\<layout name>/collections/\<collection name>/ before
+the collection's own folder. OneSauce themes use it for art that some
+systems have in the layout (cabinet) and others only in the collection
+(marquee).
 
 The item path also depends on whether the selected item is a collection
 or a game; it will select the first found file.

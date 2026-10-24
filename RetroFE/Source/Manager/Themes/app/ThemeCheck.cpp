@@ -18,6 +18,7 @@
 #include "../../../Database/Configuration.h"
 #include "../../../Database/GlobalOpts.h"
 #include "../../../Graphics/FontCache.h"
+#include "../../../Graphics/LayoutCompat.h"
 #include "../../../Graphics/Page.h"
 #include "../../../Graphics/PageBuilder.h"
 #include "../../../SDL.h"
@@ -84,6 +85,30 @@ namespace
             readText(file, page.xml);
             pages.push_back(page);
         }
+        // Fork compat: a layout.lua with no layout.xml beside it draws the XML
+        // file its build() names (Graphics/LayoutCompat.h), with the lua file's
+        // folder as the page's folder. Each file is checked once.
+        std::vector<fs::path> luas = { dir / "layout.lua" };
+        for (fs::directory_iterator it(dir / "collections", ec), end; !ec && it != end; it.increment(ec)) {
+            luas.push_back(it->path() / "layout" / "layout.lua");
+        }
+        std::vector<fs::path> built;
+        for (const fs::path& lua : luas) {
+            std::error_code luaEc;
+            if (!fs::is_regular_file(lua, luaEc) || fs::exists(lua.parent_path() / "layout.xml", luaEc)) continue;
+            const fs::path target = LayoutCompat::luaBuildTarget(lua.string(), dir.string());
+            if (target.empty() || !fs::is_regular_file(target, luaEc) ||
+                std::find(files.begin(), files.end(), target) != files.end() ||
+                std::find(built.begin(), built.end(), target) != built.end()) {
+                continue;
+            }
+            built.push_back(target);
+            CheckPage page;
+            page.label = fs::relative(target, dir, luaEc).generic_string() + " (from " + fs::relative(lua, dir, luaEc).generic_string() + ")";
+            page.folder = lua.parent_path().string();
+            readText(target, page.xml);
+            pages.push_back(page);
+        }
         return pages;
     }
 }
@@ -109,7 +134,7 @@ int Themes::runThemeCheck(Configuration& config, const std::string& layout, cons
         return status;
     };
 
-    const std::string layoutsRoot = Utils::combinePath(Configuration::absolutePath, "layouts");
+    const std::string layoutsRoot = Configuration::layoutsPath();
     const fs::path dir = fs::path(layoutsRoot) / layout;
     say("Theme check: layouts/" + layout);
     if (!themeFolderValid(layout) || !fs::is_directory(dir)) {
@@ -168,7 +193,14 @@ int Themes::runThemeCheck(Configuration& config, const std::string& layout, cons
         problem("no splash.xml: RetroFE won't start on this theme (saving it in the editor writes one)");
     }
     std::string mainXml;
-    if (!readText(dir / "layout.xml", mainXml)) problem("no layout.xml");
+    std::string luaMain;
+    if (!fs::exists(dir / "layout.xml", ec) && fs::is_regular_file(dir / "layout.lua", ec)) {
+        luaMain = LayoutCompat::luaBuildTarget((dir / "layout.lua").string(), dir.string());
+    }
+    if (!luaMain.empty() && fs::is_regular_file(luaMain, ec)) {
+        say("layout.lua builds " + fs::relative(luaMain, dir, ec).generic_string() + " (RetroFE reads only its build())");
+    }
+    else if (!readText(dir / "layout.xml", mainXml)) problem("no layout.xml");
     else if (kind == TF_EDITOR && !mainPageProblem(mainXml).empty()) problem("layout.xml: " + mainPageProblem(mainXml));
 
     // The vocabulary this fork's PageBuilder reads

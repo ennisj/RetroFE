@@ -52,6 +52,10 @@ public:
     void printProperties() const;
     void dumpPropertiesToFile(const std::string& filename);
     static std::string absolutePath;
+    // The folder themes are in: <root>/layouts, or the baseLayoutPath setting
+    // (fork compat, OneSauce) when that folder exists. Set by applyBaseLayoutPath().
+    static std::string layoutsPath();
+    void applyBaseLayoutPath();
 	static int AvdecMaxThreads;
     static int AvdecThreadType;
     static bool HardwareVideoAccel; // Declare HardwareVideoAccel as a static member variable
@@ -65,5 +69,6 @@ private:
     typedef std::pair<std::string, std::string> PropertiesPair;
 
     PropertiesType properties_;
+    static std::string layoutsPath_;
 
 };

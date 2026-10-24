@@ -514,7 +514,7 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
         result.emplace_back("", "Built-in");
         std::vector<std::string> names;
         std::error_code ec;
-        for (const auto& entry : fs::directory_iterator(Utils::combinePath(Configuration::absolutePath, "layouts"), ec)) {
+        for (const auto& entry : fs::directory_iterator(Configuration::layoutsPath(), ec)) {
             if (entry.is_directory()) {
                 names.push_back(entry.path().filename().string());
             }

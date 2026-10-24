@@ -518,7 +518,7 @@ bool ManagerUI::buildPage()
     // forms/<page>.xml, for the page collections are drawn with (LayoutPages::formFile)
     std::string layoutName;
     config_.getProperty(OPTION_LAYOUT, layoutName);
-    std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
+    std::string formsPath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "forms");
     std::string file = layoutName.empty() ? "" : LayoutPages::formFile(formsPath, frame->form, layoutPage_);
 
     PageBuilder builder(layoutName, "layout", config_, fontCache_);
@@ -572,7 +572,7 @@ bool ManagerUI::openKeyboard()
 {
     std::string layoutName;
     config_.getProperty(OPTION_LAYOUT, layoutName);
-    std::string formsPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms");
+    std::string formsPath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "forms");
     std::string file = layoutName.empty() ? "" : LayoutPages::keyboardFile(formsPath, layoutPage_);
 
     PageBuilder builder(layoutName, "layout", config_, fontCache_);

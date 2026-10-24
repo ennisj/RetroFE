@@ -39,7 +39,7 @@ namespace ThemeEditor
             "minHeight", "minWidth", "maxHeight", "maxWidth", "alpha", "angle", "layer", "backgroundColor",
             "backgroundAlpha", "reflection", "reflectionDistance", "reflectionScale", "reflectionAlpha",
             "containerX", "containerY", "containerWidth", "containerHeight", "monitor", "volume", "restart",
-            "additive", "pauseOnScroll", nullptr
+            "additive", "pauseOnScroll", "transform", nullptr
         };
         // PageBuilder::addFont, read from the component itself
         const char* const FONT[] = { "font", "fontColor", "loadFontSize", nullptr };
@@ -92,7 +92,7 @@ namespace ThemeEditor
         const char* const STATUS_TEXT[] = { "id", "menuScrollReload", nullptr };
         const char* const MEDIA[] = {
             "id", "type", "imageType", "mode", "selectedOffset", "randomSelect", "jukebox", "jukeboxNumLoops",
-            "textFallback", "useTextureCache", "menuScrollReload", nullptr
+            "textFallback", "useTextureCache", "menuScrollReload", "textFormat", nullptr
         };
         const char* const RELOADABLE_TEXT[] = {
             "id", "type", "mode", "textFormat", "timeFormat", "location", "singlePrefix", "singlePostfix",
@@ -102,6 +102,11 @@ namespace ThemeEditor
             "id", "type", "mode", "textFormat", "location", "singlePrefix", "singlePostfix", "pluralPrefix",
             "pluralPostfix", "alignment", "selectedOffset", "direction", "scrollingSpeed", "startPosition",
             "startTime", "endTime", "menuScrollReload", nullptr
+        };
+        // Fork compat (OneSauce themes): a text file scroller, src resolved like an image's
+        const char* const FILE_SCROLLING_TEXT[] = {
+            "id", "src", "textFormat", "alignment", "direction", "scrollingSpeed", "startPosition", "startTime",
+            "endTime", "menuScrollReload", nullptr
         };
         const char* const HISCORES[] = {
             "id", "textFormat", "selectedOffset", "scrollingSpeed", "startTime", "excludedColumns",
@@ -130,6 +135,7 @@ namespace ThemeEditor
             { "reloadableVideo", true, MEDIA },
             { "reloadableText", true, RELOADABLE_TEXT },
             { "reloadableScrollingText", true, SCROLLING_TEXT },
+            { "scrollingText", true, FILE_SCROLLING_TEXT },
             { "reloadableHiscores", true, HISCORES },
             { "menu", true, MENU },
         };
@@ -138,7 +144,7 @@ namespace ThemeEditor
         // their attributes aren't checked
         const char* const UNCHECKED[] = { "form", "keyboard", nullptr };
 
-        const char* const MEDIA_MODES[] = { "system", "systemlayout", "layout", "commonlayout", "common", "menu", nullptr };
+        const char* const MEDIA_MODES[] = { "system", "systemlayout", "layout", "commonlayout", "common", "menu", "layout_preferred", nullptr };
         const char* const MENU_MODES[] = { "layout", "common", "commonlayout", nullptr };
         const char* const SOUND_TYPES[] = { "load", "unload", "highlight", "select", nullptr };
 
@@ -309,7 +315,7 @@ namespace ThemeEditor
                     const std::string m(mode->value(), mode->value_size());
                     if (!m.empty() && !inList(m, menu ? MENU_MODES : MEDIA_MODES)) issue(n, "mode '" + m + "' isn't supported here");
                 }
-                if ((name == "image" || name == "video") && !attribute(n, "src")) issue(n, "has no src");
+                if ((name == "image" || name == "video" || name == "scrollingText") && !attribute(n, "src")) issue(n, "has no src");
                 if (name == "text" && !attribute(n, "value")) issue(n, "has no value");
                 if ((name == "reloadableImage" || name == "reloadableText" || name == "reloadableScrollingText") && !attribute(n, "type")) {
                     issue(n, "has no type");

@@ -786,7 +786,7 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
 
         // Determine paths based on modes
         if (layoutMode_) {
-            std::string base = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections");
+            std::string base = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections");
             std::string subPath = commonMode_ ? "_common" : collectionName;
             buildPaths(imagePath, videoPath, base, subPath, imageType_, videoType_);
         }
@@ -817,7 +817,7 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
         // Check sub-collection path for art
         if (!commonMode_) {
             if (layoutMode_) {
-                std::string base = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", item->collectionInfo->name);
+                std::string base = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", item->collectionInfo->name);
                 buildPaths(imagePath, videoPath, base, "", imageType_, videoType_);
             }
             else {
@@ -844,9 +844,9 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
     if ( !t ) {
         if ( layoutMode_ ) {
             if ( commonMode_ )
-                imagePath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", "_common");
+                imagePath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", "_common");
             else
-                imagePath = Utils::combinePath( Configuration::absolutePath, "layouts", layoutName, "collections", item->name );
+                imagePath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", item->name );
             imagePath = Utils::combinePath( imagePath, "system_artwork" );
             videoPath = imagePath;
         }
@@ -898,7 +898,7 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
 
             // Build paths for medium artwork
             if (layoutMode_) {
-                std::string base = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections");
+                std::string base = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections");
                 std::string subPath = commonMode_ ? "_common" : collectionName;
                 buildPaths(imagePath, videoPath, base, subPath, imageType_, videoType_);
             }
@@ -919,7 +919,7 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
             // Check sub-collection path for art if needed
             if (!t && !commonMode_) {
                 if (layoutMode_) {
-                    std::string base = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", item->collectionInfo->name);
+                    std::string base = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", item->collectionInfo->name);
                     buildPaths(imagePath, videoPath, base, "", imageType_, videoType_);
                 }
                 else {
@@ -937,9 +937,9 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
         if ( !t ) {
             if ( layoutMode_ ) {
                 if ( commonMode_ )
-                    imagePath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", "_common");
+                    imagePath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", "_common");
                 else
-                    imagePath = Utils::combinePath( Configuration::absolutePath, "layouts", layoutName, "collections", item->name );
+                    imagePath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", item->name );
                 imagePath = Utils::combinePath( imagePath, "system_artwork" );
             }
             else {

@@ -34,6 +34,7 @@ namespace Library
     //
     // Lookups behave like Configuration's: get() expands %BASE_MEDIA_PATH% and
     // %BASE_ITEM_PATH% from the raw global values (default <root>/collections),
+    // getAbsolutePath() also %RETROFE_PATH% (the root),
     // absolute paths resolve against the root, booleans accept yes/true/on.
     class Properties
     {

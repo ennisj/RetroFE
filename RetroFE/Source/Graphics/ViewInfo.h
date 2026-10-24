@@ -18,9 +18,11 @@
 #include "Animate/TweenTypes.h"
 #include <string>
 #include <map>
+#include <memory>
 #include <cfloat>
 
 class FontManager;
+namespace LayoutCompat { struct QuadTransform; }
 
 class ViewInfo
 {
@@ -78,6 +80,8 @@ public:
     bool         Restart{ false };
     bool         Additive{ false };
     bool         PauseOnScroll{ true };
+    // transform="..." (fork compat): drawn through this perspective quad
+    std::shared_ptr<const LayoutCompat::QuadTransform> Transform;
 
 private:
     float AbsoluteHeight() const;

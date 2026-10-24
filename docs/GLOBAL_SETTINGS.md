@@ -145,5 +145,8 @@ For all `BOOLEAN` types, the following values are accepted: `yes`, `no`, `true`,
 |--------|---------|------|-------------|-----------------------|
 | `baseMediaPath` | `""` | `PATH` | Path to media if stored outside the build | |
 | `baseItemPath` | `""` | `PATH` | Path to items if stored outside the build | |
+| `baseLayoutPath` | `""` | `PATH` | Folder holding the layouts, if not `<root>/layouts` (fork compat, OneSauce). Ignored if it isn't a folder. | |
+
+Path settings (these, `list.path`, `media.*`, `list.includeFile`, ...) may use `%RETROFE_PATH%` for the RetroFE root, as launchers do (fork compat: OneSauce's settings.conf writes `baseMediaPath = %RETROFE_PATH%/../../base_assets/collections`). See [ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md).
 
 [Back](README.md)

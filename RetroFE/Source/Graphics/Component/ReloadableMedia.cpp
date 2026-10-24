@@ -25,6 +25,8 @@
 #include "../../Utility/Log.h"
 #include "../../Utility/Utils.h"
 #include "../../SDL.h"
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <vector>
 #include <iostream>
@@ -419,9 +421,29 @@ Component *ReloadableMedia::reloadTexture()
 
     // if image and artwork was not specified, fall back to displaying text
     if(!foundComponent && textFallback_) {
-        return new Text(selectedItem->fullTitle, page, FfntInst_, baseViewInfo.Monitor);
+        std::string text = selectedItem->fullTitle;
+        if (textFormat_ == "uppercase") {
+            std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        }
+        else if (textFormat_ == "lowercase") {
+            std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        }
+        return new Text(text, page, FfntInst_, baseViewInfo.Monitor);
     }
     return foundComponent;
+}
+
+
+std::string ReloadableMedia::layoutFolder(const std::string& collection, const std::string& type, bool systemMode) const
+{
+    // check if collection's assets are in a different theme
+    std::string layoutName;
+    config_.getProperty("collections." + collection + ".layout", layoutName);
+    if (layoutName == "") {
+        config_.getProperty(OPTION_LAYOUT, layoutName);
+    }
+    std::string path = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", commonMode_ ? std::string("_common") : collection);
+    return systemMode ? Utils::combinePath(path, "system_artwork") : Utils::combinePath(path, "medium_artwork", type);
 }
 
 
@@ -438,28 +460,28 @@ Component* ReloadableMedia::findComponent(
     VideoBuilder videoBuild{};
     ImageBuilder imageBuild{};
 
+    // the extensions a file of this kind can have
+    const std::vector<std::string>& extensions = isVideo ? ReloadableMedia::videoExtensions : ReloadableMedia::imageExtensions;
+
     if (filepath != "") {
         imagePath = filepath; 
     } 
     else {
+        std::string preferred;
+        if (layoutPreferred_ && !layoutMode_) {
+            // mode="layout_preferred": the layout's copy, when it has one
+            std::string found;
+            std::string folder = layoutFolder(collection, type, systemMode);
+            if (Utils::findMatchingFile(Utils::combinePath(folder, basename), extensions, found)) {
+                preferred = folder;
+            }
+        }
         // check the system folder
-        if (layoutMode_) {
-            // check if collection's assets are in a different theme
-            std::string layoutName;
-            config_.getProperty("collections." + collection + ".layout", layoutName);
-            if (layoutName == "") {
-                config_.getProperty(OPTION_LAYOUT, layoutName);
-            }
-            if (commonMode_) {
-                imagePath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", "_common");
-            }
-            else {
-                imagePath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", collection);
-            }
-            if (systemMode)
-                imagePath = Utils::combinePath(imagePath, "system_artwork");
-            else
-                imagePath = Utils::combinePath(imagePath, "medium_artwork", type);
+        if (!preferred.empty()) {
+            imagePath = preferred;
+        }
+        else if (layoutMode_) {
+            imagePath = layoutFolder(collection, type, systemMode);
         }
         else {
             if (commonMode_) {
@@ -476,8 +498,6 @@ Component* ReloadableMedia::findComponent(
     }
 
     // if file already loaded, don't load again
-    const std::vector<std::string>& extensions = isVideo ? ReloadableMedia::videoExtensions : ReloadableMedia::imageExtensions;
-    
     // (A jukebox video that has played its loops is started again instead.)
     if (loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying())) {
         std::string filePath;
