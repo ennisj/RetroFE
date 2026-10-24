@@ -258,6 +258,25 @@ Each section's agent chose these; the alternatives are in brackets.
 - **A `<menu>` without `<itemDefaults>` gets empty defaults with a warning**
   [skip the menu; null checks everywhere].
 
+### M16. Round 5 choices — Decided
+- **Videos play in RetroFE only with `play = here`** in info.conf [treating no
+  line as "here", which would change existing collections]. Manage writes it
+  for new video collections and offers "Plays: In RetroFE / With an external
+  player" on the Playback screen.
+- **The player is a page of its own** (`player.xml`, then `_videos`, then
+  built-in) drawn in place of the list [pushing it onto RetroFE's page stack].
+  Left/Right are previous/next, Up/Down seek by 5%.
+- **A video collection previews its own files** when it has no video artwork
+  (done in the engine, so hand-made collections get it too).
+- **`collections/_videos/layout/`** styles every video collection without
+  pages of its own, checked before `_menu`.
+- **Layout editor palette writes RetroFE's own XML** [the widget library's
+  fragments], placed after the selection and styled like its neighbours;
+  files go next to the page that uses them, so paths work whatever theme is
+  active.
+- **Log levels:** menus and merged collections without settings log INFO; a
+  system missing its settings or launcher still warns.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless

@@ -4,6 +4,27 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 5 — videos in RetroFE, layout editor additions, clean logs (2026-10-23)
+
+Unit tests: 4,430 → 4,966 checks.
+
+- **Video collections play in RetroFE.** Selecting a video opens a full-screen
+  player page (Select pauses, Left/Right previous/next, Up/Down seek, Back to
+  the list on the same video; the next one starts when one ends). A video
+  collection's list previews each video. New video collections play here by
+  default (`play = here` in info.conf); existing ones keep their external
+  player. Built-in and Aeon Nox pages (`collections/_videos/`, 4:3 too).
+- **Layout editor:** add new elements from a palette (images, videos, text,
+  game art and text, menus…), edit and copy animations, play an event on the
+  preview, and see where an element's start animation leaves it.
+- **Clean logs:** a normal start on OnesaUCE-shaped data no longer logs dozens
+  of false errors (menus without settings, missing hiscore tools, the DPI
+  hint, optional layout pages); real problems still warn.
+- **Fixes:** a video reselected with the same file keeps playing instead of
+  restarting (an upstream change had broken this); `<animate>` with an empty
+  `from`/`to` no longer reads past the end of the value; hidden games keep
+  their titles and metadata in Manage; "Back from" names the game's title.
+
 ## Round 4 — editing hand-made themes (2026-10-23)
 
 - **Layout editor for hand-made themes.** Edit on Aeon Nox (or any theme not
