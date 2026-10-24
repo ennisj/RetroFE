@@ -91,6 +91,7 @@ private:
         Emulators::Users users;
         std::vector<std::string> fileLines;
         bool genericFileBehind = false;   // a collection's launcher.<os>.conf with a launcher.conf beside it
+        bool runsInRoot = false;          // with no currentDirectory it runs in RetroFE's folder (a bare cmd.exe)
     };
 
     // The latest snapshot; rebuilds the list when it changed. nullptr while there's none yet.

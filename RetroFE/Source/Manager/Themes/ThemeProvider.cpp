@@ -363,7 +363,8 @@ namespace Themes
                 return "This theme was made with the editor, but its project (layouts/" + t->folder +
                        "/editor/project.xml) doesn't load: " + t->projectError;
             }
-            if (!editor) {
+            // A folder with no pages (OneSauce's "default" holds wallpapers) has no Edit to explain
+            if (!editor && get("canOpen", screen) == "yes") {
                 return "This theme was made by hand. Edit opens its pages in the layout editor, which moves, "
                        "resizes and changes the settings of a page's elements, adds new ones and edits their "
                        "animations, rewriting only what changes. The first save keeps the original page in "

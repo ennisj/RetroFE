@@ -24,6 +24,7 @@
 #include "../Source/Graphics/LayoutCompat.h"
 #include "../Source/Library/Index.h"
 #include "../Source/Library/Properties.h"
+#include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Themes/ThemeProvider.h"
 #include "../Source/ThemeEditor/LayoutSession.h"
 #include "../Source/Utility/Utils.h"
@@ -206,6 +207,36 @@ namespace
             checkEqual(Configuration::layoutsPath(), Utils::combinePath(root, "layouts"), "a folder that isn't there is ignored");
 
             Configuration::absolutePath = saved;
+            none.applyBaseLayoutPath();
+        });
+
+        run("compat: Settings' Layout list offers only folders RetroFE can draw, in Manage's order", [] {
+            const std::string saved = Configuration::absolutePath;
+            std::string top = makeRoot("compat-layout-options");
+            std::string root = at(top, "appdata/retrofe");
+            for (const char* page : { "layout.xml", "splash.xml" }) {
+                writeFile(at(top, std::string("base_assets/layouts/Renee/") + page), "<layout/>");
+                writeFile(at(top, std::string("base_assets/layouts/amiga/") + page), "<layout/>");
+            }
+            writeFile(at(top, "base_assets/layouts/Aeon Nox/layout.lua"), "function build(pb)\nend\n");
+            writeFile(at(top, "base_assets/layouts/Aeon Nox/splash.xml"), "<layout/>");
+            writeFile(at(top, "base_assets/layouts/default/README.md"), "Put live wallpaper videos here.\n");   // OneSauce's
+            writeFile(at(top, "base_assets/layouts/No splash/layout.xml"), "<layout/>");   // RetroFE would stop at start-up
+            fs::create_directories(at(top, "base_assets/layouts/Half made"));
+            writeFile(at(root, "settings.conf"), "layout = Half made\nbaseLayoutPath = %RETROFE_PATH%/../../base_assets/layouts\n");
+            Configuration::absolutePath = root;
+            {
+                Configuration config;
+                config.importString("", "baseLayoutPath = %RETROFE_PATH%/../../base_assets/layouts\n");
+                config.applyBaseLayoutPath();
+                ManagerModel model(config);
+                std::string names;
+                for (const auto& option : model.options("layouts")) names += (names.empty() ? "" : ", ") + option.second;
+                checkEqual(names, std::string("Built-in, Aeon Nox, amiga, Half made, Renee"),
+                           "a layout.lua counts; no splash page or no main page is left out unless it's the one set; case ignored");
+            }
+            Configuration::absolutePath = saved;
+            Configuration none;
             none.applyBaseLayoutPath();
         });
 

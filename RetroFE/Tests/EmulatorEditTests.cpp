@@ -363,6 +363,17 @@ static Test::Suite emulatorEdit("emulator-edit", [] {
         check(exists(root + "/launchers." + os() + "/renamed.conf"), "the renamed launcher is still there");
     });
 
+    run("emulator: a bare cmd.exe runs in RetroFE's folder, and the screen says so", [] {
+        std::string root = makeInstall("working-folder-bare");
+        writeFile(root + "/launchers." + os() + "/batch.conf", "executable = cmd.exe\narguments = /c \"%RETROFE_PATH%/x.bat\"\n");
+        Fixture f(root);
+        f.model->setScreen("emulator", { { "id", "batch" }, { "scope", "global" } });
+        checkEqual(f.model->get("emulator:workingFolder"), std::string("RetroFE's folder (cmd.exe has no folder of its own)"),
+                   "as Launcher runs it (Library::programFolder), not \"the program's folder\"");
+        f.model->setScreen("emulator", { { "id", "notepad" }, { "scope", "global" } });
+        checkEqual(f.model->get("emulator:workingFolder"), std::string("The program's folder"), "a program given by its path");
+    });
+
     run("emulator edit: says another platform's file isn't changed", [] {
         Fixture f(makeInstall("edit-other-platform"));
         f.model->setScreen("emulator-edit", { { "id", "retro" }, { "scope", "global" } });
