@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "EditorPad.h"
 #include "FileChooser.h"
 #include "../../ImGuiScreen.h"
 #include "../../../ThemeEditor/EditorScript.h"
@@ -52,6 +53,11 @@ namespace Library { class Indexer; }
 // frame, the first time a theme is opened in that session, with a banner
 // while it runs, so the editor can be checked without a mouse
 // (ThemeEditor/EditorScript.h).
+//
+// RetroFE's mapped controls drive it too (EditorPad.h, EditorNav.h): the
+// regions (toolbar, theme panel, canvas, properties) and their items, the
+// canvas's Pick / Move / Resize modes, the dialogs and an on-screen keyboard
+// for the text fields.
 class ThemeEditorScreen : public Manager::ImGuiScreen
 {
 public:
@@ -87,6 +93,10 @@ public:
     bool takeBack() override;
     void retire() override;
     void shutdown() override;
+    bool wantsControls() const override;
+    void controlsHeld(const ControlsHeld& held) override;
+    void control(Control control, bool repeat) override;
+    void beforeFrame() override;
 
 private:
     enum class Job { None, Save, SaveAndClose, Use, NativePick, Import };
@@ -153,6 +163,11 @@ private:
     void drawPopups();
     void syncPopup(const char* name, bool& show, bool& opened);
     void requestClose();
+    // The controller
+    bool dialogOpen() const;
+    void canvasControl(int press);
+    void setMode(ThemeEditor::EdCanvasMode mode);
+    std::string controllerHints() const;
 
     Context ctx_;
     std::string folder_;
@@ -230,9 +245,13 @@ private:
     bool back_ = false;
     bool leaveWithoutSaving_ = false;
     bool retired_ = false;   // left: nothing more is built
-    bool navFlagsSaved_ = false, savedNavKeyboard_ = false;   // ImGui keyboard navigation, off while shown
     bool nudging_ = false;   // arrow-key nudges since the last pause
     float sinceNudge_ = 0.0f;
+
+    // RetroFE's mapped controls
+    Themes::EditorPad pad_;
+    ThemeEditor::EdCanvasMode mode_ = ThemeEditor::ECM_PICK;
+    int repeats_ = 0;        // repeats of the held direction (Move and Resize speed up)
 
     // -editorScript
     std::vector<ThemeEditor::EditorCommand> script_;

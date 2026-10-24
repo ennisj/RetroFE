@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <array>
 #include <string>
 
 namespace Manager
@@ -27,10 +28,37 @@ namespace Manager
     // The rule that keeps it safe: pages are built and destroyed, and
     // textures created and freed, only in update() and shutdown(), never in
     // draw() or drawTargets(). ManagerUI deletes a screen from update() too.
+    //
+    // Input reaches it two ways:
+    //   - the mouse and keyboard as SDL events, through ImGui's SDL backend;
+    //   - RetroFE's mapped controls (controls.conf: up, down, left, right,
+    //     select, back, page and letter up/down), when wantsControls(): RetroFE
+    //     reads them as it does for the layout-drawn screens (the keyboard
+    //     through SDL_GetKeyboardState, joysticks through their events, which
+    //     ManagerUI then leaves to RetroFE's input too), and ManagerUI turns
+    //     what's held into presses (directions, page and letter up/down repeat
+    //     while held) and hands each to control().
+    // A key can be both a mapped control and a key ImGui sees (arrows, Enter,
+    // letters): a screen that reads keys from ImGui too must not act on such
+    // a key twice (controlsHeld says which controls are down).
     class ImGuiScreen
     {
     public:
+        enum class Control { Up = 0, Down, Left, Right, Select, Back, PageUp, PageDown, LetterUp, LetterDown, Count };
+        using ControlsHeld = std::array<bool, static_cast<size_t>(Control::Count)>;
+
         virtual ~ImGuiScreen() = default;
+
+        // RetroFE's mapped controls (see above). control() runs between
+        // frames, before update() and draw(); repeat is true for a held
+        // direction's repeats. controlsHeld() comes first, every frame.
+        virtual bool wantsControls() const { return false; }
+        virtual void controlsHeld(const ControlsHeld& held) { (void)held; }
+        virtual void control(Control control, bool repeat) { (void)control; (void)repeat; }
+
+        // Inside the render pass, after the backends' NewFrame and before
+        // ImGui::NewFrame (e.g. to tell ImGui a gamepad is there)
+        virtual void beforeFrame() {}
 
         // Every frame while it's the current screen, outside the render pass
         // and outside SDL::getMutex()

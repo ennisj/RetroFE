@@ -691,6 +691,8 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
     // Escape goes back, unless it's being used to leave a text field
     if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat && !ImGui::GetIO().WantTextInput) {
+        // Escape is usually the Back control too: this press is dealt with here, not again in navigate()
+        navHeld_[static_cast<size_t>(Manager::ImGuiScreen::Control::Back)] = true;
         if (screen_ && screen_->escape()) {
             return true;   // it closed a dialog or cancelled a drag
         }
@@ -700,11 +702,14 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
         return true;
     }
     ImGui_ImplSDL2_ProcessEvent(&e);
-    return true;
+    // A screen driven by RetroFE's controls: RetroFE's input sees the event
+    // too (joysticks are read from their events), and navigate() follows
+    return !(screen_ && screen_->wantsControls());
 }
 
-void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
+void ManagerUI::navigate(const Controls& held, float now)
 {
+    using Control = Manager::ImGuiScreen::Control;
     static constexpr FormWidget::Nav navs[] = {
         FormWidget::Nav::Up, FormWidget::Nav::Down, FormWidget::Nav::Left,
         FormWidget::Nav::Right, FormWidget::Nav::Select, FormWidget::Nav::Back
@@ -712,20 +717,44 @@ void ManagerUI::navigate(const std::array<bool, 6>& held, float now)
     const float repeatDelay = 0.4f;
     const float repeatInterval = 0.09f;
 
-    syncKeyboard();
-    for (size_t i = 0; i < held.size() && widget_; i++) {
-        bool repeats = i < 4;  // up/down/left/right
+    // Whether control i acts now: once when pressed, and while held for the
+    // ones that repeat (everything but select and back)
+    auto acts = [&](size_t i, bool& repeat) {
+        bool repeats = i != static_cast<size_t>(Control::Select) && i != static_cast<size_t>(Control::Back);
         bool act = false;
+        repeat = false;
         if (held[i] && !navHeld_[i]) {
             act = true;
             navRepeatAt_[i] = now + repeatDelay;
         }
-        else if (held[i] && repeats && now >= navRepeatAt_[i]) {
+        else if (held[i] && navHeld_[i] && repeats && now >= navRepeatAt_[i]) {
             act = true;
+            repeat = true;
             navRepeatAt_[i] = now + repeatInterval;
         }
         navHeld_[i] = held[i];
-        if (!act) {
+        return act;
+    };
+
+    // An ImGui screen that asked for RetroFE's controls gets every press
+    if (screen_ && !page_) {
+        if (!screen_->wantsControls()) {
+            return;
+        }
+        screen_->controlsHeld(held);
+        for (size_t i = 0; i < held.size() && screen_; i++) {
+            bool repeat = false;
+            if (acts(i, repeat)) {
+                screen_->control(static_cast<Control>(i), repeat);
+            }
+        }
+        return;
+    }
+
+    syncKeyboard();
+    for (size_t i = 0; i < 6 && widget_; i++) {
+        bool repeat = false;
+        if (!acts(i, repeat)) {
             continue;
         }
 
@@ -881,6 +910,9 @@ void ManagerUI::render()
     ImGui::SetCurrentContext(context_);
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
+    if (screen_) {
+        screen_->beforeFrame();
+    }
     ImGui::NewFrame();
 
     if (screen_) {

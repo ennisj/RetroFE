@@ -95,12 +95,17 @@ public:
     // Unused events should go to RetroFE's input so navigate() gets them.
     bool handleEvent(const SDL_Event& e);
 
-    // Whether the open screen is driven by RetroFE's controls through navigate()
-    bool wantsNavigation() const { return open_ && page_; }
+    // Whether the open screen is driven by RetroFE's controls through navigate():
+    // a layout-drawn screen, or an ImGui screen that asks for them (the theme editor)
+    bool wantsNavigation() const { return open_ && (page_ || (screen_ && screen_->wantsControls())); }
 
-    // RetroFE's up, down, left, right, select and back controls, as currently held.
-    // Presses act once, and up/down/left/right repeat while held.
-    void navigate(const std::array<bool, 6>& held, float now);
+    // RetroFE's up, down, left, right, select, back, page up, page down,
+    // letter up and letter down controls, as currently held (Controls'
+    // order). Presses act once; directions, page and letter up/down repeat
+    // while held. Layout-drawn screens use the first six; an ImGui screen
+    // gets them all (ImGuiScreen::control).
+    using Controls = Manager::ImGuiScreen::ControlsHeld;
+    void navigate(const Controls& held, float now);
 
     // Work that can't happen while rendering, such as native file dialogs.
     // Call once per frame, outside SDL::getMutex().
@@ -176,8 +181,8 @@ private:
     KeyboardWidget* keyboard_ = nullptr;
     bool wasEditing_ = false;
     bool typedOnKeyboard_ = false;     // this edit uses a real keyboard, so no on-screen one
-    std::array<bool, 6> navHeld_{};
-    std::array<float, 6> navRepeatAt_{};
+    Controls navHeld_{};
+    std::array<float, std::tuple_size<Controls>::value> navRepeatAt_{};
 
     Configuration& config_;
     std::unique_ptr<Catalog::Service> catalog_;   // destroyed after model_, which points to it

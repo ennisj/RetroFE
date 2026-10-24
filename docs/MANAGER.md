@@ -440,7 +440,8 @@ a row of cursor keys (`<-`, `->`, **Line up**, **Line down**); **Done** keeps
 the text, and the box at the top shows the line the cursor is on. Typing on a
 real keyboard puts the on-screen one away for that edit; finish with Enter
 (Ctrl+Enter in a multi-line field) or cancel with Escape. Set
-`onScreenKeyboard = no` to never show it.
+`onScreenKeyboard = no` to never show it. The theme editor draws its own
+keyboard with the same keys (it isn't styled by the layout).
 
 A layout styles it with `layouts/<layout>/forms/keyboard/layout.xml`, a page
 with a `<keyboard>` element; it's drawn over the screen being edited:

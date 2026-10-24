@@ -5,7 +5,8 @@ widget dialect audit, storage and saving), the first UI round is done (the
 Themes screens and the editor screen, "UI round 1" below) and so is the
 next (templates, files, theme properties, "Editor round 3" below), and
 hand-made themes can be edited in place ("Layout-native mode" below,
-decision M10 option 3). The core
+decision M10 option 3), and both editors work with RetroFE's mapped
+controls ("Controller editing" below). The core
 lives in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is
 tested by `RetroFE/Tests/ThemeEditorTests.cpp`; the screens are in
 `RetroFE/Source/Manager/Themes/`, tested by `RetroFE/Tests/ThemesTests.cpp`.
@@ -423,8 +424,8 @@ confirm, Use this theme, and RetroFE running the new theme with its wheel.
 ### Next round (as left by round 1)
 
 - ~~Templates: add, reassign, delete, coverage~~ (round 3).
-- Controller editing (`EditorNav.h` is ready) and an on-screen keyboard for
-  the text fields.
+- ~~Controller editing (`EditorNav.h` is ready) and an on-screen keyboard for
+  the text fields~~ ("Controller editing" below).
 - Guides and alignment snapping between widgets; multi-select.
 - ~~Ask for a file when placing Static Image / Static Video~~ (round 3).
 - ~~The selected item highlight for text wheels; theme fonts and sounds~~
@@ -559,8 +560,8 @@ NES on the Console Look template. `--theme-check` on the result: clean.
 
 ### Left for later
 
-- Controller editing and an on-screen keyboard; guides, alignment snapping,
-  multi-select (as before).
+- ~~Controller editing and an on-screen keyboard~~ (below); guides, alignment
+  snapping, multi-select (as before).
 - Previewing a page as one of its member collections from the Pages list
   (the Collections list does it).
 - A template's own font or sounds (they're the theme's).
@@ -859,6 +860,153 @@ and RetroFE reloaded the theme when the manager closed.
   selects it).
 - End boxes for other events, and previewing an event's frames by a slider.
 - Adding a sound (`<sound>`) and menu items from the palette.
+
+## Controller editing
+
+Both editors without a mouse: RetroFE's mapped controls drive the regions,
+the canvas, the panels, the dialogs and an on-screen keyboard.
+User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#with-a-controller).
+
+### How the input gets there
+
+This is the first ImGui screen driven by RetroFE's controls, so the routing
+is explicit (`Manager/ImGuiScreen.h`):
+
+1. `RetroFE.cpp` reads the mapped controls as it does for the layout-drawn
+   screens (`UserInput`: the keyboard through `SDL_GetKeyboardState`,
+   joysticks through their events) and hands ManagerUI ten held states: up,
+   down, left, right, select, back, page up, page down, letter up, letter
+   down.
+2. `ManagerUI::handleEvent` gives every event to ImGui's SDL backend as
+   before, and for a screen with `wantsControls()` also returns false, so
+   RetroFE's input sees it too (without that a joystick never updates, and
+   a held state never clears). Escape is still ManagerUI's (`escape()`, then
+   Back); it marks the Back control held so the same press isn't acted on
+   twice when Escape is also mapped to Back.
+3. `ManagerUI::navigate` turns held states into presses (the same repeat as
+   the forms: 0.4 s, then every 0.09 s; select and back don't repeat) and
+   calls `controlsHeld()` then `control(c, repeat)`; `beforeFrame()` runs
+   between the backends' NewFrame and `ImGui::NewFrame`.
+4. The screen decides (`EditorNav.h`) and, for panels and dialogs, posts the
+   press to ImGui as a gamepad key (`EditorPad`).
+
+The ManagerUI change is small: `wantsNavigation()` includes such a screen,
+the `navigate()` array grew from 6 to 10 (the layout-drawn screens still use
+the first 6), the event's return value, and the `beforeFrame` call.
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/EditorNav.h` | The new pure decisions: `regionStep` and `regionCycle` (the four regions, Page Up / Down), `panelRoute` (what a press does on a kind of item in a panel, a dialog or a drop-down list), `canvasPress` (Pick / Move / Resize and their transitions), `pickStep` (`rectNeighbor` plus a first pick nearest the middle, -1 = leave the canvas), `nudgeStep` (acceleration), `listStep`, `choiceStep`, `numberStep`. The One Saucier functions already there (`rectNeighbor`, `canvasNudgeMove`, `canvasNudgeResize`) do the picking and nudging. |
+| `Forms/KeyboardKeys.h` | The on-screen keyboard's keys and navigation, moved out of `KeyboardWidget` (which now draws it) so the editors' keyboard types the same way. Adds an optional `.` key for decimal numbers. Header-only. |
+| `Manager/Themes/app/EditorPad.{h,cpp}` | The ImGui side, shared by both screens: region focus (`beginRegion`), posting presses to ImGui, the item registrations, the edge check, the focus highlight, and the on-screen keyboard drawn in ImGui. |
+| `ThemeEditorScreen`, `LayoutEditorScreen` | `control()`, the canvas modes, regions around the toolbar, panels and canvas, registrations after each text, number, choice and tree node, hints under the canvas, Move / Resize drawn on the selection. |
+| `FileChooser` | Its list is navigable (NavFlattened); Select on a file chooses it, on a folder enters it with the focus on its first entry. |
+| `Manager/ImGuiScreen.h`, `ManagerUI`, `RetroFE.cpp` | The routing above. |
+
+### Decisions
+
+- **ImGui's own gamepad navigation inside panels and dialogs, the editor's
+  own logic for regions and the canvas.** The presses are posted to ImGui as
+  gamepad keys (d-pad, A to activate, B to close a drop-down), so every
+  existing widget (buttons, checkboxes, radio buttons, combos and their
+  lists, tree nodes, sliders, list rows, popups) works without being
+  rewritten, scrolls into view and keeps its tooltip. Considered: One
+  Saucier's approach, a row model per panel deciding every press itself
+  (its editor's controller handling is thousands of lines; both our screens'
+  panels would need rewriting as row lists), and ImGui's keyboard
+  navigation (the real arrow keys would then move ImGui's focus and nudge at
+  the same time).
+- **A gamepad reaches ImGui only through RetroFE's mapping.** The SDL
+  backend's own gamepad reading is switched off while an editor is shown
+  (`ImGui_ImplSDL2_SetGamepadMode(Manual, none)`), so a pad mapped in
+  `controls.conf` doesn't act twice, and `HasGamepad` is set in
+  `beforeFrame` so ImGui's gamepad navigation runs.
+- **Registrations, not a second widget set.** After a field is drawn the
+  screen calls `pad_.text()`, `pad_.number()`, `pad_.choice()` or
+  `pad_.node()`. The focused registration decides what Select and Left /
+  Right do (keyboard, step, fold); what the user did is handed back on a
+  later frame through the same call, so the screen applies it where it
+  applies typing (same coalescing, same validation). The focus test also
+  covers a number with - and + buttons (the focus is on one of its parts).
+  Items without a registration get ImGui's default (activate).
+- **Leaving a panel: "nothing moved".** A direction is posted to ImGui; if
+  the focus hasn't changed two frames later, the region that way takes over.
+  So a panel's last row, a lone field on its row and an empty panel all
+  lead out, without the screens knowing their layout. Tree nodes never
+  leave (Left / Right fold them). Back always returns to the canvas, the
+  editor's home; Back there leaves the editor (with the unsaved-changes
+  dialog).
+- **The canvas is the editor's own region**, not an ImGui item (the canvas
+  button is `NoNav`), with One Saucier's Pick, Move and Resize modes. Select
+  goes Pick, Move, Resize, Pick; Back returns to Pick, keeping the change
+  (Undo takes it back; a run is one undo step). One Saucier's Edit mode
+  (in-place text editing on the canvas) wasn't needed: the properties panel
+  has the keyboard. Picking skips widgets hidden in the editor, as the mouse
+  does; the layout editor picks every element and menu item with a box.
+- **Bigger steps by holding, not a modifier.** The step is the snap grid (1
+  without snapping), x4 after 4 repeats (about 0.75 s), x10 after 12
+  (about 1.5 s). A modifier would need a mapped control most cabinets don't
+  have spare.
+- **The keyboard: an ImGui one with the shared keys, not the layout's
+  keyboard page.** The editor's window is opaque and drawn after the pages,
+  so a keyboard page would have to be rendered into a texture and the
+  `layout` setting points at the theme being edited while it's open (its
+  own `forms/keyboard` would style it). Drawing the same keys
+  (`KeyboardKeys`) in ImGui keeps it simple and identical to type with; the
+  look follows the built-in keyboard page's colours. The mouse is off while
+  it's up (`NoMouse`), so nothing underneath is clicked. Typing on a real
+  keyboard types into it (the mapped controls stand down until it's closed,
+  since letters may be mapped). `onScreenKeyboard = no` hands the field to
+  ImGui's own editing instead.
+- **Colours are typed as hex** with the controller (ImGui's colour picker
+  isn't usable with a d-pad).
+- **Keys that are both.** An arrow mapped as a direction is the
+  controller's on the canvas (Pick moves the selection, not a 1-unit nudge):
+  the keyboard nudge is skipped while a mapped direction is held. Enter
+  mapped as Select presses the focused dialog button; the dialogs' Enter / D
+  shortcuts are skipped while Select is held or after a controller press.
+  Delete and Put back the original open with Cancel focused.
+- **Edits through the controller use the session's existing setters**
+  (`setRect`, `setBox`, `setVar`, `setAttribute`...), so they're validated,
+  coalesced and undone exactly as mouse and typed edits are.
+
+### Checked
+
+`retrofe_tests` (`Tests/EditorNavTests.cpp`): the region graph and Page Up /
+Down cycle, every route (panels, dialogs, drop-down lists, each item kind),
+the canvas modes and their transitions (selection lost mid-move, nothing to
+select, a read-only box), picking (empty page, first pick, directions,
+nothing that way, straight-ahead preference), step acceleration, list and
+choice steps, number clamping, and the shared keyboard keys (start, wrap,
+up/down by column, Shift, Del, Done, Back, number and decimal pads,
+multi-line keys).
+
+GUI check (2026-10-23, private root `E:\Storage\Agents\editorpad`,
+**driven only by posted keys**: posted keys don't reach ImGui, but they do
+reach RetroFE's mapped controls, so this is the controller path itself).
+Widget editor: Pick in four directions, Move with acceleration (760 to 1100
+in 1.8 s held), Resize, Back to Pick, out of the canvas into the
+properties, X stepped with Right, the name typed on the on-screen keyboard
+(Shift for a capital), Up out of the canvas to the toolbar, Add widget and
+its list, Page Up to the properties, a choice stepped and its list opened and
+closed with Back, Letter down through the widgets, *Choose...* opening the
+editor's chooser, a folder entered and a file chosen, Back twice to the
+unsaved-changes dialog, Don't save. Layout editor: Pick, Move (`x="center"`
+became `970`), Page Up to the pages and elements panel, the lists scrolling
+with the focus, an element chosen there and Right into the canvas, Page Down
+to the properties, `x` typed on the keyboard, an animation event unfolded
+with Right and its type stepped, the unsaved-changes dialog closed with Back
+and answered, the Add element palette from Select with nothing selected.
+Screenshots in `E:\Storage\Agents\editorpad\screenshots`.
+
+### Left for later
+
+- Resizing from other corners with the controller (Resize moves the
+  bottom-right one).
+- Moving several elements at once; guides.
+- Scrolling the element list to the element picked on the canvas.
 
 ## Other open items
 
