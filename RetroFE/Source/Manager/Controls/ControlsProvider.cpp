@@ -236,7 +236,10 @@ std::string ControlsProvider::notes(const std::string& name) const
     bool works = std::any_of(list.begin(), list.end(), [](const std::string& token) {
         return InputToken::parse(token).kind != InputToken::Kind::Invalid;
     });
-    if (list.empty() && alwaysMapped(name) && source != sources_.end() && !source->second.file.empty()) {
+    // Left empty in the file itself (quit = on a kiosk), not just emptied here and unsaved
+    auto saved = saved_.find(name);
+    bool emptyInFile = saved != saved_.end() && nonEmpty(InputToken::split(saved->second)).empty();
+    if (list.empty() && emptyInFile && alwaysMapped(name) && source != sources_.end() && !source->second.file.empty()) {
         text += " It's empty there, so nothing is bound to it.";
     }
     if (control->keyboardOnly && std::none_of(list.begin(), list.end(), [](const std::string& token) {
@@ -256,7 +259,7 @@ std::string ControlsProvider::notes(const std::string& name) const
         }
         std::vector<std::string> others = usedBy(token, name);
         if (!others.empty()) {
-            text += " " + InputToken::describe(input) + " is also " + joinWords(others) + "'s input.";
+            text += " " + InputToken::describe(input) + " is also an input of " + joinWords(others) + ".";
         }
     }
     return text;
@@ -302,7 +305,7 @@ std::string ControlsProvider::get(const std::string& key, const Screen& screen)
         if (key == "inputToken") return token;
         if (!known) return "RetroFE doesn't recognise it, so it skips it: " + input.problem;
         std::vector<std::string> others = usedBy(token, id);
-        return others.empty() ? "" : "It's also " + joinWords(others) + "'s input.";
+        return others.empty() ? "" : "It's also an input of " + joinWords(others) + ".";
     }
     if (key == "defaultText") {
         std::string fallback = ControlList::builtinDefault(id);
@@ -436,7 +439,7 @@ Forms::Model::Result ControlsProvider::addCaptured(const std::string& id)
     result.message = "Added " + InputToken::describe(input) + ".";
     std::vector<std::string> others = usedBy(token, id);
     if (!others.empty()) {
-        result.message += " Note: it's also " + joinWords(others) + "'s input, so it does both.";
+        result.message += " Note: it's also an input of " + joinWords(others) + ", so it does both.";
     }
     result.message += " Save to keep it.";
     return result;

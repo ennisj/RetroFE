@@ -405,6 +405,29 @@ static Test::Suite controlsSuite("controls", [] {
         checkEqual(f.model->actionProblem("control.save"), "", "neither blocks saving");
     });
 
+    run("controls: emptying a control here isn't called empty in the file, and shared inputs read plainly", [] {
+        std::string root = makeRoot("controls_emptied");
+        writeFile(root + "/controls.conf", oneSauce);
+        Fixture f(root);
+        f.model->setScreen("control", { { "id", "back" } });
+        for (const char* token : { "F11", "joyBack", "Escape" }) {
+            f.model->setScreen("control-input", { { "id", "back" }, { "input", token } });
+            check(f.model->runAction("control.remove").ok, std::string("removed ") + token);
+        }
+        f.model->setScreen("control", { { "id", "back" } });
+        std::string notes = f.model->get("control:notes");
+        check(!contains(notes, "empty there"), "not said to be empty in controls.conf: " + notes);
+        check(contains(notes, "not saved yet"), "but changed: " + notes);
+        check(!f.model->actionProblem("control.save").empty(), "and Save refuses it");
+
+        f.model->setScreen("control", { { "id", "pageDown" } });
+        Forms::Model::Result added = f.capture("O");
+        check(added.ok && contains(added.message, "also an input of Remove from favourites,"),
+              "no \"favourites's\": " + added.message);
+        check(contains(f.model->get("control:notes"), "is also an input of Remove from favourites."),
+              "the control says so: " + f.model->get("control:notes"));
+    });
+
     run("controls: the same button under another name on a connected pad is a duplicate too", [] {
         std::string root = makeRoot("controls_twins");
         writeFile(root + "/controls.conf", "select = Return\nback = Escape,joyButton1\nup = Up\ndown = Down\n");
