@@ -53,6 +53,13 @@ namespace ThemeEditor
     // Problems found, each naming the element (and its id when it has one)
     std::vector<std::string> checkLayoutXml(const std::string& xml);
 
+    // The same, setting apart the names in OneSauce's themes that
+    // docs/ONESAUCE-COMPAT.md lists as ignored (hwdec, algorithm, pauseTime,
+    // case variants such as Height or maxwidth, <stop> in an event, mode="system"
+    // on a menu, ...): each one found adds its name to ignored instead of a
+    // problem. With ignored null this is checkLayoutXml(xml). For --theme-check.
+    std::vector<std::string> checkLayoutXml(const std::string& xml, std::vector<std::string>* ignored);
+
     // Why PageBuilder couldn't use this at all (rapidxml can't parse it, or
     // there's no <layout> root); "" when it can
     std::string layoutParseError(const std::string& xml);

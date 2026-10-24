@@ -28,6 +28,8 @@
 #include "../../SDL.h"
 #include <algorithm>
 #include <cctype>
+#include <ctime>
+#include <random>
 #include <fstream>
 #include <vector>
 #include <iostream>
@@ -76,6 +78,8 @@ bool ReloadableMedia::update(float dt)
         newItemSelected = false;
         newScrollItemSelected = false;
         Component* foundComponent = reloadTexture();  // Removed the re-declaration here.
+        another_ = false;
+        anotherFor_ = nullptr;
         if (foundComponent) {
             foundComponent->playlistName = page.getPlaylistName();
             foundComponent->allocateGraphicsMemory();
@@ -100,6 +104,21 @@ bool ReloadableMedia::update(float dt)
 
     // needs to be ran at the end to prevent the NewItemSelected flag from being detected
     return Component::update(dt);
+}
+
+
+void ReloadableMedia::pickAnotherMedia()
+{
+    // Only a component showing a media folder's file reloads (a finished
+    // jukebox video elsewhere isn't restarted), and only for the item
+    // selected now: if it doesn't update before another item is, that
+    // reload keeps its usual pick
+    if (!loadedComponent_ || folderFile_.empty() || loadedComponent_->filePath() != folderFile_) {
+        return;
+    }
+    another_ = true;
+    anotherFor_ = page.getSelectedItem(displayOffset_);
+    newItemSelected = true;
 }
 
 
@@ -496,13 +515,27 @@ Component* ReloadableMedia::findComponent(
 
     // if file already loaded, don't load again
     // (A jukebox video that has played its loops is started again instead.)
-    if (loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying())) {
-        std::string filePath;
-        if (Utils::findMatchingFile(Utils::combinePath(imagePath, basename), extensions, filePath)) {
-            if (filePath == loadedComponent_->filePath()) {
-                return loadedComponent_;
-            }
+    const bool mayKeep = loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying());
+    // <basename>.<ext> as upstream, else (fork compat, OneSauce) a file of the
+    // media folder <basename>/, kept while it's showing; not in a game's own folder
+    static const std::vector<std::string> folderImageExtensions = { "gif", "webp", "png", "jpg", "jpeg" };
+    static std::minstd_rand random(static_cast<unsigned>(std::time(nullptr)));   // apart from rand(): randomSelect's sequence stays as it was
+    const std::string current = loadedComponent_ ? std::string(loadedComponent_->filePath()) : std::string();
+    const bool another = another_ && anotherFor_ == page.getSelectedItem(displayOffset_);
+    const LayoutCompat::MediaLookup found = LayoutCompat::lookupMediaStep(imagePath, basename, !filepath.empty(), extensions,
+        isVideo ? ReloadableMedia::videoExtensions : folderImageExtensions, current, another, static_cast<unsigned>(random()));
+    if (mayKeep && !found.file.empty() && found.file == current) {
+        return loadedComponent_;
+    }
+    if (found.fromFolder) {
+        folderFile_ = found.file;
+        if (isVideo) {
+            return new VideoComponent(page, found.file, baseViewInfo.Monitor, jukebox_ ? jukeboxNumLoops_ : -1, false, -1, nullptr);
         }
+        return new Image(found.file, "", page, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCache_);
+    }
+    if (isVideo && found.file.empty()) {
+        return nullptr;   // the video builder looks for the same names: nothing there
     }
 
     if(isVideo) {

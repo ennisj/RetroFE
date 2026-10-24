@@ -42,6 +42,9 @@ public:
     void setLayoutPreferred(bool value) { layoutPreferred_ = value; }
     // textFormat="uppercase"/"lowercase" for the text fallback
     void setTextFormat(const std::string& format) { textFormat_ = format; }
+    // Fork compat (OneSauce media folders, LayoutCompat::lookupMediaStep): when
+    // it shows a media folder's file, reload with the folder's next file
+    void pickAnotherMedia();
     bool isJukeboxPlaying() override;
     void skipForward() override;
     void skipBackward() override;
@@ -66,6 +69,9 @@ private:
     FontManager* FfntInst_;
     bool textFallback_{ false };
     bool layoutPreferred_{ false };
+    bool another_{ false };            // pickAnotherMedia() asked for the next reload...
+    Item* anotherFor_{ nullptr };      // ...with this item selected
+    std::string folderFile_;           // the last file picked from a media folder
     std::string textFormat_;
     std::string layoutFolder(const std::string& collection, const std::string& type, bool systemMode) const;
     std::string type_;

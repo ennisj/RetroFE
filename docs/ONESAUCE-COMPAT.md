@@ -41,6 +41,7 @@ Compat code is marked "Fork compat" in the source. Layout parsing is in
 | `transform="(x, y), (w, h); (x1, y1), (x2, y2), (x3, y3), (x4, y4)[; n]"` on reloadableVideo, image, reloadableImage | Amiga Memories, Atari Girl, Cafe80s, Cyberpunkd, Fan Art Magazine, Live Wallpapers, NEVATO, Old Memories, Pacman, Princess Power | reloadableVideo 105/105/54, image 8/7/0, reloadableImage 3/4/0 | A rectangle (x, y, w, h) and four corners: the TV or monitor drawn at an angle in the background (TL, TR, BL, BR, checked against the art). The rectangle is the component's own box in layout units: Amiga Memories' video sits at 0,0-400x300 with `transform="(0, 0), (400, 300); ..."`, and Gemini's `(1340, 440, 400, 200)` is exactly its logo's box (x=center+580, width 400, maxHeight 200). Without it the video is drawn in the top-left corner, under the background. | **Implemented** as a perspective (projective) map from the rectangle onto the quad, applied to whatever the component draws, drawn as a 16x16 mesh. Also the `(x, y, w, h), corners` spelling. The trailing `; 50` / `, 1` is ignored: it can't move anything under a projective map (likely mesh quality), and values differ for identical quads. Not with containers, angle, reflections, or on rotated/mirrored screens. The corners must make a convex quad in that order (else the transform is ignored with a warning, never the page); while a component's box moves outside the rectangle, points past the quad's horizon aren't drawn and the rest are clamped. |
 | `transform="quad (x, y, u, v), ..."` | Gemini (on `<view>`) | 3/0/0 | Corners with texture coordinates (upper half of the video on the top DS screen, lower half on the bottom). | **Not implemented**: only on `<view>`, which isn't built either. |
 | `mode="layout_preferred"` on reloadableImage | Aeon Nox, Cafe80s, CoinOPS, Cyberpunkd, Renee | 61/183/16 | Used for `cabinet`, `marquee`, `fanart` (and once logo, playlist). In Renee's and CoinOPS's arcade-system menus the cabinet exists only in the layout (`layouts/Renee/collections/Cave/system_artwork/cabinet.png`) and the marquee only in the collection's media (`base_assets/collections/Cave/system_artwork`): the same page needs both found, so "layout's copy first, else the usual place". | **Implemented**: each lookup step tries the layout folder first, then the usual folder. The cabinets now show. Option not taken: run the whole layout chain before the whole normal chain; the data doesn't tell these apart (no system has both copies). |
+| Media folders: `<name>/` in place of `<name>.<ext>` | Collections' media: 52 of the 58 folders in `base_assets/collections` (K: and I: alike) have `system_artwork/video/` and no `system_artwork/video.*` (none has both). Layouts: Cafe80s `1 ARCADES/medium_artwork/video/default/` (4 videos) and `Main/medium_artwork/background/<entry>/` (7 entries, 1-3 jpgs each), `1 COLLECTIONS/medium_artwork/background/<entry>/`; Fan Art Magazine `_common/medium_artwork/cabinet/default/` (cabinet pngs); Live Wallpapers `_common/medium_artwork/video/default/`; Simple Blue `MAME/medium_artwork/video/<game>/<game>_1.mp4, _2.mp4` (220 games) | 52 collections; 4 themes | A folder of interchangeable files where one file would be: the names are free (`ARCADES 1..9.mp4`, `Racing-1..6.mp4`, `Gaelco1..3.mp4`, but also `Arcade Classics.mp4; Arcade3.mp4; video.mp4`, `Psikyo 2.mp4; video.mp4` with no 1, `Gun Games.mp4; Light Gun.mp4; One saUCE - Light Guns...mp4`), so no order or count is meant. Every folder sits exactly where RetroFE looks for a file of that name. Only video and image folders exist (no other system_artwork subfolders but Cyberpunkd's and Renee's `transition/`, which are named per system, not a media folder). Live Wallpapers' folder has a README "Put live wallpaper videos here." (several to choose from). Cafe80s's menus say "B: play different video (if available)", and B is `removePlaylist = O,joyB` in OneSauce's controls.conf, which on a menu entry does nothing but reload the item's media; its game lists say "Y/B: add to/remove from favorite list" instead. | **Implemented** in the reloadable media lookup (reloadableImage/Video/Audio, `LayoutCompat::findMedia`): when `<name>.<ext>` is missing, a file of `<name>/` with an accepted extension. **Random** when the folder comes up (several files, nothing saying which comes first); kept while the next item uses the same folder (a game list's system video doesn't restart on each scroll, as with one file); **removePlaylist** (B) moves to the next file in natural name order, wrapping. A file beside a folder wins (upstream unchanged, `.webp` included). Not at the step that looks in a game's own ROM folder (`list.romHierarchy`): a PC game's `video\` or `music\` there is the game's own, not art. Only components showing a folder's file react to removePlaylist. Each media folder's parent is listed once per run, so a miss costs no file system call. Options not taken: always the first (the rest would only show with B); sequential on each visit (needs state per folder, and nothing in the data asks for a sequence); the next video when one ends (RetroFE loops videos; Cafe80s's entry video has `numLoops="1"` and simply stops). Menu (scrolling list) art isn't looked up in folders: no theme has one there. Manage's media screens still show only `<name>.<ext>` files. Before: Renee's ARCADE cabinet and Cafe80s's main video area were black. |
 | `<scrollingText src="file.txt" ...>` | Cafe80s | 138/138/18 | Same attributes as reloadableScrollingText (direction, alignment, scrollingSpeed, startPosition, startTime, endTime) plus a src naming a fixed text file: the controller instructions in the top bar (`collections/_common/text/menu_instruct.txt`). src is relative to the theme folder, as image src. | **Implemented** as reloadableScrollingText type "file". |
 | `pauseTime` on scrollingText | Cafe80s | 152 in the pages checked | Probably a pause between lines of a vertical scroll; always 1. | **Unclear**, ignored. Would settle: a theme where it varies, or a recording. |
 | `textFormat` on reloadableImage | Cafe80s, Cyberpunkd, Renee | 127/245/49 | Always with `textFallback="true"` on a playlist image: the fallback text in upper case, as textFormat on reloadableText. | **Implemented** for the fallback text. (The fallback shows the item title, as upstream; whether the other fork shows the playlist name there is **unclear**.) |
@@ -92,6 +93,38 @@ Compat code is marked "Fork compat" in the source. Layout parsing is in
   folder, and accepts a root layout.lua in place of layout.xml. It no
   longer reports transform, layout_preferred, textFormat on media or
   scrollingText.
+- `--theme-check` counts the names this page lists as **Ignored** (harmless,
+  redundant, typos, and the unclear ones that change little: `hwdec`,
+  `algorithm`, `keepOldWhileLoading`, `scaleMode`, `static`, `delay`,
+  `reload`, `reloadTransform`, `miScrollTime`, `endPosition`, `uppercase`,
+  `pauseTime`, `numLoops`/`minShowTime` on reloadableVideo, `value` on
+  statusText, `angle` on animate, the case variants `Height`, `Width`,
+  `maxwidth`, `loadfontSize`, `textFallBack`, `<Reloadableimage>`,
+  `textFormat` on menu items, the event typos, `onJumpEnter/Exit`,
+  `<onEmpty>`, `<stop>` in an event, `mode="system"`/`"systemlayout"` on a
+  menu, the top-level events of dead files) on one "ignored (OneSauce)"
+  line with a count per name, not as problems
+  (`ThemeEditor::checkLayoutXml(xml, &ignored)`). What draws differently
+  stays a problem: `<reloadablePanningImage>`, `<view>`, the quad
+  transform, any other unknown name, and missing files. On the QA copy of
+  K: (`r8-themecheck-b-*` before, `E:\Storage\Agents\compat2\screenshots\themecheck-*.txt`
+  after): Cafe80s 512 problems to 4 (the splash image and three text files
+  its 1 HANDHELDS page names), Aeon Nox 32 to 1 (its splash background),
+  Renee 16 to 1, Amiga Memories 8 to 6 (missing files). The theme editor
+  still lists every one of them, as it checks pages being written for this
+  RetroFE.
+- A missing layout sound is warned about once per file (the splash and the
+  main page both load the layout's sounds, so each was warned twice).
+
+## Unclear items, second look (round 9)
+
+Re-surveyed after the media folders: none became clear. `onJumpEnter/Exit`:
+Cyberpunkd's 212 pages use both `onJumpEnter` (352) and upstream's
+`onMenuJumpEnter` (110), so it isn't a plain alias the theme relies on.
+`searchMediaWithoutParenthesis`: the two collections that set it have no
+ROMs or media on K:/I: to compare names against. `pauseTime` is still
+always 1, `endPosition` still 3 uses, and the case variants, panning
+image, `settings_windows.conf` and `custom = yes` have nothing new.
 
 ## Screenshots
 
@@ -105,5 +138,13 @@ cabinet) and `after_raw_renee_arcadesystems.png`; `after_raw_aeonnox_*.png`
 `after_raw_amigamemories_consoles_transform.png` (and `_4x3`);
 `before_wa_cafe80s_main_noscrollingtext.png` and
 `after_raw_cafe80s_main_scrollingtext.png`.
+
+Media folders, in `E:\Storage\Agents\compat2\screenshots\` (a copy of QA
+round 8's slice of K:, OneSauce's own settings): `before-renee-arcade.png`
+(Renee, Main, ARCADE: the cabinet's screen is black) and
+`after-renee-arcade.png` (one of `1 ARCADES/system_artwork/video/` plays),
+`after-renee-arcade-B1.png` (after removePlaylist, the next video),
+`after-renee-arcade-again.png` (back on ARCADE after COLLECTIONS: a random
+one again); `after-cafe80s-main2.png` (Cafe80s's main video area).
 
 [Back](README.md)

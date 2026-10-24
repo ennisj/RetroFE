@@ -35,6 +35,7 @@
 #else
 #error "Cannot find SDL_ttf header"
 #endif
+#include <atomic>
 #include <list>
 #include <stack>
 #include <map>
@@ -76,6 +77,16 @@ private:
     volatile bool initializeError;
     SDL_Thread   *initializeThread;
     static int    initialize( void *context );
+
+    // Closing the window (title-bar X, Alt+F4, WM_CLOSE: SDL_QUIT or a window's
+    // close event) asks RetroFE to quit as the quit control does; an SDL event
+    // watch notes it, whichever loop polls the event, and run() acts on it
+    // when idle. Kiosk mode ignores it; an open Manage asks its screens first.
+    static int SDLCALL windowCloseWatch( void *context, SDL_Event *event );
+    // Adds (or removes) the watch; SDL_Quit drops it, so it's added again
+    // whenever SDL is (unloadSDL)
+    void watchWindowClose( bool on );
+    std::atomic<bool> windowCloseRequested_{ false };
 
     enum RETROFE_STATE
     {
