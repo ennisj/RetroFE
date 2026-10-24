@@ -143,6 +143,15 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 - Chosen: the Emulators screen lists launchers (global, per collection and
   local), what uses them, and unresolved names. Adding a launcher (executable
   from a file picker, arguments from presets) comes after the read-only views.
+- **Round 7: launchers are now edited in place** [keeping them read-only,
+  which meant duplicating a launcher and repointing every system to change
+  one argument]. Only the edited lines change; the screen says which systems
+  and games the change reaches, and the original can be put back. Global
+  launchers can be renamed with a preview: the file in every
+  `launchers.<os>` folder and every `launcher =` reference (alternatives
+  included) and per-game launcher file are rewritten, all or nothing.
+  Collection and local launchers aren't renamed (a collection's launcher is
+  named by its folder).
 
 ### M9. Writes go where stock RetroFE reads, even on OnesaUCE data — Decided
 - OnesaUCE data uses keys stock RetroFE ignores (`media.basePath`,
@@ -333,6 +342,26 @@ QA follow-ups:
 - **A negative `selectedOffset` counts back** (-1 is the previous item), a
   deliberate change from upstream, where -1 showed the next one. No shipped
   layout uses it.
+
+### M18. Round 7 choices — Decided
+Saves:
+- **Only RetroArch games have a Saves screen** [a per-launcher saves-folder
+  setting matched by file name]. MAME and most standalone emulators keep a
+  folder per game or per system, so matching by name would be wrong for the
+  common cases; others say "Not known for this emulator".
+- **Backups are snapshots under `<root>/manage/saves/<collection>/<game>/<time>/`**
+  [reusing `manage/backups`, which keeps one original per file]. Kept until
+  deleted; restoring backs up the current files first.
+- **Files match by the game's exact name plus a known save or state
+  ending**, ignoring case on Windows and other case-insensitive drives;
+  games sharing a name (and so the same save file) are pointed out.
+- **Save folders follow RetroArch's source as read** (the reviewer read it
+  differently): "in content folder" swaps the folder for the game's folder
+  and sorting still adds sub-folders inside it; an empty or invalid folder
+  setting keeps RetroArch's default saves folder. Worth one check on a real
+  install, with the RetroArch settings in M17.
+- **Unknown `%VARIABLES%` in a launcher are refused** unless the program is
+  the command prompt or a batch file, which expands its own (`%APPDATA%`).
 
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
