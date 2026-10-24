@@ -368,6 +368,7 @@ static Test::Suite themes("themes", [] {
         check(!f.model->get("theme:problem").empty(), "a folder without layout.xml says RetroFE can't use it");
         check(!f.model->actionProblem("theme.use").empty(), "and it can't be used");
         check(f.model->get("theme:canOpen") == "no" && !f.model->actionProblem("theme.edit").empty(), "or edited: it has no pages");
+        checkEqual(f.model->get("theme:editNote"), "", "so there's no note about editing it");
     });
 
     Test::run("New theme creates an editor-made theme and opens it", [] {

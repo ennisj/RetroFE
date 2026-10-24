@@ -512,14 +512,33 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
 
     if (source == "layouts") {
         result.emplace_back("", "Built-in");
+        // Only folders RetroFE can start with: a main page and a splash page (a .xml, or a
+        // .lua: fork compat), as Manage's "Use this theme" asks; RetroFE stops at start-up
+        // without a splash page. Plus the one set now, whatever it is. In name order,
+        // ignoring case, as Manage's Themes list. (OneSauce's layouts folder also holds
+        // "default", a folder of wallpapers.)
+        const std::string current = get("settings:layout");
+        auto hasPage = [](const fs::path& folder, const char* page) {
+            std::error_code fileEc;
+            return fs::is_regular_file(folder / (std::string(page) + ".xml"), fileEc)
+                || fs::is_regular_file(folder / (std::string(page) + ".lua"), fileEc);
+        };
         std::vector<std::string> names;
         std::error_code ec;
         for (const auto& entry : fs::directory_iterator(Configuration::layoutsPath(), ec)) {
-            if (entry.is_directory()) {
-                names.push_back(entry.path().filename().string());
+            std::error_code fileEc;
+            if (!entry.is_directory(fileEc)) {
+                continue;
+            }
+            std::string name = entry.path().filename().string();
+            if (name == current || (hasPage(entry.path(), "layout") && hasPage(entry.path(), "splash"))) {
+                names.push_back(name);
             }
         }
-        std::sort(names.begin(), names.end());
+        std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) {
+            std::string la = Utils::toLower(a), lb = Utils::toLower(b);
+            return la != lb ? la < lb : a < b;
+        });
         for (const std::string& name : names) {
             result.emplace_back(name, name);
         }

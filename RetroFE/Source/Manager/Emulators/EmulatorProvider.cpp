@@ -253,6 +253,12 @@ const EmulatorProvider::Details* EmulatorProvider::details(const Manager::Screen
         const Library::LauncherDef& def = index->launchers[static_cast<size_t>(details_.launcher)];
         details_.executable = Emulators::checkExecutable(*index, def.executable);
         details_.users = Emulators::usersOf(*index, details_.launcher);
+        // Where Launcher runs it without a currentDirectory (Library::programFolder): a bare
+        // name like cmd.exe has no folder of its own and runs in RetroFE's. Read once here,
+        // as it may search the system path.
+        if (def.executable.find_first_of("/\\") == std::string::npos && !def.executable.empty()) {
+            details_.runsInRoot = Library::programFolder(def.executable, index->options.root) == index->options.root;
+        }
         std::string content;
         if (Library::readFile(def.file, content)) {
             for (const Library::Line& line : Library::Lines::parse(content).lines) {
@@ -761,7 +767,7 @@ std::string EmulatorProvider::detailValue(const std::string& key, const Manager:
     bool global = def->scope == LauncherScope::Global;
     if (key == "workingFolder") {
         if (def->currentDirectory.empty()) {
-            return "The program's folder";
+            return found->runsInRoot ? "RetroFE's folder (" + def->executable + " has no folder of its own)" : "The program's folder";
         }
         return global ? def->currentDirectory : def->currentDirectory + " (ignored for this launcher: the program's folder is used)";
     }
