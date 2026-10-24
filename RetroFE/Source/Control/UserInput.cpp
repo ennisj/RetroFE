@@ -165,7 +165,11 @@ void UserInput::MapRequired(const std::string& keyDescription, KeyCode_E key, co
     if (config_.getProperty(configKey, description)) {
         // Deliberately empty (e.g. quit = in a kiosk): nothing bound, as upstream
         if (InputToken::split(description).empty()) {
-            LOG_WARNING("Input", configKey + " is empty: nothing is bound to it");
+            // quit = is how a cabinet says nobody may leave: a choice, not a problem
+            if (keyDescription == "quit")
+                LOG_NOTICE("Input", configKey + " is empty: nothing is bound to it, and closing the window is ignored");
+            else
+                LOG_WARNING("Input", configKey + " is empty: nothing is bound to it");
             return;
         }
         if (MapInputs(configKey, description, key) > 0) {
