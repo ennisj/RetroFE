@@ -43,7 +43,12 @@
 //     where it already differed; so is the page's own size. The result says
 //     what wasn't copied.
 //   - Adding, deleting and duplicating elements, events or steps isn't
-//     copied (attributeChanges says the structure changed).
+//     copied as a change (attributeChanges says the structure changed).
+//     Instead the screen makes those operations on both pages (runOnBoth):
+//     the same operation on the matching elements there, when every one
+//     it acts on has a match. Align and distribute go the same way, each
+//     page lining up its own boxes (twinGeometry), since copying the moves
+//     lines them up on one page only.
 //
 // Pure: no filesystem. LayoutSession holds each page.
 

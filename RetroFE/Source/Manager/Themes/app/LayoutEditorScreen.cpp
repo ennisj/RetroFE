@@ -2110,9 +2110,10 @@ void LayoutEditorScreen::alignSelection(int op)
     const std::string before = session_.text();
     if (onBoth(twin, "lining up")) {
         const bool here = session_.text() != before;
-        setStatus(std::string(here ? "Lined up the " + std::to_string(n) + " elements' " + what[op] + " (written as numbers, as a drag writes them). "
-                                   : "They're lined up that way here already. ") +
-                  (alsoOnTwin() ? twinNote_ + " " : std::string()) + "Undo takes it back.", false);
+        setStatus(here ? "Lined up the " + std::to_string(n) + " elements' " + what[op] + " (written as numbers, as a drag writes them). " +
+                             (alsoOnTwin() ? twinNote_ + " " : std::string()) + "Undo takes it back."
+                       : "They're lined up that way here already; lined up on " + twin_.page() + " now (Show it to undo it there).",
+                  false);
     }
     else setStatus("They're lined up that way already.", false);
 }
@@ -2130,10 +2131,10 @@ void LayoutEditorScreen::distributeSelection(bool horizontal)
     const std::string before = session_.text();
     if (onBoth(twin, "spacing")) {
         const bool here = session_.text() != before;
-        setStatus(std::string(here ? "Spaced the " + std::to_string(n) + " elements evenly " + (horizontal ? "across" : "down") +
-                                         ": the outer two stayed where they were. "
-                                   : "They're evenly spaced that way here already. ") +
-                  (alsoOnTwin() ? twinNote_ : std::string()), false);
+        setStatus(here ? "Spaced the " + std::to_string(n) + " elements evenly " + (horizontal ? "across" : "down") +
+                             ": the outer two stayed where they were. " + (alsoOnTwin() ? twinNote_ : std::string())
+                       : "They're evenly spaced that way here already; spaced on " + twin_.page() + " now (Show it to undo it there).",
+                  false);
     }
     else setStatus("They're evenly spaced that way already.", false);
 }
@@ -2640,6 +2641,7 @@ void LayoutEditorScreen::drawPopups()
         if (!showDelete_) ImGui::CloseCurrentPopup();
         if (session_.selectionCount() > 1) ImGui::Text("Delete the %d selected elements from the page?", session_.selectionCount());
         else ImGui::Text("Delete %s from the page?", session_.label(session_.selected()).c_str());
+        if (alsoOnTwin()) ImGui::Text("The same goes from %s too, where it's there.", twin_.page().c_str());
         ImGui::TextDisabled("Undo brings it back until you leave the editor.");
         if (ImGui::Button("Delete (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld() && !pad_.controllerActive())) {
             deleteSelected();
