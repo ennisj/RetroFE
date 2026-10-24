@@ -59,7 +59,7 @@ namespace
         "LEDBlinkyEmulator = fceumm\r\n";
 
     // launchers.<os>: retro (also in the other platform's folder), notepad
-    //   Arcade: launcher = retro, notepad; a.zip picks retro, b.zip notepad
+    //   Arcade: launcher = retro, notepad; a.zip picks retro (CRLF on Windows), b.zip notepad
     //   NES:    launcher = retro; mario picks "retro", which is NES's local launcher of that name
     //   SNES:   launcher = retro, set in info.conf
     //   Tools:  its own launcher.conf
@@ -77,7 +77,10 @@ namespace
         writeFile(root + "/collections/Arcade/settings.conf", "# arcade\r\nlist.extensions = zip\r\nlauncher = retro, notepad\r\n");
         writeFile(root + "/collections/Arcade/roms/a.zip", "x");
         writeFile(root + "/collections/Arcade/roms/b.zip", "x");
-        writeFile(root + "/collections/Arcade/launchers/a.conf", "retro\r\nkept\r\n");
+        // A CRLF first line names "retro" only on Windows: elsewhere RetroFE's
+        // text-mode getline keeps the '\r' (see LibraryTests), so a.conf picks
+        // retro there only with a plain LF after the name
+        writeFile(root + "/collections/Arcade/launchers/a.conf", std::string("retro") + (os() == "windows" ? "\r\n" : "\n") + "kept\r\n");
         writeFile(root + "/collections/Arcade/launchers/b.conf", "notepad\n");
         writeFile(root + "/collections/NES/settings.conf", "list.extensions = nes\nlauncher = retro\n");
         writeFile(root + "/collections/NES/launchers.local/retro.conf", "executable = emu/other.exe\n");
@@ -398,6 +401,8 @@ static Test::Suite emulatorEdit("emulator-edit", [] {
         fs::create_directories(root + "/collections/Arcade/launchers/a.conf.tmp");
         std::map<std::string, std::string> before = snapshot(root);
         Library::Editor editor(root);
+        check(editor.planLauncherRename(*index, "retro", "RetroArch NES").gameFiles.size() == 1,
+              "a.conf is part of the rename, so writing it is what fails");
         Library::EditResult r = editor.renameLauncher(*index, "retro", "RetroArch NES");
         check(!r.ok && contains(r.message, "Nothing was changed"), r.message);
         std::map<std::string, std::string> after = snapshot(root);
