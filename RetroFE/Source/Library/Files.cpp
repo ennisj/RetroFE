@@ -242,6 +242,7 @@ std::string cmdArguments(const std::string& arguments)
     return arguments.substr(0, command) + "\"" + rest + "\"";
 }
 
+
 std::string findProgram(const std::string& name)
 {
     if (name.empty() || name.find_first_of("/\\") != std::string::npos) {
@@ -272,6 +273,37 @@ std::string findProgram(const std::string& name)
     }
     return "";
 #endif
+}
+
+std::string programFolder(const std::string& executable, const std::string& root)
+{
+    std::string folder = fs::path(executable).parent_path().string();
+    if (!folder.empty()) {
+        return folder;   // a path: its own folder (relative ones are taken from root, as the program is)
+    }
+    std::error_code ec;
+    if (executable.empty() || fs::exists(fs::path(root) / executable, ec)) {
+        return root;     // a program in RetroFE's root is run from there
+    }
+#ifdef _WIN32
+    // Found on the system path, as Launcher finds it: that program's folder,
+    // unless it's one of Windows' own tools (cmd.exe, powershell.exe...), which
+    // run in RetroFE's root so that relative paths in their arguments mean
+    // what they mean everywhere else in RetroFE
+    std::string found = findProgram(executable);
+    if (!found.empty()) {
+        char windows[MAX_PATH] = {};
+        UINT n = GetSystemWindowsDirectoryA(windows, MAX_PATH);
+        bool system = n > 0 && n < MAX_PATH && isInside(toLower(found), toLower(std::string(windows, n)));
+        std::string own = fs::path(found).parent_path().string();
+        if (!system && !own.empty()) {
+            return own;
+        }
+    }
+#endif
+    // Elsewhere a program on PATH is installed system-wide (/usr/bin...) and
+    // doesn't look for anything beside itself: RetroFE's root
+    return root;
 }
 
 Lines Lines::parse(const std::string& content)

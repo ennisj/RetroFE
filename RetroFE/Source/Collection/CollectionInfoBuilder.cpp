@@ -838,7 +838,12 @@ std::string CollectionInfoBuilder::getKey(Item* item)
 }
 
 void CollectionInfoBuilder::updateTimeSpent(Item* item, double timePlayedInSeconds) {
-    if (!item || timePlayedInSeconds <= 0) {
+    if (item && timePlayedInSeconds >= 0 && timePlayedInSeconds < 1) {
+        // A program that ended within a second (counted in whole seconds): nothing to add
+        LOG_INFO("CollectionInfoBuilder", "Played under a second; time spent unchanged.");
+        return;
+    }
+    if (!item || timePlayedInSeconds < 0) {
         LOG_WARNING("CollectionInfoBuilder", "Invalid item or gameplay duration; cannot update time spent.");
         return;
     }

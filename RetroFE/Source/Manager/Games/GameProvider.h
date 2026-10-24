@@ -93,6 +93,11 @@ namespace Manager
         };
         static PlayStats readPlayStats(const std::string& root, const std::string& system, const std::string& game);
         static std::string describePlays(const PlayStats& stats);   // "3 times, last on 2026-10-01 14:03"
+        // Why RetroFE doesn't count a system's plays, from lastPlayedSkipCollection
+        // and lastplayedSize as RetroFE reads them; "" when it does. Shown in
+        // place of "Never" for a game with no plays.
+        static std::string playsNotCounted(const std::string& skipCollections, const std::string& lastPlayedSize,
+                                           const std::string& system);
         static std::string describeTime(double seconds);             // "1 h 12 min"
 
         // Tests: waits for the media worker and does whatever it still has to do

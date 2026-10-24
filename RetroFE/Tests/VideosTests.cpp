@@ -24,12 +24,16 @@
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Graphics/LayoutPages.h"
+#include "../Source/Graphics/Component/ListIndex.h"
+#include "../Source/ThemeEditor/LayoutCheck.h"
 #include "../Source/Library/Edits.h"
 #include "../Source/Library/Files.h"
 #include "../Source/Library/Indexer.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Systems/SystemProvider.h"
 #include "../Source/Utility/Utils.h"
+#include <algorithm>
+#include <climits>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -226,6 +230,9 @@ namespace
             check(contains(list, "<menu") && contains(list, "reloadableVideo type=\"video\""), "a list and the selected video");
             check(contains(player, "<menu") && contains(player, "jukebox=\"true\""), "the player follows a menu and can pause");
             check(contains(player, "type=\"isPaused\"") && contains(player, "type=\"current\""), "it shows pause and time");
+            // What PageBuilder warns about on every open otherwise
+            check(contains(player, "<itemDefaults"), "the player's menu has item defaults");
+            check(contains(list, "imageType=") && contains(player, "imageType="), "their videos say what shows without one");
         });
 
         run("videos: adding one plays it in RetroFE by default, with no player program", [] {
@@ -303,6 +310,67 @@ namespace
             check(Library::Editor::checkSetting(*index, "Films", "play", "here").empty(), "here");
             check(Library::Editor::checkSetting(*index, "Films", "play", "launcher").empty(), "launcher");
             check(!Library::Editor::checkSetting(*index, "Films", "play", "vlc").empty(), "nothing else");
+        });
+
+        // retrofe --theme-check finds these too; the shipped pages must pass it
+        run("videos: Aeon Nox's video pages pass the layout check", [] {
+            const fs::path pages = fs::path(RETROFE_SOURCE_DIR) / ".." / ".." / "Package" / "Environment" / "Common"
+                                   / "layouts" / "Aeon Nox" / "collections" / "_videos" / "layout";
+            std::error_code ec;
+            if (!fs::is_directory(pages, ec)) {
+                std::cout << "  (skipped: no shipped layouts at " << pages.string() << ")" << std::endl;
+                return;
+            }
+            int checked = 0;
+            for (const char* name : { "layout.xml", "layout 4x3.xml", "player.xml", "player 4x3.xml" }) {
+                std::string xml = readFile((pages / name).string());
+                std::string problems;
+                for (const std::string& p : ThemeEditor::checkLayoutXml(xml)) problems += "; " + p;
+                check(!xml.empty() && problems.empty(), std::string(name) + problems);
+                checked++;
+            }
+            check(checked == 4, "four pages");
+        });
+
+        // ScrollingList keeps the item in its first slot (itemIndex) and the
+        // selected slot apart: selected = itemIndex + slot. Aeon Nox's video list
+        // selects its 5th slot (4); with 3 videos that is past the end.
+        run("videos: a list shorter than the menu's selected slot opens on, and comes back to, the right video", [] {
+            const size_t slot = 4, count = 3;
+            for (size_t video = 0; video < count; video++) {
+                size_t first = loopDecrement(video, slot, count);   // setScrollOffsetIndex(video)
+                checkEqual(std::to_string(loopIncrement(first, slot, count)), std::to_string(video),
+                           "back from the player on video " + std::to_string(video + 1));
+            }
+            // A new list (setItems, and the start of a collection) selects the first item
+            checkEqual(std::to_string(loopIncrement(loopDecrement(count, slot, count), slot, count)), "0", "a new list");
+            checkEqual(std::to_string(loopIncrement(loopDecrement(0, slot, count), slot, count)), "0", "the start");
+            // Page Up by the menu's 9 slots in a 3-item list moves a whole number of turns
+            checkEqual(std::to_string(loopDecrement(1, 9, count)), "1", "page up");
+            checkEqual(std::to_string(loopIncrement(1, 9, count)), "1", "page down");
+            checkEqual(std::to_string(loopDecrement(5, 2, 0)), "0", "an empty list");
+        });
+
+        // ReloadableMedia & co. show page.getSelectedItem(selectedOffset)
+        run("menus: a negative selectedOffset is the item before the selected one, whatever the list's length", [] {
+            for (size_t size : { size_t(2), size_t(3), size_t(5), size_t(7), size_t(10), size_t(6467) }) {
+                for (size_t index = 0; index < std::min<size_t>(size, 4); index++) {
+                    const std::string at = std::to_string(size) + " items, at " + std::to_string(index);
+                    checkEqual(std::to_string(itemAtOffset(index, -1, size)), std::to_string((index + size - 1) % size), at + ": -1");
+                    checkEqual(std::to_string(itemAtOffset(index, -2, size)), std::to_string((index + 2 * size - 2) % size), at + ": -2");
+                    checkEqual(std::to_string(itemAtOffset(index, 1, size)), std::to_string((index + 1) % size), at + ": +1");
+                    checkEqual(std::to_string(itemAtOffset(index, 0, size)), std::to_string(index), at + ": 0");
+                }
+            }
+            // One item: every offset is that item
+            for (int offset : { -3, -1, 0, 1, 4 }) {
+                checkEqual(std::to_string(itemAtOffset(0, offset, 1)), "0", "one item, offset " + std::to_string(offset));
+                checkEqual(std::to_string(loopIncrement(0, static_cast<size_t>(offset < 0 ? -offset : offset), 1)), "0", "one item, loopIncrement");
+                checkEqual(std::to_string(loopDecrement(0, static_cast<size_t>(offset < 0 ? -offset : offset), 1)), "0", "one item, loopDecrement");
+            }
+            checkEqual(std::to_string(itemAtOffset(1, -12, 5)), "4", "further back than the list is long");
+            checkEqual(std::to_string(itemAtOffset(0, INT_MIN, 3)), std::to_string((3 - (2147483648ULL % 3)) % 3), "INT_MIN doesn't overflow");
+            checkEqual(std::to_string(itemAtOffset(3, -1, 0)), "0", "an empty list");
         });
     }
 
