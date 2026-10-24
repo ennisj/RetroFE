@@ -891,6 +891,14 @@ void ThemeEditorScreen::canvasControl(int press)
     if (d.mode != mode_ && d.action != ECA_MODE) setMode(d.mode);   // the selection went away mid-move
     int dx = 0, dy = 0;
     pressDirection(press, dx, dy);
+    // Shift + an arrow that's a mapped direction still nudges by 10, as it did before the controller
+    const bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    if (shift && d.action == ECA_PICK && sel) {
+        session_.moveBy(dx * 10, dy * 10);
+        sinceNudge_ = 0.0f;   // a pause ends this run of nudges as one undo step (update())
+        nudging_ = true;
+        return;
+    }
     switch (d.action) {
     case ECA_PICK: {
         // The visible widgets' boxes; hidden ones can't be picked, as with the mouse
@@ -916,12 +924,14 @@ void ThemeEditorScreen::canvasControl(int press)
         DragRect r;
         canvasHitRect(*sel, r.x, r.y, r.w, r.h);
         const WidgetDef* def = session_.selectedDef();
-        const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, repeats_);
+        const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, shift ? 12 : repeats_);
         const DragRect n = d.action == ECA_MOVE
             ? canvasNudgeMove(r, dx, dy, step, p.canvasW(), p.canvasH())
             : canvasNudgeResize(r, dx, dy, step, def ? def->minW : 8, def ? def->minH : 8, p.canvasW(), p.canvasH());
         session_.setCoalesceKey("controller");
-        session_.setRect(n.x, n.y, n.w, n.h);
+        // As with the mouse: moving keeps a warped widget's shape, resizing makes it a plain box
+        if (d.action == ECA_MOVE) session_.moveTo(n.x, n.y);
+        else session_.setRect(n.x, n.y, n.w, n.h);
         break;
     }
     case ECA_MODE:

@@ -26,6 +26,8 @@
 // header-only.
 
 #include "EditorCanvas.h"
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <set>
 #include <string>
@@ -468,6 +470,19 @@ namespace ThemeEditor
         if (cur < 0 || cur >= n) return dir < 0 ? n - 1 : 0;
         const int next = cur + (dir < 0 ? -1 : 1);
         return next < 0 ? 0 : next >= n ? n - 1 : next;
+    }
+
+    // A number as the on-screen keyboard starts from: the shortest text that
+    // reads back as exactly this value (0.1, 0.1234567, 1234567, 1e+20), so
+    // Done without typing leaves it as it was
+    static inline std::string roundTripNumber(double value)
+    {
+        char buffer[40];
+        for (int digits = 1; digits <= 17; ++digits) {
+            std::snprintf(buffer, sizeof(buffer), "%.*g", digits, value);
+            if (std::strtod(buffer, nullptr) == value) return buffer;
+        }
+        return buffer;
     }
 
     // A number stepped by Left / Right, clamped to [lo, hi]

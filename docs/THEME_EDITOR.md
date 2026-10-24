@@ -125,17 +125,33 @@ what the controls do there.
 - **Dialogs** (Add widget, Add element, the template dialogs, the file
   chooser, Saved, Unsaved changes, Delete, Put back the original): Up / Down
   / Left / Right move between their items, Select presses, Back closes the
-  dialog (as Cancel). Delete and Put back the original start on Cancel. In
-  the file chooser Select opens a folder and chooses a file.
+  dialog (as Cancel). A dialog opens on the button its Enter label names
+  (*Save (Enter)*, *Delete (Enter)*), so Enter does what it says whether or
+  not it's mapped as Select. In the file chooser Select opens a folder and
+  chooses a file.
 - **The on-screen keyboard**: the directions move between keys, Select
   presses one, Done keeps the text and Back cancels. Typing on a real
   keyboard while it's up types there instead (Enter keeps it, Escape cancels).
   With `onScreenKeyboard = no` Select starts typing into the field with a
   real keyboard instead.
 
-The mouse and keyboard keep working alongside. An arrow key that's also a
-mapped direction acts as the controller's (it picks in Pick mode rather than
-nudging), and Enter mapped as Select presses the focused button in a dialog.
+The mouse and keyboard keep working alongside, but a keyboard key that's
+mapped in `controls.conf` acts as that control while no field is being typed
+into:
+
+- With the shipped `controls.conf`, Left and Right are mapped (directions)
+  but Up and Down aren't (Keypad 8 / 2 are), so on the canvas Left / Right
+  pick a widget while Up / Down nudge it by 1. Shift with a mapped arrow
+  still nudges by 10, as before.
+- **B** is Back (it leaves the editor from the canvas, asking about unsaved
+  changes first), **M** / **N** are Letter up / down (the previous / next
+  widget), and Return is Select. Typing into a field (a click puts the cursor
+  there) or on the on-screen keyboard isn't affected.
+- Enter mapped as Select presses the focused button in a dialog; *D* (Don't
+  save) works from the keyboard as before (any key that isn't mapped hands
+  the dialogs back to the keyboard's shortcuts).
+- A control mapped to a mouse button doesn't act in the editor: the mouse
+  clicks.
 
 ## Files
 

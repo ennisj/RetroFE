@@ -816,6 +816,14 @@ void LayoutEditorScreen::canvasControl(int press)
     if (d.mode != mode_ && d.action != ECA_MODE) setMode(d.mode);   // the selection went away mid-move
     int dx = 0, dy = 0;
     pressDirection(press, dx, dy);
+    // Shift + an arrow that's a mapped direction still nudges by 10, as it did before the controller
+    const bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    if (shift && d.action == ECA_PICK && has) {
+        session_.moveBy(dx * 10, dy * 10);
+        sinceNudge_ = 0.0f;
+        nudging_ = true;
+        return;
+    }
     switch (d.action) {
     case ECA_PICK: {
         // Every element with a box on the page (menu items included), as the mouse picks them
@@ -836,7 +844,7 @@ void LayoutEditorScreen::canvasControl(int press)
     case ECA_MOVE:
     case ECA_RESIZE: {
         const DragRect r = session_.box(sel);
-        const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, repeats_);
+        const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, shift ? 12 : repeats_);
         const DragRect n = d.action == ECA_MOVE ? canvasNudgeMove(r, dx, dy, step, session_.canvasW(), session_.canvasH())
                                                 : canvasNudgeResize(r, dx, dy, step, 1, 1, session_.canvasW(), session_.canvasH());
         session_.setCoalesceKey("controller");
@@ -1858,7 +1866,6 @@ void LayoutEditorScreen::drawPopups()
             showRestore_ = false;
             ImGui::CloseCurrentPopup();
         }
-        ImGui::SetItemDefaultFocus();   // the controller starts on Cancel
 
         ImGui::EndPopup();
     }
@@ -1879,7 +1886,6 @@ void LayoutEditorScreen::drawPopups()
             showDelete_ = false;
             ImGui::CloseCurrentPopup();
         }
-        ImGui::SetItemDefaultFocus();   // the controller starts on Cancel
 
         ImGui::EndPopup();
     }

@@ -703,8 +703,11 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     }
     ImGui_ImplSDL2_ProcessEvent(&e);
     // A screen driven by RetroFE's controls: RetroFE's input sees the event
-    // too (joysticks are read from their events), and navigate() follows
-    return !(screen_ && screen_->wantsControls());
+    // too (joysticks are read from their events), and navigate() follows.
+    // Not a mouse click: the mouse is ImGui's there, and a control mapped to
+    // a mouse button would turn every click into a press. (Releases still
+    // go through, so a button held when the screen opened doesn't stick.)
+    return e.type == SDL_MOUSEBUTTONDOWN || !(screen_ && screen_->wantsControls());
 }
 
 void ManagerUI::navigate(const Controls& held, float now)

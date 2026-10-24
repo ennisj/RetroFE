@@ -135,6 +135,9 @@ static Test::Suite editorNav("editor controller", [] {
         check(numberStep(10, 5, 1, 0, 0) == 15 && numberStep(10, 5, -1, 0, 0) == 5, "numbers step, unbounded");
         check(numberStep(98, 5, 1, 0, 100) == 100 && numberStep(2, 5, -1, 0, 100) == 0 && numberStep(0.5, 0.1, 1, 0, 1) > 0.59,
               "and clamp when bounded");
+        check(roundTripNumber(0.1) == "0.1" && roundTripNumber(0.1234567) == "0.1234567" && roundTripNumber(1234567) == "1234567" &&
+              roundTripNumber(-2.5) == "-2.5" && roundTripNumber(0) == "0", "numbers the keyboard starts from read back exactly");
+        check(std::strtod(roundTripNumber(1.0 / 3.0).c_str(), nullptr) == 1.0 / 3.0, "even a third");
         int dx = 9, dy = 9;
         pressDirection(EP_LEFT, dx, dy);
         check(dx == -1 && dy == 0, "left");

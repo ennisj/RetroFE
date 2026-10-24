@@ -14,7 +14,6 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "EditorPad.h"
-#include "imgui_impl_sdl2.h"
 #include <algorithm>
 #include <cerrno>
 #include <cfloat>
@@ -72,12 +71,6 @@ namespace
         return false;
     }
 
-    std::string formatNumber(double v)
-    {
-        char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "%g", v);
-        return buffer;
-    }
 
     // The cursor a line up or down, at the same column as far as the line allows
     void moveLine(Forms::TextEdit& t, int dir)
@@ -109,17 +102,27 @@ namespace Themes
 {
     // ---- lifetime ------------------------------------------------------------------
 
+    void EditorPad::releaseGamepadKeys()
+    {
+        // Anything the backend left down (the press that opened the screen) goes up
+        ImGuiIO& io = ImGui::GetIO();
+        for (int key = ImGuiKey_GamepadStart; key <= ImGuiKey_GamepadRStickDown; ++key) {
+            io.AddKeyAnalogEvent(static_cast<ImGuiKey>(key), false, 0.0f);
+        }
+    }
+
     void EditorPad::attach()
     {
         ImGuiIO& io = ImGui::GetIO();
         if (!attached_) {
             attached_ = true;
             savedNavKeyboard_ = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
-            // A gamepad reaches the editor through RetroFE's mapping only, so it doesn't act twice
-            ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode_Manual, nullptr, 0);
+            savedNavGamepad_ = (io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0;
+            releaseGamepadKeys();
         }
         // The arrow keys nudge on the canvas, so ImGui's keyboard navigation is off
-        // (Tab still moves between fields); its gamepad navigation takes the mapped controls
+        // (Tab still moves between fields); its gamepad navigation takes the mapped
+        // controls while the frame is built (beforeFrame / endFrame)
         io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     }
@@ -130,8 +133,10 @@ namespace Themes
         attached_ = false;
         ImGuiIO& io = ImGui::GetIO();
         if (savedNavKeyboard_) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        if (savedNavGamepad_) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
         io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-        ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode_AutoFirst, nullptr, 0);
+        releaseGamepadKeys();
         keyboard_ = Keyboard();
     }
 
@@ -139,7 +144,11 @@ namespace Themes
     {
         if (!attached_) return;
         ImGuiIO& io = ImGui::GetIO();
-        // The backend clears this every frame when it reads no gamepad of its own
+        // The SDL backend's NewFrame (just before this) skipped reading real
+        // gamepads because gamepad navigation was off (endFrame), so a pad
+        // reaches ImGui only through RetroFE's mapping and never acts twice.
+        // Now it's on for this frame, with a gamepad present: the mapped controls.
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
         // While the keyboard is up the mouse can't reach what's under it
         if (keyboard_.open) io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
@@ -217,8 +226,11 @@ namespace Themes
             inject(press);
             break;
         case ER_FORWARD_EDGE:
+            // Decided once ImGui has seen the press and finished the move it started (beginFrame)
             edgeArmed_ = true;
-            edgeFrames_ = 3;   // the move is applied when the frame after next starts
+            edgeSeen_ = false;
+            edgeFrames_ = 0;
+            edgeKey_ = directionKey(press);
             pressDirection(press, edgeDx_, edgeDy_);
             edgeFrom_ = GImGui->NavId;
             inject(press);
@@ -242,17 +254,22 @@ namespace Themes
         return route;
     }
 
+    ImGuiKey EditorPad::directionKey(int press)
+    {
+        switch (press) {
+        case EP_UP: return ImGuiKey_GamepadDpadUp;
+        case EP_DOWN: return ImGuiKey_GamepadDpadDown;
+        case EP_LEFT: return ImGuiKey_GamepadDpadLeft;
+        case EP_RIGHT: return ImGuiKey_GamepadDpadRight;
+        default: return ImGuiKey_None;
+        }
+    }
+
     void EditorPad::inject(int press)
     {
-        ImGuiKey key = ImGuiKey_None;
-        switch (press) {
-        case EP_UP: key = ImGuiKey_GamepadDpadUp; break;
-        case EP_DOWN: key = ImGuiKey_GamepadDpadDown; break;
-        case EP_LEFT: key = ImGuiKey_GamepadDpadLeft; break;
-        case EP_RIGHT: key = ImGuiKey_GamepadDpadRight; break;
-        case EP_SELECT: key = ImGui::GetIO().ConfigNavSwapGamepadButtons ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown; break;
-        default: return;
-        }
+        ImGuiKey key = directionKey(press);
+        if (press == EP_SELECT) key = ImGui::GetIO().ConfigNavSwapGamepadButtons ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown;
+        if (key == ImGuiKey_None) return;
         // Activating needs the focus shown (it hides after a mouse click)
         ImGui::SetNavCursorVisible(true);
         injectKey(key);
@@ -276,16 +293,52 @@ namespace Themes
             (ImGui::IsMousePosValid() && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))) {
             controllerActive_ = false;
         }
+        // So did the keyboard: a key that isn't one of the mapped controls (D in
+        // Unsaved changes), or typing, while no mapped control is held
+        if (!anyHeld() && (io.InputQueueCharacters.Size > 0 || realKeyPressed())) controllerActive_ = false;
         if (keyboard_.open && io.InputQueueCharacters.Size > 0) keyboard_.typing = true;
         // A dialog closed: the focus goes back into the region (ImGui gives it to the editor's window)
         const bool modal = modalOpen();
         if (wasModal_ && !modal) refocus();
         wasModal_ = modal;
 
-        if (edgeArmed_ && --edgeFrames_ <= 0) {
-            edgeArmed_ = false;
-            if (GImGui->NavId == edgeFrom_ && !listOpen() && !modalOpen()) edgeReady_ = true;
+        // A forwarded direction: once ImGui has seen it pressed and has finished
+        // the move it started (which may take more than a frame, when it
+        // scrolls), the focus either moved or there was nothing that way.
+        // Frames are counted only to give up on a press ImGui never saw.
+        if (edgeArmed_) {
+            ImGuiContext& g = *GImGui;
+            if (!edgeSeen_) {
+                edgeSeen_ = ImGui::IsKeyPressed(edgeKey_, false);
+                if (!edgeSeen_ && ++edgeFrames_ > 30) edgeArmed_ = false;
+            }
+            else if (!g.NavMoveSubmitted && !g.NavMoveForwardToNextFrame) {
+                edgeArmed_ = false;
+                if (g.NavId == edgeFrom_ && !listOpen() && !modal) edgeReady_ = true;
+            }
         }
+    }
+
+    bool EditorPad::anyHeld() const
+    {
+        for (bool h : held_) {
+            if (h) return true;
+        }
+        return false;
+    }
+
+    bool EditorPad::realKeyPressed() const
+    {
+        // Keyboard keys only (the gamepad keys come after them); modifiers don't count
+        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_GamepadStart; ++key) {
+            const ImGuiKey k = static_cast<ImGuiKey>(key);
+            if (k == ImGuiKey_LeftCtrl || k == ImGuiKey_RightCtrl || k == ImGuiKey_LeftShift || k == ImGuiKey_RightShift ||
+                k == ImGuiKey_LeftAlt || k == ImGuiKey_RightAlt || k == ImGuiKey_LeftSuper || k == ImGuiKey_RightSuper) {
+                continue;
+            }
+            if (ImGui::IsKeyPressed(k, false)) return true;
+        }
+        return false;
     }
 
     bool EditorPad::takeEdge(int& dx, int& dy)
@@ -376,7 +429,7 @@ namespace Themes
         item.key = ImGui::GetID(title);
         item.kind = EIK_NUMBER;
         item.title = title;
-        item.value = formatNumber(value);
+        item.value = roundTripNumber(value);   // the exact value: Done without typing changes nothing
         item.numeric = true;
         item.decimal = true;
         const ImGuiID key = item.key;
@@ -485,6 +538,9 @@ namespace Themes
         focused_ = focusedThisFrame_;
         focusedThisFrame_ = 0;
         if (delivery_.key && --delivery_.frames < 0) delivery_ = Delivery();
+        // Off until beforeFrame, so the SDL backend's next NewFrame doesn't feed
+        // ImGui a real gamepad (see beforeFrame)
+        if (attached_) ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
     }
 
     void EditorPad::drawFocus(float scale)
@@ -510,6 +566,7 @@ namespace Themes
         keyboard_.key = item.key;
         keyboard_.title = item.title;
         keyboard_.text.set(item.value);
+        keyboard_.seed = item.value;
         keyboard_.keys.reset(item.numeric, item.multiline, item.decimal);
     }
 
@@ -521,7 +578,8 @@ namespace Themes
     void EditorPad::finishKeyboard(bool keep)
     {
         if (!keyboard_.open) return;
-        if (keep) {
+        // Done on what the field already had isn't an edit (it would dirty the theme for nothing)
+        if (keep && keyboard_.text.text != keyboard_.seed) {
             delivery_ = Delivery();
             delivery_.key = keyboard_.key;
             delivery_.frames = 3;

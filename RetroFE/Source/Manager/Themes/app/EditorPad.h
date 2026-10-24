@@ -139,6 +139,7 @@ namespace Themes
             bool typing = false;          // a real keyboard types into it
             ImGuiID key = 0;              // the item it types for
             std::string title;
+            std::string seed;             // what the field had when it opened
             Forms::TextEdit text;
             Forms::KeyboardKeys keys;
         };
@@ -157,6 +158,10 @@ namespace Themes
         const Item* focusedItem() const;
         void inject(int press);
         void injectKey(ImGuiKey key);
+        static ImGuiKey directionKey(int press);
+        void releaseGamepadKeys();
+        bool anyHeld() const;
+        bool realKeyPressed() const;
         void openKeyboard(const Item& item);
         void keyboardControl(Control control);
         void keyboardTyping();
@@ -174,6 +179,7 @@ namespace Themes
         bool keyboardEnabled_ = true;
         bool wasModal_ = false;
         bool savedNavKeyboard_ = false;
+        bool savedNavGamepad_ = true;
         bool controllerActive_ = false;
         std::vector<Item> items_, lastItems_;   // this frame's registrations, and last frame's
         ImGuiID focused_ = 0;                   // the registered item ImGui's focus was on last frame
@@ -182,6 +188,8 @@ namespace Themes
         Keyboard keyboard_;
         // An edge press waiting to see whether the focus moved
         bool edgeArmed_ = false;
+        bool edgeSeen_ = false;           // ImGui has seen the press
+        ImGuiKey edgeKey_ = ImGuiKey_None;
         int edgeFrames_ = 0;
         int edgeDx_ = 0, edgeDy_ = 0;
         ImGuiID edgeFrom_ = 0;

@@ -101,6 +101,11 @@ namespace ThemeEditor
 
         // Edits on the selected widget; false when nothing changed
         bool moveBy(int dx, int dy);   // keyboard nudge, not snapped
+        // Moves the selection so its box (canvasHitRect) starts at x, y, as a
+        // drag of its body does: a warped widget keeps its corners' shape.
+        // Coalesces with the current key (setCoalesceKey).
+        bool moveTo(int x, int y);
+        // Sets the box; a warped widget becomes a plain box (as a resize drag does)
         bool setRect(int x, int y, int w, int h);
         bool setName(const std::string& name);
         bool setLayer(int layer);      // clamped to 0..MAX_LAYER
