@@ -22,6 +22,7 @@
 #include "Database/MetadataDatabase.h"
 #include "Execute/AttractMode.h"
 #include "Graphics/FontCache.h"
+#include "Graphics/VideoPlayback.h"
 #include "Manager/ManagerUI.h"
 #include "Video/IVideo.h"
 #include "Video/VideoFactory.h"
@@ -210,6 +211,10 @@ private:
     std::vector<std::string> cycleVector_;
     std::filesystem::file_time_type lastHiFileModifiedTime_{};
     ManagerUI          manager_;
+    // A video collection's videos playing in RetroFE (info.conf play = here)
+    VideoPlayback      player_;
+    RETROFE_STATE      processPlayerInput( );
+    std::map<int, bool> playerKeysHeld_;
     bool               homeMenu_{ false };
     std::string        browseCollection_;  // where Home's Browse goes
     std::string        nextPageName_;      // overrides nextPageItem_->name for the next page

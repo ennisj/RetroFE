@@ -307,13 +307,41 @@ Every change keeps the original file in `manage/backups` first and takes
 effect when RetroFE reloads, after you close Manage.
 
 **Videos** is the same for **video collections**: systems whose files are
-videos, played by a video player, and marked with `type = videos` in their
-`info.conf`. **Add a video collection** starts with the extensions
-`mp4,mkv,avi` and the launcher `VideoPlayer`; when there's no such launcher
-yet, choose the player program (VLC or mpv get their usual full-screen
-arguments) and Manage writes `launchers.<os>/VideoPlayer.conf`. Video
-collections are listed under Videos, not Systems. Playing videos inside a
-page (jukebox mode) and previewing video art on these screens come later.
+videos, marked with `type = videos` in their `info.conf`. They're listed
+under Videos, not Systems, and each row says how its videos play.
+
+- **Plays in RetroFE** (`play = here` in `info.conf`): selecting a video in
+  Browse plays it full screen inside RetroFE. Select pauses and resumes,
+  Left and Right go to the previous or next video, Up and Down seek, the skip
+  keys jump a minute, and Back returns to the list on the video you were
+  watching. When a video ends the next one starts; after the last one you're
+  back on the list. A video that doesn't start within 10 seconds (a file the
+  player can't open) is skipped. Each video that starts counts as played in
+  last played and the play count, as a launched game does (RetroFE keeps those
+  only when `lastPlayedSkipCollection` is set). Attract mode doesn't start
+  these videos. Sound follows RetroFE's video settings (`MuteVideo`, and
+  the layout's `volume`). RetroFE's player opens mp4, avi, mkv, mp3, wav and
+  flac files.
+- **Plays with an external player** (`play = launcher`, or no `play` line, as
+  for video collections made before): its launcher starts, e.g. VLC or mpv.
+
+**Add a video collection** starts with the extensions `mp4,mkv,avi` and
+**Plays: In RetroFE**, which needs no player program (file types RetroFE
+can't play are refused there). Choose **With an external player** to pick the
+launcher `VideoPlayer` or, when there's none yet, the player program (VLC or
+mpv get their usual full-screen arguments); Manage then writes
+`launchers.<os>/VideoPlayer.conf`.
+
+A video collection's **Playback** screen (its Launcher screen) switches
+between the two. Switching to an external player needs an installed player;
+switching to RetroFE keeps the launcher for later. Its **Check** says which
+extensions RetroFE can't play when it plays them itself.
+
+In Browse a video collection's page shows its list and the selected video
+playing beside it: Aeon Nox draws it with `collections/_videos/layout`, and
+the player with `player.xml` there (`player 4x3.xml` for 4:3), and RetroFE has
+built-in pages when no layout is installed. A layout can give one collection
+its own pages in `collections/<name>/layout/` (`layout.xml`, `player.xml`).
 
 ### Themes
 
@@ -555,6 +583,8 @@ above, so it's a working example:
 |-----------------------------|-------|
 | `layout.xml` | A collection's games: the information wall and box art. Every collection of games without a page of its own uses it. |
 | `collections/_menu/layout/layout.xml` | Menus of collections, such as Browse: one logo per collection, or its name when there's no logo (see below) |
+| `collections/_videos/layout/layout.xml` | Video collections (`type = videos`): the list, and the selected video playing beside it |
+| `collections/_videos/layout/player.xml` | Where a video collection that plays in RetroFE plays a video, full screen |
 | `collections/Home/layout/layout.xml` | Home, in the same style |
 | `collections/Home/medium_artwork/` | Home's artwork and text: `logo/`, `icon/`, `tagline/` and `description/`, each with a file per item (`Catalog.png`, `Catalog.txt`...) |
 | `collections/Catalog/layout/layout.xml` | The Catalog: package logos, with kind, source and version in the info panel |
@@ -572,11 +602,27 @@ Every collection, Home and the Catalog included, is a page of its own. RetroFE
 takes it from the first of these that the layout has:
 
 1. `collections/<collection>/layout/`, the collection's own pages
-2. `collections/_menu/layout/`, when the collection is a **menu**: it has items
+2. `collections/_videos/layout/`, when the collection is a **video collection**
+   (`type = videos` in its `info.conf`)
+3. `collections/_menu/layout/`, when the collection is a **menu**: it has items
    and they're all collections (from `menu.txt` or `menu/`), like Main, a
    "Consoles" menu or Home. A menu that's still empty is drawn like a collection
    of games.
-3. the layout's own folder
+4. the layout's own folder
+
+A video collection's own files are its `video` media (unless `media.video` is
+set or it has a `medium_artwork/video` folder), so `<reloadableVideo
+type="video">` shows the selected video. Its **player page** is `player.xml`
+(or `player 4x3.xml` for the page `layout 4x3`) in its own folder, then in
+`collections/_videos/layout/`, else RetroFE's built-in one. RetroFE gives the
+player page the list the collection's page shows: it needs a `<menu>` (it can
+be invisible, as in Aeon Nox's), and a `<reloadableVideo type="video"
+jukebox="true">` so Select can pause it and RetroFE knows when it ends; a page
+without either is replaced by the built-in one (log.txt says why). The list
+page's sounds are off while a video plays, so give the player page its own
+`<sound type="load">` for a sound as it opens (Aeon Nox plays `select.wav`). Texts
+of type `title`, `collectionIndexSize`, `isPaused`, `current` and `duration`
+follow the video playing, and `onHighlightEnter` runs when it changes.
 
 The collection's `layoutFromAnotherCollection` setting still wins over all of
 these. In each folder RetroFE uses `layout.xml`, or the page `randomLayout`

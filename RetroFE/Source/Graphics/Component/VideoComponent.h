@@ -62,4 +62,5 @@ private:
     int perspectiveCorners_[8]{ 0 }; // Initialize to zeros
     bool hasPerspective_{ false };
     bool dimensionsUpdated_ = false; // Track if dimensions have been updated for the current video
+    bool heldPaused_ = false;        // paused by pause(), not by being hidden
 };

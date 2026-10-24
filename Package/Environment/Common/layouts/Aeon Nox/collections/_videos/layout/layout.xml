@@ -1,0 +1,87 @@
+<layout width="1920" height="1080" font="fonts/OpenSans.ttf" loadFontSize="36" fontColor="dedede">
+
+<!-- Aeon Nox: a video collection (info.conf type = videos): its videos on the left, the selected one playing on the right.
+     RetroFE uses collections/_videos/layout for any video collection without a page of its own; a video's own file is its
+     "video" media. With play = here in its info.conf, Select plays it full screen on player.xml. -->
+
+    <sound type="load"      src="../../../sounds/load.wav" />
+    <sound type="unload"    src="../../../sounds/unload.wav" />
+    <sound type="highlight" src="../../../sounds/highlight.wav" />
+    <sound type="select"    src="../../../sounds/select.wav" />
+
+    <!-- Background -->
+    <image src="../../../images/background.png" x="0" y="0" width="1920" height="1080" layer="0"/>
+
+    <!-- Top bar: collection, time, position -->
+    <image src="../../../images/topbar.png" x="0" y="0" width="stretch" height="50" layer="5">
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+    </image>
+    <reloadableText type="collectionName" x="20" y="25" maxWidth="640" xOrigin="left" yOrigin="center" fontSize="42" loadFontSize="42" layer="10">
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+    </reloadableText>
+    <reloadableText type="time" timeFormat="%I:%M %p" x="center" y="25" xOrigin="center" yOrigin="center" fontSize="42" loadFontSize="42" fontColor="ffffff" layer="10">
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+    </reloadableText>
+    <reloadableText type="collectionIndexSize" singlePrefix="VIDEOS  " pluralPrefix="VIDEOS  " menuScrollReload="true" x="1900" y="25" xOrigin="right" yOrigin="center" fontSize="42" loadFontSize="42" layer="10">
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onMenuEnter>      <set duration=".1"><animate type="alpha" to="1"/></set></onMenuEnter>
+    </reloadableText>
+
+    <!-- Panels: the list, and the video -->
+    <image src="../../../images/system_info_bg.png" x="40" y="100" width="980" height="900" alpha=".85" layer="2"/>
+    <image src="../../../images/system_info_bg.png" x="1060" y="100" width="820" height="680" layer="2"/>
+    <image src="../../../images/system_info_overlay.png" x="1060" y="100" width="820" height="680" layer="11"/>
+
+    <!-- The selected row -->
+    <image src="../../../images/form_focus.png" x="60" y="550" width="940" height="92" yOrigin="center" alpha=".22" layer="3">
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to=".22"/></set></onGameExit>
+    </image>
+
+    <!-- The videos -->
+    <menu type="custom" orientation="vertical" textFallback="true" scrollTime=".15" scrollAcceleration=".02" minScrollTime="0.05">
+        <itemDefaults x="90" xOrigin="left" yOrigin="center" maxWidth="880" font="fonts/Oswald-Regular.ttf" loadFontSize="44" fontSize="40" fontColor="ffffff" alpha=".45" layer="12"/>
+        <item y="75" alpha="0"/>
+        <item y="170"/>
+        <item y="265"/>
+        <item y="360"/>
+        <item y="455"/>
+        <item y="550" selected="true" fontSize="52" alpha="1" fontColor="75c8f7"/>
+        <item y="645"/>
+        <item y="740"/>
+        <item y="835"/>
+        <item y="930"/>
+        <item y="1025" alpha="0"/>
+    </menu>
+
+    <!-- The selected video, playing (its own file); the title and details under it -->
+    <reloadableVideo type="video" x="1470" y="440" width="760" maxHeight="600" xOrigin="center" yOrigin="center" layer="9">
+        <onEnter>          <set duration=".2"><animate type="alpha" from="0" to="1"/></set></onEnter>
+        <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
+        <onMenuEnter>      <set duration=".2"><animate type="alpha" from="0" to="1"/></set></onMenuEnter>
+        <onMenuExit>       <set duration=".1"><animate type="alpha" to="0"/></set></onMenuExit>
+        <onHighlightEnter> <set duration=".15"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".05"><animate type="alpha" to="0"/></set></onHighlightExit>
+        <onGameEnter>      <set duration=".1"><animate type="alpha" to="0"/></set></onGameEnter>
+        <onGameExit>       <set duration=".1"><animate type="alpha" to="1"/></set></onGameExit>
+    </reloadableVideo>
+
+    <reloadableText type="title" x="1470" y="840" maxWidth="800" xOrigin="center" yOrigin="center" font="fonts/Oswald-Bold.ttf" fontSize="56" loadFontSize="56" fontColor="75c8f7" layer="10">
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to="1"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".05"><animate type="alpha" to="0"/></set></onHighlightExit>
+    </reloadableText>
+    <reloadableText type="year" x="1470" y="905" maxWidth="800" xOrigin="center" yOrigin="center" font="fonts/Oswald-Regular.ttf" fontSize="36" loadFontSize="36" alpha=".8" layer="10">
+        <onHighlightEnter> <set duration=".1"><animate type="alpha" to=".8"/></set></onHighlightEnter>
+        <onHighlightExit>  <set duration=".05"><animate type="alpha" to="0"/></set></onHighlightExit>
+    </reloadableText>
+
+    <text value="SELECT  PLAY        BACK  RETURN" x="1470" y="1040" xOrigin="center" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="40" loadFontSize="40" alpha=".55" layer="10"/>
+
+</layout>
