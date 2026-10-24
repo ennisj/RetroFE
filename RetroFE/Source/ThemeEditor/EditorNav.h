@@ -18,13 +18,16 @@
 // The editor's controller decisions: focus regions, the canvas's pick, move
 // and resize modes, directional widget picking, nudges, the properties
 // panel's rows and which overlay owns a press. Deciding them here keeps the
-// UI loop thin and testable. Nothing in v1 drives it yet; it's ready for
-// controller editing.
+// UI loop thin and testable. Both theme editor screens are driven by
+// RetroFE's mapped controls through these (Manager/Themes/app/EditorPad.h);
+// the second half of this file holds the decisions added for that.
 //
 // Ported from One Saucier's theme editor (app/editor/editor_nav.h). Pure,
 // header-only.
 
 #include "EditorCanvas.h"
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <set>
 #include <string>
@@ -269,5 +272,227 @@ namespace ThemeEditor
             std::vector<std::string> kids = kidsOf(f.name);
             for (size_t i = kids.size(); i > 0; --i) stack.push_back({ kids[i - 1], f.depth + 1 });
         }
+    }
+
+    // ---- Controller editing in this fork's editors --------------------------
+    //
+    // Both screens have the same four regions: the toolbar across the top,
+    // the theme (or pages and elements) panel on the left, the canvas in the
+    // middle and the properties on the right (EF_TOOLBAR, EF_THEME,
+    // EF_CANVAS, EF_PROPS). Inside a panel or a dialog ImGui's own gamepad
+    // navigation moves between items; the presses below decide what reaches
+    // it and what the editor does itself.
+
+    // RetroFE's mapped controls as the editor sees them
+    enum EdPress { EP_UP = 0, EP_DOWN, EP_LEFT, EP_RIGHT, EP_SELECT, EP_BACK, EP_PAGE_UP, EP_PAGE_DOWN,
+                   EP_LETTER_UP, EP_LETTER_DOWN, EP_COUNT };
+
+    static inline void pressDirection(int press, int& dx, int& dy)
+    {
+        dx = press == EP_LEFT ? -1 : press == EP_RIGHT ? 1 : 0;
+        dy = press == EP_UP ? -1 : press == EP_DOWN ? 1 : 0;
+    }
+
+    // Where leaving a region in a direction lands; -1 = nowhere, stay
+    static inline int regionStep(int from, int dx, int dy)
+    {
+        switch (from) {
+        case EF_TOOLBAR: return dy > 0 ? EF_CANVAS : -1;
+        case EF_THEME:
+            if (dx > 0) return EF_CANVAS;
+            return dy < 0 ? EF_TOOLBAR : -1;
+        case EF_CANVAS:
+            if (dx < 0) return EF_THEME;
+            if (dx > 0) return EF_PROPS;
+            return dy < 0 ? EF_TOOLBAR : -1;
+        case EF_PROPS:
+            if (dx < 0) return EF_CANVAS;
+            return dy < 0 ? EF_TOOLBAR : -1;
+        default: return -1;
+        }
+    }
+
+    // Page Up / Page Down: the previous or next region, in reading order
+    static inline int regionCycle(int from, int dir)
+    {
+        static const int order[4] = { EF_TOOLBAR, EF_THEME, EF_CANVAS, EF_PROPS };
+        int at = 2;   // anything else counts as the canvas
+        for (int i = 0; i < 4; ++i) {
+            if (order[i] == from) at = i;
+        }
+        return order[(at + (dir < 0 ? 3 : 1)) % 4];
+    }
+
+    // What a focused item in a panel or dialog is, as far as the controls go
+    enum EdItemKind {
+        EIK_OTHER = 0,   // buttons, checkboxes, list rows...: ImGui's navigation activates them
+        EIK_TEXT,        // a text field: Select types into it on the on-screen keyboard
+        EIK_NUMBER,      // a number: Left / Right step it, Select types one
+        EIK_CHOICE,      // a list of choices: Left / Right pick the previous / next, Select opens the list
+        EIK_NODE,        // a tree node or section header: Left / Right fold it, never leave the panel
+    };
+    // Where the focus is: a panel (a region), one of the editor's dialogs, or
+    // a drop-down list (an open combo; inside a dialog too)
+    enum EdLayer { EL_PANEL = 0, EL_DIALOG, EL_LIST };
+
+    enum EdRoute {
+        ER_IGNORE = 0,
+        ER_FORWARD,        // to ImGui's navigation
+        ER_FORWARD_EDGE,   // to ImGui's navigation; when the focus doesn't move, the region in that direction
+        ER_ADJUST,         // the item steps itself (previous / next)
+        ER_KEYBOARD,       // the on-screen keyboard opens for the item
+        ER_CLOSE_LIST,     // ImGui's cancel: closes the drop-down list
+        ER_CLOSE_DIALOG,   // the editor closes its dialog
+        ER_LEAVE_REGION,   // back to the canvas
+    };
+
+    static inline EdRoute panelRoute(int kind, int press, int layer)
+    {
+        if (press == EP_BACK) {
+            if (layer == EL_LIST) return ER_CLOSE_LIST;
+            return layer == EL_DIALOG ? ER_CLOSE_DIALOG : ER_LEAVE_REGION;
+        }
+        if (press == EP_SELECT) return kind == EIK_TEXT || kind == EIK_NUMBER ? ER_KEYBOARD : ER_FORWARD;
+        if (press == EP_UP || press == EP_DOWN) return layer == EL_PANEL ? ER_FORWARD_EDGE : ER_FORWARD;
+        if (press == EP_LEFT || press == EP_RIGHT) {
+            if (layer != EL_LIST && (kind == EIK_NUMBER || kind == EIK_CHOICE)) return ER_ADJUST;
+            if (kind == EIK_NODE || layer != EL_PANEL) return ER_FORWARD;
+            return ER_FORWARD_EDGE;
+        }
+        return ER_IGNORE;
+    }
+
+    // The canvas: what a press does in each mode
+    enum EdCanvasAction {
+        ECA_NONE = 0,
+        ECA_PICK,           // select the nearest element that way (or leave the canvas)
+        ECA_MOVE,           // nudge the selection
+        ECA_RESIZE,         // nudge its bottom-right corner
+        ECA_MODE,           // switch to the decision's mode (the change so far is kept)
+        ECA_ADD,            // nothing to select: open Add widget / Add element
+        ECA_CANT_MOVE,      // the selection can't be moved here (say why)
+        ECA_LEAVE_EDITOR,   // Back in Pick mode
+        ECA_PREV, ECA_NEXT, // Letter up / down: the previous / next element in list order
+    };
+    struct EdCanvasDecision
+    {
+        EdCanvasAction action = ECA_NONE;
+        EdCanvasMode mode = ECM_PICK;
+    };
+
+    // Select goes Pick -> Move -> Resize -> Pick; Back goes back to Pick, or
+    // leaves the editor from Pick
+    static inline EdCanvasDecision canvasPress(EdCanvasMode mode, int press, bool hasSelection, bool movable)
+    {
+        EdCanvasDecision d;
+        d.mode = mode;
+        if (mode != ECM_PICK && !(hasSelection && movable)) {
+            d.mode = ECM_PICK;   // the selection went away mid-move
+            mode = ECM_PICK;
+        }
+        switch (press) {
+        case EP_UP: case EP_DOWN: case EP_LEFT: case EP_RIGHT:
+            d.action = mode == ECM_MOVE ? ECA_MOVE : mode == ECM_RESIZE ? ECA_RESIZE : ECA_PICK;
+            break;
+        case EP_SELECT:
+            if (mode == ECM_PICK) {
+                if (!hasSelection) d.action = ECA_ADD;
+                else if (!movable) d.action = ECA_CANT_MOVE;
+                else { d.action = ECA_MODE; d.mode = ECM_MOVE; }
+            }
+            else {
+                d.action = ECA_MODE;
+                d.mode = mode == ECM_MOVE ? ECM_RESIZE : ECM_PICK;
+            }
+            break;
+        case EP_BACK:
+            if (mode == ECM_PICK) d.action = ECA_LEAVE_EDITOR;
+            else { d.action = ECA_MODE; d.mode = ECM_PICK; }
+            break;
+        case EP_LETTER_UP:
+            if (mode == ECM_PICK) d.action = ECA_PREV;
+            break;
+        case EP_LETTER_DOWN:
+            if (mode == ECM_PICK) d.action = ECA_NEXT;
+            break;
+        default:
+            break;
+        }
+        return d;
+    }
+
+    // Pick mode, one step: the nearest rect that way (rectNeighbor), the one
+    // nearest the middle of the canvas when nothing is selected, or -1 when
+    // there's nothing that way (the focus leaves the canvas)
+    static inline int pickStep(const std::vector<DragRect>& rs, int cur, int dx, int dy, int canvasW, int canvasH)
+    {
+        const int n = static_cast<int>(rs.size());
+        if (n == 0) return -1;
+        if (cur < 0 || cur >= n) {
+            int best = 0;
+            double bestD = -1.0;
+            for (int i = 0; i < n; ++i) {
+                const double ex = rs[i].x + rs[i].w * 0.5 - canvasW * 0.5;
+                const double ey = rs[i].y + rs[i].h * 0.5 - canvasH * 0.5;
+                const double d = ex * ex + ey * ey;
+                if (bestD < 0.0 || d < bestD) { bestD = d; best = i; }
+            }
+            return best;
+        }
+        const int next = rectNeighbor(rs, cur, dx, dy);
+        return next == cur ? -1 : next;
+    }
+
+    // Move and Resize nudge by the snap grid (or 1 without snapping); holding
+    // the direction speeds up: x4 after 4 repeats, x10 after 12
+    static inline int nudgeStep(int base, int repeats)
+    {
+        if (base < 1) base = 1;
+        if (repeats >= 12) return base * 10;
+        if (repeats >= 4) return base * 4;
+        return base;
+    }
+
+    // The previous / next index in a list of n, wrapping; from none, the first or last
+    static inline int listStep(int cur, int n, int dir)
+    {
+        if (n <= 0) return -1;
+        if (cur < 0 || cur >= n) return dir < 0 ? n - 1 : 0;
+        return (cur + (dir < 0 ? n - 1 : 1)) % n;
+    }
+
+    // A choice row stepped by Left / Right: the option after (or before) the
+    // current one, clamped at the ends (no wrap, so a held direction stops at
+    // the last); an unknown current value steps to the first or last
+    static inline int choiceStep(int cur, int n, int dir)
+    {
+        if (n <= 0) return -1;
+        if (cur < 0 || cur >= n) return dir < 0 ? n - 1 : 0;
+        const int next = cur + (dir < 0 ? -1 : 1);
+        return next < 0 ? 0 : next >= n ? n - 1 : next;
+    }
+
+    // A number as the on-screen keyboard starts from: the shortest text that
+    // reads back as exactly this value (0.1, 0.1234567, 1234567, 1e+20), so
+    // Done without typing leaves it as it was
+    static inline std::string roundTripNumber(double value)
+    {
+        char buffer[40];
+        for (int digits = 1; digits <= 17; ++digits) {
+            std::snprintf(buffer, sizeof(buffer), "%.*g", digits, value);
+            if (std::strtod(buffer, nullptr) == value) return buffer;
+        }
+        return buffer;
+    }
+
+    // A number stepped by Left / Right, clamped to [lo, hi]
+    static inline double numberStep(double value, double step, int dir, double lo, double hi)
+    {
+        double v = value + step * (dir < 0 ? -1.0 : 1.0);
+        if (lo < hi) {
+            if (v < lo) v = lo;
+            if (v > hi) v = hi;
+        }
+        return v;
     }
 }

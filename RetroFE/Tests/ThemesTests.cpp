@@ -211,6 +211,48 @@ static Test::Suite themes("themes", [] {
               "lines from collection and database loading aren't the page's");
     });
 
+    Test::run("controller moves keep a warped widget's shape; resizing flattens it, as with the mouse", [] {
+        std::string root = makeThemesRoot("session_warp_move");
+        EditorSession s;
+        std::string folder, error;
+        check(openNew(root, "Warped", s, folder) && s.addWidget("static_image"), "a widget");
+        SaveInputs inputs;
+        inputs.fontBytes = fontBytes();
+        SaveReport report;
+        check(s.save(inputs, report, error), "saved: " + error);
+        // A One Saucier warp on it, as project.xml carries one
+        const std::string project = root + "/layouts/" + folder + "/editor/project.xml";
+        std::string xml = readFile(project);
+        const size_t at = xml.find("<widget");
+        check(at != std::string::npos, "the widget in project.xml");
+        xml.insert(at + 7, " warp=\"1\" wtl=\"100,100\" wtr=\"500,110\" wbl=\"100,400\" wbr=\"520,420\"");
+        writeFile(project, xml);
+        EditorSession w;
+        check(w.open(root + "/layouts", folder, Themes::widgetLibrary(), error) && !w.page().widgets.empty(), "reopened: " + error);
+        w.select(0);
+        check(w.selectedWidget()->warp, "it's warped");
+        // Three controller nudges, as the screen makes them: the box moved to x, y
+        w.setCoalesceKey("controller");
+        for (int i = 1; i <= 3; ++i) {
+            int bx, by, bw, bh;
+            canvasHitRect(*w.selectedWidget(), bx, by, bw, bh);
+            check(w.moveTo(bx + 5, by), "nudge " + std::to_string(i));
+        }
+        const WidgetInstance* m = w.selectedWidget();
+        check(m->warp && m->wx[0] == 115 && m->wy[0] == 100 && m->wx[3] == 535 && m->wy[3] == 420,
+              "the corners moved together: " + std::to_string(m->wx[0]) + "," + std::to_string(m->wx[3]));
+        int bx, by, bw, bh;
+        canvasHitRect(*m, bx, by, bw, bh);
+        check(!w.moveTo(bx, by), "moving to where it is changes nothing");
+        w.endCoalesce();
+        check(w.undo() && w.selectedWidget()->warp && w.selectedWidget()->wx[0] == 100, "the run of nudges is one undo step");
+        check(!w.canUndo(), "and the only one");
+        check(w.redo() && w.selectedWidget()->wx[0] == 115, "redo");
+        // Resizing makes it a plain box, as a resize drag does
+        canvasHitRect(*w.selectedWidget(), bx, by, bw, bh);
+        check(w.setRect(bx, by, bw + 5, bh) && !w.selectedWidget()->warp && w.selectedWidget()->w == bw + 5, "resize flattens it");
+    });
+
     Test::run("editor scripts parse, and session commands run", [] {
         EditorCommand c = parseEditorCommand("  var VALUE  Hello   there  ");
         check(c.name == "var" && c.words.size() == 3 && c.words[0] == "VALUE" && c.tail(1) == "Hello   there" &&

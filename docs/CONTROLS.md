@@ -26,6 +26,12 @@ These keys must be defined for RetroFE to boot
 | `back` | Leaves current menu |
 | `quit` | Exits the frontend |
 
+The Manage screens use `up`, `down`, `left`, `right`, `select` and `back`
+too, and the theme editor (Manage > Themes > Edit) adds `pageUp` / `pageDown`
+(the previous / next region of its screen) and `letterUp` / `letterDown` (the
+previous / next widget on the canvas). See
+[THEME_EDITOR.md](THEME_EDITOR.md#with-a-controller).
+
 ### Basic Navigation
 Most users will want to use these keys to move around a build
 | Control | Description |

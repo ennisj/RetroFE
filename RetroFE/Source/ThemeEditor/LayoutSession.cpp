@@ -736,7 +736,9 @@ namespace ThemeEditor
             if (!parseLayoutText(next, work, error)) return false;
         }
         const std::string path = el.path;
-        if (!change(work.text, resize ? "" : coalesce_)) return false;
+        // A run of controller nudges (move or resize) with a key is one undo
+        // step; a mouse drag ended the run first (pointerUp), so it's its own
+        if (!change(work.text, coalesce_)) return false;
         // The box stays where it was dropped until the page is rebuilt
         g.approximate = false;
         geom_[path] = g;

@@ -339,6 +339,25 @@ namespace ThemeEditor
         return true;
     }
 
+    bool EditorSession::moveTo(int x, int y)
+    {
+        const WidgetInstance* w = selectedWidget();
+        if (!w) return false;
+        DragRect start;
+        canvasHitRect(*w, start.x, start.y, start.w, start.h);
+        const int dx = x - start.x, dy = y - start.y;
+        if (dx == 0 && dy == 0) return false;
+        beginChange(coalesce_);
+        WidgetInstance* m = selectedMutable();
+        if (m->warp) {
+            for (int i = 0; i < 4; ++i) { m->wx[i] += dx; m->wy[i] += dy; }
+        }
+        m->x += dx;
+        m->y += dy;
+        changed();
+        return true;
+    }
+
     bool EditorSession::setRect(int x, int y, int w, int h)
     {
         WidgetInstance* m = selectedMutable();

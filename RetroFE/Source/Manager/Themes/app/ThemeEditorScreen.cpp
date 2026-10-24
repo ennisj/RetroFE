@@ -139,6 +139,11 @@ ThemeEditorScreen::ThemeEditorScreen(const Context& context, const std::string& 
     // retrofe -editorScript <file>: commands to run, one per frame, the
     // first time a theme is opened in this session only
     Themes::takeEditorScript(ctx_.config, script_, scriptPath_);
+
+    // The on-screen keyboard for text fields, as for the forms
+    std::string keyboard = "yes";
+    if (ctx_.config) ctx_.config->getProperty("onScreenKeyboard", keyboard);
+    pad_.setKeyboardEnabled(Forms::isTruthy(keyboard));
 }
 
 bool Themes::takeEditorScript(Configuration* config, std::vector<EditorCommand>& commands, std::string& path)
@@ -181,10 +186,7 @@ void ThemeEditorScreen::retire()
         ctx_.config->setProperty(OPTION_LAYOUT, originalLayout_);
         layoutOverridden_ = false;
     }
-    if (navFlagsSaved_ && ImGui::GetCurrentContext()) {
-        if (savedNavKeyboard_) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        navFlagsSaved_ = false;
-    }
+    pad_.detach();
     retired_ = true;
 }
 
@@ -795,6 +797,10 @@ void ThemeEditorScreen::drawTargets()
 
 bool ThemeEditorScreen::escape()
 {
+    if (pad_.keyboardOpen()) {
+        pad_.cancelKeyboard();
+        return true;
+    }
     if (showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen()) {
         showAdd_ = showClose_ = showReport_ = showTemplate_ = showDeleteTpl_ = false;
         browser_.close();
@@ -804,7 +810,169 @@ bool ThemeEditorScreen::escape()
         session_.cancelDrag();
         return true;
     }
+    // With the controller, Escape is Back: out of Move / Resize, out of a panel
+    if (mode_ != ECM_PICK) {
+        setMode(ECM_PICK);
+        return true;
+    }
+    if (pad_.controllerActive() && pad_.region() != EF_CANVAS) {
+        pad_.setRegion(EF_CANVAS);
+        return true;
+    }
     return false;
+}
+
+// ---- RetroFE's mapped controls ------------------------------------------------------
+
+bool ThemeEditorScreen::wantsControls() const
+{
+    return !retired_;
+}
+
+void ThemeEditorScreen::controlsHeld(const ControlsHeld& held)
+{
+    pad_.held(held);
+}
+
+void ThemeEditorScreen::beforeFrame()
+{
+    pad_.beforeFrame();
+}
+
+bool ThemeEditorScreen::dialogOpen() const
+{
+    return showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen() || pad_.modalOpen();
+}
+
+void ThemeEditorScreen::control(Control control, bool repeat)
+{
+    if (retired_) return;
+    // A theme that didn't open: Select (its Close button) or Back leaves
+    if (!session_.isOpen()) {
+        if (control == Control::Back || control == Control::Select) back_ = true;
+        return;
+    }
+    // A script is driving: nobody else does
+    if (scriptAt_ < script_.size()) return;
+    repeats_ = repeat ? repeats_ + 1 : 0;
+    if (pad_.takesControl(control)) return;
+    const int press = static_cast<int>(control);
+    if (dialogOpen()) {
+        if (press >= EP_PAGE_UP) return;
+        if (pad_.press(press, EL_DIALOG) == ER_CLOSE_DIALOG) escape();
+        return;
+    }
+    if (session_.dragging()) return;   // the mouse is busy
+    if (press == EP_PAGE_UP || press == EP_PAGE_DOWN) {
+        pad_.setRegion(regionCycle(pad_.region(), press == EP_PAGE_UP ? -1 : 1));
+        return;
+    }
+    if (pad_.region() == EF_CANVAS && !pad_.listOpen()) {
+        canvasControl(press);
+        return;
+    }
+    if (press >= EP_LETTER_UP) return;
+    if (pad_.press(press, EL_PANEL) == ER_LEAVE_REGION) pad_.setRegion(EF_CANVAS);
+}
+
+void ThemeEditorScreen::setMode(EdCanvasMode mode)
+{
+    // A run of nudges is one undo step, from entering Move or Resize to leaving it
+    if (mode_ != ECM_PICK || mode != ECM_PICK) session_.endCoalesce();
+    mode_ = mode;
+    if (mode != ECM_PICK) session_.setCoalesceKey("controller");
+}
+
+void ThemeEditorScreen::canvasControl(int press)
+{
+    const ThemeProject& p = session_.project();
+    const WidgetInstance* sel = session_.selectedWidget();
+    const EdCanvasDecision d = canvasPress(mode_, press, sel != nullptr, sel != nullptr);
+    if (d.mode != mode_ && d.action != ECA_MODE) setMode(d.mode);   // the selection went away mid-move
+    int dx = 0, dy = 0;
+    pressDirection(press, dx, dy);
+    // Shift + an arrow that's a mapped direction still nudges by 10, as it did before the controller
+    const bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    if (shift && d.action == ECA_PICK && sel) {
+        session_.moveBy(dx * 10, dy * 10);
+        sinceNudge_ = 0.0f;   // a pause ends this run of nudges as one undo step (update())
+        nudging_ = true;
+        return;
+    }
+    switch (d.action) {
+    case ECA_PICK: {
+        // The visible widgets' boxes; hidden ones can't be picked, as with the mouse
+        std::vector<DragRect> rects;
+        std::vector<int> index;
+        int cur = -1;
+        const auto& widgets = session_.page().widgets;
+        for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
+            if (widgets[i].canvasHide) continue;
+            DragRect r;
+            canvasHitRect(widgets[i], r.x, r.y, r.w, r.h);
+            if (i == session_.selected()) cur = static_cast<int>(rects.size());
+            rects.push_back(r);
+            index.push_back(i);
+        }
+        const int next = pickStep(rects, cur, dx, dy, p.canvasW(), p.canvasH());
+        if (next < 0) pad_.setRegion(regionStep(EF_CANVAS, dx, dy));   // nothing that way: the panel there
+        else session_.select(index[next]);
+        break;
+    }
+    case ECA_MOVE:
+    case ECA_RESIZE: {
+        DragRect r;
+        canvasHitRect(*sel, r.x, r.y, r.w, r.h);
+        const WidgetDef* def = session_.selectedDef();
+        const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, shift ? 12 : repeats_);
+        const DragRect n = d.action == ECA_MOVE
+            ? canvasNudgeMove(r, dx, dy, step, p.canvasW(), p.canvasH())
+            : canvasNudgeResize(r, dx, dy, step, def ? def->minW : 8, def ? def->minH : 8, p.canvasW(), p.canvasH());
+        session_.setCoalesceKey("controller");
+        // As with the mouse: moving keeps a warped widget's shape, resizing makes it a plain box
+        if (d.action == ECA_MOVE) session_.moveTo(n.x, n.y);
+        else session_.setRect(n.x, n.y, n.w, n.h);
+        break;
+    }
+    case ECA_MODE:
+        setMode(d.mode);
+        break;
+    case ECA_ADD:
+        showAdd_ = true;
+        addFilter_.clear();
+        break;
+    case ECA_LEAVE_EDITOR:
+        requestClose();
+        break;
+    case ECA_PREV:
+    case ECA_NEXT: {
+        const int next = listStep(session_.selected(), static_cast<int>(session_.page().widgets.size()), d.action == ECA_PREV ? -1 : 1);
+        if (next >= 0) session_.select(next);
+        break;
+    }
+    case ECA_CANT_MOVE:
+    case ECA_NONE:
+        break;
+    }
+}
+
+std::string ThemeEditorScreen::controllerHints() const
+{
+    if (pad_.keyboardOpen()) return "";
+    if (dialogOpen()) return "Arrows: move   Select: choose   Back: close the dialog";
+    switch (pad_.region()) {
+    case EF_CANVAS:
+        if (mode_ == ECM_MOVE) return "MOVE: arrows move the widget (hold to speed up)   Select: resize instead   Back: done";
+        if (mode_ == ECM_RESIZE) return "RESIZE: arrows size the widget from its bottom-right corner   Select or Back: done";
+        return std::string("PICK: arrows choose a widget (past the last one: the panel that way)   ") +
+               (session_.selectedWidget() ? "Select: move it" : "Select: add a widget") +
+               "   Letter up/down: previous / next   Page up/down: regions   Back: leave the editor";
+    case EF_TOOLBAR:
+        return "Toolbar: arrows move   Select: press   Down: the canvas   Back: the canvas";
+    default:
+        return "Up / Down: rows   Left / Right: change a value   Select: press, or type with the on-screen keyboard   "
+               "Back: the canvas";
+    }
 }
 
 bool ThemeEditorScreen::askToLeave()
@@ -858,13 +1026,14 @@ void ThemeEditorScreen::requestClose()
 void ThemeEditorScreen::draw()
 {
     ImGuiIO& io = ImGui::GetIO();
-    // The arrow keys nudge widgets here, so ImGui's keyboard navigation is
-    // off while the editor is shown (Tab still moves between fields); retire() restores it
-    if (!navFlagsSaved_) {
-        savedNavKeyboard_ = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
-        navFlagsSaved_ = true;
-    }
-    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    // ImGui's keyboard navigation is off while the editor is shown (the arrow
+    // keys nudge widgets; Tab still moves between fields), its gamepad
+    // navigation takes RetroFE's controls; retire() puts things back
+    pad_.attach();
+    pad_.beginFrame();
+    int edgeX = 0, edgeY = 0;
+    if (pad_.takeEdge(edgeX, edgeY)) pad_.setRegion(regionStep(pad_.region(), edgeX, edgeY));
+    if (pad_.region() != EF_CANVAS && mode_ != ECM_PICK) setMode(ECM_PICK);
     const float s = ctx_.scale;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
@@ -888,7 +1057,9 @@ void ThemeEditorScreen::draw()
         return;
     }
 
+    pad_.beginRegion(EF_TOOLBAR, "##toolbar", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
     drawToolbar();
+    ImGui::EndChild();
 
     // Nobody should wonder why the theme is changing by itself
     if (scriptAt_ < script_.size()) {
@@ -907,7 +1078,7 @@ void ThemeEditorScreen::draw()
     const float statusH = ImGui::GetTextLineHeightWithSpacing() * 3.2f;
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
-    ImGui::BeginChild("##theme", ImVec2(sideW, avail.y), ImGuiChildFlags_Borders);
+    pad_.beginRegion(EF_THEME, "##theme", ImVec2(sideW, avail.y), ImGuiChildFlags_Borders);
     drawThemePanel();
     ImGui::EndChild();
 
@@ -915,19 +1086,24 @@ void ThemeEditorScreen::draw()
     float canvasW = std::max(100.0f, avail.x - sideW - propsW - ImGui::GetStyle().ItemSpacing.x * 2.0f);
     ImGui::BeginChild("##canvasColumn", ImVec2(canvasW, avail.y), ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::BeginChild("##canvas", ImVec2(canvasW, avail.y - statusH), ImGuiChildFlags_Borders,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    pad_.beginRegion(EF_CANVAS, "##canvas", ImVec2(canvasW, avail.y - statusH), ImGuiChildFlags_Borders,
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     drawCanvas();
     ImGui::EndChild();
 
     // Status, then what the generator and the engine said about the page
     ImGui::BeginChild("##status", ImVec2(canvasW, 0), ImGuiChildFlags_None);
+    if (pad_.controllerActive() && !controllerHints().empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.77f, 0.16f, 1.0f));
+        ImGui::TextWrapped("%s", controllerHints().c_str());
+        ImGui::PopStyleColor();
+    }
     if (!status_.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
         ImGui::TextWrapped("%s", status_.c_str());
         ImGui::PopStyleColor();
     }
-    else {
+    else if (!pad_.controllerActive()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TextWrapped("Drag to move, drag a handle to resize, click again to pick the widget underneath. "
                            "Arrows nudge (Shift: 10), Delete removes, Ctrl+Z / Ctrl+Y undo and redo, Ctrl+S saves.");
@@ -939,11 +1115,12 @@ void ThemeEditorScreen::draw()
     ImGui::EndChild();
 
     ImGui::SameLine();
-    ImGui::BeginChild("##props", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
+    pad_.beginRegion(EF_PROPS, "##props", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
     drawProperties();
     ImGui::EndChild();
 
     drawPopups();
+    pad_.endFrame(ctx_.scale);
     ImGui::End();
 }
 
@@ -995,12 +1172,24 @@ void ThemeEditorScreen::drawToolbar()
     ImGui::TextDisabled("Preview with:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f * ctx_.scale);
-    if (ImGui::BeginCombo("##previewCollection", previewName_.c_str())) {
+    const bool open = ImGui::BeginCombo("##previewCollection", previewName_.c_str());
+    // Left / Right: the previous / next collection
+    if (const int step = open ? 0 : pad_.choice("Preview with")) {
+        auto at = std::find(collections_.begin(), collections_.end(), previewName_);
+        const int next = choiceStep(at == collections_.end() ? -1 : static_cast<int>(at - collections_.begin()),
+                                    static_cast<int>(collections_.size()), step);
+        if (next >= 0) {
+            previewName_ = collections_[next];
+            previewDirty_ = true;
+        }
+    }
+    if (open) {
         for (const std::string& name : collections_) {
             if (ImGui::Selectable(name.c_str(), name == previewName_)) {
                 previewName_ = name;
                 previewDirty_ = true;
             }
+            if (name == previewName_) ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
@@ -1012,11 +1201,13 @@ void ThemeEditorScreen::drawThemePanel()
     ImGui::SeparatorText("Theme");
     std::string name = p.name;
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##themeName", &name)) {
+    const bool typed = ImGui::InputText("##themeName", &name);
+    const bool keyboard = pad_.text("Theme name", name);
+    if (typed || keyboard) {
         session_.setCoalesceKey("themeName");
         session_.setThemeName(name);
     }
-    if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+    if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
     int vertical = p.vertical ? 1 : 0;
     if (ImGui::RadioButton("Landscape", &vertical, 0)) session_.setVertical(false);
     ImGui::SameLine();
@@ -1030,13 +1221,19 @@ void ThemeEditorScreen::drawThemePanel()
         }
     };
     unfold("fonts");
-    if (ImGui::CollapsingHeader("Font and sounds")) drawThemeProperties();
+    const bool fonts = ImGui::CollapsingHeader("Font and sounds");
+    pad_.node();
+    if (fonts) drawThemeProperties();
     unfold("splash");
-    if (ImGui::CollapsingHeader("Splash")) drawSplash();
+    const bool splash = ImGui::CollapsingHeader("Splash");
+    pad_.node();
+    if (splash) drawSplash();
     drawPages();
     if (openSection_ == "collections") ImGui::SetScrollHereY(0.0f);   // and scrolled to
     unfold("collections");
-    if (ImGui::CollapsingHeader("Collections", ImGuiTreeNodeFlags_DefaultOpen)) drawCollections();
+    const bool collections = ImGui::CollapsingHeader("Collections", ImGuiTreeNodeFlags_DefaultOpen);
+    pad_.node();
+    if (collections) drawCollections();
 
     ImGui::SeparatorText("Widgets on this page");
     const auto& widgets = session_.page().widgets;
@@ -1105,7 +1302,16 @@ void ThemeEditorScreen::drawThemeProperties()
     ImGui::TextUnformatted("Font");
     ImGui::SameLine(ImGui::GetFontSize() * 6.0f);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - import);
-    if (ImGui::BeginCombo("##font", current.c_str())) {
+    const bool open = ImGui::BeginCombo("##font", current.c_str());
+    if (const int step = open ? 0 : pad_.choice("Font")) {
+        // The bundled font, then the theme's own
+        std::vector<std::string> all = { "" };
+        all.insert(all.end(), fonts_.begin(), fonts_.end());
+        auto at = std::find(all.begin(), all.end(), p.font);
+        const int next = choiceStep(at == all.end() ? -1 : static_cast<int>(at - all.begin()), static_cast<int>(all.size()), step);
+        if (next >= 0) session_.setThemeFont(all[next]);
+    }
+    if (open) {
         if (ImGui::Selectable("Roboto (bundled)##bundled", p.font.empty())) session_.setThemeFont("");
         for (const std::string& font : fonts_) {
             if (ImGui::Selectable((fs::path(font).stem().string() + "##" + font).c_str(), font == p.font)) session_.setThemeFont(font);
@@ -1147,11 +1353,13 @@ void ThemeEditorScreen::drawSplash()
     ImGui::TextUnformatted("Text");
     ImGui::SameLine(ImGui::GetFontSize() * 6.0f);
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##splashText", &text)) {
+    const bool typed = ImGui::InputText("##splashText", &text);
+    const bool keyboard = pad_.text("Splash text", text);
+    if (typed || keyboard) {
         session_.setCoalesceKey("splashText");
         session_.setSplashText(text);
     }
-    if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+    if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
     FileRequest request;
     request.what = FileFor::SplashBackground;
     request.filter = "media";
@@ -1209,11 +1417,13 @@ void ThemeEditorScreen::drawPages()
     ImGui::TextUnformatted("Name");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##tplName", &name)) {
+    const bool typed = ImGui::InputText("##tplName", &name);
+    const bool keyboard = pad_.text("Template name", name);
+    if (typed || keyboard) {
         session_.setCoalesceKey("tplName");
         session_.renameTemplate(primary, name);
     }
-    if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+    if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
 
     // Its collections
     ImGui::TextDisabled(primary == MENUS_TEMPLATE ? "Used for every menu without a page of its own, and:" : "Used for:");
@@ -1241,8 +1451,10 @@ void ThemeEditorScreen::drawPages()
     // More collections: the ones not on it already
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::BeginCombo("##addCollection", "Add a collection...", ImGuiComboFlags_HeightLarge)) {
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        // Typing filters straight away; with the controller the list comes first
+        if (ImGui::IsWindowAppearing() && !pad_.controllerActive()) ImGui::SetKeyboardFocusHere();
         ImGui::InputTextWithHint("##addFilter", "Filter", &tplFilter_);
+        pad_.text("Filter collections", tplFilter_);
         const std::string filter = Utils::toLower(tplFilter_);
         std::set<std::string> listed;
         for (const TreeRow& row : tree_) {
@@ -1294,6 +1506,7 @@ void ThemeEditorScreen::drawCollections()
     ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputTextWithHint("##treeFilter", "Filter collections", &treeFilter_);
+    pad_.text("Filter collections", treeFilter_);
     const std::string filter = Utils::toLower(treeFilter_);
     std::vector<int> rows;
     for (int i = 0; i < static_cast<int>(tree_.size()); ++i) {
@@ -1302,7 +1515,8 @@ void ThemeEditorScreen::drawCollections()
     }
     const float line = ImGui::GetTextLineHeightWithSpacing();
     const float height = line * std::min(12.0f, std::max(3.0f, static_cast<float>(rows.size()))) + ImGui::GetStyle().WindowPadding.y;
-    ImGui::BeginChild("##tree", ImVec2(0, height), ImGuiChildFlags_Borders);
+    // NavFlattened: the controller moves into the list like any other rows
+    ImGui::BeginChild("##tree", ImVec2(0, height), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(rows.size()), line);
     while (clipper.Step()) {
@@ -1377,10 +1591,12 @@ void ThemeEditorScreen::drawCanvas()
     }
     dl->AddRect(a, b, IM_COL32(90, 90, 100, 255));
 
-    // Input: the whole canvas is one button
+    // Input: the whole canvas is one button, for the mouse (the controller has its own modes)
     ImGui::SetCursorScreenPos(origin);
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
     ImGui::InvisibleButton("##canvasInput", size, ImGuiButtonFlags_MouseButtonLeft);
-    const bool hovered = ImGui::IsItemHovered();
+    ImGui::PopItemFlag();
+    const bool hovered = ImGui::IsItemHovered() && !pad_.keyboardOpen();
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const float sx = mouse.x - origin.x, sy = mouse.y - origin.y;
     const float grab = 6.0f * ctx_.scale;
@@ -1390,9 +1606,11 @@ void ThemeEditorScreen::drawCanvas()
         else session_.pointerUp();
     }
 
-    // Keyboard, while the canvas has focus and no field is being typed in
+    // Keyboard, while the canvas has focus and no field is being typed in. An
+    // arrow that's also a mapped direction acts as the controller's (Pick,
+    // Move, Resize), not twice.
     ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsWindowFocused() && !io.WantTextInput) {
+    if (ImGui::IsWindowFocused() && !io.WantTextInput && !pad_.directionHeld() && !pad_.keyboardOpen()) {
         int step = io.KeyShift ? 10 : 1;
         int dx = 0, dy = 0;
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) dx -= step;
@@ -1406,7 +1624,7 @@ void ThemeEditorScreen::drawCanvas()
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Delete)) session_.removeSelected();
     }
-    if (!io.WantTextInput && io.KeyCtrl) {
+    if (!io.WantTextInput && io.KeyCtrl && !pad_.keyboardOpen()) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) io.KeyShift ? session_.redo() : session_.undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) session_.redo();
         if (ImGui::IsKeyPressed(ImGuiKey_S, false)) job_ = Job::Save;
@@ -1438,17 +1656,24 @@ void ThemeEditorScreen::drawCanvas()
         ImVec2 p1 = toStage(static_cast<float>(r.x), static_cast<float>(r.y));
         ImVec2 p2 = toStage(static_cast<float>(r.x + r.w), static_cast<float>(r.y + r.h));
         dl->AddRectFilled(p1, p2, colourOf(def ? def->color : "", 40));
-        dl->AddRect(p1, p2, colourOf(def ? def->color : "", 255), 0.0f, 0, 2.0f);
+        // The controller's Move and Resize modes show in the outline
+        const ImU32 modeColour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255) : 0;
+        dl->AddRect(p1, p2, modeColour ? modeColour : colourOf(def ? def->color : "", 255), 0.0f, 0, modeColour ? 3.0f * ctx_.scale : 2.0f);
         for (int hnd = 0; hnd < 8; ++hnd) {
             float hx, hy;
             handlePoint(r, hnd, hx, hy);
             ImVec2 c = toStage(hx, hy);
-            float hs = 4.0f * ctx_.scale;
-            dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), IM_COL32(255, 255, 255, 255));
+            // Resize nudges move the bottom-right corner
+            float hs = (mode_ == ECM_RESIZE && hnd == CH_SE ? 7.0f : 4.0f) * ctx_.scale;
+            dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs),
+                              mode_ == ECM_RESIZE && hnd == CH_SE ? modeColour : IM_COL32(255, 255, 255, 255));
             dl->AddRect(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), IM_COL32(0, 0, 0, 255));
         }
         std::string label = sel->name;
-        if (session_.dragMoved()) {
+        if (mode_ != ECM_PICK) {
+            label += "  " + std::to_string(r.x) + ", " + std::to_string(r.y) + "  " + std::to_string(r.w) + " x " + std::to_string(r.h);
+        }
+        else if (session_.dragMoved()) {
             label += "  " + std::to_string(r.x) + ", " + std::to_string(r.y) + "  " + std::to_string(r.w) + " x " + std::to_string(r.h);
         }
         ImVec2 ts = ImGui::CalcTextSize(label.c_str());
@@ -1468,6 +1693,18 @@ void ThemeEditorScreen::drawCanvas()
     }
     if (hovered && hoveredWidget >= 0 && !session_.dragging() && hoveredWidget != session_.selected()) {
         ImGui::SetTooltip("%s", widgets[hoveredWidget].name.c_str());
+    }
+    // The controller's mode, while the canvas has its focus
+    if (pad_.region() == EF_CANVAS && (pad_.controllerActive() || mode_ != ECM_PICK)) {
+        const char* text = mode_ == ECM_MOVE ? "MOVE" : mode_ == ECM_RESIZE ? "RESIZE" : "PICK";
+        const ImU32 colour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255)
+                                                                                                   : IM_COL32(255, 196, 40, 255);
+        const ImVec2 ts = ImGui::CalcTextSize(text);
+        const float pad = 6.0f * ctx_.scale;
+        const ImVec2 at(origin.x + pad, origin.y + pad);
+        dl->AddRectFilled(at, ImVec2(at.x + ts.x + pad * 2.0f, at.y + ts.y + pad), IM_COL32(0, 0, 0, 200), 4.0f * ctx_.scale);
+        dl->AddRect(at, ImVec2(at.x + ts.x + pad * 2.0f, at.y + ts.y + pad), colour, 4.0f * ctx_.scale);
+        dl->AddText(ImVec2(at.x + pad, at.y + pad * 0.5f), colour, text);
     }
     dl->PopClipRect();
 }
@@ -1494,25 +1731,44 @@ void ThemeEditorScreen::drawProperties()
     };
 
     std::string name = w->name;
-    if (ImGui::InputText("Name", &name)) { session_.setCoalesceKey("name"); session_.setName(name); }
+    const bool typedName = ImGui::InputText("Name", &name);
+    const bool keyboardName = pad_.text("Name", name);
+    if (typedName || keyboardName) { session_.setCoalesceKey("name"); session_.setName(name); }
+    if (keyboardName) session_.endCoalesce();
     endEdit();
 
+    // The controller steps each by the snap grid (Left / Right) or types one
+    // (Select). The pad registers the item just drawn, so it's called after it.
     int rect[4] = { w->x, w->y, w->w, w->h };
-    if (ImGui::InputInt("X", &rect[0], 5, 50)) { session_.setCoalesceKey("x"); session_.setRect(rect[0], rect[1], rect[2], rect[3]); }
-    endEdit();
-    if (ImGui::InputInt("Y", &rect[1], 5, 50)) { session_.setCoalesceKey("y"); session_.setRect(rect[0], rect[1], rect[2], rect[3]); }
-    endEdit();
-    if (ImGui::InputInt("Width", &rect[2], 5, 50)) { session_.setCoalesceKey("w"); session_.setRect(rect[0], rect[1], rect[2], rect[3]); }
-    endEdit();
-    if (ImGui::InputInt("Height", &rect[3], 5, 50)) { session_.setCoalesceKey("h"); session_.setRect(rect[0], rect[1], rect[2], rect[3]); }
-    endEdit();
+    const int big = 100000;
+    const char* const rectNames[4] = { "X", "Y", "Width", "Height" };
+    const char* const rectKeys[4] = { "x", "y", "w", "h" };
+    for (int i = 0; i < 4; ++i) {
+        bool changed = ImGui::InputInt(rectNames[i], &rect[i], 5, 50);
+        changed = pad_.number(rectNames[i], rect[i], 5, i < 2 ? -big : 1, big) || changed;
+        if (changed) {
+            session_.setCoalesceKey(rectKeys[i]);
+            session_.setRect(rect[0], rect[1], rect[2], rect[3]);
+        }
+        endEdit();
+    }
 
     int layer = w->layer;
-    if (ImGui::SliderInt("Layer", &layer, 0, MAX_LAYER)) { session_.setCoalesceKey("layer"); session_.setLayer(layer); }
+    bool layerChanged = ImGui::SliderInt("Layer", &layer, 0, MAX_LAYER);
+    layerChanged = pad_.number("Layer", layer, 1, 0, MAX_LAYER) || layerChanged;
+    if (layerChanged) {
+        session_.setCoalesceKey("layer");
+        session_.setLayer(layer);
+    }
     endEdit();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 is drawn first, 19 on top");
     int alpha = w->alphaPct;
-    if (ImGui::SliderInt("Opacity %", &alpha, 0, 100)) { session_.setCoalesceKey("alpha"); session_.setAlpha(alpha); }
+    bool alphaChanged = ImGui::SliderInt("Opacity %", &alpha, 0, 100);
+    alphaChanged = pad_.number("Opacity %", alpha, 5, 0, 100) || alphaChanged;
+    if (alphaChanged) {
+        session_.setCoalesceKey("alpha");
+        session_.setAlpha(alpha);
+    }
     endEdit();
 
     if (def && usesFontColour(*def)) {
@@ -1523,6 +1779,13 @@ void ThemeEditorScreen::drawProperties()
             session_.setFontColor(floatsToHex(rgb));
         }
         endEdit();
+        // The controller types the colour as RRGGBB
+        std::string hex = w->fontColor;
+        if (pad_.text("Text colour (RRGGBB)", hex)) {
+            const std::string colour = normalizeColour(hex);
+            if (!colour.empty() || hex.empty()) session_.setFontColor(colour);
+            else setStatus("Not a colour: " + hex + " (six hex digits, like FFAA00).", true);
+        }
         ImGui::SameLine();
         if (w->fontColor.empty()) ImGui::TextDisabled("(theme's)");
         else if (ImGui::SmallButton("Clear##fontColor")) session_.setFontColor("");
@@ -1564,11 +1827,22 @@ void ThemeEditorScreen::drawVar(const WidgetVar& var)
     }
     case VarKind::Choice: {
         std::string shown = value.empty() ? "(none)" : value;
-        if (ImGui::BeginCombo(label, shown.c_str())) {
+        const bool open = ImGui::BeginCombo(label, shown.c_str());
+        // Left / Right: the previous / next option
+        if (const int step = open ? 0 : pad_.choice(label)) {
+            int cur = -1;
+            for (size_t i = 0; i < var.options.size(); ++i) {
+                if ((var.options[i] == "-" ? std::string() : var.options[i]) == value) cur = static_cast<int>(i);
+            }
+            const int next = choiceStep(cur, static_cast<int>(var.options.size()), step);
+            if (next >= 0) session_.setVar(var.token, var.options[next] == "-" ? std::string() : var.options[next]);
+        }
+        if (open) {
             for (const std::string& option : var.options) {
                 std::string optionValue = option == "-" ? std::string() : option;
                 std::string optionLabel = optionValue.empty() ? "(none)" : optionValue;
                 if (ImGui::Selectable(optionLabel.c_str(), optionValue == value)) session_.setVar(var.token, optionValue);
+                if (optionValue == value) ImGui::SetItemDefaultFocus();
             }
             ImGui::EndCombo();
         }
@@ -1576,7 +1850,9 @@ void ThemeEditorScreen::drawVar(const WidgetVar& var)
     }
     case VarKind::Number: {
         double number = value.empty() ? 0.0 : std::atof(value.c_str());
-        if (ImGui::InputDouble(label, &number, var.step, var.step * 10.0, "%g")) {
+        const bool typed = ImGui::InputDouble(label, &number, var.step, var.step * 10.0, "%g");
+        const bool pad = pad_.number(label, number, var.step > 0.0 ? var.step : 1.0);
+        if (typed || pad) {
             char buffer[32];
             std::snprintf(buffer, sizeof(buffer), "%g", number);
             session_.setCoalesceKey("var");
@@ -1597,6 +1873,13 @@ void ThemeEditorScreen::drawVar(const WidgetVar& var)
             session_.setVar(var.token, floatsToHex(rgb));
         }
         if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+        // The controller types it as RRGGBB
+        std::string hex = value;
+        if (pad_.text((var.name + " (RRGGBB)").c_str(), hex)) {
+            const std::string colour = normalizeColour(hex);
+            if (!colour.empty() || hex.empty()) session_.setVar(var.token, colour);
+            else setStatus("Not a colour: " + hex + " (six hex digits, like FFAA00).", true);
+        }
         ImGui::SameLine();
         if (value.empty()) ImGui::TextDisabled("(auto)");
         else if (ImGui::SmallButton("Clear")) session_.setVar(var.token, "");
@@ -1606,8 +1889,10 @@ void ThemeEditorScreen::drawVar(const WidgetVar& var)
         std::string text = value;
         float button = ImGui::CalcTextSize("Choose...").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
         ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - button);
-        if (ImGui::InputText("##file", &text)) { session_.setCoalesceKey("var"); session_.setVar(var.token, text); }
-        if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+        const bool typed = ImGui::InputText("##file", &text);
+        const bool keyboard = pad_.text(label, text);
+        if (typed || keyboard) { session_.setCoalesceKey("var"); session_.setVar(var.token, text); }
+        if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
         ImGui::SameLine();
         if (ImGui::Button("Choose...")) openBrowser(varRequest(var.token));
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("The file is copied into the theme's assets folder");
@@ -1622,17 +1907,21 @@ void ThemeEditorScreen::drawVar(const WidgetVar& var)
     }
     case VarKind::Raw: {
         std::string text = value;
-        if (ImGui::InputTextMultiline(label, &text, ImVec2(0, ImGui::GetTextLineHeight() * 4.0f))) {
+        const bool typed = ImGui::InputTextMultiline(label, &text, ImVec2(0, ImGui::GetTextLineHeight() * 4.0f));
+        const bool keyboard = pad_.text(label, text, true);
+        if (typed || keyboard) {
             session_.setCoalesceKey("var");
             session_.setVar(var.token, text);
         }
-        if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+        if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
         break;
     }
     case VarKind::Text: {
         std::string text = value;
-        if (ImGui::InputText(label, &text)) { session_.setCoalesceKey("var"); session_.setVar(var.token, text); }
-        if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+        const bool typed = ImGui::InputText(label, &text);
+        const bool keyboard = pad_.text(label, text);
+        if (typed || keyboard) { session_.setCoalesceKey("var"); session_.setVar(var.token, text); }
+        if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
         break;
     }
     }
@@ -1667,13 +1956,16 @@ void ThemeEditorScreen::drawAddWidget()
         return;
     }
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    // Typing searches straight away; with the controller the list comes first
+    // (Select on the search field types with the on-screen keyboard)
+    if (ImGui::IsWindowAppearing() && !pad_.controllerActive()) ImGui::SetKeyboardFocusHere();
     // Enter adds the first widget the search finds, so it works from the keyboard
     bool addFirst = ImGui::InputTextWithHint("##filter", "Search widgets, Enter adds the first", &addFilter_,
                                              ImGuiInputTextFlags_EnterReturnsTrue);
+    pad_.text("Search widgets", addFilter_);
     std::string filter = Utils::toLower(addFilter_);
 
-    ImGui::BeginChild("##defs", ImVec2(0, 0), ImGuiChildFlags_None);
+    ImGui::BeginChild("##defs", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
     static const std::pair<const char*, const char*> categories[] = {
         { "menu", "Wheels and menus" }, { "media", "Art and video" }, { "text", "Text" }, { "static", "Fixed images, video and text" }
     };
@@ -1759,8 +2051,9 @@ void ThemeEditorScreen::drawTemplateDialog()
         const std::string shown = tplCollection_.empty() ? std::string("Choose...") :
                                   tplCollection_ == MENUS_TEMPLATE ? std::string("_menu (every menu)") : tplCollection_;
         if (ImGui::BeginCombo("##tplCollection", shown.c_str(), ImGuiComboFlags_HeightLarge)) {
-            if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+            if (ImGui::IsWindowAppearing() && !pad_.controllerActive()) ImGui::SetKeyboardFocusHere();
             ImGui::InputTextWithHint("##tplFilter", "Filter", &tplFilter_);
+            pad_.text("Filter collections", tplFilter_);
             const std::string filter = Utils::toLower(tplFilter_);
             if (filter.empty() && ImGui::Selectable("_menu (every menu of collections without a page of its own)", tplCollection_ == MENUS_TEMPLATE)) {
                 tplCollection_ = MENUS_TEMPLATE;
@@ -1804,6 +2097,7 @@ void ThemeEditorScreen::drawTemplateDialog()
         ImGui::SameLine(ImGui::GetFontSize() * 5.0f);
         ImGui::SetNextItemWidth(260.0f * ctx_.scale);
         ImGui::InputText("##tplNewName", &tplName_);
+        pad_.text("Template name", tplName_);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Based on");
         ImGui::SameLine(ImGui::GetFontSize() * 5.0f);
@@ -1951,6 +2245,7 @@ void ThemeEditorScreen::drawDeleteTemplate()
         showDeleteTpl_ = false;
         ImGui::CloseCurrentPopup();
     }
+    ImGui::SetItemDefaultFocus();   // the controller starts on Cancel
     ImGui::EndPopup();
 }
 
@@ -1980,7 +2275,8 @@ void ThemeEditorScreen::drawPopups()
                 ImGui::TextWrapped("%s", warning.c_str());
             }
         }
-        if (ImGui::Button("OK (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+        // Enter answers from the keyboard, unless it's the mapped Select (which presses the focused button)
+        if (ImGui::Button("OK (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld())) {
             showReport_ = false;
             ImGui::CloseCurrentPopup();
         }
@@ -1992,14 +2288,16 @@ void ThemeEditorScreen::drawPopups()
     if (ImGui::BeginPopupModal("Unsaved changes", &showClose_, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!showClose_) ImGui::CloseCurrentPopup();
         ImGui::Text("Save the changes to %s?", session_.project().name.c_str());
-        // Keyboard answers too: ImGui's keyboard navigation is off in the editor
-        if (ImGui::Button("Save (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+        // Keyboard answers too (ImGui's keyboard navigation is off in the editor),
+        // but not a key that's a mapped control: the controller presses the focused button
+        const bool keys = !pad_.selectHeld() && !pad_.controllerActive();
+        if (ImGui::Button("Save (Enter)") || (keys && ImGui::IsKeyPressed(ImGuiKey_Enter, false))) {
             job_ = Job::SaveAndClose;
             showClose_ = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Don't save (D)") || ImGui::IsKeyPressed(ImGuiKey_D, false)) {
+        if (ImGui::Button("Don't save (D)") || (keys && ImGui::IsKeyPressed(ImGuiKey_D, false))) {
             leaveWithoutSaving_ = true;
             back_ = true;
             showClose_ = false;

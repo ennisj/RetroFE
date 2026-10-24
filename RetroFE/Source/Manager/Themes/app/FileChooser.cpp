@@ -129,6 +129,7 @@ namespace Themes
         ImGui::TextDisabled("%s", where.empty() || where == "." ? "(the RetroFE folder)" : where.c_str());
 
         // Listed once per folder, not every frame
+        const bool relisted = !listed_;
         if (!listed_) {
             listed_ = true;
             entries_.clear();
@@ -155,21 +156,31 @@ namespace Themes
         }
 
         const float buttonsH = ImGui::GetFrameHeightWithSpacing() * 1.6f;
-        ImGui::BeginChild("##files", ImVec2(0, -buttonsH), ImGuiChildFlags_Borders);
+        // NavFlattened: a controller moves into the list like any other rows
+        ImGui::BeginChild("##files", ImVec2(0, -buttonsH), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
         bool choose = false;
         fs::path enter;
+        // A new folder starts at its top; the controller's focus goes to its first entry when it was in the list
+        const bool focusFirst = relisted && focusList_;
+        if (relisted) ImGui::SetScrollY(0.0f);
+        focusList_ = false;
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(entries_.size()));
         while (clipper.Step()) {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
                 const auto& entry = entries_[i];
                 ImGui::PushID(i);
+                if (i == 0 && focusFirst) ImGui::SetKeyboardFocusHere();
                 if (entry.second) {
-                    if (ImGui::Selectable(("[" + entry.first + "]").c_str())) enter = dir_ / entry.first;
+                    if (ImGui::Selectable(("[" + entry.first + "]").c_str())) {
+                        enter = dir_ / entry.first;
+                        focusList_ = !ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+                    }
                 }
                 else if (ImGui::Selectable(entry.first.c_str(), selected_ == entry.first, ImGuiSelectableFlags_AllowDoubleClick)) {
                     selected_ = entry.first;
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) choose = true;
+                    // A double click chooses it, as does Select on a controller (no mouse involved)
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || !ImGui::IsMouseReleased(ImGuiMouseButton_Left)) choose = true;
                 }
                 ImGui::PopID();
             }

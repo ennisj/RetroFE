@@ -18,12 +18,6 @@
 #include <algorithm>
 #include <cstddef>
 
-namespace
-{
-    // The font atlas only has ASCII, so the keys stay ASCII too
-    std::vector<KeyboardWidget::Key> keyRow(const std::string& characters);
-}
-
 KeyboardWidget::KeyboardWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor)
     : Component(p)
     , painter_(p, font, focusFont)
@@ -41,12 +35,7 @@ void KeyboardWidget::attach(Forms::TextEdit* text, const std::string& title, boo
 {
     text_ = text;
     title_ = title;
-    numeric_ = numeric;
-    multiline_ = multiline && !numeric;
-    shift_ = false;
-    // Start on the first row of letters, or on 1 for numbers
-    row_ = numeric ? 0 : 1;
-    column_ = 0;
+    keys_.reset(numeric, multiline);
 }
 
 void KeyboardWidget::detach()
@@ -54,148 +43,22 @@ void KeyboardWidget::detach()
     text_ = nullptr;
 }
 
-const std::vector<std::vector<KeyboardWidget::Key>>& KeyboardWidget::keys() const
-{
-    static const std::vector<Key> bottom = {
-        { "Shift", Action::Shift, 2 }, { "Space", Action::Space, 4 }, { "Del", Action::Delete, 2 }, { "Done", Action::Done, 2 }
-    };
-    // Covers what names and paths need: \ / : . - _ ' and more under Shift
-    static const std::vector<std::vector<Key>> lower = {
-        keyRow("1234567890"), keyRow("qwertyuiop"), keyRow("asdfghjkl-"), keyRow("zxcvbnm./\\"), bottom
-    };
-    static const std::vector<std::vector<Key>> upper = {
-        keyRow("!@$%&()_+="), keyRow("QWERTYUIOP"), keyRow("ASDFGHJKL'"), keyRow("ZXCVBNM,:\""), bottom
-    };
-    static const std::vector<std::vector<Key>> numbers = {
-        keyRow("123"), keyRow("456"), keyRow("789"),
-        { { "-", Action::Insert, 1 }, { "0", Action::Insert, 1 }, { "Del", Action::Delete, 1 } },
-        { { "Done", Action::Done, 3 } }
-    };
-    // Multi-line text: cursor keys above, and a New line key; Done still finishes
-    static const std::vector<Key> cursorKeys = {
-        { "<-", Action::CursorLeft, 2 }, { "->", Action::CursorRight, 2 },
-        { "Line up", Action::LineUp, 3 }, { "Line down", Action::LineDown, 3 }
-    };
-    static const std::vector<Key> multilineBottom = {
-        { "Shift", Action::Shift, 2 }, { "Space", Action::Space, 2 }, { "New line", Action::NewLine, 2 },
-        { "Del", Action::Delete, 2 }, { "Done", Action::Done, 2 }
-    };
-    static const std::vector<std::vector<Key>> lowerLines = {
-        keyRow("1234567890"), keyRow("qwertyuiop"), keyRow("asdfghjkl-"), keyRow("zxcvbnm./\\"), cursorKeys, multilineBottom
-    };
-    static const std::vector<std::vector<Key>> upperLines = {
-        keyRow("!@$%&()_+="), keyRow("QWERTYUIOP"), keyRow("ASDFGHJKL'"), keyRow("ZXCVBNM,:\""), cursorKeys, multilineBottom
-    };
-    if (numeric_) {
-        return numbers;
-    }
-    if (multiline_) {
-        return shift_ ? upperLines : lowerLines;
-    }
-    return shift_ ? upper : lower;
-}
-
-void KeyboardWidget::clampFocus()
-{
-    const auto& rows = keys();
-    row_ = std::clamp(row_, 0, static_cast<int>(rows.size()) - 1);
-    column_ = std::clamp(column_, 0, static_cast<int>(rows[row_].size()) - 1);
-}
-
 KeyboardWidget::Result KeyboardWidget::navigate(FormWidget::Nav nav)
 {
     if (!text_) {
         return Result::Cancel;
     }
-    const auto& rows = keys();
-    clampFocus();
-    int rowCount = static_cast<int>(rows.size());
-    int columnCount = static_cast<int>(rows[row_].size());
-
+    using KNav = Forms::KeyboardKeys::Nav;
+    KNav k = KNav::Back;
     switch (nav) {
-    case FormWidget::Nav::Left:
-        column_ = (column_ - 1 + columnCount) % columnCount;
-        break;
-    case FormWidget::Nav::Right:
-        column_ = (column_ + 1) % columnCount;
-        break;
-    case FormWidget::Nav::Up:
-    case FormWidget::Nav::Down: {
-        // Move to the key above or below the middle of the current one
-        float middle = 0.0f;
-        for (int i = 0; i < column_; i++) {
-            middle += rows[row_][i].units;
-        }
-        middle += rows[row_][column_].units / 2.0f;
-        int rowsUnits = 0;
-        for (const Key& key : rows[row_]) {
-            rowsUnits += key.units;
-        }
-        float position = middle / rowsUnits;
-
-        row_ = (row_ + (nav == FormWidget::Nav::Down ? 1 : -1) + rowCount) % rowCount;
-        int targetUnits = 0;
-        for (const Key& key : rows[row_]) {
-            targetUnits += key.units;
-        }
-        float target = position * targetUnits;
-        float start = 0.0f;
-        column_ = static_cast<int>(rows[row_].size()) - 1;
-        for (size_t i = 0; i < rows[row_].size(); i++) {
-            if (target < start + rows[row_][i].units) {
-                column_ = static_cast<int>(i);
-                break;
-            }
-            start += rows[row_][i].units;
-        }
-        break;
+    case FormWidget::Nav::Up: k = KNav::Up; break;
+    case FormWidget::Nav::Down: k = KNav::Down; break;
+    case FormWidget::Nav::Left: k = KNav::Left; break;
+    case FormWidget::Nav::Right: k = KNav::Right; break;
+    case FormWidget::Nav::Select: k = KNav::Select; break;
+    case FormWidget::Nav::Back: k = KNav::Back; break;
     }
-    case FormWidget::Nav::Select: {
-        const Key& key = rows[row_][column_];
-        if (key.action == Action::Done) {
-            return Result::Done;
-        }
-        if (key.action == Action::LineUp || key.action == Action::LineDown) {
-            return key.action == Action::LineUp ? Result::LineUp : Result::LineDown;
-        }
-        press(key);
-        break;
-    }
-    case FormWidget::Nav::Back:
-        return Result::Cancel;
-    }
-    return Result::None;
-}
-
-void KeyboardWidget::press(const Key& key)
-{
-    switch (key.action) {
-    case Action::Insert:
-        text_->insert(key.label);
-        break;
-    case Action::Space:
-        text_->insert(" ");
-        break;
-    case Action::NewLine:
-        text_->insert("\n");
-        break;
-    case Action::Delete:
-        text_->backspace();   // the whole UTF-8 character before the cursor
-        break;
-    case Action::CursorLeft:
-        text_->left();
-        break;
-    case Action::CursorRight:
-        text_->right();
-        break;
-    case Action::Shift:
-        shift_ = !shift_;
-        break;
-    case Action::Done:
-    case Action::LineUp:
-    case Action::LineDown:
-        break;
-    }
+    return keys_.navigate(k, *text_);
 }
 
 void KeyboardWidget::allocateGraphicsMemory()
@@ -236,7 +99,7 @@ void KeyboardWidget::draw()
         return;
     }
     painter_.begin(baseViewInfo);
-    clampFocus();
+    keys_.clampFocus();
 
     const float size = fontSize();
     const float padding = size * 0.6f;
@@ -259,7 +122,7 @@ void KeyboardWidget::draw()
     size_t lineEnd = text.find('\n', cursor);
     lineEnd = lineEnd == std::string::npos ? text.size() : lineEnd;
     std::string title = title_;
-    if (multiline_) {
+    if (keys_.multiline()) {
         size_t line = static_cast<size_t>(std::count(text.begin(), text.begin() + static_cast<std::ptrdiff_t>(cursor), '\n')) + 1;
         size_t lines = static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) + 1;
         title += "  (line " + std::to_string(line) + " of " + std::to_string(lines) + ")";
@@ -279,7 +142,7 @@ void KeyboardWidget::draw()
 
     // The keys fill what's left above the hints
     const float hintsHeight = style_.showHints ? size * 1.4f : 0.0f;
-    const auto& rows = keys();
+    const auto& rows = keys_.rows();
     const float spacing = style_.keySpacing > 0 ? style_.keySpacing : size * 0.25f;
     const float gridHeight = top + height - y - hintsHeight;
     const float keyHeight = (gridHeight - spacing * (rows.size() - 1)) / rows.size();
@@ -316,8 +179,8 @@ void KeyboardWidget::draw()
         for (size_t c = 0; c < rows[r].size(); c++) {
             const Key& key = rows[r][c];
             float keyWidth = key.units * unitWidth + (key.units - 1) * spacing;
-            bool focused = static_cast<int>(r) == row_ && static_cast<int>(c) == column_;
-            drawBox(x, keyY, keyWidth, keyHeight, focused, key.action == Action::Shift && shift_);
+            bool focused = static_cast<int>(r) == keys_.row() && static_cast<int>(c) == keys_.column();
+            drawBox(x, keyY, keyWidth, keyHeight, focused, key.action == Action::Shift && keys_.shift());
 
             float labelWidth = painter_.textWidth(key.label, size);
             painter_.text(key.label, x + (keyWidth - labelWidth) / 2.0f, keyY + (keyHeight - size) / 2.0f, keyWidth, size, focused, 1.0f);
@@ -327,26 +190,12 @@ void KeyboardWidget::draw()
 
     if (style_.showHints) {
         std::string hint = "Select: type   Back: cancel";
-        if (multiline_) {
+        if (keys_.multiline()) {
             hint = "Select: type   Done: keep   Back: cancel";
         }
-        if (!numeric_) {
+        if (!keys_.numeric()) {
             hint += "   Shift: capitals and symbols";
         }
         painter_.text(hint, left, top + height - hintsHeight + (hintsHeight - size * 0.85f) / 2.0f, width, size * 0.85f, false, style_.noteAlpha);
-    }
-}
-
-namespace
-{
-    std::vector<KeyboardWidget::Key> keyRow(const std::string& characters)
-    {
-        std::vector<KeyboardWidget::Key> row;
-        for (char c : characters) {
-            KeyboardWidget::Key key;
-            key.label = std::string(1, c);
-            row.push_back(key);
-        }
-        return row;
     }
 }
