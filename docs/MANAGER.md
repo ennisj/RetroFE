@@ -185,6 +185,20 @@ thing you can change:
 - **Description**: the story text (`medium_artwork/story/<game>.txt`) in a
   multi-line field, or replaced from a file. Lines you didn't change keep
   their exact bytes and line endings; new lines get the file's own.
+- **Saves**: the game's save files and save states, for games that start in
+  RetroArch (other emulators keep saves their own way, so those say **Not
+  known for this emulator**). It shows where RetroArch keeps them, worked out
+  from `retroarch.cfg` as RetroArch does (`savefile_directory`,
+  `savestate_directory`, saving beside the game, a folder per content folder
+  and per core), and lists the game's files: exactly its name with a save or
+  state ending (`.srm`, `.state`, `.state1`..., `.state.auto`, their `.png`
+  pictures, `.rtc`...), never another game's. **Back up now** copies them to
+  `manage/saves/<system>/<game>/<date-time>/`; **Delete these saves** backs
+  them up first, then deletes them. Each backup opens on its own screen with
+  its files: **Restore this backup** backs up what's there now, then puts the
+  backup's files back (so the game has exactly those), and **Delete this
+  backup** removes it. When another system's game of the same name shares the
+  files, the screen says so.
 
 The game's screen also has:
 
@@ -348,9 +362,44 @@ the player with `player.xml` there (`player 4x3.xml` for 4:3), and RetroFE has
 built-in pages when no layout is installed. A layout can give one collection
 its own pages in `collections/<name>/layout/` (`layout.xml`, `player.xml`).
 
+### Emulators
+
+**Manage → Emulators** lists every launcher (the global ones in
+`launchers.<os>`, a system's own launcher file, a system's local launchers)
+with where it's defined, its program (flagged when missing) and how many
+systems and games use it, then the names systems or games ask for that no
+launcher defines. **Add a launcher** asks for a name, the program, the
+arguments (the game's file, RetroArch with a core, MAME, or your own), the
+working folder and whether RetroFE restarts afterwards.
+
+A launcher's screen shows its program, arguments and working folder, with:
+
+- **Used by**: the systems and games that use it, each opening its screen.
+- **Edit**: change the program, the arguments (from the same presets, or your
+  own text), and for global launchers the working folder and whether RetroFE
+  restarts after it. The screen says who the change reaches. **Save** changes
+  only those lines of the launcher's file, keeping its comments and any other
+  settings; the program must be there, and arguments may only use the
+  variables RetroFE fills in (`%ITEM_FILEPATH%`, `%ITEM_NAME%`,
+  `%ITEM_DIRECTORY%`, `%RETROFE_PATH%`...). **Put back the original** returns
+  the file to what it was before Manage first changed it.
+- **RetroArch** (only when it runs RetroArch): the core-wide settings, core
+  options and controls of its core, as on a system's screen; see
+  [RetroArch settings](#retroarch-settings).
+- **The file**: the launcher's file as it is on disk.
+- **Rename** (global launchers): type the new name to see every file that
+  changes (its file in each `launchers.<os>` folder, the systems' `launcher =`
+  lines, the games set to it), then **Rename**. If a step fails, everything is
+  put back.
+- **Duplicate and edit** and **Delete launcher** (only when nothing uses it).
+
+Changes keep the original in `manage/backups` and take effect when RetroFE
+reloads, after you close Manage.
+
 ### RetroArch settings
 
-A game or system whose launcher runs RetroArch gets a **RetroArch** link.
+A game or system whose launcher runs RetroArch, and such a launcher on
+Emulators, gets a **RetroArch** link.
 A launcher runs RetroArch when its program is `retroarch` (`retroarch.exe`),
 when its arguments load a core (`-L <core>`, `--libretro <core>`), or when it
 hands RetroArch a `*_libretro` core through another program (a script, the
@@ -394,7 +443,7 @@ A **game's** RetroArch screen shows the core and launcher and:
   (it's kept in `manage/backups`), and **Reset to original** puts back the
   file as it was before Manage first changed it.
 
-A **system's** RetroArch screen edits the core-wide `<Core>.cfg`, `.opt` and
+A **system's** (or a launcher's) RetroArch screen edits the core-wide `<Core>.cfg`, `.opt` and
 `.rmp` instead, and says which systems it reaches: every system whose
 launcher runs that core (and any game set to such a launcher), unless a game
 has a file of its own. RetroArch reads these files each time it starts a

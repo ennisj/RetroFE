@@ -312,6 +312,44 @@ std::string presetArguments(const std::string& preset, const std::string& core)
     return "";
 }
 
+std::string unknownPlaceholder(const std::string& text)
+{
+    static const std::set<std::string> known = { "ITEM_FILEPATH", "ITEM_NAME", "ITEM_FILENAME", "ITEM_DIRECTORY",
+        "ITEM_COLLECTION_NAME", "RETROFE_PATH", "COLLECTION_PATH", "RETROFE_EXEC_PATH", "CMD" };
+    for (size_t start = text.find('%'); start != std::string::npos; start = text.find('%', start + 1)) {
+        size_t end = start + 1;
+        while (end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) {
+            end++;
+        }
+        // %NAME%: a letter or _ first; anything else (%1, %%, %~dp0) isn't a variable
+        if (end < text.size() && text[end] == '%' && end > start + 1
+            && !std::isdigit(static_cast<unsigned char>(text[start + 1]))) {
+            std::string name = text.substr(start + 1, end - start - 1);
+            if (!known.count(name)) {
+                return "%" + name + "%";
+            }
+            start = end;   // the closing % doesn't open another
+        }
+    }
+    return "";
+}
+
+std::string checkLauncherValues(const std::string& executable, const std::string& arguments, const std::string& workingFolder)
+{
+    for (const std::string& value : { executable, arguments, workingFolder }) {
+        if (value.find_first_of("#\r\n") != std::string::npos) {
+            return "The program, arguments and working folder can't contain # or a line break.";
+        }
+        std::string unknown = unknownPlaceholder(value);
+        if (!unknown.empty()) {
+            return "RetroFE doesn't replace " + unknown + ", so the program would get it as it is. It knows %ITEM_FILEPATH%, "
+                   "%ITEM_NAME%, %ITEM_FILENAME%, %ITEM_DIRECTORY%, %ITEM_COLLECTION_NAME%, %RETROFE_PATH%, %COLLECTION_PATH%, "
+                   "%RETROFE_EXEC_PATH% and %CMD%.";
+        }
+    }
+    return "";
+}
+
 std::string portablePath(const std::string& root, const std::string& path, const std::string& os)
 {
     std::string value = Utils::trimEnds(path);

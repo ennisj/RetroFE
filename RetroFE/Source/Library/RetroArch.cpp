@@ -689,6 +689,11 @@ std::map<std::string, std::string> parseConfig(const std::string& text)
     return out;
 }
 
+std::map<std::string, std::string> readConfigFile(const std::string& path)
+{
+    return readConfig(path);
+}
+
 std::string editConfig(const std::string& text, const std::map<std::string, std::optional<std::string>>& edits)
 {
     Lines lines = Lines::parse(text);

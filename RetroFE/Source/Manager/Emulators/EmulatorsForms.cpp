@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../../Forms/BuiltinForms.h"
+#include "../Games/RetroArchForms.h"
 
 // The Emulators screens, opened from Manage. RetroFE has no emulator entity:
 // these are its launchers (a program plus arguments). Served by
@@ -47,9 +48,11 @@ const char* const emulatorForm = R"(
   <value label="Working folder" bind="emulator:workingFolder"/>
   <value label="Restarts RetroFE" bind="emulator:reboot"/>
   <link label="Used by" open="emulator-users" status="emulator:usersStatus"/>
+  <link label="Edit" open="emulator-edit" status="emulator:usersStatus"/>
+  <link label="RetroArch" open="emulator-retroarch" status="retroarch:status" visibleWhen="retroarch:runs"/>
   <link label="The file" open="emulator-file" status="emulator:fileName"/>
   <section label="Actions">
-    <note value="A launcher's program and arguments can't be changed here, because systems and games rely on them. Duplicate it instead: change the copy before you create it, then give systems or games the copy."/>
+    <button label="Rename" action="emulator.startRename" visibleWhen="emulator:isGlobal"/>
     <button label="Duplicate and edit" action="emulator.duplicate"/>
     <button label="Delete launcher" action="emulator.delete" confirm="Delete this launcher? Its program stays on the drive."/>
     <note bind="emulator:deleteNote"/>
@@ -100,15 +103,66 @@ const char* const emulatorNewForm = R"(
 </form>
 )";
 
+// An existing launcher, changed in place (param:id, param:scope)
+const char* const emulatorEditForm = R"(
+<form id="emulator-edit" title="Edit launcher" bind="emulator:title">
+  <note bind="emulator:problem"/>
+  <note bind="emulator:editIntro"/>
+  <section label="Launcher" visibleWhen="emulator:editIsReady">
+    <file label="Program" bind="emulator:editExecutable" hint="Not chosen yet"/>
+    <choice label="Arguments" bind="emulator:editPreset" options="emulator:presets"/>
+    <file label="Core" bind="emulator:editCore" filter="RetroArch cores" pattern="*.dll;*.so;*.dylib" hint="Not chosen yet"
+          visibleWhen="emulator:editNeedsCore"/>
+    <text label="Custom arguments" bind="emulator:editArguments" hint="None" visibleWhen="emulator:editIsCustom"
+          help="%ITEM_FILEPATH% is the game's file, %ITEM_NAME% its name, %ITEM_DIRECTORY% its folder (ending in a separator: in quotes, write &quot;%ITEM_DIRECTORY%.&quot;), %ITEM_FILENAME% its file name, %RETROFE_PATH% RetroFE's folder."/>
+    <folder label="Working folder" bind="emulator:editWorkingFolder" hint="The program's folder" visibleWhen="emulator:editIsGlobal"/>
+    <toggle label="Restarts RetroFE" bind="emulator:editReboot" visibleWhen="emulator:editIsGlobal"
+            help="RetroFE restarts once the program exits, e.g. after one that switches the theme."/>
+    <value label="Runs" bind="emulator:editCommand"/>
+    <value label="File" bind="emulator:editFile"/>
+  </section>
+  <actions>
+    <button label="Save" action="emulator.save"/>
+    <button label="Reset" action="emulator.resetEdit" visibleWhen="emulator:editIsDirty"/>
+  </actions>
+  <actions>
+    <button label="Put back the original" action="emulator.restore" visibleWhen="emulator:editHasOriginal"
+            confirm="Put back the launcher file as it was before Manage changed it?"/>
+  </actions>
+</form>
+)";
+
+// A global launcher's new name, with what changes (param:id)
+const char* const emulatorRenameForm = R"(
+<form id="emulator-rename" title="Rename launcher" bind="emulator:title">
+  <note bind="emulator:problem"/>
+  <note bind="emulator:renameIntro"/>
+  <text label="New name" bind="emulator:renameTo" hint="Not typed yet"
+        help="Systems and games ask for it by this name, spelt exactly."/>
+  <note bind="emulator:renameProblem"/>
+  <section label="What changes" visibleWhen="emulator:canRename">
+    <note bind="emulator:renameChangesText"/>
+  </section>
+  <button label="Rename" action="emulator.rename"
+          confirm="Rename it and change these files? The originals are kept in manage/backups."/>
+</form>
+)";
+
 }
 
 Forms::BuiltinTable Forms::emulatorsForms()
 {
-    return {
+    BuiltinTable table = {
         { "emulators", emulatorsForm },
         { "emulator", emulatorForm },
         { "emulator-users", emulatorUsersForm },
         { "emulator-file", emulatorFileForm },
         { "emulator-new", emulatorNewForm },
+        { "emulator-edit", emulatorEditForm },
+        { "emulator-rename", emulatorRenameForm },
     };
+    // The launcher's core-wide RetroArch screens (Games/RetroArchForms.cpp, RetroArchProvider)
+    const BuiltinTable& retroArch = Manager::retroArchLauncherForms();
+    table.insert(table.end(), retroArch.begin(), retroArch.end());
+    return table;
 }

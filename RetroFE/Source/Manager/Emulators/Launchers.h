@@ -84,6 +84,17 @@ namespace Emulators
     // The arguments a preset gives. core: RetroArch's core file, as written in the launcher.
     std::string presetArguments(const std::string& preset, const std::string& core);
 
+    // The variables RetroFE replaces in a launcher (Launcher::replaceVariables):
+    // %ITEM_FILEPATH%, %ITEM_NAME%, %ITEM_FILENAME%, %ITEM_DIRECTORY%,
+    // %ITEM_COLLECTION_NAME%, %RETROFE_PATH%, %COLLECTION_PATH%,
+    // %RETROFE_EXEC_PATH%, %CMD%. Returns the first %NAME% in text that isn't
+    // one of them (it would reach the program as it is), or "".
+    std::string unknownPlaceholder(const std::string& text);
+    // Empty when the program, arguments and working folder can be written,
+    // otherwise why not: one line, no '#', only known variables
+    std::string checkLauncherValues(const std::string& executable, const std::string& arguments,
+                                    const std::string& workingFolder);
+
     // A path as a new launcher stores it: inside RetroFE's folder as
     // %RETROFE_PATH%/..., so the drive can move; elsewhere as it is. A
     // relative path with a folder in it is taken as relative to RetroFE's

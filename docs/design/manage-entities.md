@@ -66,7 +66,9 @@ the screen authors, is in [manage-library.md](manage-library.md).
 These carry over from One Saucier, where they were learned the hard way:
 
 - **An explicit list of what each screen may change.** Paths, `executable` and
-  `arguments` are shown, never edited, and nothing outside the list is written.
+  `arguments` are shown, never edited (the one exception is the Emulators edit
+  screen, which changes a launcher's own file, validated, warning who it
+  reaches), and nothing outside the list is written.
 - **Back up the original before the first change**, and offer **Reset**.
 - **Write through a temporary file and rename it into place**, keeping
   comments, spacing and line endings in files people also edit by hand.
@@ -130,8 +132,7 @@ file. Results are capped with a "refine the search" note.
 | Description | The story text | `medium_artwork/story/<game>.txt` |
 | Actions | Test-launch, hide (exclude) | `exclude.txt` |
 | RetroArch | Only when the game's launcher runs RetroArch: curated RetroArch settings, core options and controls (One Saucier's tiles), see [RetroArch settings](#retroarch-settings) | `<config>/<Core>/<rom>.cfg` / `.opt`, `<remaps>/<Core>/<rom>.rmp` |
-
-Later: saves backup/restore.
+| Saves | The game's save files and save states, where they are; Back up now, Delete (confirmed, backed up first), the backups with Restore and Delete; see [Saves](#saves) | copies under `manage/saves/<collection>/<game>/<id>/`; the game's own files in RetroArch's save folders |
 
 ### Menus
 
@@ -215,11 +216,12 @@ not defined ("unresolved").
 
 | Link | Shows / edits | Writes |
 |------|---------------|--------|
-| Details | Name, where it's defined, executable (and whether it exists), arguments, working folder, the file verbatim | read-only in v1 |
+| Details | Name, where it's defined, executable (and whether it exists), arguments, working folder, the file verbatim | read-only |
+| Edit | Program, arguments (presets or custom), working folder and restart (global launchers only), with who it reaches | the launcher's own file, in place |
+| Rename | A global launcher's new name, with a preview of every file that changes | `launchers.<os>/` (every platform), `launcher =` lines, games' launcher files |
+| RetroArch | Only when it runs RetroArch: the core-wide settings, options and controls (the system screens') | `<config>/<Core>/<Core>.cfg` / `.opt`, `<remaps>/<Core>/<Core>.rmp` |
 | Used by | Systems that use it by default, games that pick it | — |
 | Actions | Add a launcher (executable via a file picker, arguments from presets), duplicate, delete when unused | `launchers.<os>/<name>.conf` |
-
-Later: RetroArch core detection and the core-wide settings tiles.
 
 **Built (round 2)**, in `Manager/Emulators/` (provider prefix `emulator`):
 
@@ -231,13 +233,24 @@ Later: RetroArch core detection and the core-wide settings tiles.
 | `emulator-file` | The conf file as read-only notes, comments included. |
 | `emulator-new` (`name`, or `from` + `fromScope`) | Name, program (file field: type with Right, or browse), arguments from a preset (`"%ITEM_FILEPATH%"`, RetroArch `-L "<core>" "%ITEM_FILEPATH%"` with a core file field, MAME `%ITEM_NAME% -rompath "%ITEM_DIRECTORY%."`: RetroFE ends `%ITEM_DIRECTORY%` with a separator, which on Windows would escape the closing quote) or custom text, working folder, whether RetroFE restarts after it (`reboot = yes`, carried over by Duplicate), and the command it will run. Paths inside RetroFE's folder are written as `%RETROFE_PATH%\...`. A name another launcher already answers to in any scope is refused, with why. Creates `launchers.<os>/<name>.conf` through `Editor::addLauncher`, shows it in the list at once ("Updating the list..." until the index catches up), then goes back. |
 
-Existing launchers stay read-only, as in One Saucier: the details screen says
-so and offers **Duplicate and edit**, which opens the add form filled in from
-the launcher (arguments as custom text, its restart setting, name "`<name>` copy"), so the copy can
-be changed before it exists. RetroArch core detection and the settings tiles
-are built for games and systems ([RetroArch settings](#retroarch-settings));
-deferred here: a launcher's own RetroArch link, and payload checks beyond
-"the program exists".
+**Duplicate and edit** opens the add form filled in from the launcher
+(arguments as custom text, its restart setting, name "`<name>` copy"), so the
+copy can be changed before it exists. Round 2 kept existing launchers
+read-only, as One Saucier does; they're now edited in place (below), because
+changing a launcher every system uses meant duplicating it and repointing each
+system.
+
+**Edit, rename and the RetroArch link**, same provider:
+
+| Form | Shows |
+|------|-------|
+| `emulator-edit` (`id`, `scope`) | Who it reaches ("Changes apply to everything that uses this launcher": the users summary), program (file field), arguments (the add form's presets, starting as custom text with the file's value; RetroArch's needs a core file), working folder and restart (global launchers only: RetroFE reads them as `launchers.<name>.*`), the command it will run, the file. **Save** writes only the fields changed, through `Editor::editLauncher` (in place: unknown keys such as `LEDBlinkyEmulator`, comments and line endings kept; empty arguments or working folder, or restart off, remove the line). Validated like Add: the program must exist (when changed), RetroArch's preset needs a core, no `#` or line break, and only RetroFE's `%VARIABLES%` (`%ITEM_FILEPATH%`, `%ITEM_NAME%`, `%ITEM_FILENAME%`, `%ITEM_DIRECTORY%`, `%ITEM_COLLECTION_NAME%`, `%RETROFE_PATH%`, `%COLLECTION_PATH%`, `%RETROFE_EXEC_PATH%`, `%CMD%`; `%1`, `%%` and `%~dp0` aren't variables), which Add now checks too. **Reset**; **Put back the original** (confirmed) while the file differs from the copy kept before Manage first changed it. The buffer is read from the file, so a save shows at once; the list shows "Updating the list..." until the index catches up. Unsaved changes warn on leaving. |
+| `emulator-rename` (`id`, `scope`), from the **Rename** button (global launchers only) | The new name (text), why it can't be (taken in any scope or platform folder, the same name, only the case, a system whose `launcher` is set outside its folder), and **What changes**: one line per file. **Rename** (confirmed) runs `Editor::renameLauncher`. The button replaces the launcher's screen with this one, and a rename replaces this one with the launcher's screen under its new name, so no open screen keeps the old name (Back from an unfinished rename returns to the list). |
+| `emulator-retroarch`, `emulator-core-options`, `emulator-core-option`, `emulator-controls` (`id`, `scope`) | The system screens' core-wide RetroArch screens for the core this launcher runs (`RetroArchProvider`, a third set of the same templates), with "reaches N systems". The link on `emulator` shows only when the launcher runs RetroArch, with its core as the status. |
+
+Deferred: payload checks beyond "the program exists"; renaming collection
+and local launchers (a collection's own launcher is named by its folder; a
+local one by its file, which games pick by its short name).
 
 ### RetroArch settings
 
@@ -345,9 +358,65 @@ RetroArch reads these files at every start.
 The system screen's "reaches" note lists the systems whose default launcher
 resolves to the same library and config folder.
 
-Not modelled: `--appendconfig`, a launcher's own RetroArch link (Emulators),
-One Saucier's button labels and customization stack, saves. Core option rows
-whose values differ between core versions are left out (mGBA's frameskip).
+A launcher's own RetroArch screens (Emulators, `emulator-retroarch`...) are
+the system's, keyed by the launcher (`id` + `scope`) instead of a system.
+
+Not modelled: `--appendconfig`, One Saucier's button labels and
+customization stack. Core option rows whose values differ between core
+versions are left out (mGBA's frameskip).
+
+### Saves
+
+**Built**: `Library/Saves.{h,cpp}` (no SDL, `Tests/SavesTests.cpp`),
+`Manager/Games/SavesProvider` (prefix `saves`), forms `game-saves` and
+`game-saves-backup` (param `backup`) in the Games table, and a **Saves** link
+on `game` with "N files, M backups" or "Not known for this emulator".
+
+**Where** (`Saves::forGame`, RetroArch launchers only, from
+`RetroArch::detect`'s `retroarch.cfg`), as RetroArch's
+`runloop_path_set_redirect` and `config_load` do:
+
+1. `savefile_directory` / `savestate_directory`: `:` is RetroArch's folder,
+   `~` home, relative paths from the working folder; `default`, empty or a
+   path that isn't a folder (RetroArch warns and ignores it) is the platform
+   default, `<RetroArch's folder>/saves` and `/states` on Windows,
+   `<config folder>/saves` / `states` elsewhere.
+2. `savefiles_in_content_dir` / `savestates_in_content_dir`: the game's
+   folder instead.
+3. `sort_savefiles_by_content_enable` / `sort_savestates_by_content_enable`
+   add the name of the game's folder, then `sort_savefiles_enable` /
+   `sort_savestates_enable` the core's library name (that order, after the
+   in-content-folder rule). Sorting by core with a core that isn't known
+   makes the saves "not known", rather than guessing.
+4. The files are named after the game's file without its extension (an
+   archive's own name), or its name when the launcher passes `%ITEM_NAME%`.
+
+**Which files** (`belongsTo`): exactly the stem (case-sensitive), then a save
+ending (`.srm`, `.sav`, `.rtc`, `.ldci`, `.eep`, `.sra`, `.fla`, `.mpk`,
+`.dsv`, `.mcr`, `.<n>.mcr`) or a state ending (`.state`, `.state<n>`,
+`.state.auto`, any of them + `.png`, `.bsv`, `.replay`, `.replay<n>`), the
+ending ignoring case. `Sonic 2.srm` is never Sonic's, and the game's own file
+is never counted even in its own folder. Another game of the same name whose
+saves resolve to the same folders (the same core, unsorted) is named on the
+screen, since those files are its too.
+
+**Backups**: `<root>/manage/saves/<collection>/<game>/<yyyymmdd-hhmmss>[-n]/`
+with `saves/`, `states/` and `backup.txt` (`reason = ...`), outside every
+content and RetroArch folder and apart from `manage/backups/` (whose
+per-file "original" model doesn't fit snapshots). **Back up now** copies the
+current files (refused when there are none); **Restore** checks every file
+in the backup is the game's (a backup holding anything else is refused,
+nothing copied), backs up the current files ("Before restoring the backup
+from ..."), removes them and copies the backup's in, so the game ends with
+exactly the backup's files; **Delete these saves** (confirmed) backs up
+("Before deleting") and removes them; **Delete this backup** (confirmed)
+removes one backup. Backups are kept until deleted. RetroFE doesn't read
+saves: no reload.
+
+Not built: saves of other emulators. Each keeps its own (MAME a folder per
+game under `nvram/`, `sta/`; standalone emulators their own layouts), so a
+per-launcher "saves folder" setting matched by file stem would be wrong for
+the commonest ones; such games say "Not known for this emulator".
 
 ### Themes
 

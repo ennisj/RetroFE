@@ -64,9 +64,11 @@ RetroArchProvider::Kind RetroArchProvider::kindOf(const std::string& form)
 {
     if (form == "game") return Kind::GameLink;
     if (form == "system") return Kind::SystemLink;
+    if (form == "emulator") return Kind::LauncherLink;
     std::string rest;
     if (startsWith(form, "game-")) rest = form.substr(5);
     else if (startsWith(form, "system-")) rest = form.substr(7);
+    else if (startsWith(form, "emulator-")) rest = form.substr(9);
     else return Kind::None;
     if (rest == "retroarch") return Kind::Hub;
     if (rest == "core-options") return Kind::CoreOptions;
@@ -78,6 +80,11 @@ RetroArchProvider::Kind RetroArchProvider::kindOf(const std::string& form)
 bool RetroArchProvider::isGameForm(const std::string& form)
 {
     return form == "game" || startsWith(form, "game-");
+}
+
+bool RetroArchProvider::isLauncherForm(const std::string& form)
+{
+    return form == "emulator" || startsWith(form, "emulator-");
 }
 
 bool RetroArchProvider::tileOf(Kind kind, Tile& tile)
@@ -94,6 +101,7 @@ bool RetroArchProvider::tileOf(Kind kind, Tile& tile)
 std::string RetroArchProvider::contextKey(const Screen& screen)
 {
     if (isGameForm(screen.form)) return "game:" + screen.param("collection") + "/" + screen.param("id");
+    if (isLauncherForm(screen.form)) return "launcher:" + screen.param("scope") + "/" + screen.param("id");
     return "system:" + screen.param("id");
 }
 
@@ -155,6 +163,24 @@ void RetroArchProvider::loadContext(const Screen& screen, const std::string& key
     }
     Library::LauncherResolution resolution;
     const Library::GameRecord* game = nullptr;
+    if (isLauncherForm(screen.form)) {
+        // A launcher of the Emulators section: its own core-wide files
+        std::string scope = screen.param("scope");
+        Library::LauncherScope parsed = scope == "collection" ? Library::LauncherScope::Collection
+            : scope == "local" ? Library::LauncherScope::Local : Library::LauncherScope::Global;
+        int launcher = idx->findLauncher(parsed, screen.param("id"));
+        if (launcher < 0) {
+            context_.why = "There's no launcher called " + screen.param("id") + ".";
+            return;
+        }
+        context_.title = screen.param("id");
+        context_.launcher = idx->launchers[static_cast<size_t>(launcher)].id;
+        context_.found = true;
+        context_.setup = setupFor(*idx, launcher);
+        context_.target = RA::coreTarget(context_.setup);
+        if (!context_.setup.ready()) context_.why = context_.setup.why;
+        return;
+    }
     if (context_.game) {
         int g = idx->findGame(screen.param("collection"), screen.param("id"));
         if (g < 0) {
@@ -483,6 +509,7 @@ Forms::Rows RetroArchProvider::rows(const std::string& key, size_t limit, const 
         }
         else {
             r.params = { { "id", screen.param("id") } };
+            if (isLauncherForm(screen.form)) r.params["scope"] = screen.param("scope");
         }
         out.items.push_back(r);
     }

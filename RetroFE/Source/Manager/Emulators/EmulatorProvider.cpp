@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "EmulatorProvider.h"
+#include "../../Library/ConfFile.h"
 #include "../../Library/Edits.h"
 #include "../../Library/Files.h"
 #include "../../Library/Indexer.h"
@@ -40,9 +41,23 @@ namespace
 
     bool isNewForm(const Manager::Screen& screen) { return screen.form == "emulator-new"; }
 
+    bool isEditForm(const Manager::Screen& screen) { return screen.form == "emulator-edit"; }
+
     bool isLauncherForm(const Manager::Screen& screen)
     {
-        return screen.form == "emulator" || screen.form == "emulator-users" || screen.form == "emulator-file";
+        return screen.form == "emulator" || screen.form == "emulator-users" || screen.form == "emulator-file"
+            || screen.form == "emulator-edit" || screen.form == "emulator-rename";
+    }
+
+    const char* const unsavedEditWarning = "You have unsaved changes. Save them, or leave again to discard them.";
+
+    // The edit field a binding changes: editExecutable -> executable
+    std::string editField(const std::string& key)
+    {
+        if (key.size() <= 4) {
+            return key;
+        }
+        return std::string(1, static_cast<char>(std::tolower(static_cast<unsigned char>(key[4])))) + key.substr(5);
     }
 
     // The draft field a binding edits: newName -> name, newWorkingFolder -> workingFolder
@@ -74,6 +89,12 @@ void EmulatorProvider::refresh()
     details_ = Details();
     checkedExecutable_ = "\x01";
     updating_ = false;
+    edit_.load("", {});
+    editCheckedExecutable_ = "\x01";
+    plannedKey_ = "\x01";
+    plannedIn_ = nullptr;
+    renameTo_.clear();
+    renameFor_.clear();
 }
 
 unsigned EmulatorProvider::generation() const
@@ -214,8 +235,8 @@ const EmulatorProvider::Details* EmulatorProvider::details(const Manager::Screen
     if (!index) {
         return nullptr;
     }
-    std::string id = screen.param("id");
     std::string scope = screen.param("scope");
+    std::string id = screen.param("id");
     if (details_.index == snapshot_ && details_.id == id && details_.scope == scope) {
         return &details_;
     }
@@ -254,10 +275,20 @@ void EmulatorProvider::enter(const Manager::Screen& screen)
             draft_.load(key, draftDefaults(screen));
         }
     }
+    else if (isEditForm(screen)) {
+        syncEdit(screen);
+    }
+    else if (screen.form == "emulator-rename" && renameFor_ != screen.param("id")) {
+        renameFor_ = screen.param("id");
+        renameTo_.clear();   // another launcher: start with an empty name
+    }
 }
 
 std::string EmulatorProvider::leaving(const Manager::Screen& screen)
 {
+    if (isEditForm(screen)) {
+        return edit_.isDirty() ? unsavedEditWarning : "";
+    }
     return isNewForm(screen) && draft_.isDirty() ? unsavedWarning : "";
 }
 
@@ -266,6 +297,256 @@ void EmulatorProvider::discard(const Manager::Screen& screen)
     if (isNewForm(screen)) {
         draft_.load("", {});   // the next visit starts afresh
     }
+    else if (isEditForm(screen)) {
+        edit_.load("", {});    // read from the file again next time
+    }
+}
+
+// --- emulator-edit ------------------------------------------------------------------
+
+std::string EmulatorProvider::editKey(const Manager::Screen& screen) const
+{
+    return "edit\n" + screen.param("scope") + "\n" + screen.param("id");
+}
+
+bool EmulatorProvider::syncEdit(const Manager::Screen& screen)
+{
+    if (edit_.id() != editKey(screen)) {
+        loadEdit(screen);
+    }
+    return !edit_.id().empty();
+}
+
+void EmulatorProvider::loadEdit(const Manager::Screen& screen)
+{
+    edit_.load("", {});
+    editFile_.clear();
+    editHasOriginal_ = false;
+    const Library::LauncherDef* def = launcher(screen);
+    if (!def) {
+        return;
+    }
+    // The file as it is now: the index may not have a save made a moment ago
+    Library::ConfFile conf(def->file);
+    if (!conf.load() || !conf.exists()) {
+        return;
+    }
+    editFile_ = def->file;
+    editGlobal_ = def->scope == LauncherScope::Global;
+    std::map<std::string, std::string> values = {
+        { "executable", conf.get("executable", "") },
+        { "preset", "custom" },
+        { "core", "" },
+        { "arguments", conf.get("arguments", "") },
+        { "workingFolder", conf.get("currentDirectory", "") },
+        { "reboot", Forms::isTruthy(conf.get("reboot", "")) ? "yes" : "no" },
+    };
+    edit_.load(editKey(screen), values);
+
+    Library::Backups* backups = services_.editor ? &services_.editor->backups() : nullptr;
+    if (backups && backups->hasOriginal(editFile_)) {
+        std::string now;
+        std::string original;
+        std::string kept = backups->backupPath(editFile_);
+        editHasOriginal_ = !Library::readFile(kept, original) || !Library::readFile(editFile_, now) || now != original;
+    }
+}
+
+std::string EmulatorProvider::editExecutable()
+{
+    const Library::Index* index = current();
+    std::string executable = edit_.get("executable");
+    return index ? Emulators::portablePath(index->options.root, executable, index->options.os) : executable;
+}
+
+std::string EmulatorProvider::editArguments()
+{
+    std::string preset = edit_.get("preset");
+    if (preset == "custom") {
+        return Utils::trimEnds(edit_.get("arguments"));
+    }
+    const Library::Index* index = current();
+    std::string core = edit_.get("core");
+    if (index) {
+        core = Emulators::portablePath(index->options.root, core, index->options.os);
+    }
+    return Emulators::presetArguments(preset, core);
+}
+
+Library::Editor::LauncherChange EmulatorProvider::editChange()
+{
+    Library::Editor::LauncherChange change;
+    std::map<std::string, std::string> changes = edit_.changes();
+    // Each field only when it was changed: an untouched value is never rewritten
+    if (changes.count("executable")) {
+        change.executable = editExecutable();
+    }
+    if (changes.count("preset") || changes.count("core") || changes.count("arguments")) {
+        std::string arguments = editArguments();
+        Manager::EditBuffer saved = edit_;
+        saved.reset();
+        if (arguments != Utils::trimEnds(saved.get("arguments"))) {
+            change.arguments = arguments;
+        }
+    }
+    const Library::Index* index = current();
+    if (changes.count("workingFolder") && editGlobal_) {
+        std::string folder = edit_.get("workingFolder");
+        change.currentDirectory = index ? Emulators::portablePath(index->options.root, folder, index->options.os) : folder;
+    }
+    if (changes.count("reboot") && editGlobal_) {
+        change.reboot = Forms::isTruthy(edit_.get("reboot"));
+    }
+    return change;
+}
+
+std::string EmulatorProvider::saveProblem(const Manager::Screen& screen)
+{
+    const Library::Index* index = current();
+    if (!index) {
+        return waitingText();
+    }
+    if (!services_.editor) {
+        return "Launchers can't be changed here.";
+    }
+    if (!syncEdit(screen)) {
+        return updating_ ? updatingText : "There's no launcher called \"" + screen.param("id") + "\".";
+    }
+    if (edit_.get("preset") == "retroarch" && edit_.get("core").empty()) {
+        return "Choose RetroArch's core file.";
+    }
+    Library::Editor::LauncherChange change = editChange();
+    if (change.empty()) {
+        return "No changes to save.";
+    }
+    if (change.executable) {
+        if (change.executable->empty()) {
+            return "Choose the program the launcher runs.";
+        }
+        if (*change.executable != editCheckedExecutable_) {
+            // Reads the disk: only when the program changes
+            editCheckedExecutable_ = *change.executable;
+            editExecutableCheck_ = Emulators::checkExecutable(*index, *change.executable);
+        }
+        if (editExecutableCheck_.state == Emulators::ExecutableCheck::State::Missing) {
+            return "The program isn't there: " + editExecutableCheck_.path + ".";
+        }
+    }
+    return Emulators::checkLauncherValues(change.executable.value_or(""), change.arguments.value_or(""),
+                                          change.currentDirectory.value_or(""));
+}
+
+Forms::Model::Result EmulatorProvider::saveEdit(const Manager::Screen& screen)
+{
+    Forms::Model::Result result;
+    result.message = saveProblem(screen);
+    if (!result.message.empty()) {
+        return result;
+    }
+    std::shared_ptr<const Library::Index> index = details_.index;   // keeps def alive
+    const Library::LauncherDef* def = launcher(screen);
+    Library::EditResult edit = services_.editor->editLauncher(*index, def->scope, def->id, editChange());
+    result.message = edit.message;
+    if (!edit.ok) {
+        return result;
+    }
+    services_.library->changed("launcher " + def->id);
+    updating_ = true;
+    patches_++;
+    loadEdit(screen);   // the file as saved
+    result.ok = true;
+    return result;
+}
+
+Forms::Model::Result EmulatorProvider::restoreEdit(const Manager::Screen& screen)
+{
+    Forms::Model::Result result;
+    if (!syncEdit(screen) || !editHasOriginal_ || !services_.editor) {
+        result.message = "Manage hasn't changed this launcher.";
+        return result;
+    }
+    Library::EditResult edit = services_.editor->restoreOriginal(editFile_);
+    result.message = edit.message;
+    if (edit.ok) {
+        services_.library->changed("launcher " + screen.param("id"));
+        updating_ = true;
+        patches_++;
+        loadEdit(screen);
+        result.ok = true;
+    }
+    return result;
+}
+
+// --- emulator-rename ----------------------------------------------------------------
+
+const Library::Editor::RenamePlan& EmulatorProvider::renamePlan(const Manager::Screen& screen)
+{
+    const Library::Index* index = current();
+    std::string id = screen.param("id");
+    std::string key = id + "\n" + renameTo_;
+    if (key == plannedKey_ && plannedIn_ == index) {
+        return plan_;
+    }
+    // Reads every collection's settings: only when the name or the snapshot changes
+    plannedKey_ = key;
+    plannedIn_ = index;
+    plan_ = Library::Editor::RenamePlan();
+    if (!index) {
+        plan_.problem = waitingText();
+    }
+    else if (!services_.editor) {
+        plan_.problem = "Launchers can't be renamed here.";
+    }
+    else if (updating_ && index->findLauncher(LauncherScope::Global, id) < 0) {
+        plan_.problem = updatingText;
+    }
+    else {
+        plan_ = services_.editor->planLauncherRename(*index, id, renameTo_);
+        if (plan_.problem.empty()) {
+            // Created since this snapshot, and not in it yet
+            for (const Entry& entry : entries_) {
+                if (entry.launcher < 0 && Library::iequals(entry.row.id, renameTo_)) {
+                    plan_.problem = "There's already a launcher called \"" + entry.row.id + "\".";
+                }
+            }
+        }
+    }
+    return plan_;
+}
+
+Forms::Model::Result EmulatorProvider::rename(const Manager::Screen& screen)
+{
+    Forms::Model::Result result;
+    result.message = renamePlan(screen).problem;
+    if (!result.message.empty()) {
+        return result;
+    }
+    std::shared_ptr<const Library::Index> index = snapshot_;
+    std::string id = screen.param("id");
+    std::string newName = renameTo_;
+    int found = index->findLauncher(LauncherScope::Global, id);
+    std::string executable = found >= 0 ? index->launchers[static_cast<size_t>(found)].executable : "";
+    std::string users = found >= 0 ? Emulators::usersOf(*index, found).shortSummary() : "Unused";
+    Library::EditResult edit = services_.editor->renameLauncher(*index, id, newName);
+    result.message = edit.message;
+    plannedKey_ = "\x01";
+    if (!edit.ok) {
+        return result;
+    }
+    patchDeleted(LauncherScope::Global, id);
+    entries_.push_back(makeEntry(-1, newName, newName, LauncherScope::Global, "", executable,
+                                 Emulators::checkExecutable(*index, executable).state, users));
+    sortEntries();
+    services_.library->changed("launcher " + newName);
+    renameTo_.clear();
+    renameFor_.clear();
+    // The rename screen took the launcher's place (startRename): the launcher
+    // under its new name takes the rename screen's, so no screen is left with the old one
+    result.ok = true;
+    result.open = "emulator";
+    result.params = { { "id", newName }, { "scope", "global" } };
+    result.replace = true;
+    return result;
 }
 
 std::string EmulatorProvider::get(const std::string& key, const Manager::Screen& screen)
@@ -290,6 +571,58 @@ std::string EmulatorProvider::get(const std::string& key, const Manager::Screen&
             ? "A system or game asks for this launcher, but no launcher file defines it, so those games won't start."
             : "Systems or games ask for these " + std::to_string(unresolved_.size())
                 + " launchers, but no launcher file defines them, so those games won't start.";
+    }
+    if (key.compare(0, 4, "edit") == 0 && isEditForm(screen)) {
+        bool ready = syncEdit(screen);
+        if (key == "editIsDirty") return ready && edit_.isDirty() ? "yes" : "no";
+        if (key == "editIsReady") return ready ? "yes" : "no";
+        if (key == "editIsGlobal") return ready && editGlobal_ ? "yes" : "no";
+        if (key == "editHasOriginal") return ready && editHasOriginal_ ? "yes" : "no";
+        if (key == "editNeedsCore") return edit_.get("preset") == "retroarch" ? "yes" : "no";
+        if (key == "editIsCustom") return edit_.get("preset") == "custom" ? "yes" : "no";
+        if (!ready) return "";
+        if (key == "editIntro") {
+            std::string text = "Changes apply to everything that uses this launcher, the next time RetroFE starts. ";
+            const Details* found = details(screen);
+            text += found ? found->users.summary() : "";
+            if (!editGlobal_) {
+                text += " RetroFE reads a working folder and the restart setting only for global launchers, so they aren't offered here.";
+            }
+            return text;
+        }
+        if (key == "editCommand") {
+            std::string executable = editExecutable();
+            std::string arguments = editArguments();
+            return executable.empty() ? "" : "\"" + executable + "\"" + (arguments.empty() ? "" : " " + arguments);
+        }
+        if (key == "editFile") return editFile_;
+        return edit_.get(editField(key));
+    }
+    if ((key.compare(0, 6, "rename") == 0 || key == "canRename") && screen.form == "emulator-rename") {
+        if (key == "renameTo") return renameTo_;
+        if (key == "renameIntro") {
+            return "Systems and games name a launcher in their settings. Renaming changes its file and every system and "
+                   "game that names it, so they keep working. Type the new name to see what changes.";
+        }
+        if (renameTo_.empty()) {
+            return key == "canRename" ? "no" : "";
+        }
+        const Library::Editor::RenamePlan& plan = renamePlan(screen);
+        if (key == "renameProblem") return plan.problem;
+        if (key == "renameChangesText") {
+            // One note line per change
+            std::string text;
+            for (const std::string& change : plan.problem.empty() ? plan.changes : std::vector<std::string>()) {
+                text += (text.empty() ? "" : "\n") + change;
+            }
+            return text;
+        }
+        if (key == "canRename") return plan.problem.empty() ? "yes" : "no";
+        return "";
+    }
+    if (key == "isGlobal") {
+        const Library::LauncherDef* def = isLauncherForm(screen) ? launcher(screen) : nullptr;
+        return def && def->scope == LauncherScope::Global ? "yes" : "no";
     }
     if (key.compare(0, 3, "new") == 0 || key == "needsCore" || key == "isCustom") {
         if (key == "newIntro") {
@@ -419,9 +752,16 @@ std::string EmulatorProvider::detailValue(const std::string& key, const Manager:
 
 void EmulatorProvider::set(const std::string& key, const std::string& value, const Manager::Screen& screen)
 {
-    (void)screen;
     if (key == "query") {
         query_ = value;
+    }
+    else if (key == "renameTo") {
+        renameTo_ = Utils::trimEnds(value);
+    }
+    else if ((key == "editExecutable" || key == "editPreset" || key == "editCore" || key == "editArguments"
+              || key == "editWorkingFolder" || key == "editReboot") && isEditForm(screen) && syncEdit(screen)) {
+        std::string field = editField(key);
+        edit_.set(field, field == "arguments" ? value : Utils::trimEnds(value));
     }
     else if (key == "newName" || key == "newExecutable" || key == "newPreset" || key == "newCore"
              || key == "newArguments" || key == "newWorkingFolder" || key == "newReboot") {
@@ -511,6 +851,17 @@ Forms::Rows EmulatorProvider::rows(const std::string& key, size_t limit, const M
         return result;
     }
     return result;
+}
+
+std::vector<std::string> EmulatorProvider::list(const std::string& key, const Manager::Screen& screen)
+{
+    if (key == "renameChanges" && screen.form == "emulator-rename" && !renameTo_.empty()) {
+        const Library::Editor::RenamePlan& plan = renamePlan(screen);
+        if (plan.problem.empty()) {
+            return plan.changes;
+        }
+    }
+    return {};
 }
 
 std::vector<std::pair<std::string, std::string>> EmulatorProvider::options(const std::string& key, const Manager::Screen& screen)
@@ -621,12 +972,7 @@ std::string EmulatorProvider::createProblem()
     if (preset == "retroarch" && draft_.get("core").empty()) {
         return "Choose RetroArch's core file.";
     }
-    for (const std::string& value : { executable, draftArguments(), draft_.get("workingFolder") }) {
-        if (value.find_first_of("#\r\n") != std::string::npos) {
-            return "The program, arguments and working folder can't contain # or a line break.";
-        }
-    }
-    return "";
+    return Emulators::checkLauncherValues(executable, draftArguments(), draft_.get("workingFolder"));
 }
 
 Forms::Model::Result EmulatorProvider::create()
@@ -663,6 +1009,31 @@ std::string EmulatorProvider::actionProblem(const std::string& action, const Man
     if (action == "create") {
         return createProblem();
     }
+    if (action == "save") {
+        return saveProblem(screen);
+    }
+    if (action == "resetEdit") {
+        return syncEdit(screen) && edit_.isDirty() ? "" : "No changes.";
+    }
+    if (action == "restore") {
+        return syncEdit(screen) && editHasOriginal_ ? "" : "Manage hasn't changed this launcher.";
+    }
+    if (action == "rename") {
+        if (renameTo_.empty()) {
+            return "Type the new name.";
+        }
+        return renamePlan(screen).problem;
+    }
+    if (action == "startRename") {
+        const Library::LauncherDef* def = isLauncherForm(screen) ? launcher(screen) : nullptr;
+        if (!def) {
+            return current() ? "There's no launcher called \"" + screen.param("id") + "\"." : waitingText();
+        }
+        if (def->scope != LauncherScope::Global) {
+            return "Only global launchers can be renamed: a collection's own launcher is named after its collection.";
+        }
+        return services_.editor ? "" : "Launchers can't be renamed here.";
+    }
     if (action == "duplicate" || action == "delete") {
         const Details* found = details(screen);
         if (!found) {
@@ -693,6 +1064,39 @@ Forms::Model::Result EmulatorProvider::runAction(const std::string& action, cons
 {
     if (action == "create") {
         return create();
+    }
+    if (action == "save") {
+        return saveEdit(screen);
+    }
+    if (action == "restore") {
+        return restoreEdit(screen);
+    }
+    if (action == "rename") {
+        if (renameTo_.empty()) {
+            Forms::Model::Result result;
+            result.message = "Type the new name.";
+            return result;
+        }
+        return rename(screen);
+    }
+    if (action == "resetEdit" || action == "startRename") {
+        Forms::Model::Result result;
+        result.message = actionProblem(action, screen);
+        if (!result.message.empty()) {
+            return result;
+        }
+        result.ok = true;
+        if (action == "resetEdit") {
+            edit_.reset();
+        }
+        else {
+            // In the launcher screen's place: once renamed, the launcher's screen
+            // comes back under its new name (Back from here returns to the list)
+            result.open = "emulator-rename";
+            result.keepParams = true;
+            result.replace = true;
+        }
+        return result;
     }
     Forms::Model::Result result;
     result.message = actionProblem(action, screen);
