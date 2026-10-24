@@ -363,6 +363,39 @@ Saves:
 - **Unknown `%VARIABLES%` in a launcher are refused** unless the program is
   the command prompt or a batch file, which expands its own (`%APPDATA%`).
 
+Theme editors:
+- **A selection is a list whose last pick is the primary** (the panel and
+  the controller start from it) [an unordered set]. Groups move, align and
+  space out but don't resize [proportional resize, which writes sizes nobody
+  asked for]. A marquee takes only what's wholly inside, so it doesn't grab
+  the full-page background.
+- **Controller: hold Select and press a direction to add**, one per press
+  [a dedicated key, which cabinets rarely have spare]; Select now acts when
+  it's let go. Letter up/down cycle the resize handle.
+- **Copying to the 4:3 page:** positions and sizes move by the same amount
+  scaled to the other page (from where the run started, so small nudges
+  don't drift); other values are copied only where both pages agreed; added
+  or deleted elements and the page size are never copied [copying values as
+  written, wrong for different page sizes; a live preview of both pages,
+  too costly]. Wheel items pair by their offset from the selected item.
+
+OnesaUCE themes:
+- **`layout.lua` is read, not run** [embedding Lua, which would also need
+  the other fork's page API, unknowable without its source]. Only a
+  `build()` that loads one XML page is understood; XML beside a lua file
+  wins. The lua hooks are not supported.
+- **A malformed `transform` is ignored with a warning**, never the page;
+  corners that cross over are refused.
+- **`%RETROFE_PATH%` is expanded only where a path is resolved**, so
+  Manage still edits settings exactly as written.
+- **Self-update keeps installing its bundled layouts to `<root>/layouts`**
+  even with `baseLayoutPath` set: its recovery runs before settings are read
+  and only trusts folders inside the program's own. OneSauce doesn't use the
+  bundled layouts.
+- Left alone until their meaning is clear: case variants (`Height`,
+  `maxwidth`), `reloadablePanningImage`, `<view ref>`, `onJumpEnter`,
+  `pauseTime` and others listed in ONESAUCE-COMPAT.md.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless

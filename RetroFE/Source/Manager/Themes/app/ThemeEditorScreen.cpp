@@ -110,7 +110,7 @@ ThemeEditorScreen::ThemeEditorScreen(const Context& context, const std::string& 
     : ctx_(context)
     , folder_(folder)
 {
-    const std::string layouts = Utils::combinePath(ctx_.root, "layouts");
+    const std::string layouts = ctx_.layoutsDir();
     if (!session_.open(layouts, folder_, Themes::widgetLibrary(), openError_)) {
         LOG_ERROR("ThemeEditor", "Can't open layouts/" + folder_ + ": " + openError_);
     }
@@ -135,7 +135,7 @@ ThemeEditorScreen::ThemeEditorScreen(const Context& context, const std::string& 
     if (ctx_.config) ctx_.config->getProperty(OPTION_LAYOUT, originalLayout_);
 
     refreshTree();
-    lastBrowseDir_ = fs::path(Utils::combinePath(ctx_.root, "layouts", folder_));
+    lastBrowseDir_ = fs::path(Utils::combinePath(ctx_.layoutsDir(), folder_));
 
     // retrofe -editorScript <file>: commands to run, one per frame, the
     // first time a theme is opened in this session only
@@ -283,7 +283,7 @@ void ThemeEditorScreen::rebuildPreview()
 
     ctx_.config->setProperty(OPTION_LAYOUT, folder_);
 
-    std::string themeDir = Utils::combinePath(ctx_.root, "layouts", folder_);
+    std::string themeDir = Utils::combinePath(ctx_.layoutsDir(), folder_);
     std::string pageDir = session_.pageFolder().empty() ? themeDir : (fs::path(themeDir) / session_.pageFolder()).string();
 
     // Loaded first: what loading a collection logs isn't about the page

@@ -454,6 +454,7 @@ static bool ImportConfiguration(Configuration* c) {
         }
         c->import("", "CLI", result, false);
     }
+    c->applyBaseLayoutPath();
 
     // log version
     LOG_INFO("RetroFE", "Version: " << RETROFE_VERSION_DESCRIBE << "-" << RETROFE_WC_BRANCH << RETROFE_VERSION_PATCH << " starting");

@@ -30,6 +30,7 @@ additional artwork like video, box art, screenshots, etc.
     -   [. General Layout Structure](PLAYGROUND.md)
     -   [. Layouts](LAYOUTS.md)
     -   [. The theme editor](THEME_EDITOR.md)
+    -   [. OneSauce themes and settings (compatibility)](ONESAUCE-COMPAT.md)
 
 
 # These are just dev notes I needed to put somewhere

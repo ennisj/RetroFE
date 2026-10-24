@@ -4,6 +4,36 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 7 — launchers and saves, editor groups, OnesaUCE themes (2026-10-24)
+
+Unit tests: 5,473 → 6,103 checks.
+
+- **Edit launchers in place.** An emulator's screen gets Edit (program,
+  arguments, working folder, restart), changing only the edited lines, with
+  the systems and games it reaches and "Put back the original". Global
+  launchers can be renamed: every reference is rewritten after a preview,
+  all or nothing. A launcher that runs RetroArch links to its core-wide
+  RetroArch settings.
+- **Saves for RetroArch games.** A game's Saves screen lists its save files
+  and states (found the way RetroArch names and sorts them), with Back up
+  now, Restore (the current files are backed up first) and Delete. Backups
+  are kept under `manage/saves/`.
+- **Theme editors: several at once.** Ctrl/Shift-click, a marquee or Ctrl+A
+  (Select held plus a direction with a controller); move, nudge, align,
+  space out, duplicate or delete them together, one undo step each. Resize
+  from any handle with a controller; lists scroll to what's picked.
+- **Both page shapes at once.** In the layout editor, "Also apply to layout
+  4x3.xml" copies each edit to the matching element on the 4:3 page, scaled
+  to its size (wheel items paired by their place from the selected one);
+  undo and save cover both. "Where animations end" works for any event.
+- **OnesaUCE themes** ([ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md) has the
+  survey): `layout.lua` pages (read without running Lua, so OnesaUCE's Aeon
+  Nox draws instead of exiting), `transform` (video and art on angled
+  screens), `layout_preferred`, `<scrollingText>`, image `textFormat`,
+  `%RETROFE_PATH%` in path settings and `baseLayoutPath`, which Manage's
+  theme screens, the library and Catalog theme installs now follow too.
+  Base paths set in `settings1..15.conf` are no longer ignored.
+
 ## Round 6 — controller editing, RetroArch settings, second QA (2026-10-24)
 
 Unit tests: 4,966 → 5,473 checks.

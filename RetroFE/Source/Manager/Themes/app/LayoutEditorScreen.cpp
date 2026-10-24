@@ -115,9 +115,9 @@ LayoutEditorScreen::LayoutEditorScreen(const ThemeEditorScreen::Context& context
         if (ctx_.config) ctx_.config->getProperty(OPTION_FIRSTCOLLECTION, previewName_);
     }
     if (ctx_.config) ctx_.config->getProperty(OPTION_LAYOUT, originalLayout_);
-    lastBrowseDir_ = fs::path(Utils::combinePath(ctx_.root, "layouts", folder_));
+    lastBrowseDir_ = fs::path(Utils::combinePath(ctx_.layoutsDir(), folder_));
 
-    pages_ =LayoutSession::themePages(Utils::combinePath(ctx_.root, "layouts", folder_));
+    pages_ =LayoutSession::themePages(Utils::combinePath(ctx_.layoutsDir(), folder_));
     std::string first = page;
     if (first.empty()) first = pages_.empty() ? std::string("layout.xml") : pages_.front();
     openPage(first);
@@ -149,7 +149,7 @@ bool LayoutEditorScreen::openPage(const std::string& page)
 {
     LayoutSession next;
     std::string error;
-    if (!next.open(ctx_.root, folder_, page, error)) {
+    if (!next.open(ctx_.root, folder_, page, error, ctx_.layoutsDir())) {
         LOG_ERROR("ThemeEditor", "Can't open layouts/" + folder_ + "/" + page + ": " + error);
         if (!session_.isOpen()) openError_ = error;
         else setStatus(error, true);
@@ -512,7 +512,7 @@ bool LayoutEditorScreen::importChosen(const std::string& path, const FileFor& wh
     std::string rel, error;
     const std::string folder = session_.importFolder(what.kind);
     // The src as this page writes it: relative to the page's own folder, which PageBuilder looks in first
-    if (!importIntoTheme(Utils::combinePath(ctx_.root, "layouts"), folder_, path, folder, session_.pageFolder(), rel, error)) {
+    if (!importIntoTheme(ctx_.layoutsDir(), folder_, path, folder, session_.pageFolder(), rel, error)) {
         setStatus("Not added: " + error, true);
         return false;
     }
@@ -1360,7 +1360,7 @@ bool LayoutEditorScreen::openTwin()
     if (twin_.isOpen() && twin_.page() == name) return true;
     LayoutSession next;
     std::string error;
-    if (!next.open(ctx_.root, folder_, name, error)) {
+    if (!next.open(ctx_.root, folder_, name, error, ctx_.layoutsDir())) {
         setStatus("Can't open " + name + " with it: " + error, true);
         return false;
     }

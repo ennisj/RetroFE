@@ -269,6 +269,11 @@ bool Properties::getAbsolutePath(const std::string& key, std::string& value) con
     if (!get(key, value)) {
         return false;
     }
+    // Fork compat (OneSauce settings.conf: baseMediaPath = %RETROFE_PATH%/../..),
+    // as in Configuration::getPropertyAbsolutePath. Only paths: get() stays raw.
+    if (value.find("%RETROFE_PATH%") != std::string::npos) {
+        value = Utils::replace(value, "%RETROFE_PATH%", root_);
+    }
 #ifndef WIN32
     std::replace(value.begin(), value.end(), '\\', '/');
 #endif

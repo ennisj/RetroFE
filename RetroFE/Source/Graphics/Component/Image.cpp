@@ -40,6 +40,7 @@
 #endif
 
 #include <string_view>
+#include <filesystem>
 #include <fstream>
 #include <vector>
 #include <cstring>
@@ -148,7 +149,10 @@ void Image::allocateGraphicsMemory() {
         return success;
         };
 
-    if (tryLoad(file_))
+    // A page's image that's only in the layout's own folder (altFile_) is normal for
+    // collection pages; don't log a failed open for the page's folder first.
+    std::error_code existsEc;
+    if ((altFile_.empty() || std::filesystem::exists(file_, existsEc)) && tryLoad(file_))
         return;
     if (!altFile_.empty() && tryLoad(altFile_))
         return;

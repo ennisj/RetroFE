@@ -16,6 +16,7 @@
 
 #include "PageBuilder.h"
 #include "LayoutPages.h"
+#include "LayoutCompat.h"
 #include "MenuXml.h"
 #include "LayoutNodePath.h"
 #include "Page.h"
@@ -82,7 +83,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 	std::string layoutFile;
 	std::string layoutFileAspect;
 	std::string layoutName = layoutKey;
-	std::string layoutPathDefault = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
+	std::string layoutPathDefault = Utils::combinePath(Configuration::layoutsPath(), layoutName);
 	bool fixedResLayouts = false;
 	config_.getProperty(OPTION_FIXEDRESLAYOUTS, fixedResLayouts);
 	namespace fs = std::filesystem;
@@ -101,7 +102,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 	}
 	else {
 		// Default case, likely for splash page or general layouts
-		layoutPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
+		layoutPath = Utils::combinePath(Configuration::layoutsPath(), layoutName);
 	}
 
 	// A fixed file or XML replaces the layout's own pages entirely
@@ -193,6 +194,26 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 				LOG_INFO("Layout", message);
 		};
 
+		// Fork compat (OneSauce themes): a page that has a <page>.lua instead of
+		// a <page>.xml is built from the one XML file its build() names
+		// (LayoutCompat::luaBuildTarget). An XML file beside it wins.
+		auto luaPage = [&](const std::string& folder) -> std::string {
+			std::string lua = Utils::combinePath(folder, currentLayoutName + ".lua");
+			if (fixedResLayouts || !fs::exists(lua)) return "";
+			std::string why;
+			std::string target = LayoutCompat::luaBuildTarget(lua, layoutPathDefault, &why);
+			if (target.empty()) {
+				LOG_WARNING("Layout", "Can't use " + lua + ": " + why);
+				return "";
+			}
+			if (!fs::exists(target)) {
+				LOG_WARNING("Layout", lua + " builds " + target + ", which doesn't exist");
+				return "";
+			}
+			LOG_INFO("Layout", lua + " builds " + target);
+			return target;
+		};
+
 		// Check if the layout file exists
 		if (builtinXml || fs::exists(layoutFile)) {
 			LOG_INFO("Layout", "Attempting to initialize layout: " + layoutFile);
@@ -201,12 +222,20 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			LOG_ERROR("Layout", "Layout file does not exist: " + layoutFile);
 			continue;
 		}
+		else if (std::string fromLua = luaPage(currentLayoutPath); !fromLua.empty()) {
+			layoutFile = fromLua;
+			LOG_INFO("Layout", "Attempting to initialize layout: " + layoutFile);
+		}
 		else {
 			// Handle special cases when layout file does not exist
 			if (layoutPath != layoutPathDefault) {
 				if (currentLayoutName != "splash") {
 					layoutFile = Utils::combinePath(layoutPathDefault, currentLayoutName + ".xml");
 					if (fs::exists(layoutFile)) {
+						LOG_INFO("Layout", "Attempting to initialize default layout: " + layoutFile);
+					}
+					else if (std::string defaultLua = luaPage(layoutPathDefault); !defaultLua.empty()) {
+						layoutFile = defaultLua;
 						LOG_INFO("Layout", "Attempting to initialize default layout: " + layoutFile);
 					}
 					else {
@@ -270,14 +299,14 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			// Process font attributes
 			if (fontXml) {
 				fontName_ = config_.convertToAbsolutePath(
-					Utils::combinePath(config_.absolutePath, "layouts", layoutKey, ""),
+					Utils::combinePath(Configuration::layoutsPath(), layoutKey, ""),
 					fontXml->value());
 
 				// Check if the font file exists
 				if (!std::filesystem::exists(fontName_)) {
 					LOG_ERROR("RetroFE", "Specified font at \n    " + fontName_ + "\n does not exist. Falling back to standard font.");
 					fontName_ = config_.convertToAbsolutePath(
-						Utils::combinePath(config_.absolutePath, "layouts", layoutKey, ""),
+						Utils::combinePath(Configuration::layoutsPath(), layoutKey, ""),
 						"fonts/standard.ttf");
 				}
 			}
@@ -373,7 +402,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 				if (layoutNameOverride.empty()) {
 					config_.getProperty(OPTION_LAYOUT, layoutNameOverride);
 				}
-				std::string altfile = Utils::combinePath(Configuration::absolutePath, "layouts", layoutNameOverride, std::string(src->value()));
+				std::string altfile = Utils::combinePath(Configuration::layoutsPath(), layoutNameOverride, std::string(src->value()));
 
 				auto* soundObj = new Sound(file, altfile);
 				std::string soundType = type->value();
@@ -577,7 +606,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 			config_.getProperty("collections." + collectionName + ".layoutFromAnotherCollection", layoutFromAnotherCollection);
 			if (!layoutFromAnotherCollection.empty()) {
 				// Handle alternative layout path without modifying layoutPath
-				std::string layoutPathDefault = Utils::combinePath(Configuration::absolutePath, "layouts", layoutKey);
+				std::string layoutPathDefault = Utils::combinePath(Configuration::layoutsPath(), layoutKey);
 				std::string alternativeLayoutPath = Utils::combinePath(layoutPathDefault, "collections", collectionName, "layout");
 				if (std::filesystem::exists(alternativeLayoutPath)) {
 					imageBasePath = alternativeLayoutPath;
@@ -598,7 +627,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 			if (layoutName.empty()) {
 				config_.getProperty(OPTION_LAYOUT, layoutName);
 			}
-			std::string altImagePath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, src->value());
+			std::string altImagePath = Utils::combinePath(Configuration::layoutsPath(), layoutName, src->value());
 
 			bool additive = additiveXml ? (Utils::toLower(additiveXml->value()) == "true" || Utils::toLower(additiveXml->value()) == "yes") : false;
 			// Check existence of either imagePath or altImagePath
@@ -666,7 +695,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 				softOverlay = true;
 			}
 
-			std::string altVideoPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, std::string(srcXml->value()));
+			std::string altVideoPath = Utils::combinePath(Configuration::layoutsPath(), layoutName, std::string(srcXml->value()));
 			int numLoops = numLoopsXml ? Utils::convertInt(numLoopsXml->value()) : 1;
 
 			int videoMonitor = monitorXml ? Utils::convertInt(monitorXml->value()) : layoutMonitor; // Use layout's monitor if not specified at the menu level
@@ -783,6 +812,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 	loadReloadableImages(layout, "reloadableText", page);
 	loadReloadableImages(layout, "reloadableScrollingText", page);
 	loadReloadableImages(layout, "reloadableHiscores", page);
+	loadReloadableImages(layout, "scrollingText", page);
 
 	return true;
 }
@@ -826,6 +856,7 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 		bool layoutMode = false;
 		bool commonMode = false;
 		bool menuMode = false;
+		bool layoutPreferred = false;
 		int selectedOffset = selectedOffsetXml ? Utils::convertInt(selectedOffsetXml->value()) : 0;
 		int id = idXml ? Utils::convertInt(idXml->value()) : -1;
 
@@ -847,6 +878,8 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 			layoutMode = sysMode == "layout" || sysMode == "commonlayout" || sysMode == "systemlayout";
 			commonMode = sysMode == "common" || sysMode == "commonlayout";
 			menuMode = sysMode == "menu";
+			// Fork compat (OneSauce themes): the layout's copy first, else as with no mode
+			layoutPreferred = sysMode == "layout_preferred";
 		}
 
 		Component* c = nullptr;
@@ -905,6 +938,32 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 					startTime, endTime, location);
 			}
 		}
+		else if (tagName == "scrollingText") {
+			// Fork compat (OneSauce themes): <scrollingText src="file.txt"> scrolls a text
+			// file like reloadableScrollingText type="file". src resolves like an image's:
+			// against the page's folder, then the layout's.
+			xml_attribute<> const* srcXml = componentXml->first_attribute("src");
+			if (!srcXml) {
+				LOG_ERROR("Layout", "scrollingText needs a src file");
+				continue;
+			}
+			std::string themeFolder = Utils::combinePath(Configuration::layoutsPath(), layoutKey);
+			std::string location = LayoutCompat::themeFile(layoutPath, themeFolder, srcXml->value());
+			if (location.empty()) {
+				LOG_WARNING("Layout", "scrollingText file not found: " + std::string(srcXml->value()) + " in " + layoutPath + " or " + themeFolder);
+				continue;
+			}
+			FontManager* font = addFont(componentXml, nullptr, cMonitor);
+			std::string textFormat = textFormatXml ? textFormatXml->value() : "";
+			std::string direction = directionXml ? directionXml->value() : "horizontal";
+			float scrollingSpeed = scrollingSpeedXml ? Utils::convertFloat(scrollingSpeedXml->value()) : 1.0f;
+			float startPosition = startPositionXml ? Utils::convertFloat(startPositionXml->value()) : 0.0f;
+			float startTime = startTimeXml ? Utils::convertFloat(startTimeXml->value()) : 0.0f;
+			float endTime = endTimeXml ? Utils::convertFloat(endTimeXml->value()) : 0.0f;
+			std::string alignment = alignmentXml ? alignmentXml->value() : "";
+			c = new ReloadableScrollingText(config_, false, false, false, "file", textFormat, "", "", "", "", alignment, *page, 0,
+				font, direction, scrollingSpeed, startPosition, startTime, endTime, location);
+		}
 		else if (tagName == "reloadableHiscores") {
 			FontManager* font = addFont(componentXml, nullptr, cMonitor);
 			std::string textFormat = textFormatXml ? textFormatXml->value() : "";
@@ -936,6 +995,9 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 				c->allocateGraphicsMemory();
 				xml_attribute<> const* textFallback = componentXml->first_attribute("textFallback");
 				static_cast<ReloadableMedia*>(c)->enableTextFallback_(textFallback && Utils::toLower(textFallback->value()) == "true");
+				static_cast<ReloadableMedia*>(c)->setLayoutPreferred(layoutPreferred);
+				// Fork compat: textFormat on the text fallback, as on reloadableText
+				static_cast<ReloadableMedia*>(c)->setTextFormat(textFormatXml ? textFormatXml->value() : "");
 
 				xml_attribute<> const* useTextureCacheXml = componentXml->first_attribute("useTextureCache");
 				if (useTextureCacheXml && Utils::toLower(useTextureCacheXml->value()) == "true") {
@@ -993,7 +1055,7 @@ FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>*
 
 	if (fontXml) {
 		fontName = Configuration::convertToAbsolutePath(
-			Utils::combinePath(Configuration::absolutePath, "layouts", layoutKey, ""),
+			Utils::combinePath(Configuration::layoutsPath(), layoutKey, ""),
 			fontXml->value());
 
 		LOG_DEBUG("Layout", "loading font " + fontName);
@@ -1770,6 +1832,26 @@ void PageBuilder::buildViewInfo(xml_node<>* componentXml, ViewInfo& info, xml_no
 
 	if (backgroundAlpha) {
 		info.BackgroundAlpha = backgroundAlpha ? Utils::convertFloat(backgroundAlpha->value()) : 1.f;
+	}
+
+	// Fork compat (OneSauce themes): transform="(x, y), (w, h); four corners"
+	// draws the layout rectangle into a perspective quad (docs/ONESAUCE-COMPAT.md)
+	if (xml_attribute<> const* transform = findAttribute(componentXml, "transform", defaultXml)) {
+		auto quad = std::make_shared<LayoutCompat::QuadTransform>();
+		std::string why;
+		bool parsed = false;
+		try {
+			parsed = LayoutCompat::parseTransform(transform->value(), *quad, &why);
+		}
+		catch (const std::exception& e) {   // never the page: only the transform is dropped
+			why = e.what();
+		}
+		if (parsed) {
+			info.Transform = quad;
+		}
+		else {
+			LOG_WARNING("Layout", "Ignoring transform=\"" + std::string(transform->value()) + "\": " + why);
+		}
 	}
 }
 

@@ -65,7 +65,8 @@ ReloadableScrollingText::~ReloadableScrollingText( )
 }
 
 bool ReloadableScrollingText::loadFileText(const std::string& filePath) {
-    std::string absolutePath = Utils::combinePath(Configuration::absolutePath, filePath);
+    // location is relative to the root; <scrollingText src> (fork compat) passes an absolute path
+    std::string absolutePath = std::filesystem::path(filePath).is_absolute() ? filePath : Utils::combinePath(Configuration::absolutePath, filePath);
     std::filesystem::path file(absolutePath);
     std::filesystem::file_time_type currentWriteTime;
 
@@ -424,7 +425,7 @@ void ReloadableScrollingText::loadText( std::string collection, std::string type
         if (layoutName == "") {
             config_.getProperty(OPTION_LAYOUT, layoutName);
         }
-        textPath = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "collections", collection);
+        textPath = Utils::combinePath(Configuration::layoutsPath(), layoutName, "collections", collection);
         if (systemMode)
             textPath = Utils::combinePath(textPath, "system_artwork");
         else

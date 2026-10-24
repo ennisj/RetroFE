@@ -27,6 +27,13 @@
 #error "Cannot find SDL_mixer header"
 #endif
 #include "Utility/Utils.h"
+#include "Graphics/LayoutCompat.h"
+#include <SDL2/SDL_version.h>
+#if !SDL_VERSION_ATLEAST(2, 0, 18)
+#error "RetroFE needs SDL 2.0.18 or newer (SDL_RenderGeometry, used for transform=)"
+#endif
+#include "Graphics/ViewInfo.h"
+#include <algorithm>
 
 std::vector<SDL_Window*>   SDL::window_;
 std::vector<SDL_Renderer*> SDL::renderer_;
@@ -538,6 +545,67 @@ SDL_Texture* SDL::getRenderTarget(int index)
 	return (index < screenCount_ ? renderTargets_[index] : renderTargets_[0]);
 }
 
+// Fork compat (OneSauce themes): draws src of texture for the layout rectangle
+// x, y, w, h through transform's perspective quad, as a mesh fine enough to look
+// projective (SDL interpolates each triangle affinely). Containers, angle and
+// reflections don't apply. offX/offY is the fullscreen centring, in layout units
+// like the rest of renderCopy.
+static void renderTransformed(SDL_Renderer* renderer, SDL_Texture* texture, float alpha, const SDL_Rect& src,
+	const LayoutCompat::QuadTransform& transform, float x, float y, float w, float h,
+	float offX, float offY, float scaleX, float scaleY)
+{
+	int texW = 0;
+	int texH = 0;
+	SDL_QueryTexture(texture, nullptr, nullptr, &texW, &texH);
+	if (!renderer || texW <= 0 || texH <= 0 || src.w <= 0 || src.h <= 0 || w <= 0 || h <= 0) {
+		return;
+	}
+	constexpr int N = 16;
+	SDL_Vertex vertices[(N + 1) * (N + 1)];
+	int indices[N * N * 6];
+	Uint8 r = 255;
+	Uint8 g = 255;
+	Uint8 b = 255;
+	SDL_GetTextureColorMod(texture, &r, &g, &b);  // geometry uses vertex colours, not the texture's modulation
+	const Uint8 a = static_cast<Uint8>(std::min(std::max(alpha, 0.f), 1.f) * 255);
+	// The component's box can lie well outside the transform's rectangle (an
+	// animation moving it): points at or past the quad's horizon aren't drawn,
+	// and the rest are clamped (LayoutCompat::QuadTransform::apply)
+	bool visible[(N + 1) * (N + 1)];
+	for (int j = 0; j <= N; ++j) {
+		for (int i = 0; i <= N; ++i) {
+			const float u = static_cast<float>(i) / N;
+			const float v = static_cast<float>(j) / N;
+			float qx = 0;
+			float qy = 0;
+			visible[j * (N + 1) + i] = transform.apply(x + u * w, y + v * h, qx, qy);
+			SDL_Vertex& vertex = vertices[j * (N + 1) + i];
+			vertex.position = { (qx + offX) * scaleX, (qy + offY) * scaleY };
+			vertex.color = { r, g, b, a };
+			vertex.tex_coord = { (src.x + u * src.w) / texW, (src.y + v * src.h) / texH };
+		}
+	}
+	int n = 0;
+	for (int j = 0; j < N; ++j) {
+		for (int i = 0; i < N; ++i) {
+			const int topLeft = j * (N + 1) + i;
+			const int bottomLeft = topLeft + N + 1;
+			if (!visible[topLeft] || !visible[topLeft + 1] || !visible[bottomLeft] || !visible[bottomLeft + 1]) {
+				continue;
+			}
+			indices[n++] = topLeft;
+			indices[n++] = topLeft + 1;
+			indices[n++] = bottomLeft;
+			indices[n++] = topLeft + 1;
+			indices[n++] = bottomLeft + 1;
+			indices[n++] = bottomLeft;
+		}
+	}
+	if (n > 0) {
+		SDL_RenderGeometry(renderer, texture, vertices, (N + 1) * (N + 1), indices, n);
+	}
+}
+
 // Render a copy of a texture
 bool SDL::renderCopy(SDL_Texture* texture, float alpha, SDL_Rect const* src, SDL_Rect const* dest, ViewInfo& viewInfo, int layoutWidth, int layoutHeight)
 {
@@ -603,6 +671,15 @@ bool SDL::renderCopy(SDL_Texture* texture, float alpha, SDL_Rect const* src, SDL
 		SDL_QueryTexture(texture, nullptr, nullptr, &w, &h);
 		srcRect.w = w;
 		srcRect.h = h;
+	}
+
+	// Fork compat (OneSauce themes): transform="..." draws through a perspective quad.
+	// A rotated or mirrored screen draws it as usual.
+	if (viewInfo.Transform && !mirror_[viewInfo.Monitor] && rotation_[viewInfo.Monitor] == 0) {
+		renderTransformed(renderer_[viewInfo.Monitor], texture, alpha, srcRect, *viewInfo.Transform,
+			static_cast<float>(dest->x), static_cast<float>(dest->y), static_cast<float>(dest->w), static_cast<float>(dest->h),
+			static_cast<float>(dstRect.x - dest->x), static_cast<float>(dstRect.y - dest->y), scaleX, scaleY);
+		return true;
 	}
 
 	// Define the scale
@@ -1254,6 +1331,15 @@ bool SDL::renderCopyF(SDL_Texture* texture, float alpha, const SDL_Rect* src, co
 		SDL_QueryTexture(texture, nullptr, nullptr, &w, &h);
 		srcRect.w = w;
 		srcRect.h = h;
+	}
+
+	// Fork compat (OneSauce themes): transform="..." draws through a perspective quad.
+	// A rotated or mirrored screen draws it as usual.
+	if (viewInfo.Transform && !mirror_[viewInfo.Monitor] && rotation_[viewInfo.Monitor] == 0) {
+		renderTransformed(renderer_[viewInfo.Monitor], texture, alpha, srcRect, *viewInfo.Transform,
+			static_cast<float>(dest->x), static_cast<float>(dest->y), static_cast<float>(dest->w), static_cast<float>(dest->h),
+			static_cast<float>(dstRect.x - dest->x), static_cast<float>(dstRect.y - dest->y), scaleX, scaleY);
+		return true;
 	}
 
 	// Define the scale
