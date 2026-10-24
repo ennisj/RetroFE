@@ -40,7 +40,7 @@ class Image;
 //         rowDetailColor="9fb4d0" rowDetailAlpha="0.8" linkMarker=">"
 //         headerColor="75c8f7" separatorColor="75c8f7" separatorAlpha="0.2"
 //         imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
-//         statusColor="9fe3a6" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"/>
+//         statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"/>
 //
 // Text too long for its column ends in "..." (see WidgetPainter).
 //
@@ -87,7 +87,8 @@ public:
     {
         Detail,   // rowDetailColor: results' details, links' status and marker
         Header,   // headerColor: section headers
-        Status,   // statusColor: the status line after an action
+        Status,   // statusColor: the status line after an action that did something
+        Info,     // infoColor: the status line when nothing happened (cancelled, undone), and prompts
         Error     // errorColor: errors, and the question of a button to confirm
     };
 
@@ -148,7 +149,7 @@ public:
     void invalidate() { stale_ = true; pictures_.recheck(); }
 
     // Shown under the form until the next action, e.g. a result or a warning
-    void setStatus(const std::string& message, bool isError);
+    void setStatus(const std::string& message, Forms::StatusKind kind);
     std::optional<Browse> takeBrowse();
 
     // An action's result, or a link or result row asking to open a form
@@ -221,6 +222,7 @@ private:
     FontManager* detailFont_ = nullptr;
     FontManager* headerFont_ = nullptr;
     FontManager* statusFont_ = nullptr;
+    FontManager* infoFont_ = nullptr;
     FontManager* errorFont_ = nullptr;
     const Forms::Form* form_ = nullptr;
     Forms::Model* model_ = nullptr;
@@ -252,7 +254,7 @@ private:
     std::string liveSent_;        // live fields: what the model was last given
 
     std::string status_;
-    bool statusIsError_ = false;
+    Forms::StatusKind statusKind_ = Forms::StatusKind::Success;
     std::optional<Browse> browse_;
     std::optional<Forms::Model::Result> result_;
 

@@ -1735,6 +1735,7 @@ Forms::Model::Result SystemProvider::runAction(const std::string& action, const 
     if (action == "resetSettings" || action == "resetLauncher" || action == "resetInfo") {
         bufferFor(screen)->edits.reset();
         result.ok = true;
+        result.info = true;
         return result;
     }
     if (action == "replaceMedia" || action == "clearMedia" || action == "restoreMedia" || action == "addToFolder"
@@ -1987,7 +1988,8 @@ Forms::Model::Result SystemProvider::playlistAction(const std::string& action, c
         result.message += note.empty() ? "" : " " + note;
     }
     result.ok = edit.ok;
-    if (edit.ok) {
+    result.info = edit.ok && edit.files.empty();   // e.g. "... is in cyclePlaylist already."
+    if (edit.ok && !edit.files.empty()) {   // nothing written: nothing to reload
         changed("playlist " + playlist + " of " + name);
         playlistKey_.clear();   // read the file again
     }

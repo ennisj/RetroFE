@@ -424,6 +424,7 @@ Forms::Model::Result ControlsProvider::addCaptured(const std::string& id)
     std::vector<std::string> list = tokens(id);
     for (const std::string& existing : list) {
         if (InputToken::same(input, InputToken::parse(existing))) {
+            result.info = true;   // nothing to add, but nothing wrong either
             result.message = InputToken::describe(input) + " is already one of its inputs.";
             return result;
         }
@@ -494,6 +495,7 @@ Forms::Model::Result ControlsProvider::runAction(const std::string& action, cons
     if (action == "reset") {
         edits_.reset();
         result.ok = true;
+        result.info = true;
         result.message = "Changes undone.";
         return result;
     }

@@ -380,14 +380,15 @@ def catalog_page(variant):
 def form_attrs(up):
     # focusImage is relative to the page's own folder. Details (a result's, a link's
     # status) in a pale accent, section headers and separators in the accent, pictures
-    # on a faint light backing, results in green, errors and a button waiting for
+    # on a faint light backing, results in green, messages that report nothing happened
+    # (cancelled, undone) in a quiet blue-grey, errors and a button waiting for
     # confirmation in red.
     lines = [
         'font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"',
         'rowHeight="50" focusImage="%simages/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35"' % up,
         'rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="%s" headerAlpha="0.95"' % ACCENT,
         'separatorColor="%s" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"' % ACCENT,
-        'statusColor="9fe3a6" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"',
+        'statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"',
         'backgroundColor="000000" backgroundAlpha="0"',
     ]
     return ('\n' + ' ' * 10).join(lines)

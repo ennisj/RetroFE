@@ -336,6 +336,21 @@ Example:
     <scrollingText src="../../collections/_common/text/menu_instruct.txt" x="830" y="6" width="555" height="32" fontSize="32" direction="vertical" alignment="left" scrollingSpeed="25" startTime="3" endTime="3" layer="18"/>
 
   
+## \<form> and \<keyboard> Parameters
+
+Fork addition: the Settings and Manage screens are pages in
+`layouts/<layout>/forms/` with a `<form>` element (and `<keyboard>` for the
+on-screen keyboard). Their attributes are in [MANAGER.md](MANAGER.md)
+("Styling the screens"). The status line under a form has three colours:
+`statusColor` when an action did something, `infoColor` when nothing
+happened (cancelled, undone, nothing to do) and for "press it now" prompts,
+and `errorColor` for errors and unsaved-changes warnings. Each defaults to
+`fontColor`. Aeon Nox uses green `9fe3a6`, blue-grey `b8c4d0` and red `ff9a8a`.
+
+    <form x="960" y="555" width="1400" height="930" xOrigin="center" yOrigin="center" fontSize="34" fontColor="dedede"
+          statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" layer="3"/>
+
+  
 ## General Parameters
 
 The other tags all support a general set of parameters:

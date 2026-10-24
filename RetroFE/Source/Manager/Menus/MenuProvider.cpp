@@ -1387,6 +1387,7 @@ Forms::Model::Result MenuProvider::finish(const EditResult& edit, const std::str
     Forms::Model::Result result;
     result.ok = edit.ok;
     result.message = edit.message;
+    result.info = edit.ok && edit.files.empty();   // nothing written: "... is already in ..."
     // A failure part way can still have changed files: re-read whenever any were touched
     if (!edit.files.empty()) {
         local_++;
@@ -1442,6 +1443,7 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
     if (action == "reset") {
         edits_.reset();
         result.ok = true;
+        result.info = true;
         return result;
     }
     if (action == "create") {

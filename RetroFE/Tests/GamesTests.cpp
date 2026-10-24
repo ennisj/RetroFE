@@ -494,6 +494,15 @@ static void runGamesTests()
         Forms::Model::Result fav = f.model.runAction("game.addFavourite");
         check(fav.ok, "favourite: " + fav.message);
         check(Test::readFile(root + "/collections/Arcade/playlists/favorites.txt").find("b") != std::string::npos, "favorites.txt");
+        {
+            // Again before the index has caught up (else it's refused up front): the
+            // library says it's there already, and that's what's shown, as a neutral note
+            Forms::Model::Result again = f.model.runAction("game.addFavourite");
+            if (again.ok) {
+                check(again.info && again.message.find("Added") == std::string::npos && again.message.find("already") != std::string::npos,
+                      "a favourite already isn't reported as added: " + again.message);
+            }
+        }
         f.settle();
         checkEqual(f.model.get("game:isFavourite"), "yes", "now a favourite");
         check(f.model.runAction("game.removeFavourite").ok, "unfavourite");

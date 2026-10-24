@@ -166,6 +166,11 @@ namespace Forms
             bool ok = false;
             std::string message;
 
+            // Nothing happened (cancelled, undone, nothing to do): the
+            // message is shown in the neutral style (infoColor) rather than
+            // as a success or an error, whatever ok says (see statusKind)
+            bool info = false;
+
             // RetroFE has to reload to show the change: the manager closes and
             // RetroFE reloads now. To reload once the user closes the manager
             // instead, providers call Services::requestReload.
@@ -197,6 +202,14 @@ namespace Forms
         };
         virtual Result runAction(const std::string& action) = 0;
     };
+
+    // How a status message is shown: a success (statusColor), a neutral
+    // note when nothing happened or for a prompt (infoColor), an error (errorColor)
+    enum class StatusKind { Success, Info, Error };
+    inline StatusKind statusKind(const Model::Result& result)
+    {
+        return result.info ? StatusKind::Info : result.ok ? StatusKind::Success : StatusKind::Error;
+    }
 
     // A button with confirm="...": the first Select arms it, a second one runs
     // it; anything else in between disarms it

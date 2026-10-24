@@ -364,6 +364,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Manager/FormView.h"
 	"${RETROFE_DIR}/Source/Manager/Home.h"
 	"${RETROFE_DIR}/Source/Manager/ImGuiScreen.h"
+	"${RETROFE_DIR}/Source/Manager/LeaveWarning.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerModel.h"
 	"${RETROFE_DIR}/Source/Manager/ManagerUI.h"
 	"${RETROFE_DIR}/Source/Manager/Navigator.h"

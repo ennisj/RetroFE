@@ -192,8 +192,8 @@ Severity: **High** breaks a task, **Medium** misleads or loses work,
 | 1 | Low | Settings > Controls, a control emptied but not saved | After removing all of Back's inputs (not saved), the control's note said "Set in controls1.conf. Changed: not saved yet. **It's empty there, so nothing is bound to it.**" — it isn't empty there; that line is for a control left blank in the file (`quit =`). Steps: a, Settings > Controls > Back, remove its three inputs (`r10-a-026-save-refused.png`). | Fixed (`r10-a-143-removed3.png`) |
 | 2 | Low | Settings > Controls, duplicate notes | "Keyboard O is also **Remove from favourites's** input" (and "Note: it's also … 's input, so it does both"). Steps: b, Controls > Page down, add O (`r10-b-114-pd-O-dup.png`). | Fixed: "is also an input of Remove from favourites" |
 | 3 | Low | Start log with `quit =` | A deliberately blank quit (the documented kiosk setting) logged `[WARNING] controls.quit is empty` at every start, the only warning on b. | Fixed: a NOTICE for quit ("…and closing the window is ignored"); an empty up/down/left/right/select/back still warns |
-| 4 | Low | Manage, unsaved changes, Back then window close | After Back on the Controls list warned "leave again to drop them", a window close quit at once, dropping the changes: the close counts as the "again". Consistent with CONTROLS.md ("closing again leaves"), but the warning was about Back. | Report only (recommendation 2) |
-| 5 | Low | Capture cancelled | "Cancelled: nothing was added." and "Changes undone." are shown in the success (green) style; a cancel reads like a result. | Report only |
+| 4 | Low | Manage, unsaved changes, Back then window close | After Back on the Controls list warned "leave again to drop them", a window close quit at once, dropping the changes: the close counts as the "again". Consistent with CONTROLS.md ("closing again leaves"), but the warning was about Back. | Fixed in the follow-up: each way of leaving warns once |
+| 5 | Low | Capture cancelled | "Cancelled: nothing was added." and "Changes undone." are shown in the success (green) style; a cancel reads like a result. | Fixed in the follow-up: a neutral `infoColor` |
 | 6 | Info | Cafe80s, 1 HANDHELDS | Three `<scrollingText src="text/…">` aren't found beside that page or in the theme; the files are in `collections/_common/text`. Either a broken page in Cafe80s or a lookup OneSauce does that RetroFE doesn't (unchanged since round 8). | Open question |
 | 7 | Info | Test method | The first start of b (before the no-activation hint) took the foreground and later exited by itself with no "Window closed" line, most likely a Q typed by the user landing in it. RetroFE raises its window at start by design. All later runs used `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1` and checked that RetroFE wasn't in front. | Harness fixed (`scratchpad\qa4-run.ps1`) |
 
@@ -228,3 +228,36 @@ Tests: 6,550/6,550 checks pass on Windows (6,541 before); 6,515/6,515 on Linux
    plain note style, for messages that report nothing happened.
 4. **Test helpers**: start RetroFE with `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1`
    in every GUI check, so a check never takes the user's keyboard.
+
+## Follow-up (after round 10)
+
+Recommendations 2 and 3 are done; 1 (Cafe80s) is on [VERIFY.md](VERIFY.md)
+for a cabinet check; 4 is in every GUI check's start script (outside the
+repository).
+
+| # | Change | Files | Test |
+|---|--------|-------|------|
+| 4 | The "warned once" state remembers the way of leaving: Back (and Escape), closing Manage (the Settings key, the Close button, starting a game) and closing the window. Leaving the same way again drops the changes; another way warns again first. A window close says so in its own words: "... Save them, or close the window again to quit and drop them." Moving on the screen in between still starts over. | `Manager/LeaveWarning.h` (new, SDL-free), `Manager/ManagerUI.cpp/.h` | FormsTests: "each way of leaving gets its own unsaved-changes warning" |
+| 5 | A third status style for "nothing happened": `Forms::Model::Result::info` (shown whatever `ok` says), `Forms::statusKind`, the `<form>` attribute `infoColor` (default `fontColor`; Aeon Nox 16:9 and 4:3 `b8c4d0`, built-in page `b4bcc6`), the plain text colour in the ImGui forms. Used for: a capture cancelled or timed out, the "press it now" prompt, Undo changes / Reset on every section, "Keyboard Y is already one of its inputs." (was an error), an edit that wrote no files ("... is already in ...", RetroArch "No changes.", a launcher saved with the same settings, cyclePlaylist already listing it), and "Back from <game>." | `Forms/Form.h`, `Graphics/Component/FormWidget.*`, `Graphics/PageBuilder.cpp`, `Builtin/Builtin.cpp`, the Controls, Games, RetroArch, Menus, Systems and Emulators providers, Aeon Nox `forms/` pages and `Scripts/aeon-nox/gen_layouts.py` | FormsTests: "results that report nothing happened are shown as neutral notes"; ControlsTests (undo and a repeated input are neutral) |
+
+Checked on `E:\Storage\Agents\leftovers` (OneSauce-shaped, Aeon Nox 16:9),
+screenshots `E:\Storage\Agents\leftovers\screenshots\lf-*.png`: the capture
+prompt and "Cancelled: nothing was added." (held X 2.6 s) in blue-grey
+(`lf-07`, `lf-08`), "Added Keyboard Y. Save to keep it." in green (`lf-09`),
+"Keyboard Y is already one of its inputs." plain, no `!` (`lf-10`), "Changes
+undone." in blue-grey (`lf-17`); on the Controls list a window close warned
+"... or close the window again to quit and drop them." (`lf-12`), Back then
+warned "... leave again ..." (`lf-13`), a window close after that warned
+again instead of quitting (`lf-14`), F10 after a Back warning warned again
+and stayed (`lf-15`); after a Back warning and two closes RetroFE quit and
+`controls.conf`/`controls1.conf` were unchanged (hash). The ImGui renderer's
+colours weren't checked on screen (posted mouse clicks don't reach ImGui).
+
+After a review: a favourite added twice says "already" (not "Added ... to
+the favourites"); a launcher saved unchanged or a cyclePlaylist already
+listing the playlist no longer asks RetroFE to reload; an action or link
+(either renderer) and any control but Back on the theme editors start the
+warning over, as moving does on a layout-drawn screen; the theme editors
+show their "already"/"nothing that way" notes plain too.
+
+Tests: 6,749/6,749 checks pass on Windows.
