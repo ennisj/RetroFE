@@ -61,6 +61,12 @@ hand-made ones included, that has no `splash.xml`.
   - Drag to move; drag one of the eight handles to resize. Moves snap to a
     5-unit grid (*Snap to grid* turns that off). The page is rebuilt when you
     let go.
+  - **Guides**: while you drag, an edge or the centre that comes within a
+    few pixels of another widget's edge or centre, or of the page's centre,
+    lines up with it exactly and a pink line shows it (a resize lines up the
+    edge you're dragging). Anything not near a guide snaps to the grid as
+    before. Hold **Alt** to drag without guides; *Guides* in the toolbar
+    turns them off.
   - Arrow keys nudge the selection by 1 (Shift: 10); Delete removes it;
     Ctrl+D duplicates it (the copy goes 20 units down and right).
   - *Show* turns art and video, text, and animations off in the preview only.
@@ -103,6 +109,17 @@ and change them together:
   change), **Space across / Space down** (three or more: the outer two stay
   and the others get equal gaps), **Duplicate them**, **Delete them** and
   **Only this one**. Below that are the settings of the last one picked.
+- **All N at once** (under those buttons): the settings they all have, each
+  showing their value when they agree and *(several values)* when they
+  don't. Typing a value (or choosing one) writes it to every one of them.
+  In the widget editor: layer, opacity, text colour (when every one has
+  one) and each setting their kinds of widget share (*Auto Fit Text* on a
+  genre, a year and a meta text). In the layout editor: `x`, `y`, `width`,
+  `height`, the origins and offsets, `alpha`, `layer`, `font`, `fontSize`,
+  `fontColor` and `src` whether set or not, then every other attribute all
+  of them set; *x* removes one from every one that has it. Only those
+  attributes' values change, byte for byte; with *Also apply to layout
+  4x3.xml* the change is copied there by the usual rules.
 - Every one of these is a single undo step.
 - Resizing is one at a time: with several selected there are no handles.
 - In the layout editor, positions are written as numbers, as a drag writes
@@ -275,7 +292,9 @@ spacing, the order of attributes, quotes, line endings.
   previews with that collection), and every element's box over it (*All
   boxes* off shows only the selected one and the one under the mouse).
   Click to select, click again to pick the one underneath; drag to move;
-  drag a handle to resize. Moves snap to a 5-unit grid. Arrow keys nudge
+  drag a handle to resize. Moves snap to a 5-unit grid, and line up with
+  other elements' edges and centres and the page's centre on the way
+  (*Guides*, as in the widget editor; Alt: none). Arrow keys nudge
   (Shift: 10), Delete deletes (it asks), Ctrl+Z / Ctrl+Y / Ctrl+S.
 - **Right: the selected element.** *Position, size and look*: `x`, `y`,
   `width`, `height`, `xOrigin`, `yOrigin`, `xOffset`, `yOffset`, `alpha`,
@@ -325,10 +344,33 @@ toolbar offers:
     `center` typed in): only where the other page had the same value as this
     one. Where it already had its own, it's left, and the line beside the
     switch says so;
-  - not the page's own size, and not adding, deleting or duplicating
-    elements, events or steps (the line says so).
+  - not the page's own size.
   A run of separate moves is scaled as one (ten 1-unit nudges move the
   1600-wide page 8, not 10), until the other page's value is changed there.
+
+  Some edits are **made on the other page** rather than copied, each page on
+  its own elements:
+  - **Left / Centre / Right / Top / Middle / Bottom** and **Space across /
+    down** line up the same elements there from *their own* boxes on that
+    page, so what's lined up here is lined up there too (copying the moves
+    would leave the 4:3 page's Publisher at 138 and Rating at 134). Elements
+    already lined up here but not there are lined up there only (Show the
+    page to undo that).
+  - **Duplicate**, **Delete**, **Add element...** (after the same element
+    there; in the middle of that page) and adding or removing **events,
+    steps and changes**, and **Copy** of animations, happen at the same
+    place there. A step or change there is the same one only when it's in
+    the same place among as many, with the same duration (a step) or type
+    (a change); a different list of steps there is left alone. **Delete**,
+    removing animations and **Copy** (which replaces events) touch an
+    element there only when it's surely the same one: not a wheel item
+    paired by its place from the selected item of a wheel of another
+    length, nor one showing another file or text there. Those stay, and the
+    line says so; the delete dialog says it beforehand.
+  Both are one undo step with this page's. When one of the elements isn't
+  on the other page, nothing is done there and the line beside the switch
+  says which: lining up and spacing then copy the moves in proportion, as
+  above; the rest stays on this page.
   Undo and Redo take both pages' step back together; when the other page
   was changed on its own since, Undo works on this page only and says so.
   Save saves both (each keeps its original in `manage/backups`, as any page
@@ -460,7 +502,15 @@ a theme is opened in that session only (not again after a reload or when
 another theme is opened), in whichever editor opens it. A banner says a script is running while it does,
 and the results go to `log.txt` (`[ThemeEditor] script:`). It exists so the
 editor can be checked without a mouse. Coordinates and distances are theme
-units; blank lines and lines starting with `#` are skipped.
+units; blank lines and lines starting with `#` are skipped. After a command
+that changes the page, the next one waits until the preview has been built
+again (and, in the layout editor, the boxes measured); while a script runs
+the preview is rebuilt straight away rather than after the usual quarter
+second, so this costs a frame or two. A script needs no `wait` after `undo`
+or `nudge`; `wait N` is only for holding the screen. Art that loads after
+the page is built (game art, videos) isn't waited for, and if the preview
+can't be rebuilt at all (a drag left open) the script goes on after 600
+frames.
 
 | Command | Does |
 |---------|------|
@@ -474,6 +524,8 @@ units; blank lines and lines starting with `#` are skipped.
 | `addselect N`, `toggleselect N`, `selectall`, `selection` | several at once (`selection` notes them) |
 | `clickadd X Y`, `marquee X1 Y1 X2 Y2 [add]` | a Ctrl-click; a box from one corner to the other (without `add` it must start on empty canvas) |
 | `align left\|center\|right\|top\|middle\|bottom`, `distribute h\|v`, `duplicate` | the selection |
+| `layerall N`, `alphaall PCT`, `colourall RRGGBB\|none`, `varall TOKEN VALUE...`, `resetvarall TOKEN`, `shared` | one setting on every selected widget; `shared` notes what they share (*(several values)* where they differ) |
+| `guides on\|off` | alignment guides for the script's own drags (off unless asked, so `move` lands where it says) |
 | `show media\|text\|anims on\|off`, `preview COLLECTION`, `rebuild` | preview options |
 | `save`, `use`, `report`, `addDialog` | |
 | `close` (asks if unsaved), `discard` (leaves without saving) | |
@@ -510,4 +562,6 @@ In the layout editor the commands are:
 | `copyanims PATH`, `events`, `endbox [EVENT]`, `movingevents`, `replay EVENT` | copies another element's animations; notes the events, where onEnter (or EVENT) leaves it and which events move it; plays an event on the preview |
 | `endevent EVENT\|all` | which event's end boxes the canvas draws (`all`: every event) |
 | `addpath PATH`, `togglepath PATH`, `selectall`, `selection`, `clickadd X Y`, `marquee X1 Y1 X2 Y2 [add]`, `align ...`, `distribute h\|v` | several at once, as in the widget editor; `duplicate` and `delete` take every selected element |
-| `twin on\|off`, `switchtwin`, `twinnote`, `twinget NAME` | edits copied to the page's 4:3 twin (or not); shows the twin with the same elements selected; notes what the last copy did; notes the selected element's attribute on the twin |
+| `twin on\|off`, `switchtwin`, `twinnote`, `twinget NAME` | edits copied to the page's 4:3 twin (or not); shows the twin with the same elements selected; notes what the last copy did; notes the selected element's attribute on the twin. With the twin on, `align`, `distribute`, `duplicate`, `delete`, `add`, `event`, `addset`, `addanimate`, `rmanim` and `copyanims` are made on both pages |
+| `attrall NAME VALUE...`, `rmattrall NAME`, `shared [NAME...]` | one attribute on every selected element; notes what they have for those (else every one they all set) |
+| `guides on\|off` | as in the widget editor |

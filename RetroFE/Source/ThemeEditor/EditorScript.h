@@ -57,7 +57,11 @@ namespace ThemeEditor
     // addselect N, toggleselect N, selectall, selection (notes it), clickadd
     // X Y (a Ctrl-click), marquee X1 Y1 X2 Y2 [add] (without add it must
     // start on empty canvas), align left|center|right|top|middle|bottom,
-    // distribute h|v, duplicate. Coordinates and distances are theme units.
+    // distribute h|v, duplicate; one setting on every selected widget:
+    // layerall N, alphaall PCT, colourall HEX|none, varall TOKEN VALUE...,
+    // resetvarall TOKEN, shared (notes each shared setting, "(several
+    // values)" where they differ); guides on|off (alignment guides for the
+    // drags that follow; off unless asked). Coordinates and distances are theme units.
     // NotSession for anything else. `note` says what happened (the
     // selection, the widget's new rect).
     CommandResult runSessionCommand(EditorSession& session, const EditorCommand& command, std::string& note);
@@ -74,7 +78,9 @@ namespace ThemeEditor
     // [EVENT] (notes where onEnter, or that event, leaves it), movingevents;
     // several at once: addpath PATH, togglepath PATH, selectall, selection,
     // clickadd X Y, marquee X1 Y1 X2 Y2 [add], align ..., distribute h|v
-    // (duplicate and delete take every selected element). NotSession for
-    // anything else.
+    // (duplicate and delete take every selected element); attrall NAME
+    // VALUE... and rmattrall NAME (every selected element, one undo step),
+    // shared [NAME...] (notes what they have, "(several values)" where they
+    // differ); guides on|off. NotSession for anything else.
     CommandResult runLayoutCommand(LayoutSession& session, const EditorCommand& command, std::string& note);
 }

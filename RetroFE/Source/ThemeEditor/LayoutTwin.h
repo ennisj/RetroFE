@@ -43,11 +43,17 @@
 //     where it already differed; so is the page's own size. The result says
 //     what wasn't copied.
 //   - Adding, deleting and duplicating elements, events or steps isn't
-//     copied (attributeChanges says the structure changed).
+//     copied as a change (attributeChanges says the structure changed).
+//     Instead the screen makes those operations on both pages (runOnBoth):
+//     the same operation on the matching elements there, when every one
+//     it acts on has a match. Align and distribute go the same way, each
+//     page lining up its own boxes (twinGeometry), since copying the moves
+//     lines them up on one page only.
 //
 // Pure: no filesystem. LayoutSession holds each page.
 
 #include "LayoutText.h"
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -58,9 +64,19 @@ namespace ThemeEditor
     // in the same folder, either way round, when both are in `pages`; "" otherwise
     std::string twinPage(const std::string& page, const std::vector<std::string>& pages);
 
+    // How sure a match is: the same element (identity and place agree, or
+    // the only one like it; a vertical menu's slot by its index), a wheel's
+    // slot by its place from the selected item (the wheels can differ in
+    // length, so it's the same slot, not the same tag), or the same place
+    // showing another file or text. The weakest step on the way down counts.
+    enum class MatchKind { Exact = 0, Slot = 1, Weak = 2, None = 3 };
+
     // The element of `to` that is `element` of `from`; -1 when there's none
-    // (or it can't be told apart). The page itself matches the page.
-    int matchElement(const LayoutDoc& from, int element, const LayoutDoc& to);
+    // (or it can't be told apart). The page itself matches the page. An
+    // event, step or change matches the one in the same place under its
+    // element's match, among as many of its tag, with the same event name,
+    // step duration or change type; else none. `kind`: how sure.
+    int matchElement(const LayoutDoc& from, int element, const LayoutDoc& to, MatchKind* kind = nullptr);
 
     // An attribute that changed between two versions of a page
     struct AttrChange
@@ -134,4 +150,66 @@ namespace ThemeEditor
     // reaches a step on one page whose other half is gone. syncTwinPages does
     // this too.
     void pairEvictions(LayoutSession& a, LayoutSession& b);
+
+    struct ElementGeom;
+
+    // The box of `element` (geometry `g` here, on a page hereW x hereH) on the
+    // other page, as its element `match` there: the position and origin from
+    // that page's own attributes, as PageBuilder reads them (a menu item's
+    // <itemDefaults> included); the size from its size here, changed by
+    // whatever size attributes (width, height, min/max, fontSize) differ
+    // there, as ViewInfo scales (aspect kept). A size that was a guess here
+    // is guessed there the same way; one that can't be told (art clamped by
+    // a maximum here and set differently there) is scaled with the page and
+    // marked approximate. False for the page, no match, or a box drawn
+    // around a menu's slots.
+    bool twinGeometry(const LayoutDoc& here, int element, const ElementGeom& g, int hereW, int hereH,
+                      const LayoutDoc& there, int match, int thereW, int thereH, ElementGeom& out, bool sameArt = true);
+
+    // A group operation made on both pages, each on its own elements, rather
+    // than copied as per-element changes: align and distribute work from
+    // each page's own boxes (copying the moves would line them up on one page
+    // only), and adding, duplicating and deleting elements, events and steps
+    // happens at the matching place there.
+    struct TwinOp
+    {
+        // The elements here the operation acts on (beyond the selection that
+        // `selection` gives), each of which must have a match there
+        std::vector<int> touches;
+        // Act on the movable selection (align, distribute) rather than the whole selection
+        bool movable = false;
+        // Act on the primary only (adding an element after it, its animations)
+        bool primaryOnly = false;
+        // The elements need their boxes there (twinGeometry)
+        bool boxes = false;
+        // Run there even when nothing changed here (lining up what's already lined up here, not there)
+        bool evenIfUnchanged = false;
+        // It removes or replaces something there (delete, removing an animation,
+        // replacing an element's events): only on elements that are surely the
+        // same (MatchKind::Exact), never a wheel's slot or one showing another file
+        bool destructive = false;
+        // The operation, on either page; `map` turns an element of this page
+        // into the same element on the page it runs on (itself here). There,
+        // the selection is the matching elements, the primary's match last.
+        std::function<bool(LayoutSession& page, const std::function<int(int)>& map)> run;
+    };
+    struct TwinOpResult
+    {
+        bool here = false;                  // it changed this page
+        bool there = false;                 // and the other one
+        bool linked = false;                // the two are one undo step
+        std::vector<std::string> missing;   // what has no match there (nothing was done there), labels
+        // What a destructive operation found there but couldn't be sure was the
+        // same ("the same slot of a shorter wheel", "showing another file"):
+        // nothing was done there either. Labels of the elements here.
+        std::vector<std::string> unsure;
+        bool failed = false;                // everything matched, yet it couldn't be made there
+    };
+    // Copies anything pending first (syncTwinPages), runs the operation here,
+    // then, when everything it acts on has a match there, on the other page
+    // as a step linked to here's (Undo takes both). Afterwards nothing is
+    // left for syncTwinPages to copy from it. When something has no match,
+    // only this page changes and `missing` says what; the caller decides
+    // whether to let syncTwinPages copy it the old way.
+    TwinOpResult runOnBoth(LayoutSession& here, LayoutSession& there, TwinSync& state, const TwinOp& op);
 }

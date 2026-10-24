@@ -240,7 +240,8 @@ void ThemeEditorScreen::update(float dt)
     else {
         sinceChange_ += dt;
     }
-    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_)) {
+    // A script doesn't wait out the delay (it waits for the rebuild before its next command)
+    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || scriptAt_ < script_.size())) {
         rebuildPreview();
     }
 
@@ -679,6 +680,14 @@ void ThemeEditorScreen::runScript()
         scriptWait_--;
         return;
     }
+    // The last command's change is in the preview first (the boxes are the
+    // project's, but what a screenshot shows is the preview); capped
+    const bool busy = session_.revision() != seenRevision_ || session_.pageIndex() != seenPage_ || previewDirty_ || job_ != Job::None;
+    if (busy && scriptIdleFrames_ < 600) {
+        scriptIdleFrames_++;
+        return;
+    }
+    scriptIdleFrames_ = 0;
     const EditorCommand& command = script_[scriptAt_++];
     std::string note;
     bool ok = runCommand(command, note);
@@ -1257,6 +1266,12 @@ void ThemeEditorScreen::drawToolbar()
     ImGui::SameLine();
     ImGui::Checkbox("Snap to grid", &session_.snap);
     ImGui::SameLine();
+    ImGui::Checkbox("Guides", &guidesOn_);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("While dragging with the mouse, edges and centres line up with the other widgets' and the page's "
+                          "centre, with a line to show it. Hold Alt to drag without them.");
+    }
+    ImGui::SameLine();
     ImGui::TextDisabled("Preview with:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f * ctx_.scale);
@@ -1708,6 +1723,11 @@ void ThemeEditorScreen::drawCanvas()
     const ImVec2 mouse = io.MousePos;
     const float sx = mouse.x - origin.x, sy = mouse.y - origin.y;
     const float grab = 6.0f * ctx_.scale;
+    // Alignment guides follow the toolbar's setting, off while Alt is held (a script sets its own)
+    if (scriptAt_ >= script_.size()) {
+        session_.guides = guidesOn_ && !io.KeyAlt;
+        session_.guideReachPx = 6.0f * ctx_.scale;
+    }
     // Ctrl or Shift: toggle the widget clicked, or a marquee that adds
     if (ImGui::IsItemActivated()) session_.pointerDown(fit_, sx, sy, grab, io.KeyCtrl || io.KeyShift);
     if (session_.dragging()) {
@@ -1800,6 +1820,16 @@ void ThemeEditorScreen::drawCanvas()
         ImVec2 at(u1.x, std::max(origin.y, u1.y - ts.y - 6.0f));
         dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 180));
         dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(255, 255, 255, 255), label.c_str());
+    }
+    // Where the box being dragged lines up with others (or the page's centre)
+    if (session_.dragMoved()) {
+        for (const GuideLine& g : session_.guideLines()) {
+            const ImVec2 p1 = g.vertical ? toStage(static_cast<float>(g.at), static_cast<float>(g.from))
+                                         : toStage(static_cast<float>(g.from), static_cast<float>(g.at));
+            const ImVec2 p2 = g.vertical ? toStage(static_cast<float>(g.at), static_cast<float>(g.to))
+                                         : toStage(static_cast<float>(g.to), static_cast<float>(g.at));
+            dl->AddLine(p1, p2, IM_COL32(255, 64, 160, 230), 1.5f * ctx_.scale);
+        }
     }
     if (session_.marqueeActive() && session_.dragMoved()) {
         const DragRect m = session_.marqueeBox();
@@ -2031,6 +2061,7 @@ void ThemeEditorScreen::drawSelectionTools()
     }
     ImGui::SameLine();
     if (ImGui::Button("Delete them")) session_.removeSelected();
+    drawSharedSettings();
     if (primary) {
         if (ImGui::Button("Only this one")) session_.select(session_.selected());
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keep only %s selected", primary->name.c_str());
@@ -2038,6 +2069,78 @@ void ThemeEditorScreen::drawSelectionTools()
         ImGui::TextWrapped("Below: %s, the last one picked.", primary->name.c_str());
         ImGui::PopStyleColor();
     }
+}
+
+void ThemeEditorScreen::drawSharedSettings()
+{
+    const int n = session_.selectionCount();
+    if (n < 2) return;
+    const std::vector<EditorSession::SharedSetting> settings = session_.sharedSettings();
+    if (settings.empty()) return;
+    ImGui::SeparatorText(("All " + std::to_string(n) + " at once").c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("What they all have. A value set here goes to every one, as one change Undo takes back. "
+                       "\"(several values)\": they differ.");
+    ImGui::PopStyleColor();
+    ImGui::PushID("shared");
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    for (const EditorSession::SharedSetting& s : settings) {
+        ImGui::PushID(s.name.c_str());
+        const bool mixed = s.value.mixed;
+        const std::string label = s.var ? s.var->name : s.name == "layer" ? "Layer" : s.name == "alpha" ? "Opacity %" : "Text colour";
+        auto apply = [this, &s](const std::string& value) {
+            session_.setCoalesceKey("shared:" + s.name);
+            bool ok = false;
+            // A number only once there is one (a field typed empty on the way to another isn't 0)
+            const bool number = !value.empty() && value.find_first_not_of("0123456789") == std::string::npos;
+            if (s.name == "layer" && !s.var) ok = number && session_.setLayerAll(std::atoi(value.c_str()));
+            else if (s.name == "alpha" && !s.var) ok = number && session_.setAlphaAll(std::atoi(value.c_str()));
+            else if (s.name == "fontColor" && !s.var) {
+                // Written once it's a whole colour (or emptied: the theme's own)
+                const std::string colour = normalizeColour(value);
+                if (value.empty() || !colour.empty()) ok = session_.setFontColorAll(colour);
+            }
+            else ok = session_.setVarAll(s.name, value);   // a colour only once it's whole (setVarAll)
+            return ok;
+        };
+        const VarKind kind = s.var ? varKind(*s.var) : VarKind::Text;
+        if (s.var && (kind == VarKind::Bool || kind == VarKind::Choice)) {
+            // One of its values for all of them
+            std::vector<std::string> options;
+            if (kind == VarKind::Bool) options = { "true", "false" };
+            else for (const std::string& o : s.var->options) options.push_back(o == "-" ? std::string() : o);
+            const std::string shown = mixed ? "(several values)" : (s.value.value.empty() ? "(none)" : s.value.value);
+            const bool open = ImGui::BeginCombo(label.c_str(), shown.c_str());
+            if (const int step = open ? 0 : pad_.choice((label + " (all of them)").c_str())) {
+                int cur = -1;
+                for (size_t i = 0; i < options.size(); ++i) {
+                    if (!mixed && options[i] == s.value.value) cur = static_cast<int>(i);
+                }
+                const int next = choiceStep(cur, static_cast<int>(options.size()), step);
+                if (next >= 0) { apply(options[next]); session_.endCoalesce(); }
+            }
+            if (open) {
+                for (const std::string& o : options) {
+                    if (ImGui::Selectable(o.empty() ? "(none)" : o.c_str(), !mixed && o == s.value.value)) { apply(o); session_.endCoalesce(); }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        else {
+            std::string value = mixed ? std::string() : s.value.value;
+            const bool typed = ImGui::InputTextWithHint(label.c_str(), mixed ? "(several values)" : "", &value);
+            const bool keyboard = pad_.text((label + " (all of them)").c_str(), value);
+            // A field showing "(several values)" changes nothing until something is typed in it
+            if ((typed || keyboard) && !(mixed && value.empty())) apply(value);
+            if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
+            if (kind == VarKind::Colour || s.name == "fontColor") {
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Six hex digits, like FFAA00; empty: the theme's own");
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::PopItemWidth();
+    ImGui::PopID();
 }
 
 void ThemeEditorScreen::drawVar(const WidgetVar& var)

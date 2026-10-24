@@ -1269,11 +1269,216 @@ an element and a controller Move of the two was copied to the 4:3 page.
   put before it (`withoutElement` removes only the element's own text), so
   delete after duplicate isn't byte-identical inline; Undo is.
 - Editing an attribute of every selected element at once in the panel
-  (layer, alpha, font).
-- Aligning to the primary, and alignment guides while dragging.
+  (layer, alpha, font). *Done in the next section.*
+- Aligning to the primary, and alignment guides while dragging. *Guides
+  done in the next section.*
 - Copying structural edits (added or deleted elements) to the twin page.
+  *Done in the next section, as operations made on both pages.*
 - Variants other than `layout 4x3.xml` (`layout - 1.xml`, other aspect
   names) and collection pages edited with the main page.
+
+## Twin group edits, one value on several, guides, script waits
+
+The follow-ups of the round above and of QA round 8 ([QA-ROUND8.md](../QA-ROUND8.md)
+problems 3 and 9). User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#several-at-once)
+and [layout.xml and layout 4x3.xml together](../THEME_EDITOR.md#layoutxml-and-layout-4x3xml-together).
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/LayoutTwin.{h,cpp}` | `twinGeometry`: an element's box on the other page, from that page's own position and origin attributes (as `PageBuilder::buildViewInfo` reads them, `<itemDefaults>` included) and this page's engine box resized by whatever size attributes differ there (width, height, min/max, fontSize), with `ViewInfo::ScaledWidth/Height`'s maths; a guessed size is guessed there the same way (`geometryOf`), one that can't be told is scaled with the page and marked approximate. `TwinOp` + `runOnBoth`: copies what's pending, runs an operation here, then (every element it acts on matched) the same operation on the other page's matching elements, with their boxes when it needs them, as a step linked to here's; restores the other page's selection and drops the borrowed boxes; `missing` names what didn't match. |
+| `ThemeEditor/EditorSelection.h` | Guides: `guideShift` (the nearest edge/centre within reach, in half units), `guideLines` (what's lined up, joining the boxes; the page's centre spans the page), `applyGuides` (a drag's grid-snapped box with an axis in reach lined up from the raw box; a resize moves only its handle's edges; an axis the pointer didn't move along is left). `SharedValue` / `sharedValue` (all the same, set on some, several values). |
+| `ThemeEditor/LayoutSession` | `guides` / `guideReachPx` / `guideLines()` in `pointerMove` (targets: every other box, not the moving ones nor anything inside them); `setAttributeAll`, `removeAttributeAll` (one text change, coalescing as typing does), `sharedAttributes(always)`. |
+| `ThemeEditor/EditorSession` | The same guides in `pointerMove`; `setLayerAll`, `setAlphaAll`, `setFontColorAll`, `setVarAll`, `resetVarAll` (one snapshot through `editEach`; a variable is normalised per widget, as `setVar` does, now through `varTakes`), `sharedSettings()` (layer, opacity, text colour when every one has one, and every variable all their kinds share by token and way of editing). |
+| `ThemeEditor/EditorScript` | Widget editor: `layerall`, `alphaall`, `colourall`, `varall`, `resetvarall`, `shared`, `guides`. Layout editor: `attrall`, `rmattrall`, `shared [NAME...]`, `guides`. |
+| `Manager/Themes/app/LayoutEditorScreen` | `onBoth` (runOnBoth with the twin on, the note beside the switch, the fallback when something has no match); align, distribute, duplicate, delete, add element, every animation add/remove and copy go through it, from the panel, the keyboard, the controller, the dialogs and scripts; *All N at once* in the panel; the *Guides* toggle and Alt; the guide lines on the canvas; the delete dialog says the twin loses it too; the script runner waits while a change isn't in the preview yet (`scriptBusy`). |
+| `Manager/Themes/app/ThemeEditorScreen` | *All N at once* (text fields; a combo for switches and choices), the *Guides* toggle, Alt, the guide lines; the script runner waits for the preview. |
+
+### Decisions
+
+- **Align and distribute on the twin from its own boxes** (QA problem 3).
+  Options: (a) keep copying the moves in proportion (M18; lines up one page
+  only: 138 / 134 in QA); (b) copy the *result* values (the aligned `y`) —
+  wrong whenever the pages' origins or sizes differ; (c) build the 4:3 page
+  off-screen with PageBuilder to measure its boxes (engine-exact, but a
+  second page with textures and videos, app-only and untestable, and
+  reloadable art isn't loaded then anyway); (d) chosen: work out the twin's
+  boxes from its own attributes plus this page's engine boxes (same art,
+  same text: the natural size is shared; what differs is what the twin's
+  attributes say), then run the very same operation there. Pure and tested;
+  exact for positions, origins and any size the attributes decide; a size
+  the engine decided from art clamped by a maximum here and set otherwise
+  there is a proportional guess (marked approximate, as boxes already are
+  before art loads). One linked undo step. When an element has no match
+  there, nothing is done there by this route and the moves are copied in
+  proportion as before, with a note naming the missing element (a
+  half-lined-up twin is worse than a proportional one). Elements already
+  lined up here but not there are lined up there alone: unlinked, since
+  this page has no step to link to (the status says Show the page to undo
+  it).
+- **Other group operations**: group moves, nudges and drags stay per-element
+  deltas in proportion (M18): a move *is* a delta, and nothing lines up
+  that wasn't lined up. A drag snapped by a guide is a move like any other:
+  the twin gets it in proportion (the guide is this page's).
+- **Structural edits on the twin** (left from round 7): done, as
+  operations rather than text diffs. Options: (a) diff the texts and place
+  the inserted bytes at the "same" offset there (guesswork with different
+  whitespace and elements); (b) leave it (the user repeats every add and
+  delete); (c) chosen: run the same operation on the other page's matching
+  elements — duplicate puts each copy right after the original's match,
+  delete removes the matches, add goes after the selected element's match
+  (or at the end when nothing is selected), centred on that page and on a
+  layer above that page's own, and events/steps/changes go into the matched
+  element's matched event or step (paths inside an element are the same on
+  both). Safe because every element it touches must match (matching is by
+  parent; a wheel's outer items, absent on the 7-item 4:3 wheel, don't), and
+  after it the pages still match element for element (a test checks every
+  path pairs up after duplicating two). When something doesn't match,
+  nothing is done there and the note says what; the old "added or removed
+  elements stay here" note remains for any structural change made another
+  way.
+- **One value on several** (left from round 7). Options: (a) the primary's
+  fields write to all (changes what the panel already means); (b) a mixed
+  state per ImGui widget (sliders and checkboxes can't show "several
+  values"); (c) chosen: a separate *All N at once* section under the group
+  tools, text fields showing the shared value or *(several values)*, and
+  combos for switches and choices; the primary's own settings stay below,
+  as before. A *(several values)* field changes nothing until something is
+  typed. Layout editor: the panel's common attributes always (set or not:
+  "not set" is a value), then every attribute all of them set (an attribute
+  only some have shows only among the common ones, as *set on some*). One
+  text change, typing coalesced into one undo step, only those values'
+  bytes; the twin gets it through the copy rules (per element). Widget
+  editor: layer, opacity, text colour when every one has one, and the
+  variables every selected kind of widget has under the same token and way
+  of editing (a genre, a year and a meta text share *Auto Fit Text*); each
+  value normalised per widget as its own field would.
+- **Script waits** (QA problem 9). Options: a fixed number of frames after
+  each command (slow, and still a guess); waiting on the session alone (the
+  boxes come from the preview, so "idle" must include the rebuild);
+  chosen: before each command the runner waits while a change hasn't
+  reached the preview (`revision` not yet seen, a rebuild pending, a page or
+  twin switch or a job queued), capped at 600 frames so a page that never
+  builds can't hang a script. Art that loads after the build isn't waited
+  for (missing art would always hit the cap). The widget editor's runner
+  waits the same way (its boxes are the project's, but screenshots show the
+  preview).
+- **Guides.** Targets: every other box's edges and centre and the page's
+  centre (page edges are usually a full-page background's, which is a
+  target anyway). Reach 6 screen pixels (scaled with the UI), so it doesn't
+  depend on the zoom; an axis in reach takes the guide's value exactly,
+  measured from the unsnapped pointer position, and an axis not in reach
+  keeps the grid — the grid keeps working. Half units are handled exactly (a
+  51-high box's middle onto another's). Alt turns them off while held (and a
+  toolbar switch for good); scripts get them only with `guides on`, so
+  `move` stays exact. Resizes line up the dragged edge. Considered: snapping
+  to equal spacing (Figma's), guides for the controller's nudges (a nudge
+  is 1 or 5 units on purpose).
+
+### Checked
+
+`retrofe_tests` (6,432 checks): `Tests/EditorGroupEditTests.cpp` — twin
+boxes (a guessed text box at the twin's own place, a smaller font, art with
+its own size, height-only art clamped by maxWidth through ViewInfo's maths,
+an unknown size scaled, a menu item through `<itemDefaults>`); align top on
+both (16:9 135/135, 4:3 138/138, not 134), the 4:3 page's selection and
+boxes as they were, nothing left to sync, one undo to the exact bytes;
+already lined up here, lined up there alone; distribute from each page's
+boxes (a 36-pt year on the 4:3 page); a page-only element stopping the twin
+op and the sync copying in proportion instead; duplicate (copies after the
+matches, CRLF kept, every element still pairs up), delete, a page-only
+delete, add after the match centred on the 1200-high page, an event and a
+step, each undone with one linked undo; one attribute on three elements
+(shared states, typing as one step, add/remove, back to the bytes, the
+script commands) and on two copied to the twin; the widget editor's shared
+settings (mixed layer, shared variables, layer/var/colour/opacity for all,
+typing one step, scripts); guide maths (reach, half units, lines, grid
+kept on the other axis, an axis not moved, right- and left-edge resizes)
+and real drags in both sessions (onto another element's edge with guides,
+the grid's value without).
+
+GUI (2026-10-24, private root `E:\Storage\Agents\editor9`, the repo's
+shipped layouts and the tests' "Every Widget"; screenshots `r9-*` in
+`screenshots/`). Scripted, layout editor with *Also apply*: align top
+(both pages: y 135 here, 138 / 138 on the 4:3 page, shown on that page:
+`r9-l3-twin43-aligned.png`), distribute down, two undos then `selectall`
+and `nudge` with no waits (39 elements, ok: problem 9 gone), a colour on
+three elements at once (copied), duplicate, delete (the dialog), an event
+on both, Save: the saved pages differ from the shipped ones by exactly the
+three colours and the event on each page (`r9-layout-saved.xml`,
+`r9-layout 4x3-saved.xml`); a scripted drag with guides lands on the other
+element's top (y 135; 138 without). Posted keys: held Select + Right added
+an element, Page down to the panel, Down to *Top*, Select: lined up on both
+pages (`r9-k2-aligntop-keys.png`, the panel's *All 2 at once* with *(several
+values)* before). *Put back the original* on both pages made them
+byte-identical to the shipped ones. Widget editor, scripted: three widgets'
+shared settings, layer/colour for all (`r9-w1-K-shared.png`), a guided
+drag (810, 815 without), undo, leave without saving: every file of the
+theme unchanged (hashes).
+
+### After the adversarial review (6fc79df8 + 5f89e7b6)
+
+- **Animations matched by place only (medium).** A step or change on the
+  other page was "the same" by index and tag, so removing step 0 here could
+  remove a different step there. `matchElement` now takes an event, step or
+  change only when its parent matched, its siblings of that tag are as many,
+  and it agrees: the event's name, a step's `duration`, a change's `type`
+  (not `from` / `to`, which are positions each page tunes). Otherwise it has
+  no match: structural edits stay here, attribute copies say "not on the
+  other page". The shipped-pages test still pairs every element of Aeon Nox.
+- **Destructive ops on weak matches (medium).** `matchElement` reports how
+  sure it is (`MatchKind`: Exact, Slot — a wheel item by its place from the
+  selected item, Weak — the same place showing another file or text).
+  `TwinOp::destructive` (delete, removing animations, Copy of animations,
+  which replaces events) acts only on Exact matches; the others are listed
+  in `TwinOpResult::unsure`, left there, and named in the note ("isn't
+  surely the same element ... another slot of a wheel of another length, or
+  showing another file there"); the delete dialog says so beforehand.
+  `twinGeometry` marks a box approximate when the match is Weak and its size
+  comes from the art.
+- **Script waits cost the rebuild delay (medium).** While a script runs the
+  preview is rebuilt as soon as it's dirty (no 0.25 s settle), in both
+  editors; the docs say what the 600-frame cap is for.
+- **Shared colour variables (medium).** `setVarAll` takes a colour variable
+  only as a whole colour, normalised (FF8800), or empty, so a half-typed
+  `ff` or `#ff8800` never reaches every widget; layer and opacity in the
+  shared fields apply only once they're a number.
+- **Guides past the limits (low-medium).** `applyGuides` takes the drag's
+  start box and minimum size: a guided move stays in canvasMove's range (on
+  the canvas, or where it already was), a guided resize stops at the
+  canvas's edge and never goes under the minimum (a Static Text's 20).
+- **Low:** undo/redo here when the other page's step isn't next now says
+  that page has a later change of its own "(made there, or lined up there
+  alone)"; `onBoth`'s notes say "nothing was lined up on either page" when
+  nothing moved, and that an operation "couldn't be done on the other page,
+  so the two pages differ now" when everything matched but it failed there;
+  after a structural op the other page's selection isn't restored by stale
+  paths (it's cleared; Show selects the matches anyway); the guides'
+  exclusion is a mask, not a search per element.
+- Tests added (`EditorGroupEditTests.cpp`, "after review"): steps listed in
+  another order there (index collision), a list of another length, a change
+  of another type, a step that agrees (added on both); delete onto a weak
+  match and onto a shorter wheel's slot (left, `unsure`), onto the same
+  element in another sibling place (deleted); Copy of animations onto a weak
+  match; duplicate with the siblings in another order there (every text
+  still pairs up); duplicate, then an attribute copy, then Also apply off
+  and on with a lone edit, then undo and redo through all of it (redo after
+  a linked undo takes both); `removeAttributeAll` copied to the twin; a
+  widget's guided resize kept at its minimum; guided moves and resizes kept
+  on the canvas; the shared colour variable.
+- GUI: the first scripted run again (no saving): the same results, the
+  84-command script ran in about 9 seconds with its own waits; both pages
+  unchanged afterwards.
+
+### Left for later
+
+- Guides for equal spacing, and guides while nudging with keys or the
+  controller.
+- A twin box whose size the engine took from art clamped here by a maximum
+  and set otherwise there is a proportional guess.
+- The twin-only "lined up there" step isn't linked to anything here, so
+  Undo here doesn't take it back (the status says to show that page).
 
 ## Other open items
 

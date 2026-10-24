@@ -46,10 +46,12 @@
 // primary's): with several selected there are no handles.
 
 #include "EditorCanvas.h"
+#include "EditorSelection.h"
 #include "ThemeGenerate.h"
 #include "ThemeProject.h"
 #include "ThemeStore.h"
 #include "WidgetDefs.h"
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -126,6 +128,11 @@ namespace ThemeEditor
         DragRect marqueeBox() const;
         // Snapping to the 5-unit grid; off moves by whole units
         bool snap = true;
+        // Alignment guides while dragging (EditorSelection.h), within
+        // guideReachPx screen pixels; off unless the screen turns them on
+        bool guides = false;
+        float guideReachPx = 6.0f;
+        const std::vector<GuideLine>& guideLines() const { return guideLines_; }
 
         // Edits on the selection; false when nothing changed
         bool moveBy(int dx, int dy);   // keyboard nudge, not snapped; a group stays on the canvas as one box
@@ -152,6 +159,26 @@ namespace ThemeEditor
         bool setVar(const std::string& token, const std::string& value);
         bool resetVar(const std::string& token);
         bool setCanvasHidden(bool hidden);
+        // The same on every selected widget, one undo step (typing coalesces
+        // as the single ones do). A setting only some of them have (a widget
+        // variable another kind of widget hasn't) changes where it's had. A
+        // colour variable takes only a whole colour (normalised) or empty.
+        bool setLayerAll(int layer);
+        bool setAlphaAll(int pct);
+        bool setFontColorAll(const std::string& hex);
+        bool setVarAll(const std::string& token, const std::string& value);
+        bool resetVarAll(const std::string& token);
+        // What the selected widgets have: layer, opacity, text colour (only
+        // when every one uses one), and each variable every one's kind of
+        // widget has (by token and the same way of editing it), in the
+        // primary's order. `name` is "layer", "alpha", "fontColor" or a token.
+        struct SharedSetting
+        {
+            std::string name;
+            const WidgetVar* var = nullptr;   // the primary's, for a variable
+            SharedValue value;
+        };
+        std::vector<SharedSetting> sharedSettings() const;
         bool removeSelected();   // every selected widget
         // Places a widget from the library, centred, and selects it
         bool addWidget(const std::string& defId);
@@ -267,6 +294,9 @@ namespace ThemeEditor
         };
 
         WidgetInstance* selectedMutable();
+        // Applies `edit` to every selected widget (with its definition); one
+        // undo step when any of them changed
+        bool editEach(const std::string& key, const std::function<bool(WidgetInstance&, const WidgetDef*)>& edit);
         // Moves widget i by dx, dy (a warp's corners too), no undo step
         void shiftWidget(int i, int dx, int dy);
         // Sets the selection list and the primary from it
@@ -295,6 +325,7 @@ namespace ThemeEditor
         int selected_ = -1;
         std::vector<int> selection_;   // every selected widget, selected_ last
         Drag drag_;
+        std::vector<GuideLine> guideLines_;
         std::vector<Snapshot> undo_;
         std::vector<Snapshot> redo_;
         std::string coalesce_;

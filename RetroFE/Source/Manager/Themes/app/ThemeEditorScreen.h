@@ -167,6 +167,7 @@ private:
     void requestClose();
     // Several selected: align, distribute, duplicate, delete
     void drawSelectionTools();
+    void drawSharedSettings();   // what the selected widgets share; a change goes to every one
     void alignSelection(int op);
     void distributeSelection(bool horizontal);
     // The controller
@@ -272,6 +273,8 @@ private:
     std::string scriptPath_;
     size_t scriptAt_ = 0;
     int scriptWait_ = 0;
+    int scriptIdleFrames_ = 0;   // frames waited for the preview since the last command (capped)
+    bool guidesOn_ = true;       // alignment guides while dragging (Alt held: none)
 };
 
 namespace Themes

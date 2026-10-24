@@ -241,7 +241,9 @@ void LayoutEditorScreen::update(float dt)
     }
     // Playing an event shows the page as edited: a rebuild that's due happens first
     const bool replay = !replay_.empty() && !session_.dragging();
-    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || replay)) rebuildPreview();
+    // A script doesn't wait out the delay (it waits for the rebuild before its next command)
+    const bool scripted = scriptAt_ < script_.size();
+    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || replay || scripted)) rebuildPreview();
     if (replay && page_) {
         // As RetroFE does: the menus' events go through every menu and component
         page_->setSelectedItem();
@@ -519,7 +521,7 @@ bool LayoutEditorScreen::importChosen(const std::string& path, const FileFor& wh
     lastBrowseDir_ = fs::path(path).parent_path();
     LOG_NOTICE("ThemeEditor", "Added " + path + " to layouts/" + folder_ + " as " + rel);
     if (what.addElement) {
-        if (!session_.addElement(what.entry, what.type, rel)) {
+        if (!addElement(what.entry, what.type, rel)) {
             setStatus("Added " + rel + " to the theme, but the element couldn't be added to the page.", true);
             return false;
         }
@@ -550,7 +552,7 @@ void LayoutEditorScreen::addFromPalette(const std::string& entry, const std::str
         chooseFile(what);
         return;
     }
-    if (session_.addElement(entry, type)) setStatus("Added " + session_.label(session_.selected()) + " to the page.", false);
+    if (addElement(entry, type)) setStatus("Added " + session_.label(session_.selected()) + " to the page.", false);
 }
 
 bool LayoutEditorScreen::save()
@@ -642,6 +644,14 @@ void LayoutEditorScreen::runScript()
         scriptWait_--;
         return;
     }
+    // The last command's change is in the preview first (its boxes measured
+    // again), so the next one sees the page as it now is; a page whose art
+    // never loads doesn't hold the script up for more than a few seconds
+    if (scriptBusy() && scriptIdleFrames_ < 600) {
+        scriptIdleFrames_++;
+        return;
+    }
+    scriptIdleFrames_ = 0;
     const EditorCommand& command = script_[scriptAt_++];
     std::string note;
     bool ok = runCommand(command, note);
@@ -692,6 +702,60 @@ bool LayoutEditorScreen::runCommand(const EditorCommand& command, std::string& n
         endEvent_ = command.rest == "all" ? "*" : command.rest;
         showEnd_ = true;
         return !endEvent_.empty();
+    }
+    // With the twin: group and structural edits are made there too, each page on its own elements
+    if (alsoOnTwin()) {
+        const std::string before = session_.text(), twinBefore = twin_.text();
+        auto changed = [&]() { return session_.text() != before || twin_.text() != twinBefore; };
+        if (n == "align") {
+            const int op = words.empty() ? -1 : alignFromName(words[0]);
+            if (op < 0) { note = "align left|center|right|top|middle|bottom"; return false; }
+            alignSelection(op);
+            note = status_;
+            return changed();
+        }
+        if (n == "distribute") {
+            if (words.empty() || (words[0] != "h" && words[0] != "v")) { note = "distribute h|v"; return false; }
+            distributeSelection(words[0] == "h");
+            note = status_;
+            return changed();
+        }
+        if (n == "duplicate" || n == "delete") {
+            const bool ok = n == "duplicate" ? duplicateSelected() : deleteSelected();
+            note = twinNote_;
+            return ok;
+        }
+        if (n == "add") {
+            if (words.empty()) return false;
+            const bool ok = addElement(words[0], words.size() > 1 && words[1] != "-" ? words[1] : std::string(), command.tail(2));
+            note = twinNote_;
+            return ok;
+        }
+        // Animations, by paths relative to the selected element (the same on both pages)
+        if (n == "event" || n == "addset" || n == "addanimate" || n == "rmanim" || n == "copyanims") {
+            if (words.empty()) return false;
+            int element = -1;
+            std::function<bool(LayoutSession&, int)> edit;
+            if (n == "event") {
+                const std::string event = words[0];
+                edit = [event](LayoutSession& p, int) { return p.addEvent(event); };
+            }
+            else if (n == "copyanims") {
+                element = session_.doc().find(command.rest);
+                if (element <= 0) return false;
+                edit = [](LayoutSession& p, int e) { return p.copyAnimationsFrom(e); };
+            }
+            else {
+                element = session_.findInSelected(words[0]);
+                if (element < 0) return false;
+                if (n == "addset") edit = [](LayoutSession& p, int e) { return p.addSet(e); };
+                else if (n == "addanimate") edit = [](LayoutSession& p, int e) { return p.addAnimate(e); };
+                else edit = [](LayoutSession& p, int e) { return p.removeAnimation(e); };
+            }
+            const bool ok = animationEdit(element, edit, n, n == "rmanim" || n == "copyanims");
+            note = twinNote_;
+            return ok;
+        }
     }
     CommandResult result = runLayoutCommand(session_, command, note);
     if (result != CommandResult::NotSession) return result == CommandResult::Ok;
@@ -1248,6 +1312,12 @@ void LayoutEditorScreen::drawToolbar()
     ImGui::AlignTextToFramePadding();
     ImGui::Checkbox("Snap to grid", &session_.snap);
     ImGui::SameLine();
+    ImGui::Checkbox("Guides", &guidesOn_);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("While dragging with the mouse, edges and centres line up with the other elements' and the page's "
+                          "centre, with a line to show it. Hold Alt to drag without them.");
+    }
+    ImGui::SameLine();
     ImGui::Checkbox("All boxes", &showBoxes_);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Outline every element, not only the selected and the one under the mouse");
     ImGui::SameLine();
@@ -1323,7 +1393,9 @@ void LayoutEditorScreen::drawToolbar()
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Each change here is made to the same element on %s too, only where it fits: positions and sizes move "
                               "by the same amount scaled to that page, other values only where the pages had the same. "
-                              "Adding and deleting elements isn't copied. Save saves both; Undo undoes both.", twin.c_str());
+                              "Lining up and spacing work from that page's own boxes. Adding, duplicating and deleting "
+                              "elements (and animations) happen there too, at the same place, when it has the same elements. "
+                              "Save saves both; Undo undoes both.", twin.c_str());
         }
         ImGui::SameLine();
         if (ImGui::Button(("Show " + fs::u8path(twin).filename().u8string()).c_str())) {
@@ -1395,7 +1467,7 @@ void LayoutEditorScreen::syncTwin()
     MirrorResult r;
     switch (syncTwinPages(session_, twin_, twinSync_, r)) {
     case TwinCopy::Structure:
-        twinNote_ = "Added or removed elements stay on " + session_.page() + ": add or remove them on " + twin_.page() + " too.";
+        twinNote_ = "Elements that came or went this way stay on " + session_.page() + ": make the same change on " + twin_.page() + " too.";
         return;
     case TwinCopy::Nothing:
         return;
@@ -1421,8 +1493,8 @@ void LayoutEditorScreen::undoBoth()
         if (twin_.undoLink() == link) twin_.undo();
         else if (twin_.hasUndoLink(link)) {
             // Its copy isn't next in the other page's history (that page was changed on its own since): say so
-            setStatus("Undone on " + session_.page() + " only: " + twin_.page() + " was changed on its own since, so its copy "
-                      "of this change stays. Show " + twin_.page() + " to undo it there.", true);
+            setStatus("Undone on " + session_.page() + " only: " + twin_.page() + " has a later change of its own (made there, or lined up "
+                      "there alone), so its copy of this change stays. Show " + twin_.page() + " to undo it there.", true);
         }
     }
     twinSync_.reset(session_);
@@ -1436,8 +1508,8 @@ void LayoutEditorScreen::redoBoth()
     if (link != 0 && twin_.isOpen()) {
         if (twin_.redoLink() == link) twin_.redo();
         else if (twin_.hasRedoLink(link)) {
-            setStatus("Redone on " + session_.page() + " only: " + twin_.page() + " was changed on its own since, so it "
-                      "doesn't get this change again. Show " + twin_.page() + " to make it there.", true);
+            setStatus("Redone on " + session_.page() + " only: " + twin_.page() + " has a change of its own since (made there, or "
+                      "lined up there alone), so it doesn't get this change again. Show " + twin_.page() + " to make it there.", true);
         }
     }
     twinSync_.reset(session_);
@@ -1473,6 +1545,94 @@ void LayoutEditorScreen::switchToTwin()
     setStatus("Showing " + session_.page() + (there.empty() ? "." : ", the same elements selected.") +
               (twin_.dirty() ? " " + twin_.page() + "'s changes are kept until you save." : ""), false);
     LOG_INFO("ThemeEditor", "Switched to layouts/" + folder_ + "/" + session_.page());
+}
+
+bool LayoutEditorScreen::onBoth(const TwinOp& op, const std::string& what)
+{
+    const std::function<int(int)> self = [](int i) { return i; };
+    if (!alsoOnTwin()) return op.run(session_, self);
+    const TwinOpResult r = runOnBoth(session_, twin_, twinSync_, op);
+    auto names = [](const std::vector<std::string>& list) {
+        std::string out;
+        for (size_t k = 0; k < list.size() && k < 3; ++k) out += (k ? ", " : "") + list[k];
+        if (list.size() > 3) out += " and " + std::to_string(list.size() - 3) + " more";
+        return out;
+    };
+    if (!r.missing.empty() || !r.unsure.empty()) {
+        std::string why;
+        if (!r.missing.empty()) why = names(r.missing) + (r.missing.size() == 1 ? " isn't" : " aren't") + " on " + twin_.page();
+        if (!r.unsure.empty()) {
+            why += (why.empty() ? "" : "; ") + names(r.unsure) +
+                   (r.unsure.size() == 1 ? " isn't surely the same element" : " aren't surely the same elements") + " on " +
+                   twin_.page() + " (another slot of a wheel of another length, or showing another file there)";
+        }
+        if (op.boxes) {
+            // Lined up here; the twin gets the moves in proportion, as any other edit (M18)
+            syncTwin();
+            twinNote_ = why + (r.here ? ", so " + what + " used this page's boxes: " + twin_.page() + " got the same moves, in proportion."
+                                      : ". Nothing was lined up on either page.");
+        }
+        else {
+            twinSync_.reset(session_);
+            twinNote_ = why + (r.here ? ": " + what + " was done on " + session_.page() + " only; " + twin_.page() + " is left as it was."
+                                      : ". Nothing was done.");
+        }
+        LOG_INFO("ThemeEditor", twinNote_);
+    }
+    else if (r.there) {
+        twinNote_ = (r.here ? "Done on " : "Already so here; done on ") + twin_.page() + " too, with its own elements" +
+                    (op.boxes ? " and boxes." : ".");
+    }
+    else if (r.here) {
+        // Everything matched, yet it changed nothing there
+        twinNote_ = op.boxes ? twin_.page() + " is lined up that way already."
+                             : what + " couldn't be done on " + twin_.page() + ", so the two pages differ now.";
+        if (!op.boxes) LOG_WARNING("ThemeEditor", twinNote_);
+    }
+    return r.here || r.there;
+}
+
+bool LayoutEditorScreen::duplicateSelected()
+{
+    TwinOp op;
+    op.run = [](LayoutSession& p, const std::function<int(int)>&) { return p.duplicateSelected(); };
+    return onBoth(op, "duplicating");
+}
+
+bool LayoutEditorScreen::deleteSelected()
+{
+    TwinOp op;
+    op.run = [](LayoutSession& p, const std::function<int(int)>&) { return p.deleteSelected(); };
+    op.destructive = true;   // only elements surely the same there
+    return onBoth(op, "deleting");
+}
+
+bool LayoutEditorScreen::addElement(const std::string& entry, const std::string& type, const std::string& src)
+{
+    TwinOp op;
+    // After the selected element's page element there; nothing selected: at the end of both
+    op.run = [entry, type, src](LayoutSession& p, const std::function<int(int)>&) { return p.addElement(entry, type, src); };
+    op.primaryOnly = true;   // only the primary decides where it goes
+    return onBoth(op, "adding an element");
+}
+
+bool LayoutEditorScreen::animationEdit(int element, const std::function<bool(LayoutSession&, int)>& edit, const std::string& what,
+                                       bool destructive)
+{
+    TwinOp op;
+    op.destructive = destructive;
+    if (element >= 0) op.touches.push_back(element);
+    op.run = [edit, element](LayoutSession& p, const std::function<int(int)>& map) {
+        return edit(p, element < 0 ? -1 : map(element));
+    };
+    op.primaryOnly = true;   // the selected element's animations
+    return onBoth(op, what);
+}
+
+bool LayoutEditorScreen::scriptBusy() const
+{
+    // A change not yet in the preview (and its boxes), a page or the twin about to be opened, a job queued
+    return session_.revision() != seenRevision_ || previewDirty_ || !openNext_.empty() || switchTwin_ || job_ != Job::None;
 }
 
 void LayoutEditorScreen::drawTwinInfo(int element)
@@ -1581,6 +1741,11 @@ void LayoutEditorScreen::drawCanvas()
     const ImVec2 mouse = io.MousePos;
     const float sx = mouse.x - origin.x, sy = mouse.y - origin.y;
     const float grab = 6.0f * ctx_.scale;
+    // Alignment guides follow the toolbar's setting, off while Alt is held (a script sets its own)
+    if (scriptAt_ >= script_.size()) {
+        session_.guides = guidesOn_ && !io.KeyAlt;
+        session_.guideReachPx = 6.0f * ctx_.scale;
+    }
     // Ctrl or Shift: toggle the element clicked, or a marquee (from anywhere) that adds
     if (ImGui::IsItemActivated()) session_.pointerDown(fit_, sx, sy, grab, io.KeyCtrl || io.KeyShift);
     if (session_.dragging()) {
@@ -1608,7 +1773,7 @@ void LayoutEditorScreen::drawCanvas()
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) redoBoth();
         if (ImGui::IsKeyPressed(ImGuiKey_S, false) && anyDirty()) job_ = Job::Save;
         if (ImGui::IsKeyPressed(ImGuiKey_A, false)) session_.selectAll();
-        if (ImGui::IsKeyPressed(ImGuiKey_D, false)) session_.duplicateSelected();
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false)) duplicateSelected();
     }
 
     auto toStage = [&](float tx, float ty) {
@@ -1693,6 +1858,16 @@ void LayoutEditorScreen::drawCanvas()
             ImVec2 at(std::max(origin.x, u1.x), std::max(origin.y, u1.y - ts.y - 3.0f));
             dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 180));
             dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(255, 255, 255, 255), label.c_str());
+        }
+    }
+    // Where the box being dragged lines up with others (or the page's centre)
+    if (session_.dragMoved()) {
+        for (const GuideLine& g : session_.guideLines()) {
+            const ImVec2 p1 = g.vertical ? toStage(static_cast<float>(g.at), static_cast<float>(g.from))
+                                         : toStage(static_cast<float>(g.from), static_cast<float>(g.at));
+            const ImVec2 p2 = g.vertical ? toStage(static_cast<float>(g.at), static_cast<float>(g.to))
+                                         : toStage(static_cast<float>(g.to), static_cast<float>(g.at));
+            dl->AddLine(p1, p2, IM_COL32(255, 64, 160, 230), 1.5f * ctx_.scale);
         }
     }
     if (session_.marqueeActive() && session_.dragMoved()) {
@@ -1932,7 +2107,7 @@ void LayoutEditorScreen::drawProperties()
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Only its box, here, to reach what's underneath; the page is unchanged");
         }
         if (session_.selectionCount() > 1) return;   // the group's Duplicate and Delete are at the top
-        if (ImGui::Button("Duplicate")) session_.duplicateSelected();
+        if (ImGui::Button("Duplicate")) duplicateSelected();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copies the element, animations and all, right after itself");
         ImGui::SameLine();
         if (ImGui::Button("Delete...")) showDelete_ = true;
@@ -1943,21 +2118,44 @@ void LayoutEditorScreen::alignSelection(int op)
 {
     static const char* const what[] = { "left edges", "centres", "right edges", "tops", "middles", "bottoms" };
     const size_t n = session_.movableSelection().size();
-    if (session_.alignSelected(op)) {
-        setStatus("Lined up the " + std::to_string(n) + " elements' " + what[op] + " (written as numbers, as a drag writes them). "
-                  "Undo takes it back.", false);
+    if (n < 2) {
+        setStatus("Lining up needs two elements that can move.", true);
+        return;
     }
-    else setStatus(n < 2 ? "Lining up needs two elements that can move." : "They're lined up that way already.", n < 2);
+    // With the twin: lined up there too, from its own boxes
+    TwinOp twin;
+    twin.movable = twin.boxes = twin.evenIfUnchanged = true;
+    twin.run = [op](LayoutSession& p, const std::function<int(int)>&) { return p.alignSelected(op); };
+    const std::string before = session_.text();
+    if (onBoth(twin, "lining up")) {
+        const bool here = session_.text() != before;
+        setStatus(here ? "Lined up the " + std::to_string(n) + " elements' " + what[op] + " (written as numbers, as a drag writes them). " +
+                             (alsoOnTwin() ? twinNote_ + " " : std::string()) + "Undo takes it back."
+                       : "They're lined up that way here already; lined up on " + twin_.page() + " now (Show it to undo it there).",
+                  false);
+    }
+    else setStatus("They're lined up that way already.", false);
 }
 
 void LayoutEditorScreen::distributeSelection(bool horizontal)
 {
     const size_t n = session_.movableSelection().size();
-    if (session_.distributeSelected(horizontal)) {
-        setStatus("Spaced the " + std::to_string(n) + " elements evenly " + (horizontal ? "across" : "down") +
-                  ": the outer two stayed where they were.", false);
+    if (n < 3) {
+        setStatus("Spacing needs three elements that can move.", true);
+        return;
     }
-    else setStatus(n < 3 ? "Spacing needs three elements that can move." : "They're evenly spaced that way already.", n < 3);
+    TwinOp twin;
+    twin.movable = twin.boxes = twin.evenIfUnchanged = true;
+    twin.run = [horizontal](LayoutSession& p, const std::function<int(int)>&) { return p.distributeSelected(horizontal); };
+    const std::string before = session_.text();
+    if (onBoth(twin, "spacing")) {
+        const bool here = session_.text() != before;
+        setStatus(here ? "Spaced the " + std::to_string(n) + " elements evenly " + (horizontal ? "across" : "down") +
+                             ": the outer two stayed where they were. " + (alsoOnTwin() ? twinNote_ : std::string())
+                       : "They're evenly spaced that way here already; spaced on " + twin_.page() + " now (Show it to undo it there).",
+                  false);
+    }
+    else setStatus("They're evenly spaced that way already.", false);
 }
 
 void LayoutEditorScreen::drawSelectionTools()
@@ -1989,16 +2187,65 @@ void LayoutEditorScreen::drawSelectionTools()
     if (ImGui::Button("Space down", ImVec2(half, 0))) distributeSelection(false);
     ImGui::EndDisabled();
     if (ImGui::Button("Duplicate them")) {
-        if (session_.duplicateSelected()) setStatus("Copied them, each right after itself; the copies are selected.", false);
+        if (duplicateSelected()) setStatus("Copied them, each right after itself; the copies are selected.", false);
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copies each one, animations and all, right after itself (Ctrl+D)");
     ImGui::SameLine();
     if (ImGui::Button("Delete them...")) showDelete_ = true;
+    drawSharedAttributes();
     if (session_.selectedElement()) {
         if (ImGui::Button("Only this one")) session_.select(session_.selected());
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keep only %s selected", session_.label(session_.selected()).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TextWrapped("Below: %s, the last one picked.", session_.label(session_.selected()).c_str());
+        ImGui::PopStyleColor();
+    }
+}
+
+void LayoutEditorScreen::drawSharedAttributes()
+{
+    const int n = session_.selectionCount();
+    if (n < 2) return;
+    ImGui::SeparatorText(("All " + std::to_string(n) + " at once").c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("A value typed here is written to every one of them, as one change Undo takes back. "
+                       "\"(several values)\": they differ.");
+    ImGui::PopStyleColor();
+    const std::vector<std::string> always(std::begin(COMMON), std::end(COMMON));
+    const float buttonW = ImGui::CalcTextSize("x").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::PushID("shared");
+    for (const LayoutSession::SharedAttr& a : session_.sharedAttributes(always)) {
+        ImGui::PushID(a.name.c_str());
+        std::string value = a.value.mixed ? std::string() : a.value.value;
+        const char* hint = a.value.mixed ? "(several values)" : "(not set)";
+        ImGui::SetNextItemWidth(std::max(60.0f, ImGui::GetContentRegionAvail().x * 0.46f));
+        const bool typed = ImGui::InputTextWithHint("##value", hint, &value);
+        const bool keyboard = pad_.text((a.name + " (all of them)").c_str(), value);
+        // A field showing "(several values)" changes nothing until something is typed in it
+        if ((typed || keyboard) && !(a.value.mixed && value.empty())) {
+            session_.setCoalesceKey("shared:" + a.name);
+            session_.setAttributeAll(a.name, value);
+        }
+        if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(a.name.c_str());
+        if (a.value.mixed) {
+            ImGui::SameLine();
+            ImGui::TextDisabled(a.value.any && !a.value.all ? "(set on some)" : "(differ)");
+        }
+        if (a.value.any) {
+            ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonW));
+            if (ImGui::SmallButton("x")) session_.removeAttributeAll(a.name);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove %s from every one of them", a.name.c_str());
+        }
+        ImGui::PopID();
+    }
+    ImGui::PopID();
+    if (alsoOnTwin()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("Copied to %s by the usual rules: positions in proportion, other values where the pages agreed.",
+                           twin_.page().c_str());
         ImGui::PopStyleColor();
     }
 }
@@ -2130,7 +2377,7 @@ void LayoutEditorScreen::drawAnimations(int element)
         if (ImGui::SmallButton("Play")) replay_ = engineName;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Plays %s on the preview (as RetroFE triggers \"%s\")", event.name.c_str(), engineName.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton("x")) structural = session_.removeAnimation(ev);
+        if (ImGui::SmallButton("x")) structural = animationEdit(ev, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing an event", true);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove %s and its steps", event.name.c_str());
         if (open && !structural) {
             ImGui::AlignTextToFramePadding();
@@ -2148,7 +2395,7 @@ void LayoutEditorScreen::drawAnimations(int element)
                 ImGui::SameLine();
                 ImGui::TextDisabled("s");
                 ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonW));
-                if (ImGui::SmallButton("x")) structural = session_.removeAnimation(set);
+                if (ImGui::SmallButton("x")) structural = animationEdit(set, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing a step", true);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this step");
                 std::vector<int> animates = session_.childrenNamed(set, "animate");
                 ImGui::Indent(12.0f * s);
@@ -2160,7 +2407,7 @@ void LayoutEditorScreen::drawAnimations(int element)
                     ImGui::SameLine();
                     drawAnimChoice(a, "algorithm", tweenAlgorithmNames(), "linear", half);
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("x")) structural = session_.removeAnimation(a);
+                    if (ImGui::SmallButton("x")) structural = animationEdit(a, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing a change", true);
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this change");
                     if (!structural) {
                         ImGui::AlignTextToFramePadding();
@@ -2176,12 +2423,12 @@ void LayoutEditorScreen::drawAnimations(int element)
                     }
                     ImGui::PopID();
                 }
-                if (!structural && ImGui::SmallButton("+ change")) structural = session_.addAnimate(set);
+                if (!structural && ImGui::SmallButton("+ change")) structural = animationEdit(set, [](LayoutSession& p, int e) { return p.addAnimate(e); }, "adding a change");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Another change that plays with this step's");
                 ImGui::Unindent(12.0f * s);
                 ImGui::PopID();
             }
-            if (!structural && ImGui::SmallButton("+ step")) structural = session_.addSet(ev);
+            if (!structural && ImGui::SmallButton("+ step")) structural = animationEdit(ev, [](LayoutSession& p, int e) { return p.addSet(e); }, "adding a step");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("A step that plays after the last one");
         }
         if (open) ImGui::TreePop();
@@ -2207,7 +2454,8 @@ void LayoutEditorScreen::drawAnimations(int element)
     }
     ImGui::SameLine();
     if (ImGui::Button("Add event")) {
-        if (session_.addEvent(newEvent_)) setStatus("Added " + newEvent_ + ": alpha from 0 to 1 in 0.2 seconds. Change it above.", false);
+        const std::string event = newEvent_;
+        if (animationEdit(-1, [event](LayoutSession& p, int) { return p.addEvent(event); }, "adding an event")) setStatus("Added " + newEvent_ + ": alpha from 0 to 1 in 0.2 seconds. Change it above.", false);
         return;
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("When it plays: onEnter as the page shows, onMenuEnter... (RetroFE's events)");
@@ -2232,7 +2480,7 @@ void LayoutEditorScreen::drawAnimations(int element)
     ImGui::BeginDisabled(source <= 0 || source == element);
     if (ImGui::Button("Copy")) {
         const std::string from = sourceLabel;
-        if (session_.copyAnimationsFrom(source)) setStatus("Its animations are now a copy of " + from + "'s (Undo brings back its own).", false);
+        if (animationEdit(source, [](LayoutSession& p, int e) { return p.copyAnimationsFrom(e); }, "copying animations", true)) setStatus("Its animations are now a copy of " + from + "'s (Undo brings back its own).", false);
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Replaces this element's events with copies of the chosen element's");
@@ -2341,7 +2589,7 @@ void LayoutEditorScreen::drawPopups()
         break;
     case Themes::FileChooser::Result::Cancelled:
         // Not now: a new image or video goes in with its placeholder name
-        if (chooserFor_.addElement && session_.addElement(chooserFor_.entry, chooserFor_.type)) {
+        if (chooserFor_.addElement && addElement(chooserFor_.entry, chooserFor_.type)) {
             setStatus("Added " + session_.label(session_.selected()) + " with a placeholder file: choose one next to src.", true);
         }
         break;
@@ -2412,9 +2660,10 @@ void LayoutEditorScreen::drawPopups()
         if (!showDelete_) ImGui::CloseCurrentPopup();
         if (session_.selectionCount() > 1) ImGui::Text("Delete the %d selected elements from the page?", session_.selectionCount());
         else ImGui::Text("Delete %s from the page?", session_.label(session_.selected()).c_str());
+        if (alsoOnTwin()) ImGui::TextWrapped("It goes from %s too where it's surely the same element there; otherwise it stays there, and the line by Also apply says so.", twin_.page().c_str());
         ImGui::TextDisabled("Undo brings it back until you leave the editor.");
         if (ImGui::Button("Delete (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld() && !pad_.controllerActive())) {
-            session_.deleteSelected();
+            deleteSelected();
             showDelete_ = false;
             ImGui::CloseCurrentPopup();
         }

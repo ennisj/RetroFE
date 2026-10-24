@@ -752,15 +752,39 @@ namespace ThemeEditor
         const float dx = (sx - drag_.startSx) / fit.scale;
         const float dy = (sy - drag_.startSy) / fit.scale;
         const int grid = snap ? CANVAS_SNAP_GRID : 1;
+        const bool movedX = std::fabs(sx - drag_.startSx) >= CLICK_SLOP;
+        const bool movedY = std::fabs(sy - drag_.startSy) >= CLICK_SLOP;
+        DragRect raw;
         if (drag_.handle == CH_BODY) {
             drag_.rect = canvasMove(drag_.start, dx, dy, grid, canvasW(), canvasH());
+            raw = canvasMove(drag_.start, dx, dy, 1, canvasW(), canvasH());
             // An axis the pointer hasn't really moved along stays as it is,
             // unsnapped: dragging straight down keeps x="center"
-            if (std::fabs(sx - drag_.startSx) < CLICK_SLOP) drag_.rect.x = drag_.start.x;
-            if (std::fabs(sy - drag_.startSy) < CLICK_SLOP) drag_.rect.y = drag_.start.y;
+            if (!movedX) drag_.rect.x = raw.x = drag_.start.x;
+            if (!movedY) drag_.rect.y = raw.y = drag_.start.y;
         }
         else {
             drag_.rect = canvasResize(drag_.start, drag_.handle, dx, dy, 1, 1, grid, canvasW(), canvasH());
+            raw = canvasResize(drag_.start, drag_.handle, dx, dy, 1, 1, 1, canvasW(), canvasH());
+        }
+        guideLines_.clear();
+        if (guides) {
+            // Every other box on the page (not one being moved, nor inside one)
+            // (a mask, so select-all on a big page isn't a search per element and ancestor)
+            std::vector<char> moving(doc_.elements.size(), 0);
+            for (int i : selection_) {
+                if (i >= 0 && i < elementCount()) moving[i] = 1;
+            }
+            std::vector<DragRect> others;
+            for (int i : listed()) {
+                if (i <= 0 || !hasBox(i) || hidden(i)) continue;
+                bool inside = false;
+                for (int e = i; e > 0 && !inside; e = doc_.elements[e].parent) inside = moving[e] != 0;
+                if (!inside) others.push_back(box(i));
+            }
+            const int reach = std::max(1, roundDelta(guideReachPx / fit.scale));
+            drag_.rect = applyGuides(drag_.rect, raw, drag_.start, drag_.handle, others, canvasW(), canvasH(), reach, 1, 1, movedX, movedY,
+                                     guideLines_);
         }
     }
 
@@ -769,6 +793,7 @@ namespace ThemeEditor
         if (!drag_.active) return;
         Drag d = drag_;
         drag_ = Drag();
+        guideLines_.clear();
         if (d.marquee) {
             if (!d.moved) {
                 if (d.additive && d.clicked > 0) toggleSelected(d.clicked);
@@ -806,6 +831,7 @@ namespace ThemeEditor
     void LayoutSession::cancelDrag()
     {
         drag_ = Drag();
+        guideLines_.clear();
     }
 
     // ---- edits ---------------------------------------------------------------
@@ -920,6 +946,54 @@ namespace ThemeEditor
     {
         if (selected_ < 0) return false;
         return change(withoutAttribute(doc_, selected_, name), "");
+    }
+
+    bool LayoutSession::setAttributeAll(const std::string& name, const std::string& value)
+    {
+        if (selection_.empty() || !attributeNameProblem(name).empty()) return false;
+        if (selection_.size() == 1) return setAttribute(name, value);
+        // Attribute edits don't move elements: every index holds in the working copy
+        LayoutDoc work = doc_;
+        std::string error;
+        for (int i : selection_) {
+            if (work.elements[i].value(name) == value && work.elements[i].has(name)) continue;
+            if (!parseLayoutText(withAttribute(work, i, name, value), work, error)) return false;
+        }
+        return change(work.text, coalesce_.empty() ? "" : coalesce_ + "/all");
+    }
+
+    bool LayoutSession::removeAttributeAll(const std::string& name)
+    {
+        if (selection_.empty()) return false;
+        if (selection_.size() == 1) return removeAttribute(name);
+        LayoutDoc work = doc_;
+        std::string error;
+        for (int i : selection_) {
+            if (!work.elements[i].has(name)) continue;
+            if (!parseLayoutText(withoutAttribute(work, i, name), work, error)) return false;
+        }
+        return change(work.text, "");
+    }
+
+    std::vector<LayoutSession::SharedAttr> LayoutSession::sharedAttributes(const std::vector<std::string>& always) const
+    {
+        std::vector<SharedAttr> out;
+        if (selection_.empty()) return out;
+        auto shared = [this](const std::string& name) {
+            std::vector<std::pair<bool, std::string>> each;
+            for (int i : selection_) each.emplace_back(doc_.elements[i].has(name), doc_.elements[i].value(name));
+            return sharedValue(each);
+        };
+        for (const std::string& name : always) out.push_back(SharedAttr{ name, shared(name) });
+        for (const LayoutAttr& a : doc_.elements[selected_].attrs) {
+            if (std::find(always.begin(), always.end(), a.name) != always.end()) continue;
+            bool listed = false;
+            for (const SharedAttr& s : out) listed = listed || s.name == a.name;
+            if (listed) continue;
+            SharedAttr s{ a.name, shared(a.name) };
+            if (s.value.all) out.push_back(s);
+        }
+        return out;
     }
 
     bool LayoutSession::setLayer(int layer)

@@ -139,6 +139,7 @@ private:
     void syncPopup(const char* name, bool& show, bool& opened);
     // Several selected: align, distribute, duplicate, delete
     void drawSelectionTools();
+    void drawSharedAttributes();   // what they all have; a change goes to every one
     void alignSelection(int op);
     void distributeSelection(bool horizontal);
     // The page's twin (layout.xml / layout 4x3.xml), edited together
@@ -151,6 +152,22 @@ private:
     void redoBoth();
     bool anyDirty() const;
     void drawTwinInfo(int element);
+    // An operation made on this page and, with "Also apply" on, on the
+    // twin's own elements too (align and distribute from its own boxes;
+    // adding, duplicating and deleting at the matching place), one undo
+    // step; `what` names it for the note. True when either page changed.
+    bool onBoth(const ThemeEditor::TwinOp& op, const std::string& what);
+    bool alsoOnTwin() const { return alsoTwin_ && twin_.isOpen(); }
+    // The structural edits, through onBoth
+    bool duplicateSelected();
+    bool deleteSelected();
+    bool addElement(const std::string& entry, const std::string& type, const std::string& src = "");
+    // destructive: it removes or replaces animations (only where the element is surely the same there)
+    bool animationEdit(int element, const std::function<bool(ThemeEditor::LayoutSession&, int)>& edit, const std::string& what,
+                       bool destructive = false);
+    // A script waits for this before its next command: the preview is
+    // rebuilt after the last change, nothing is being opened or saved
+    bool scriptBusy() const;
     // The controller
     bool dialogOpen() const;
     void canvasControl(int press, bool released = false);
@@ -246,4 +263,8 @@ private:
     std::string scriptPath_;
     size_t scriptAt_ = 0;
     int scriptWait_ = 0;
+    int scriptIdleFrames_ = 0;    // frames waited for the preview since the last command (capped)
+
+    // Alignment guides while dragging (Alt held: none)
+    bool guidesOn_ = true;
 };
