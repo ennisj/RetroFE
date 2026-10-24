@@ -1775,7 +1775,8 @@ Forms::Model::Result GameProvider::playlistAction(const std::string& action, con
         bool adding = action == "addFavourite";
         edit = adding ? services_.editor->addToPlaylist(*idx, page, "favorites", own, name)
                       : services_.editor->removeFromPlaylist(*idx, page, "favorites", own, name);
-        if (edit.ok) {
+        // Only when something changed: "... is already in favorites." is kept as it is
+        if (edit.ok && !edit.files.empty()) {
             edit.message = (adding ? "Added " + name + " to the favourites of " : "Removed " + name + " from the favourites of ")
                 + page + ".";
         }

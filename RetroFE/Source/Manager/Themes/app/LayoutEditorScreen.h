@@ -67,7 +67,7 @@ public:
     bool askToLeave() override;
     std::string leaving() override;
     void discard() override;
-    void setStatus(const std::string& message, bool isError) override;
+    void setStatus(const std::string& message, bool isError, bool isInfo = false) override;
     bool takeBack() override;
     void retire() override;
     void shutdown() override;
@@ -212,6 +212,7 @@ private:
     std::string openNext_;        // a page to open on the next update()
     std::string status_;
     bool statusIsError_ = false;
+    bool statusIsInfo_ = false;   // nothing happened: plain, not green
     std::string newName_, newValue_;
     bool showClose_ = false, closeOpen_ = false;
     bool showRestore_ = false, restoreOpen_ = false;

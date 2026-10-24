@@ -166,6 +166,7 @@ bool LayoutEditorScreen::openPage(const std::string& page)
     builtText_.clear();
     status_.clear();
     statusIsError_ = false;
+    statusIsInfo_ = false;
     listPrimary_ = -1;
     // Another page: its own twin, if it has one and the pages are edited together
     closeTwin();
@@ -976,7 +977,7 @@ void LayoutEditorScreen::heldControl(int press)
             index.push_back(el);
         }
         const int next = pickStep(rects, cur, dx, dy, session_.canvasW(), session_.canvasH());
-        if (next < 0) setStatus("Nothing that way to add.", false);
+        if (next < 0) setStatus("Nothing that way to add.", false, true);
         else session_.addSelected(index[next]);
         break;
     }
@@ -1161,10 +1162,11 @@ void LayoutEditorScreen::discard()
     leaveWithoutSaving_ = true;
 }
 
-void LayoutEditorScreen::setStatus(const std::string& message, bool isError)
+void LayoutEditorScreen::setStatus(const std::string& message, bool isError, bool isInfo)
 {
     status_ = message;
     statusIsError_ = isError;
+    statusIsInfo_ = isInfo && !isError;
 }
 
 bool LayoutEditorScreen::takeBack()
@@ -1247,7 +1249,7 @@ void LayoutEditorScreen::draw()
         ImGui::PopStyleColor();
     }
     if (!status_.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : statusIsInfo_ ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
         ImGui::TextWrapped("%s", status_.c_str());
         ImGui::PopStyleColor();
     }
@@ -2134,7 +2136,7 @@ void LayoutEditorScreen::alignSelection(int op)
                        : "They're lined up that way here already; lined up on " + twin_.page() + " now (Show it to undo it there).",
                   false);
     }
-    else setStatus("They're lined up that way already.", false);
+    else setStatus("They're lined up that way already.", false, true);
 }
 
 void LayoutEditorScreen::distributeSelection(bool horizontal)
@@ -2155,7 +2157,7 @@ void LayoutEditorScreen::distributeSelection(bool horizontal)
                        : "They're evenly spaced that way here already; spaced on " + twin_.page() + " now (Show it to undo it there).",
                   false);
     }
-    else setStatus("They're evenly spaced that way already.", false);
+    else setStatus("They're evenly spaced that way already.", false, true);
 }
 
 void LayoutEditorScreen::drawSelectionTools()

@@ -253,4 +253,11 @@ and stayed (`lf-15`); after a Back warning and two closes RetroFE quit and
 `controls.conf`/`controls1.conf` were unchanged (hash). The ImGui renderer's
 colours weren't checked on screen (posted mouse clicks don't reach ImGui).
 
-Tests: 6,748/6,748 checks pass on Windows.
+After a review: a favourite added twice says "already" (not "Added ... to
+the favourites"); a launcher saved unchanged or a cyclePlaylist already
+listing the playlist no longer asks RetroFE to reload; an action or link
+(either renderer) and any control but Back on the theme editors start the
+warning over, as moving does on a layout-drawn screen; the theme editors
+show their "already"/"nothing that way" notes plain too.
+
+Tests: 6,749/6,749 checks pass on Windows.

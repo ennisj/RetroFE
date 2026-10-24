@@ -86,8 +86,12 @@ namespace Manager
         virtual std::string leaving() { return ""; }
         virtual void discard() {}
 
-        // A message for the user (e.g. why they can't leave yet)
-        virtual void setStatus(const std::string& message, bool isError) { (void)message; (void)isError; }
+        // A message for the user (e.g. why they can't leave yet): an error, a
+        // neutral note when nothing happened (isInfo), else a success
+        virtual void setStatus(const std::string& message, bool isError, bool isInfo = false)
+        {
+            (void)message; (void)isError; (void)isInfo;
+        }
 
         // True once when the screen asks to go back (its own Close button)
         virtual bool takeBack() { return false; }

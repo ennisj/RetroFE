@@ -857,6 +857,10 @@ void ManagerUI::navigate(const Controls& held, float now)
         for (size_t i = 0; i < held.size() && screen_; i++) {
             bool repeat = false;
             if (acts(i, repeat)) {
+                // As on a layout-drawn screen: anything but Back after a warning starts over
+                if (static_cast<Control>(i) != Control::Back) {
+                    leave_.reset();
+                }
                 screen_->control(static_cast<Control>(i), repeat);
             }
         }
@@ -951,6 +955,9 @@ void ManagerUI::handleWidgetResults()
 
 void ManagerUI::handleResult(const Forms::Model::Result& result)
 {
+    // Something else was done after a warning about leaving (an action, a
+    // link; with either renderer): the next attempt to leave warns again
+    leave_.reset();
     // A game to start: close (asking about unsaved changes first, like Close;
     // asking again leaves them), and RetroFE starts it once it's reloaded if it has to
     if (launches_.handle(result.ok, [this](bool discard) {
@@ -1008,7 +1015,7 @@ void ManagerUI::setStatus(const std::string& message, Forms::StatusKind kind)
         widget_->setStatus(message, kind);
     }
     if (screen_ && !message.empty()) {
-        screen_->setStatus(message, kind == Forms::StatusKind::Error);
+        screen_->setStatus(message, kind == Forms::StatusKind::Error, kind == Forms::StatusKind::Info);
     }
 }
 

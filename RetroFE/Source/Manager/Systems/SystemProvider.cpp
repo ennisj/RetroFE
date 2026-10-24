@@ -1989,7 +1989,7 @@ Forms::Model::Result SystemProvider::playlistAction(const std::string& action, c
     }
     result.ok = edit.ok;
     result.info = edit.ok && edit.files.empty();   // e.g. "... is in cyclePlaylist already."
-    if (edit.ok) {
+    if (edit.ok && !edit.files.empty()) {   // nothing written: nothing to reload
         changed("playlist " + playlist + " of " + name);
         playlistKey_.clear();   // read the file again
     }

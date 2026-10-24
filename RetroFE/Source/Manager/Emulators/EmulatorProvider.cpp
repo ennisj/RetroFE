@@ -478,9 +478,12 @@ Forms::Model::Result EmulatorProvider::saveEdit(const Manager::Screen& screen)
     if (!edit.ok) {
         return result;
     }
-    services_.library->changed("launcher " + def->id);
-    updating_ = true;
-    patches_++;
+    // Nothing written ("... already has these settings."): nothing for RetroFE to reload
+    if (!edit.files.empty()) {
+        services_.library->changed("launcher " + def->id);
+        updating_ = true;
+        patches_++;
+    }
     loadEdit(screen);   // the file as saved
     result.ok = true;
     result.info = edit.files.empty();   // "... already has these settings."
