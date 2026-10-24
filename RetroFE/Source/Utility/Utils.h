@@ -54,6 +54,9 @@ public:
     static void setEnvVar(const std::string& var, const std::string& value);
     static std::string getFileName(const std::string& filePath);
     static bool findMatchingFile(const std::string& prefix, const std::vector<std::string>& extensions, std::string& file);
+    // Forgets findMatchingFile's folder listings, so files added or removed
+    // since show up (RetroFE's reload after Manage changes calls it)
+    static void clearFileCache();
     static std::string toLower(const std::string& inputStr);
     static std::string uppercaseFirst(std::string str);
     static std::string filterComments(const std::string& line);

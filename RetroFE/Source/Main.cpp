@@ -22,6 +22,7 @@
 #include "Database/GlobalOpts.h"
 #include "Collection/CollectionInfoBuilder.h"
 #include "Execute/Launcher.h"
+#include "Graphics/LayoutCompat.h"
 #include "Manager/Themes/app/ThemesApp.h"
 #include "Utility/Log.h"
 #include "Utility/Utils.h"
@@ -384,11 +385,16 @@ int main(int argc, char** argv)
                 else LOG_NOTICE("Catalog", text);
             }
             recovery.log.clear();
-            RetroFE p(config);
-            if (p.run()) // Check if we need to reboot after running
+            {
+                RetroFE p(config);
+                if (!p.run()) // Check if we need to reboot after running
+                    break;
                 config.clearProperties();
-            else
-                break;
+            }
+            // A reload shows media added or removed since (Manage's changes, a
+            // media folder's files): forget the file listings, once nothing runs
+            Utils::clearFileCache();
+            LayoutCompat::clearMediaFolderCache();
         }
     }
     catch (std::exception& e) {

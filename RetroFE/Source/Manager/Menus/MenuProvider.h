@@ -41,7 +41,9 @@
 //   menu-source   id, source   one source: remove it
 //   menu-info     id           info.conf title, manufacturer, year, genre (Save/Reset)
 //   menu-media    id           system_artwork slots
-//   menu-medium   id, type     one slot: preview, replace from a file, clear, put back
+//   menu-medium   id, type     one slot: preview, replace from a file, clear, put back;
+//                              a media folder's files, add one, clear the folder
+//   menu-medium-file id, type, file  one file of the slot's media folder: keep only it, take it out
 //   menu-actions  id           new menu here, delete
 //   menu-new      [id]         a new menu or merged collection (parent: id or the top menu)
 //

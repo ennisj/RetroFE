@@ -144,6 +144,8 @@ namespace Manager
             std::string key;                                   // collection/id
             std::vector<std::string> types;
             std::map<std::string, Library::MediaSlot> slots;   // by type, once looked up
+            // What Put back would restore, by type: worked out once per slot, not per frame
+            std::map<std::string, std::vector<std::string>> originals;
         };
         struct MediaJob
         {
@@ -164,7 +166,8 @@ namespace Manager
         bool collectJobs(bool wait);
         std::string slotStatus(const Library::MediaSlot& slot) const;
         std::string slotValue(const std::string& key, const Screen& screen);
-        std::vector<std::string> originals(const Library::MediaSlot& slot) const;
+        // The slot's files Manage changed (its own file's, its media folder's), cached
+        const std::vector<std::string>& originals(const Library::MediaSlot& slot);
         Forms::Model::Result mediaAction(const std::string& action, const Screen& screen);
 
         // --- metadata

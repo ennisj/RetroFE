@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -86,12 +87,31 @@ namespace LayoutCompat
     bool naturalLess(const std::string& a, const std::string& b);
 
     // A file of the media folder <prefix>/ chosen by pickMediaFile, or false.
-    // prefix is relative to RetroFE's folder or absolute. Cached for the run,
-    // like findMatchingFile: each parent folder's subfolder names are read
-    // once (so a miss costs no file system call), each media folder's files
-    // once per extension list (pass the caller's static list).
+    // prefix is relative to RetroFE's folder or absolute. Cached until a
+    // reload, like findMatchingFile: each parent folder's subfolder names are
+    // read once (so a miss costs no file system call, and adds at most an
+    // entry for a parent not seen before), each media folder's files once per
+    // extension list (pass one of the lists below). Main thread only.
     bool findMediaFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
                              const std::string& current, bool another, unsigned random, std::string& file);
+
+    // The extensions media folders take, lower case (compared ignoring case):
+    // ImageBuilder's (with webp) and VideoBuilder's. Every caller passes these
+    // same lists, since findMediaFolderFile keeps a listing per list.
+    const std::vector<std::string>& mediaFolderImageExtensions();
+    const std::vector<std::string>& mediaFolderVideoExtensions();
+
+    // Forgets those caches (and nothing else), so folders and files added or
+    // removed since show up: RetroFE's reload calls it with Utils::clearFileCache
+    void clearMediaFolderCache();
+
+    // Menu (scrolling list) art from a media folder, asked where the builders
+    // found no <prefix>.<ext> file: findMediaFolderFile's random file, kept in
+    // picks (the list's own, by prefix) so an item keeps its picture while
+    // the list scrolls and builds it again, and items sharing a folder (a
+    // "default/") show the same file, as with one file. Only hits are kept.
+    bool menuFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
+                        std::map<std::string, std::string>& picks, unsigned random, std::string& file);
 
     // RetroFE's lookup of <prefix>.<ext> (Utils::findMatchingFile, unchanged
     // when such a file exists), else findMediaFolderFile.

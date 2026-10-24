@@ -575,6 +575,241 @@ static void runLibraryTests()
               && readFile(root + "/collections/Arcade/medium_artwork/logo/a.jpg") == "old", "the original comes back");
     });
 
+    run("library: a media folder stands for a missing file (fork compat)", [&] {
+        std::string root = makeInstall("lib-media-folders");
+        const std::string art = root + "/collections/Arcade/system_artwork";
+        for (const char* name : { "ARCADES 10.mp4", "ARCADES 2.mp4", "ARCADES 1.mp4", "notes.txt" }) {
+            writeFile(art + "/video/" + name, "v");
+        }
+        writeFile(art + "/logo.png", "png");
+        writeFile(art + "/logo/other.png", "png");          // beside a file: the file wins
+        writeFile(art + "/story/a.txt", "text");            // text slots don't use folders
+        fs::create_directories(art + "/fanart");            // an empty folder
+        writeFile(root + "/collections/Arcade/medium_artwork/video/a/clip 1.mp4", "v");
+        writeFile(root + "/collections/Arcade/medium_artwork/marquee/default/m1.png", "png");
+        writeFile(root + "/collections/Arcade/medium_artwork/marquee/default/m2.png", "png");
+        writeFile(root + "/collections/Arcade/roms/screenshot/shot.png", "png");   // the game's ROM folder: not art
+        auto index = scan(root);
+        int arcade = index->findCollection("Arcade");
+        int a = index->findGame("Arcade", "a");
+
+        MediaSlot video = collectionMedia(*index, arcade, "video", MediaKind::Video);
+        check(video.own && video.fromFolder() && video.shownFolderFiles == 3, "a folder of three videos is its own video");
+        check(fs::path(video.file).filename() == "ARCADES 1.mp4", "the first, in natural order, stands for them: " + video.file);
+        check(video.folderFiles.size() == 3 && fs::path(video.folderFiles[2]).filename() == "ARCADES 10.mp4", "its files, listed");
+        checkEqual(mediaShownText(video), std::string("a folder of 3 files (one shown at random)"), "shown as");
+        check(mediaFolderNote(video).find("at random") != std::string::npos, "the note says one is picked at random");
+        check(!video.fileBesideFolder(), "no file beside it");
+
+        MediaSlot logo = collectionMedia(*index, arcade, "logo", MediaKind::Image);
+        check(logo.own && !logo.fromFolder() && fs::path(logo.file).filename() == "logo.png", "a file beside the folder wins");
+        check(logo.fileBesideFolder() && logo.folderFiles.size() == 1, "and the folder is known");
+        check(mediaFolderNote(logo).find("The file wins") != std::string::npos, "the note says the file wins: " + mediaFolderNote(logo));
+
+        MediaSlot story = collectionMedia(*index, arcade, "story", MediaKind::Text);
+        check(story.file.empty() && story.folder.empty(), "a text slot never reads a folder");
+
+        MediaSlot fanart = collectionMedia(*index, arcade, "fanart", MediaKind::Image);
+        check(fanart.file.empty() && !fanart.own && !fanart.folder.empty() && fanart.folderFiles.empty(), "an empty folder shows nothing");
+        check(mediaFolderNote(fanart).find("holds no") != std::string::npos, "and says so");
+
+        MediaSlot clip = gameMedia(*index, a, "video", MediaKind::Video);
+        check(clip.own && clip.fromFolder() && fs::path(clip.file).filename() == "clip 1.mp4", "a game's own folder");
+        MediaSlot marquee = gameMedia(*index, a, "marquee", MediaKind::Image);
+        check(!marquee.own && marquee.fromFolder() && marquee.shownFolderFiles == 2 && marquee.fallback == "game's collection (default)",
+              "a default/ folder is a fallback: " + marquee.fallback);
+        check(marquee.folder.empty(), "and not the slot's own folder");
+        MediaSlot shot = gameMedia(*index, a, "screenshot", MediaKind::Image);
+        check(shot.file.empty(), "a folder in the game's ROM folder isn't art");
+
+        // A menu entry's art falls back to the child's folder too
+        MediaSlot entry = menuEntryMedia(*index, index->findCollection("Main"), "Arcade", "video", MediaKind::Video);
+        check(!entry.own && entry.fromFolder() && entry.fallback == "child's collection art", "a menu entry: the child's folder");
+
+        // Replace and Clear never remove a folder
+        Editor editor(root);
+        check(!editor.clearMedia(video).ok, "clearing a folder slot as one file is refused");
+        check(fs::exists(art + "/video/ARCADES 1.mp4"), "the folder is untouched");
+        writeFile(root + "/incoming/new.mp4", "new");
+        EditResult r = editor.replaceMedia(video, root + "/incoming/new.mp4");
+        check(r.ok && readFile(art + "/video.mp4") == "new" && r.message.find("wins over the folder") != std::string::npos,
+              "replacing puts a file beside the folder, which wins: " + r.message);
+        check(mediaFolderFiles(art, "video", MediaKind::Video).size() == 3 && fs::exists(art + "/video/notes.txt"), "the folder stays");
+        video = collectionMedia(*index, arcade, "video", MediaKind::Video);
+        check(video.fileBesideFolder(), "now both are there");
+        r = editor.clearMedia(video);
+        check(r.ok && !fs::exists(art + "/video.mp4") && r.message.find("3 files show now") != std::string::npos,
+              "clearing the file shows the folder again: " + r.message);
+        check(mediaFolderFiles(art, "video", MediaKind::Video).size() == 3, "the folder is untouched");
+    });
+
+    run("library: media folder edits keep every file", [&] {
+        std::string root = makeInstall("lib-media-folder-edits");
+        const std::string art = root + "/collections/Arcade/system_artwork";
+        for (const char* name : { "one.mp4", "two.mp4", "three.mp4" }) {
+            writeFile(art + "/video/" + name, name);
+        }
+        writeFile(art + "/video/README.txt", "Put videos here.");
+        writeFile(root + "/incoming/four.mp4", "four");
+        writeFile(root + "/incoming/pic.png", "png");
+        auto index = scan(root);
+        int arcade = index->findCollection("Arcade");
+        Editor editor(root);
+        auto slot = [&] { return collectionMedia(*index, arcade, "video", MediaKind::Video); };
+
+        EditResult r = editor.addMediaFolderFile(slot(), root + "/incoming/four.mp4");
+        check(r.ok && readFile(art + "/video/four.mp4") == "four" && r.message.find("4 files") != std::string::npos, "added: " + r.message);
+        check(!editor.addMediaFolderFile(slot(), root + "/incoming/four.mp4").ok, "a name that's taken is refused");
+        check(!editor.addMediaFolderFile(slot(), root + "/incoming/pic.png").ok, "a picture can't go in a video folder");
+        check(!editor.addMediaFolderFile(collectionMedia(*index, arcade, "logo", MediaKind::Image), root + "/incoming/pic.png").ok,
+              "a slot without a folder can't get one this way");
+
+        r = editor.removeMediaFolderFile(slot(), "two.mp4");
+        check(r.ok && !fs::exists(art + "/video/two.mp4") && r.message.find("3 files left") != std::string::npos, "removed: " + r.message);
+        check(readFile(root + "/manage/backups/collections/Arcade/system_artwork/video/two.mp4") == "two.mp4", "and kept in the backups");
+        check(!editor.removeMediaFolderFile(slot(), "two.mp4").ok, "a file that isn't there");
+        check(!editor.removeMediaFolderFile(slot(), "README.txt").ok, "only files of the slot's kind");
+        check(!editor.removeMediaFolderFile(slot(), "../video.mp4").ok, "only files in the folder");
+
+        std::vector<std::string> originals = editor.mediaFolderOriginals(slot());
+        std::sort(originals.begin(), originals.end());
+        check(originals.size() == 2 && fs::path(originals[0]).filename() == "four.mp4" && fs::path(originals[1]).filename() == "two.mp4",
+              "what Put back would restore: the added and the removed file (" + std::to_string(originals.size()) + ")");
+
+        // The folder becomes one file
+        r = editor.mediaFolderToFile(slot(), "three.mp4");
+        check(r.ok && readFile(art + "/video.mp4") == "three.mp4", "three.mp4 is now video.mp4: " + r.message);
+        check(mediaFolderFiles(art, "video", MediaKind::Video).empty() && fs::exists(art + "/video/README.txt"),
+              "the folder's videos went, its other files stay");
+        check(readFile(root + "/manage/backups/collections/Arcade/system_artwork/video/one.mp4") == "one.mp4"
+              && readFile(root + "/manage/backups/collections/Arcade/system_artwork/video/three.mp4") == "three.mp4",
+              "every video is kept");
+        MediaSlot single = slot();
+        check(single.own && !single.fromFolder() && single.folderFiles.empty(), "the slot is one file now");
+
+        // Put back: the folder's files and video.mp4 (which didn't exist)
+        std::vector<std::string> restore = editor.mediaFolderOriginals(single);
+        restore.push_back(art + "/video.mp4");
+        for (const std::string& file : restore) {
+            check(editor.restoreOriginal(file).ok, "restored " + file);
+        }
+        check(!fs::exists(art + "/video.mp4"), "the single file is gone again");
+        std::vector<std::string> names;
+        for (const std::string& file : mediaFolderFiles(art, "video", MediaKind::Video)) {
+            names.push_back(fs::path(file).filename().string());
+        }
+        check(names == std::vector<std::string>({ "one.mp4", "three.mp4", "two.mp4" }), "the folder is as it was");
+        check(editor.mediaFolderOriginals(slot()).empty(), "nothing left to put back");
+
+        // Clearing: every video to the backups, and the emptied folder goes
+        fs::remove(art + "/video/README.txt");
+        r = editor.clearMediaFolder(slot());
+        check(r.ok && !fs::exists(art + "/video") && r.message.find("3 files") != std::string::npos, "cleared: " + r.message);
+        check(slot().file.empty() && slot().folder.empty(), "nothing shows");
+        check(!editor.clearMediaFolder(slot()).ok, "no folder to clear");
+    });
+
+    run("library: a media folder made one file where a file already was, and put back", [&] {
+        std::string root = makeInstall("lib-media-folder-beside");
+        const std::string art = root + "/collections/Arcade/system_artwork";
+        writeFile(art + "/video.mp4", "old single");
+        writeFile(art + "/video/one.mp4", "one");
+        writeFile(art + "/video/two.mp4", "two");
+        writeFile(art + "/logo.png", "png");
+        fs::create_directories(art + "/logo");   // an empty folder beside a file
+        auto index = scan(root);
+        int arcade = index->findCollection("Arcade");
+        Editor editor(root);
+        auto slot = [&] { return collectionMedia(*index, arcade, "video", MediaKind::Video); };
+        check(slot().fileBesideFolder(), "the file wins over the folder");
+        MediaSlot logo = collectionMedia(*index, arcade, "logo", MediaKind::Image);
+        check(!logo.fileBesideFolder() && !logo.folder.empty(), "an empty folder isn't a folder the file wins over");
+
+        EditResult r = editor.mediaFolderToFile(slot(), "two.mp4");
+        check(r.ok && readFile(art + "/video.mp4") == "two" && !fs::exists(art + "/video"), "two.mp4 is the file now: " + r.message);
+        const std::string kept = root + "/manage/backups/collections/Arcade/system_artwork";
+        check(readFile(kept + "/video.mp4") == "old single" && readFile(kept + "/video/one.mp4") == "one",
+              "the old single file and the folder's files are kept");
+
+        // Put back: the single file as it was, and the folder
+        std::vector<std::string> restore = editor.mediaFolderOriginals(slot());
+        check(restore.size() == 2, "the folder's two files to put back: " + std::to_string(restore.size()));
+        restore.push_back(art + "/video.mp4");
+        for (const std::string& file : restore) {
+            check(editor.restoreOriginal(file).ok, "restored " + file);
+        }
+        check(readFile(art + "/video.mp4") == "old single" && readFile(art + "/video/one.mp4") == "one"
+              && readFile(art + "/video/two.mp4") == "two", "both as they were");
+        check(editor.mediaFolderOriginals(slot()).empty(), "nothing left to put back");
+        // A later change to a put-back file shows again (decided by size and time, then content)
+        writeFile(art + "/video/one.mp4", "one, edited by hand");
+        check(editor.mediaFolderOriginals(slot()).size() == 1, "an edited file differs from its original");
+        writeFile(art + "/video/one.mp4", "one");
+        check(editor.mediaFolderOriginals(slot()).empty(), "and the same bytes again don't");
+    });
+
+    run("library: media folder files named like numbered copies, and odd cases", [&] {
+        std::string root = makeInstall("lib-media-folder-names");
+        const std::string folder = root + "/collections/Arcade/system_artwork/video";
+        writeFile(folder + "/Racing.mp4", "racing");
+        writeFile(folder + "/Racing (2).mp4", "racing two");
+        writeFile(folder + "/Other.mp4", "other");
+        writeFile(root + "/incoming/clip.MP4", "clip");
+        writeFile(root + "/incoming2/CLIP.mp4", "CLIP");   // apart: on Windows the two names are one file
+        auto index = scan(root);
+        int arcade = index->findCollection("Arcade");
+        Editor editor(root);
+        auto slot = [&] { return collectionMedia(*index, arcade, "video", MediaKind::Video); };
+
+        // Both taken out: "Racing (2).mp4" is a real file, not a kept copy
+        check(editor.removeMediaFolderFile(slot(), "Racing.mp4").ok && editor.removeMediaFolderFile(slot(), "Racing (2).mp4").ok, "taken out");
+        std::vector<std::string> originals = editor.mediaFolderOriginals(slot());
+        check(originals.size() == 2, "both are put back: " + std::to_string(originals.size()));
+        for (const std::string& file : originals) {
+            editor.restoreOriginal(file);
+        }
+        check(readFile(folder + "/Racing.mp4") == "racing" && readFile(folder + "/Racing (2).mp4") == "racing two", "both back");
+
+        // A real kept copy: Other.mp4 taken out, a different Other.mp4 copied in by hand and taken out too
+        check(editor.removeMediaFolderFile(slot(), "Other.mp4").ok, "first take-out");
+        writeFile(folder + "/Other.mp4", "other, newer");
+        check(editor.removeMediaFolderFile(slot(), "Other.mp4").ok, "second take-out");
+        const std::string kept = root + "/manage/backups/collections/Arcade/system_artwork/video";
+        check(readFile(kept + "/Other (2).mp4") == "other, newer", "the newer one is a numbered copy");
+        originals = editor.mediaFolderOriginals(slot());
+        check(originals.size() == 1 && fs::path(originals[0]).filename() == "Other.mp4", "the copy isn't offered as an original");
+
+        // Extensions in any case; names that differ only in case
+        EditResult r = editor.addMediaFolderFile(slot(), root + "/incoming/clip.MP4");
+        check(r.ok && readFile(folder + "/clip.MP4") == "clip", "an upper-case extension is taken, the name kept: " + r.message);
+        const MediaSlot withClip = slot();
+        check(std::any_of(withClip.folderFiles.begin(), withClip.folderFiles.end(),
+                          [](const std::string& f) { return fs::path(f).filename() == "clip.MP4"; }), "and listed");
+        r = editor.addMediaFolderFile(slot(), root + "/incoming2/CLIP.mp4");
+#ifdef WIN32
+        check(!r.ok && readFile(folder + "/clip.MP4") == "clip", "Windows: the same name in another case is the same file, refused");
+#else
+        check(r.ok && readFile(folder + "/CLIP.mp4") == "CLIP" && readFile(folder + "/clip.MP4") == "clip",
+              "elsewhere: another file, as RetroFE lists it: " + r.message);
+#endif
+    });
+
+    run("library: a media folder that can't be emptied leaves the new file winning", [&] {
+        std::string root = makeInstall("lib-media-folder-fail");
+        const std::string art = root + "/collections/Arcade/system_artwork";
+        writeFile(art + "/video/one.mp4", "one");
+        writeFile(art + "/video/two.mp4", "two");
+        // The backups can't take the folder's files: a file where their folder would go
+        writeFile(root + "/manage/backups/collections/Arcade/system_artwork/video", "in the way");
+        auto index = scan(root);
+        Editor editor(root);
+        MediaSlot video = collectionMedia(*index, index->findCollection("Arcade"), "video", MediaKind::Video);
+        EditResult r = editor.mediaFolderToFile(video, "one.mp4");
+        check(!r.ok && r.message.find("couldn't be emptied") != std::string::npos, "says it failed part way: " + r.message);
+        check(!r.files.empty() && readFile(art + "/video.mp4") == "one", "the file is in place, and listed as changed");
+        check(fs::exists(art + "/video/one.mp4") && fs::exists(art + "/video/two.mp4"), "the folder keeps its files");
+    });
+
     run("library: hidden games are read with their metadata, apart from the games", [&] {
         // Arcade's exclude.txt names b
         std::string root = makeInstall("lib-hidden");

@@ -77,9 +77,14 @@ These carry over from One Saucier, where they were learned the hard way:
   (texts that are lines, such as a story, use a multi-line field).
 - **Ask before deleting**, and say what stays ("Its games stay on the drive").
 - **Changes take effect on reload.** RetroFE reads configuration, collections,
-  metadata and media once, and caches media folder listings for good. Screens
+  metadata and media once, and caches media folder listings until it reloads
+  (the reload forgets them, so new and removed files show). Screens
   mark changes as pending, and RetroFE reloads when you leave Manage (as the
   Catalog does when you're back on Home).
+- **Media can be a folder of files** (OneSauce): every media screen shows
+  such a slot, lists its files and changes them one by one
+  (`Library::Editor`'s media folder calls), and a file beside a folder wins,
+  as in RetroFE. A replace or clear never removes a folder.
 - **Names are case-sensitive** in RetroFE (folders, menu lines, metadata,
   playlists, launcher overrides, ROM extensions). Screens show and write the
   exact spelling found on disk.

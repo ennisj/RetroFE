@@ -59,9 +59,18 @@ namespace Library
         // Keeps a numbered copy of path unless it's identical to its kept original
         bool keepIfChanged(const std::string& path, std::string& error);
 
-    private:
+        // True when an original is kept and path is byte for byte the same
         bool isOriginal(const std::string& path) const;
+
+        // True when backupFile (a file in the backups) is one of the numbered
+        // copies made here ("name (2).ext"), not the original of a file that is
+        // itself named like that: each folder of the backups lists the copies
+        // made in it in a ".numbered" file
+        bool isNumberedCopy(const std::string& backupFile) const;
+
+    private:
         std::string numberedCopyPath(const std::string& path) const;
+        void recordNumberedCopy(const std::string& copy);
 
         std::string root_;
         std::string folder_;

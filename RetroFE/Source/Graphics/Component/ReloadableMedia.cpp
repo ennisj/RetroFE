@@ -518,12 +518,13 @@ Component* ReloadableMedia::findComponent(
     const bool mayKeep = loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying());
     // <basename>.<ext> as upstream, else (fork compat, OneSauce) a file of the
     // media folder <basename>/, kept while it's showing; not in a game's own folder
-    static const std::vector<std::string> folderImageExtensions = { "gif", "webp", "png", "jpg", "jpeg" };
+    // (the folder lists are LayoutCompat's shared ones, which menus use too)
     static std::minstd_rand random(static_cast<unsigned>(std::time(nullptr)));   // apart from rand(): randomSelect's sequence stays as it was
     const std::string current = loadedComponent_ ? std::string(loadedComponent_->filePath()) : std::string();
     const bool another = another_ && anotherFor_ == page.getSelectedItem(displayOffset_);
     const LayoutCompat::MediaLookup found = LayoutCompat::lookupMediaStep(imagePath, basename, !filepath.empty(), extensions,
-        isVideo ? ReloadableMedia::videoExtensions : folderImageExtensions, current, another, static_cast<unsigned>(random()));
+        isVideo ? LayoutCompat::mediaFolderVideoExtensions() : LayoutCompat::mediaFolderImageExtensions(),
+        current, another, static_cast<unsigned>(random()));
     if (mayKeep && !found.file.empty() && found.file == current) {
         return loadedComponent_;
     }

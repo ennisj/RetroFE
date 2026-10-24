@@ -265,7 +265,7 @@ void GameProvider::enter(const Screen& screen)
             filter_ = collection;
         }
     }
-    priorityType_ = screen.form == "game-media-slot" ? screen.param("type")
+    priorityType_ = screen.form == "game-media-slot" || screen.form == "game-media-folder-file" ? screen.param("type")
                   : screen.form == "game-description" ? "story" : "";
     if (screen.form == "game-media-slot") {
         newFile_.clear();
@@ -475,7 +475,7 @@ std::string GameProvider::get(const std::string& key, const Screen& screen)
         || key == "launcherProblem" || key == "unresolvedNote" || key == "isLauncherDirty" || key == "hasLauncherOverride") {
         return launcherValue(key, screen);
     }
-    if (startsWith(key, "slot:") || key == "mediaNote") {
+    if (startsWith(key, "slot:") || startsWith(key, "folderFile:") || key == "mediaNote") {
         return slotValue(key, screen);
     }
     if (startsWith(key, "story:") || key == "isStoryDirty") {
@@ -765,6 +765,27 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
         return onlyHidden_ ? hiddenRows(limit) : searchRows(limit);
     }
     Forms::Rows rows;
+    if (key == "slot:folderFiles") {
+        // The files of the slot's own media folder, each opening its screen
+        const MediaSlot* s = slot(screen, screen.param("type"));
+        if (!s) {
+            return rows;
+        }
+        rows.total = s->folderFiles.size();
+        for (const std::string& file : s->folderFiles) {
+            if (rows.items.size() >= limit) {
+                break;
+            }
+            Forms::Row row;
+            row.id = fileName(file);
+            row.label = row.id;
+            row.detail = s->fileBesideFolder() ? "not shown" : "";
+            row.image = s->kind == MediaKind::Image ? file : "";
+            row.params = { { "collection", screen.param("collection") }, { "id", screen.param("id") }, { "type", s->type } };
+            rows.items.push_back(std::move(row));
+        }
+        return rows;
+    }
     if (key != "media") {
         return rows;
     }
@@ -789,7 +810,8 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
         }
         else {
             const MediaSlot& slot = found->second;
-            row.detail = slot.own ? "Own file" : !slot.file.empty() ? "Fallback: " + slot.fallback : "Missing";
+            row.detail = slot.own ? (slot.fromFolder() ? "Own folder (" + std::to_string(slot.shownFolderFiles) + ")" : "Own file")
+                       : !slot.file.empty() ? "Fallback: " + slot.fallback : "Missing";
             if (slot.kind == MediaKind::Image) {
                 row.image = slot.file;
             }
@@ -1051,6 +1073,7 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
         };
         auto section = sections.find(screen.form);
         if (screen.form == "game-media-slot") return title + " - " + mediaLabel(screen.param("type"));
+        if (screen.form == "game-media-folder-file") return title + " - " + mediaLabel(screen.param("type")) + " folder";
         return section == sections.end() ? title : title + " - " + section->second;
     }
     if (!game) {
@@ -1215,29 +1238,41 @@ const MediaSlot* GameProvider::slot(const Screen& screen, const std::string& typ
 void GameProvider::forgetSlot(const std::string& type)
 {
     media_.slots.erase(type);
+    media_.originals.erase(type);
     mediaEpoch_++;   // a lookup running now may have read the old file
     generation_++;
 }
 
 std::string GameProvider::slotStatus(const MediaSlot& slot) const
 {
-    if (slot.own) return "Its own file";
-    if (!slot.file.empty()) return "A fallback from the " + slot.fallback;
+    if (slot.own && slot.fromFolder()) return "Its own folder: " + Library::mediaShownText(slot);
+    if (slot.own) return slot.fileBesideFolder() ? "Its own file (it wins over the folder beside it)" : "Its own file";
+    if (!slot.file.empty()) return "A fallback from the " + slot.fallback + (slot.fromFolder() ? ": " + Library::mediaShownText(slot) : "");
     return "Missing";
 }
 
-std::vector<std::string> GameProvider::originals(const MediaSlot& slot) const
+const std::vector<std::string>& GameProvider::originals(const MediaSlot& slot)
 {
-    // The slot's own files that Manage changed: each extension it could have
-    std::vector<std::string> files;
+    // Asked every frame (hasOriginal, the Put back button's problem): worked
+    // out once per looked-up slot; forgetSlot() and a new game drop it
+    auto cached = media_.originals.find(slot.type);
+    if (cached != media_.originals.end()) {
+        return cached->second;
+    }
+    std::vector<std::string>& files = media_.originals[slot.type];
     if (!services_.editor || slot.directory.empty() || slot.basename.empty()) {
         return files;
     }
+    // The slot's own files that Manage changed and that differ now: each extension it could have
     for (const std::string& extension : Library::acceptedExtensions(slot.kind)) {
         std::string file = Utils::combinePath(slot.directory, slot.basename + "." + extension);
-        if (services_.editor->backups().hasOriginal(file)) {
+        if (services_.editor->differsFromOriginal(file)) {
             files.push_back(file);
         }
+    }
+    // and the files of its media folder Manage changed
+    for (const std::string& file : services_.editor->mediaFolderOriginals(slot)) {
+        files.push_back(file);
     }
     return files;
 }
@@ -1250,7 +1285,8 @@ std::string GameProvider::slotValue(const std::string& key, const Screen& screen
         return "Each kind of media, as RetroFE finds it for this game on its own system's page. A fallback is "
                "another file RetroFE shows instead (by the game's title, its parent's name, or the collection's "
                "default); replacing puts a file of the game's own in its place. A merged collection that shows the "
-               "game may have art of its own for it, which it shows first.";
+               "game may have art of its own for it, which it shows first. A slot can also be a folder of files "
+               "(as OneSauce ships some videos), of which RetroFE shows one at random.";
     }
     if (key == "slot:newFile") return newFile_;
     if (key == "slot:title") return mediaLabel(screen.param("type"));
@@ -1262,14 +1298,37 @@ std::string GameProvider::slotValue(const std::string& key, const Screen& screen
         }
         return startsWith(key, "slot:is") || startsWith(key, "slot:can") || startsWith(key, "slot:has") ? "no" : "";
     }
+    if (startsWith(key, "folderFile:")) {
+        std::string name = screen.param("file");
+        std::string file = s->folder.empty() ? "" : Utils::combinePath(s->folder, name);
+        bool there = std::find(s->folderFiles.begin(), s->folderFiles.end(), file) != s->folderFiles.end();
+        if (key == "folderFile:name") return name;
+        if (key == "folderFile:folder") return s->folder;
+        if (key == "folderFile:image") return there && s->kind == MediaKind::Image ? file : "";
+        if (key == "folderFile:note") {
+            if (!there) return "This file isn't in the folder any more.";
+            if (s->fileBesideFolder()) return "A file beside the folder (" + fileName(s->file) + ") wins, so RetroFE doesn't show this one.";
+            return "One of the folder's " + std::to_string(s->folderFiles.size()) + " files: RetroFE shows one of them at random. "
+                   "Keep only this file puts it beside the folder as " + s->basename + " and empties the folder.";
+        }
+        return "";
+    }
     if (key == "slot:image") return s->kind == MediaKind::Image ? s->file : "";
-    if (key == "slot:file") return s->file;
+    if (key == "slot:file") return s->fromFolder() ? Library::mediaShownText(*s) : s->file;
     if (key == "slot:status") return slotStatus(*s);
     if (key == "slot:place") return Utils::combinePath(s->directory, s->basename) + ".*";
+    if (key == "slot:folderNote") {
+        std::string note = Library::mediaFolderNote(*s);
+        if (!note.empty() && Library::iequals(s->basename, "default")) {
+            note += " A game named default shares this folder with every game that has no " + s->type + " of its own.";
+        }
+        return note;
+    }
+    if (key == "slot:hasFolder") return yesNo(!s->folder.empty());
     if (key == "slot:isImage") return yesNo(s->kind == MediaKind::Image);
     if (key == "slot:isVideo") return yesNo(s->kind == MediaKind::Video);
     if (key == "slot:isText") return yesNo(s->kind == MediaKind::Text);
-    if (key == "slot:canClear") return yesNo(s->own);
+    if (key == "slot:canClear") return yesNo(s->own && !s->fromFolder());
     if (key == "slot:hasOriginal") return yesNo(!originals(*s).empty());
     if (key == "slot:text") {
         std::string content;
@@ -1296,6 +1355,18 @@ Forms::Model::Result GameProvider::mediaAction(const std::string& action, const 
     else if (action == "clearMedia") {
         edit = services_.editor->clearMedia(copy);
     }
+    else if (action == "addToFolder") {
+        edit = services_.editor->addMediaFolderFile(copy, Utils::trimEnds(newFile_));
+    }
+    else if (action == "clearFolder") {
+        edit = services_.editor->clearMediaFolder(copy);
+    }
+    else if (action == "removeFolderFile") {
+        edit = services_.editor->removeMediaFolderFile(copy, screen.param("file"));
+    }
+    else if (action == "keepFolderFile") {
+        edit = services_.editor->mediaFolderToFile(copy, screen.param("file"));
+    }
     else {
         std::vector<std::string> files = originals(copy);
         std::string label = mediaLabel(type);
@@ -1314,11 +1385,17 @@ Forms::Model::Result GameProvider::mediaAction(const std::string& action, const 
     }
     result.ok = edit.ok;
     result.message = edit.message;
-    if (edit.ok) {
+    // A failure part way can still have changed files (a folder made one
+    // file, then not emptied): look the slot up again whenever any were touched
+    if (edit.ok || !edit.files.empty()) {
         // Back to the list: pictures are cached by path, and the slot's file
-        // has the same path as before, so a fresh screen shows the new one
-        result.back = true;
-        newFile_.clear();
+        // has the same path as before, so a fresh screen shows the new one.
+        // A folder's changes stay on the slot's screen (adding several files),
+        // or go back to it from one of its files.
+        result.back = edit.ok && action != "addToFolder" && action != "clearFolder";
+        if (edit.ok) {
+            newFile_.clear();
+        }
         forgetSlot(type);
         thumbnails_.erase(screen.param("collection") + "/" + screen.param("id"));
         if (type == "story") {
@@ -1984,7 +2061,8 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
 {
     static const std::vector<std::string> known = {
         "saveMetadata", "resetMetadata", "saveLauncher", "resetLauncher", "useSystemLauncher",
-        "replaceMedia", "clearMedia", "restoreMedia", "addFavourite", "removeFavourite", "addToPlaylist",
+        "replaceMedia", "clearMedia", "restoreMedia", "addToFolder", "clearFolder", "removeFolderFile", "keepFolderFile",
+        "addFavourite", "removeFavourite", "addToPlaylist",
         "removeFromPlaylist", "addToMerged", "removeFromMerged", "saveStory", "resetStory", "clearStory",
         "restoreStory", "replaceStory", "launch", "hide", "unhide",
     };
@@ -2053,11 +2131,28 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
         if (!s) return lookingMessage;
         if (action == "replaceMedia") return Utils::trimEnds(newFile_).empty() ? "Choose a file first." : "";
         if (action == "clearMedia") {
+            if (s->own && s->fromFolder()) return "It's a folder of files, not one file: take files out of it, or clear the folder.";
             if (s->own) return "";
             return s->file.empty() ? "There's nothing to clear." : "This shows a fallback from the " + s->fallback
                 + "; there's no file of the game's own to clear.";
         }
         return originals(*s).empty() ? "There's no original kept for this slot." : "";
+    }
+    if (action == "addToFolder" || action == "clearFolder" || action == "removeFolderFile" || action == "keepFolderFile") {
+        const MediaSlot* s = slot(screen, screen.param("type"));
+        if (!s) return lookingMessage;
+        if (s->folder.empty()) return "It has no folder of files.";
+        if (action == "addToFolder") return Utils::trimEnds(newFile_).empty() ? "Choose a file first." : "";
+        // A game named "default": its folder is the collection's default art,
+        // which every game without its own shows; it isn't emptied from here
+        if ((action == "clearFolder" || action == "keepFolderFile") && Library::iequals(s->basename, "default")) {
+            return "This folder is the collection's default " + s->type + ", which every game without its own shows; "
+                   "change it file by file, or in the folder itself.";
+        }
+        if (action == "clearFolder") return "";
+        std::string file = Utils::combinePath(s->folder, screen.param("file"));
+        return std::find(s->folderFiles.begin(), s->folderFiles.end(), file) == s->folderFiles.end()
+            ? "This file isn't in the folder any more." : "";
     }
     if (action == "addFavourite" || action == "removeFavourite") {
         if (globalFavourites(*idx)) {
@@ -2132,7 +2227,8 @@ Forms::Model::Result GameProvider::runAction(const std::string& action, const Sc
     if (action == "saveLauncher" || action == "resetLauncher" || action == "useSystemLauncher") {
         return launcherAction(action, screen);
     }
-    if (action == "replaceMedia" || action == "clearMedia" || action == "restoreMedia") {
+    if (action == "replaceMedia" || action == "clearMedia" || action == "restoreMedia" || action == "addToFolder"
+        || action == "clearFolder" || action == "removeFolderFile" || action == "keepFolderFile") {
         return mediaAction(action, screen);
     }
     if (action == "saveStory" || action == "resetStory" || action == "clearStory" || action == "restoreStory"

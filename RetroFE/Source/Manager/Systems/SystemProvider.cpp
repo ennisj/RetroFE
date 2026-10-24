@@ -562,7 +562,7 @@ void SystemProvider::enter(const Screen& screen)
     if (isForm(screen, "-check") || screen.form == base_) {
         detailsIndex_.reset();   // checked afresh on every visit
     }
-    if (isForm(screen, "-media") || isForm(screen, "-medium")) {
+    if (isForm(screen, "-media") || isForm(screen, "-medium") || isForm(screen, "-medium-file")) {
         ensureMedia(screen, true);
     }
     if (isForm(screen, "-medium")) {
@@ -717,6 +717,7 @@ std::string SystemProvider::screenTitle(const Screen& screen) const
     if (isForm(screen, "-info")) return name + ": info";
     if (isForm(screen, "-media")) return name + ": media";
     if (isForm(screen, "-medium")) return name + ": " + screen.param("slot");
+    if (isForm(screen, "-medium-file")) return name + ": " + screen.param("slot") + " folder";
     if (isForm(screen, "-playlists")) return name + ": playlists";
     if (isForm(screen, "-playlist")) return name + ": " + screen.param("playlist");
     if (isForm(screen, "-check")) return "Check " + name;
@@ -945,7 +946,18 @@ void SystemProvider::ensureMedia(const Screen& screen, bool force)
     std::set<std::string> extra;
     for (const auto& entry : fs::directory_iterator(first.directory, ec)) {
         std::string name;
-        if (!entry.is_regular_file(ec) || !Library::narrowName(entry.path().filename(), name)) {
+        if (!Library::narrowName(entry.path().filename(), name)) {
+            continue;
+        }
+        if (entry.is_directory(ec)) {
+            // A media folder (fork compat) holding art of the kind its name suggests
+            bool known = std::any_of(types.begin(), types.end(), [&](const std::string& t) { return iequals(t, name); });
+            if (!known && !Library::mediaFolderFiles(first.directory, name, Library::defaultKind(name)).empty()) {
+                extra.insert(name);
+            }
+            continue;
+        }
+        if (!entry.is_regular_file(ec)) {
             continue;
         }
         size_t dot = name.find_last_of('.');
@@ -990,6 +1002,10 @@ void SystemProvider::ensureMedia(const Screen& screen, bool force)
                 if (differs) {
                     originals_[type].push_back(live);
                 }
+            }
+            // and its media folder's files (fork compat)
+            for (const std::string& live : services_.editor->mediaFolderOriginals(slot)) {
+                originals_[type].push_back(live);
             }
         }
         slots_.push_back(std::move(slot));
@@ -1309,25 +1325,45 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
     // Media
     if (key == "mediaFile") return mediaFile_;
     if (key.compare(0, 6, "medium") == 0 || key == "isImageSlot" || key == "isVideoSlot" || key == "isTextSlot"
-        || key == "hasOwnMedia" || key == "canRestoreMedia") {
+        || key == "hasOwnMedia" || key == "canRestoreMedia" || key == "hasMediaFolder" || key.compare(0, 10, "folderFile") == 0) {
         const Library::MediaSlot* s = slot(screen);
         if (!s) {
             return key.compare(0, 2, "is") == 0 || key.compare(0, 3, "has") == 0 || key.compare(0, 3, "can") == 0 ? "no" : "";
         }
+        if (key.compare(0, 10, "folderFile") == 0) {
+            // One file of the slot's media folder (param file)
+            std::string name = screen.param("file");
+            std::string file = s->folder.empty() ? "" : Utils::combinePath(s->folder, name);
+            bool there = std::find(s->folderFiles.begin(), s->folderFiles.end(), file) != s->folderFiles.end();
+            if (key == "folderFileName") return name;
+            if (key == "folderFileFolder") return s->folder;
+            if (key == "folderFileImage") return there && s->kind == Library::MediaKind::Image ? file : "";
+            if (key == "folderFileNote") {
+                if (!there) return "This file isn't in the folder any more.";
+                if (s->fileBesideFolder()) return "A file beside the folder (" + fileName(s->file) + ") wins, so RetroFE doesn't show this one.";
+                return "One of the folder's " + std::to_string(s->folderFiles.size()) + " files: RetroFE shows one of them at random"
+                    + (s->kind == Library::MediaKind::Video ? " (a video: it plays on the page, not here)." : ".");
+            }
+            return "";
+        }
         if (key == "mediumImage") return s->kind == Library::MediaKind::Image ? s->file : "";
         if (key == "mediumFile") {
             if (s->file.empty()) return "Nothing";
-            return fileName(s->file) + (s->kind == Library::MediaKind::Video ? " (a video: it plays on the page, not here)" : "");
+            std::string shown = s->fromFolder() ? Library::mediaShownText(*s) : fileName(s->file);
+            return shown + (s->kind == Library::MediaKind::Video ? " (a video: it plays on the page, not here)" : "");
         }
         if (key == "mediumWhere") {
             if (s->file.empty()) return "";
-            return s->own ? "Its own file" : "Not its own: it's the " + s->fallback + " (" + s->file + ")";
+            if (s->own) return s->fromFolder() ? "Its own folder, " + s->folder : "Its own file";
+            return "Not its own: it's the " + s->fallback + " (" + (s->fromFolder() ? fs::path(s->file).parent_path().string() : s->file) + ")";
         }
+        if (key == "mediumFolderNote") return Library::mediaFolderNote(*s);
+        if (key == "hasMediaFolder") return yesNo(!s->folder.empty());
         if (key == "mediumFolder") return s->directory;
         if (key == "isImageSlot") return yesNo(s->kind == Library::MediaKind::Image);
         if (key == "isVideoSlot") return yesNo(s->kind == Library::MediaKind::Video);
         if (key == "isTextSlot") return yesNo(s->kind == Library::MediaKind::Text);
-        if (key == "hasOwnMedia") return yesNo(s->own);
+        if (key == "hasOwnMedia") return yesNo(s->own);   // a folder of its own counts
         if (key == "canRestoreMedia") return yesNo(originals_.count(s->type) > 0);
         return "";
     }
@@ -1468,13 +1504,28 @@ Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Scr
         row.detail = count(r->gameCount, item_, items_);
         rows.items.push_back(std::move(row));
     }
+    else if (key == "folderFiles") {
+        // The files of the slot's own media folder, each opening its screen
+        const Library::MediaSlot* s = slot(screen);
+        for (size_t i = 0; s && i < s->folderFiles.size() && rows.items.size() < limit; i++) {
+            Forms::Row row;
+            row.id = fileName(s->folderFiles[i]);
+            row.label = row.id;
+            row.detail = s->fileBesideFolder() ? "not shown" : "";
+            row.image = s->kind == Library::MediaKind::Image ? s->folderFiles[i] : "";
+            row.params = { { "id", r->name }, { "slot", s->type } };
+            rows.items.push_back(std::move(row));
+        }
+        rows.total = s ? s->folderFiles.size() : 0;
+        return rows;
+    }
     else if (key == "media") {
         ensureMedia(screen);
         for (const Library::MediaSlot& s : slots_) {
             Forms::Row row;
             row.id = s.type;
             row.label = capitalised(s.type);
-            row.detail = s.file.empty() ? "None" : s.own ? fileName(s.file) : "From the " + s.fallback;
+            row.detail = s.file.empty() ? "None" : s.own ? Library::mediaShownText(s) : "From the " + s.fallback;
             row.image = s.kind == Library::MediaKind::Image ? s.file : "";
             row.params = { { "id", r->name } };
             rows.items.push_back(std::move(row));
@@ -1620,8 +1671,25 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
             if (!fs::is_regular_file(mediaFile_, ec)) return "That file isn't there.";
             return "";
         }
-        if (action == "clearMedia") return s->own ? "" : "It has no file of its own to clear.";
+        if (action == "clearMedia") {
+            if (s->own && s->fromFolder()) return "It's a folder of files, not one file: take files out of it, or clear the folder.";
+            return s->own ? "" : "It has no file of its own to clear.";
+        }
         return originals_.count(s->type) ? "" : "Nothing was changed here.";
+    }
+    if (action == "addToFolder" || action == "clearFolder" || action == "removeFolderFile" || action == "keepFolderFile") {
+        const Library::MediaSlot* s = slot(screen);
+        if (!s) return "Choose the art to change.";
+        if (s->folder.empty()) return "It has no folder of files.";
+        if (action == "addToFolder") {
+            std::error_code ec;
+            if (mediaFile_.empty()) return "Choose a file first.";
+            return fs::is_regular_file(mediaFile_, ec) ? "" : "That file isn't there.";
+        }
+        if (action == "clearFolder") return "";
+        std::string file = Utils::combinePath(s->folder, screen.param("file"));
+        return std::find(s->folderFiles.begin(), s->folderFiles.end(), file) == s->folderFiles.end()
+            ? "This file isn't in the folder any more." : "";
     }
     if (action == "createPlaylist") {
         std::string name = Utils::trimEnds(newPlaylist_);
@@ -1669,7 +1737,8 @@ Forms::Model::Result SystemProvider::runAction(const std::string& action, const 
         result.ok = true;
         return result;
     }
-    if (action == "replaceMedia" || action == "clearMedia" || action == "restoreMedia") {
+    if (action == "replaceMedia" || action == "clearMedia" || action == "restoreMedia" || action == "addToFolder"
+        || action == "clearFolder" || action == "removeFolderFile" || action == "keepFolderFile") {
         return mediaAction(action, screen);
     }
     return playlistAction(action, screen);
@@ -1802,6 +1871,18 @@ Forms::Model::Result SystemProvider::mediaAction(const std::string& action, cons
     else if (action == "clearMedia") {
         edit = services_.editor->clearMedia(target);
     }
+    else if (action == "addToFolder") {
+        edit = services_.editor->addMediaFolderFile(target, mediaFile_);
+    }
+    else if (action == "clearFolder") {
+        edit = services_.editor->clearMediaFolder(target);
+    }
+    else if (action == "removeFolderFile") {
+        edit = services_.editor->removeMediaFolderFile(target, screen.param("file"));
+    }
+    else if (action == "keepFolderFile") {
+        edit = services_.editor->mediaFolderToFile(target, screen.param("file"));
+    }
     else {
         edit.ok = true;
         for (const std::string& file : originals_[target.type]) {
@@ -1816,14 +1897,22 @@ Forms::Model::Result SystemProvider::mediaAction(const std::string& action, cons
         }
     }
     result.message = edit.message;
-    if (!edit.ok) {
+    // A failure part way can still have changed files: read the art again whenever any were touched
+    if (!edit.ok && edit.files.empty()) {
         return result;
     }
-    mediaFile_.clear();
+    if (edit.ok) {
+        mediaFile_.clear();
+    }
     changed(target.type + " art of " + screen.param("id"));
     ensureMedia(screen, true);
     detailsIndex_.reset();
+    if (!edit.ok) {
+        return result;
+    }
     result.ok = true;
+    // From one of a folder's files, back to the art's screen
+    result.back = action == "removeFolderFile" || action == "keepFolderFile";
     return result;
 }
 

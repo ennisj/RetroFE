@@ -28,6 +28,7 @@
 #include "VideoComponent.h"
 #include "ReloadableMedia.h"
 #include "Text.h"
+#include "../LayoutCompat.h"
 #include "../../Video/VideoPool.h"
 #include "../../Database/Configuration.h"
 #include "../../Database/GlobalOpts.h"
@@ -48,6 +49,8 @@
 #include <cctype>
 #include <iomanip>
 #include <algorithm>
+#include <ctime>
+#include <random>
 
 int ScrollingList::nextListId = 0;
 
@@ -786,11 +789,11 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
         // Create video or image
         if (!t) {
             if (videoType_ != "null") {
-                t = videoBuild.createVideo(videoPath, page, name, baseViewInfo.Monitor, -1, false, listId_, perspectiveCornersInitialized_ ? perspectiveCorners_ : nullptr);
+                t = createVideoOrFolder(videoPath, name);
             }
             else {
                 std::string imageName = selectedImage_ && item->name == selectedItemName ? name + "-selected" : name;
-                t = imageBuild.CreateImage(imagePath, page, imageName, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                t = createImageOrFolder(imagePath, imageName);
             }
         }
 
@@ -810,11 +813,11 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
 
             if (!t) {
                 if (videoType_ != "null") {
-                    t = videoBuild.createVideo(videoPath, page, name, baseViewInfo.Monitor, -1,  false, listId_, perspectiveCornersInitialized_ ? perspectiveCorners_ : nullptr);
+                    t = createVideoOrFolder(videoPath, name);
                 }
                 else {
                     std::string imageName = selectedImage_ && item->name == selectedItemName ? name + "-selected" : name;
-                    t = imageBuild.CreateImage(imagePath, page, imageName, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                    t = createImageOrFolder(imagePath, imageName);
                 }
             }
         }
@@ -845,15 +848,15 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
             }
         }
         if ( videoType_ != "null" ) {
-            t = videoBuild.createVideo( videoPath, page, videoType_, baseViewInfo.Monitor, -1, false, listId_, perspectiveCornersInitialized_ ? perspectiveCorners_ : nullptr);
+            t = createVideoOrFolder(videoPath, videoType_);
         }
         else {
             name = imageType_;
             if (selectedImage_ && item->name == selectedItemName) {
-                t = imageBuild.CreateImage(imagePath, page, name + "-selected", baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                t = createImageOrFolder(imagePath, name + "-selected");
             }
             if (!t) {
-                t = imageBuild.CreateImage(imagePath, page, name, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                t = createImageOrFolder(imagePath, name);
             }
         }
     }
@@ -897,7 +900,7 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
 
             // Try to create image
             std::string imageName = selectedImage_ && item->name == selectedItemName ? name + "-selected" : name;
-            t = imageBuild.CreateImage(imagePath, page, imageName, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+            t = createImageOrFolder(imagePath, imageName);
 
             // Check sub-collection path for art if needed
             if (!t && !commonMode_) {
@@ -912,7 +915,7 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
 
                 // Try to create image again
                 imageName = selectedImage_ && item->name == selectedItemName ? name + "-selected" : name;
-                t = imageBuild.CreateImage(imagePath, page, imageName, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                t = createImageOrFolder(imagePath, imageName);
             }
         }
 
@@ -937,10 +940,10 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
             if ( !t ) {
                 name = imageType_;
                 if (selectedImage_ && item->name == selectedItemName) {
-                    t = imageBuild.CreateImage(imagePath, page, name + "-selected", baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                    t = createImageOrFolder(imagePath, name + "-selected");
                 }
                 if (!t) {
-                    t = imageBuild.CreateImage(imagePath, page, name, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+                    t = createImageOrFolder(imagePath, name);
                 }
             }
         }
@@ -972,6 +975,42 @@ bool ScrollingList::allocateTexture( size_t index, const Item *item )
 void ScrollingList::buildPaths(std::string& imagePath, std::string& videoPath, const std::string& base, const std::string& subPath, const std::string& mediaType, const std::string& videoType) {
     imagePath = Utils::combinePath(base, subPath, "medium_artwork", mediaType);
     videoPath = Utils::combinePath(imagePath, "medium_artwork", videoType);
+}
+
+namespace
+{
+    std::minstd_rand folderRandom(static_cast<unsigned>(std::time(nullptr)));
+}
+
+Component* ScrollingList::createVideoOrFolder(const std::string& path, const std::string& name)
+{
+    // <path>/<name>.<ext> as upstream; else a file of the media folder
+    // <path>/<name>/ (LayoutCompat::menuFolderFile: kept per list and folder)
+    const int* corners = perspectiveCornersInitialized_ ? perspectiveCorners_ : nullptr;
+    VideoBuilder videoBuild{};
+    if (Component* t = videoBuild.createVideo(path, page, name, baseViewInfo.Monitor, -1, false, listId_, corners)) {
+        return t;
+    }
+    std::string file;
+    if (LayoutCompat::menuFolderFile(Utils::combinePath(path, name), LayoutCompat::mediaFolderVideoExtensions(), folderPicks_,
+                                     static_cast<unsigned>(folderRandom()), file)) {
+        return new VideoComponent(page, file, baseViewInfo.Monitor, -1, false, listId_, corners);
+    }
+    return nullptr;
+}
+
+Component* ScrollingList::createImageOrFolder(const std::string& path, const std::string& name)
+{
+    ImageBuilder imageBuild;
+    if (Component* t = imageBuild.CreateImage(path, page, name, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_)) {
+        return t;
+    }
+    std::string file;
+    if (LayoutCompat::menuFolderFile(Utils::combinePath(path, name), LayoutCompat::mediaFolderImageExtensions(), folderPicks_,
+                                     static_cast<unsigned>(folderRandom()), file)) {
+        return new Image(file, "", page, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
+    }
+    return nullptr;
 }
 
 void ScrollingList::deallocateTexture( size_t index )

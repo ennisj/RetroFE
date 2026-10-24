@@ -496,17 +496,57 @@ namespace
 #else
     std::string folderKey(const std::string& name) { return name; }
 #endif
+
+    // findMediaFolderFile's caches (main thread only, as findMatchingFile's)
+    std::map<std::string, std::set<std::string>> subfolders;   // by parent folder
+    std::map<std::pair<std::string, const std::vector<std::string>*>, std::vector<std::string>> listed;
+}
+
+const std::vector<std::string>& mediaFolderImageExtensions()
+{
+    static const std::vector<std::string> extensions = { "gif", "webp", "png", "jpg", "jpeg" };
+    return extensions;
+}
+
+const std::vector<std::string>& mediaFolderVideoExtensions()
+{
+    static const std::vector<std::string> extensions = { "mp4", "avi", "mkv", "mp3", "wav", "flac" };
+    return extensions;
+}
+
+void clearMediaFolderCache()
+{
+    subfolders.clear();
+    listed.clear();
+}
+
+bool menuFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
+                    std::map<std::string, std::string>& picks, unsigned random, std::string& file)
+{
+    // Only hits are kept: a miss is already cheap (findMediaFolderFile), and
+    // a big list would otherwise keep a name for every item it scrolled past
+    auto it = picks.find(prefix);
+    if (it != picks.end()) {
+        file = it->second;
+        return true;
+    }
+    std::string found;
+    if (!findMediaFolderFile(prefix, extensions, "", false, random, found)) {
+        return false;
+    }
+    picks.emplace(prefix, found);
+    file = found;
+    return true;
 }
 
 bool findMediaFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
                          const std::string& current, bool another, unsigned random, std::string& file)
 {
     // A miss is the usual case (a game with no folder of its own): each media
-    // folder's subfolder names are read once per run, so a miss costs a
-    // lookup, not a file system call, and adds nothing to the caches. A
-    // missing parent folder is read as having no subfolders.
-    static std::map<std::string, std::set<std::string>> subfolders;   // by parent folder
-    static std::map<std::pair<std::string, const std::vector<std::string>*>, std::vector<std::string>> listed;
+    // folder's subfolder names are read once (until a reload), so a miss costs
+    // a lookup, not a file system call. A miss adds at most one entry, for a
+    // parent folder not seen before; a missing parent is kept as having no
+    // subfolders, so it isn't looked for again.
     const fs::path folder = fs::path(Utils::combinePath(Configuration::absolutePath, prefix));
     const std::string parent = folder.parent_path().string();
     auto parentIt = subfolders.find(parent);

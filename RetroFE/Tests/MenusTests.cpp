@@ -149,7 +149,7 @@ static void runMenusTests()
 {
     run("menus: every Menus form parses", [] {
         for (const char* id : { "menus", "menu", "menu-entries", "menu-entry", "menu-sources", "menu-source", "menu-info",
-                                "menu-media", "menu-medium", "menu-actions", "menu-new" }) {
+                                "menu-media", "menu-medium", "menu-medium-file", "menu-actions", "menu-new" }) {
             std::string error;
             const char* xml = Forms::builtinForm(id);
             check(xml && Forms::parse(xml, error) != nullptr, std::string(id) + " parses " + error);
@@ -639,5 +639,39 @@ static void runMenusTests()
         checkEqual(rig.file("collections/Favs/system_artwork/logo.png"), "old logo", "the original is back");
         check(rig.run("clearMedium").ok && !rig.exists("collections/Favs/system_artwork/logo.png"), "cleared");
         check(rig.exists("manage/backups/collections/Favs/system_artwork/logo.png"), "kept in the backups");
+    });
+
+    run("menus: artwork kept as a folder of files (OneSauce)", [] {
+        std::string root = makeInstall("menus-media-folder");
+        writeFile(root + "/collections/Favs/system_artwork/video/one.mp4", "1");
+        writeFile(root + "/collections/Favs/system_artwork/video/two.mp4", "2");
+        writeFile(root + "/collections/Favs/system_artwork/neon/glow.png", "png");
+        writeFile(root + "/incoming/three.mp4", "3");
+        Rig rig(root);
+        rig.screen("menu-media", { { "id", "Favs" } });
+        Forms::Rows slots = rig.rows("media");
+        check(findRow(slots, "video") && findRow(slots, "video")->detail == "a folder of 2 files (one shown at random)", "the video slot");
+        check(findRow(slots, "neon") != nullptr, "a media folder of another name is offered");
+
+        rig.screen("menu-medium", { { "id", "Favs" }, { "type", "video" } });
+        checkEqual(rig.get("hasMediaFolder"), "yes", "a folder");
+        checkEqual(rig.get("canClear"), "no", "not one file to clear");
+        check(contains(rig.get("mediumFolderNote"), "at random"), "the note");
+        Forms::Rows files = rig.rows("folderFiles");
+        check(files.items.size() == 2 && files.items[0].id == "one.mp4" && files.items[0].params.at("type") == "video", "its files");
+        rig.set("newFile", root + "/incoming/three.mp4");
+        Forms::Model::Result added = rig.run("addToFolder");
+        check(added.ok && rig.file("collections/Favs/system_artwork/video/three.mp4") == "3", "added: " + added.message);
+
+        rig.screen("menu-medium-file", { { "id", "Favs" }, { "type", "video" }, { "file", "one.mp4" } });
+        Forms::Model::Result kept = rig.run("keepFolderFile");
+        check(kept.ok && kept.back && rig.file("collections/Favs/system_artwork/video.mp4") == "1"
+              && !rig.exists("collections/Favs/system_artwork/video"), "one file now: " + kept.message);
+        rig.screen("menu-medium", { { "id", "Favs" }, { "type", "video" } });
+        checkEqual(rig.get("canRestore"), "yes", "it can be put back");
+        check(rig.run("restoreMedium").ok, "put back");
+        check(!rig.exists("collections/Favs/system_artwork/video.mp4") && rig.exists("collections/Favs/system_artwork/video/one.mp4")
+              && rig.exists("collections/Favs/system_artwork/video/two.mp4") && !rig.exists("collections/Favs/system_artwork/video/three.mp4"),
+              "the folder as it was before Manage");
     });
 }

@@ -533,6 +533,44 @@ namespace
             std::string file;
             check(!LayoutCompat::findMediaFolderFile(at(root, "media/Missing/x/y"), video, "", false, 0, file), "folder lookup under a missing parent");
         });
+
+        run("compat: menu (scrolling list) art from media folders keeps its pick", [] {
+            std::string root = makeRoot("compat-menu-folders");
+            static const std::vector<std::string> video = { "mp4", "avi" };
+            for (const char* name : { "a.mp4", "b.mp4", "c.mp4" }) {
+                writeFile(at(root, std::string("media/Main/medium_artwork/video/default/") + name), "x");
+            }
+            writeFile(at(root, "media/Arcade/system_artwork/video/one.mp4"), "x");
+            std::map<std::string, std::string> picks;
+            std::string first, again, shared, file;
+            const std::string defaults = at(root, "media/Main/medium_artwork/video/default");
+            check(LayoutCompat::menuFolderFile(defaults, video, picks, 2, first) && fs::path(first).filename() == "c.mp4",
+                  "random 2 picks the third: " + first);
+            // The list builds the item again (scrolled away and back), or another item shares "default"
+            check(LayoutCompat::menuFolderFile(defaults, video, picks, 0, again) && again == first, "the same file again: " + again);
+            check(LayoutCompat::menuFolderFile(at(root, "media/Arcade/system_artwork/video"), video, picks, 7, shared)
+                  && fs::path(shared).filename() == "one.mp4", "one file: it");
+            // A miss isn't kept, so a big list doesn't keep a name per item
+            check(!LayoutCompat::menuFolderFile(at(root, "media/Main/medium_artwork/video/pacman"), video, picks, 0, file), "no folder");
+            check(picks.size() == 2, "only hits are kept: " + std::to_string(picks.size()));
+            // Another list (a new page) picks afresh
+            std::map<std::string, std::string> other;
+            check(LayoutCompat::menuFolderFile(defaults, video, other, 0, file) && fs::path(file).filename() == "a.mp4",
+                  "another list's own pick: " + file);
+            // Listings are kept for the run; a reload forgets them, so a file added since shows up
+            writeFile(at(root, "media/Arcade/system_artwork/video/two.mp4"), "x");
+            check(LayoutCompat::findMediaFolderFile(at(root, "media/Arcade/system_artwork/video"), video, "", false, 1, file)
+                  && fs::path(file).filename() == "one.mp4", "cached: the new file isn't seen yet");
+            fs::create_directories(at(root, "media/Arcade/system_artwork/logo"));
+            writeFile(at(root, "media/Arcade/system_artwork/logo/x.mp4"), "x");
+            check(!LayoutCompat::findMediaFolderFile(at(root, "media/Arcade/system_artwork/logo"), video, "", false, 0, file),
+                  "cached: a new folder isn't seen yet");
+            LayoutCompat::clearMediaFolderCache();
+            check(LayoutCompat::findMediaFolderFile(at(root, "media/Arcade/system_artwork/video"), video, "", false, 1, file)
+                  && fs::path(file).filename() == "two.mp4", "after a reload: the new file " + file);
+            check(LayoutCompat::findMediaFolderFile(at(root, "media/Arcade/system_artwork/logo"), video, "", false, 0, file),
+                  "after a reload: the new folder");
+        });
     }
 
     // A OneSauce-shaped install: root appdata/retrofe, layouts in base_assets/layouts

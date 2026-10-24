@@ -20,6 +20,12 @@
 // would find. Folders come from Configuration::getMediaPropertyAbsolutePath's
 // rule: collections.<c>.media.<type>, then (fork-compat) media.basePath, then
 // baseMediaPath/<c>/medium_artwork/<type> (system_artwork for collections).
+//
+// Fork compat (OneSauce media folders, LayoutCompat::lookupMediaStep): where
+// <directory>/<basename>.<ext> is missing, a folder <directory>/<basename>/
+// holding image (or video) files stands for it, and RetroFE shows one of its
+// files at random. A file beside the folder wins. Not for text, and not at a
+// game's own ROM folder.
 
 #include "Index.h"
 #include <string>
@@ -39,7 +45,8 @@ namespace Library
         std::string directory;
         std::string basename;     // file name without extension
         std::string why;          // "page collection", "game's collection", "game folder", "default", ...
-        std::string file;         // what's there, or ""
+        std::string file;         // what's there, or "" (a media folder: its first file)
+        size_t folderFiles = 0;   // file is the first of a media folder of this many files
     };
 
     struct MediaSlot
@@ -52,6 +59,20 @@ namespace Library
         bool own = false;         // file is the slot's own; false = empty or a fallback
         std::string fallback;     // when showing a fallback, where it comes from (MediaProbe::why)
         std::vector<MediaProbe> probes;  // every place looked, in order
+
+        // Media folders. The slot's own folder <directory>/<basename>/, when
+        // there is one (also when a file beside it wins, or it's empty), and
+        // its files of this kind in natural order (full paths)
+        std::string folder;
+        std::vector<std::string> folderFiles;
+        // file is the first of a media folder's files, standing for the one
+        // RetroFE picks at random: the slot's own folder (own) or a fallback's
+        size_t shownFolderFiles = 0;      // how many files that folder has; 0 = file is a plain file
+
+        bool fromFolder() const { return shownFolderFiles > 0; }
+        // The slot's own file is a single file beside its folder of files (which
+        // then aren't shown); an empty folder doesn't count
+        bool fileBesideFolder() const { return own && !fromFolder() && !folderFiles.empty(); }
     };
 
     // Media types to offer for a collection: RetroFE's standard folders,
@@ -77,4 +98,19 @@ namespace Library
 
     // Extensions accepted when copying a file into a slot of this kind (lower case)
     const std::vector<std::string>& acceptedExtensions(MediaKind kind);
+
+    // Media folders (see the top of this file). Whether a slot of this kind
+    // can be a folder (images and videos), and the files of the folder
+    // <directory>/<basename>/ RetroFE chooses from (extensions ignoring case,
+    // natural order, full paths; empty when there's no such folder)
+    bool mediaFoldersApply(MediaKind kind);
+    std::vector<std::string> mediaFolderFiles(const std::string& directory, const std::string& basename, MediaKind kind);
+
+    // Sentences for the screens. A slot's own folder, or "" when it has none:
+    // "A folder of 3 files: RetroFE shows one at random. <folder>", saying
+    // when a file beside it wins, or that it's empty
+    std::string mediaFolderNote(const MediaSlot& slot);
+    // What a slot shows, in a few words: "a folder of 3 files (one shown at
+    // random)", the file's name, or "" when nothing
+    std::string mediaShownText(const MediaSlot& slot);
 }
