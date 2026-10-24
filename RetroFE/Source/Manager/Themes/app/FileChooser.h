@@ -66,5 +66,6 @@ namespace Themes
         bool listed_ = false;
         std::vector<std::pair<std::string, bool>> entries_;   // name, is a folder
         std::string selected_;
+        bool focusList_ = false;   // a folder was entered without the mouse: focus its first entry
     };
 }

@@ -644,11 +644,13 @@ bool RetroFE::run()
 			}
 			if (manager_.wantsNavigation())
 			{
-				// Layout-drawn screens are driven by the user's mapped controls, gamepads included
+				// Layout-drawn screens (and the theme editor) are driven by the user's mapped controls, gamepads included
 				input_.updateKeystate();
 				manager_.navigate({ input_.keystate(UserInput::KeyCodeUp), input_.keystate(UserInput::KeyCodeDown),
 					input_.keystate(UserInput::KeyCodeLeft), input_.keystate(UserInput::KeyCodeRight),
-					input_.keystate(UserInput::KeyCodeSelect), input_.keystate(UserInput::KeyCodeBack) }, currentTime_);
+					input_.keystate(UserInput::KeyCodeSelect), input_.keystate(UserInput::KeyCodeBack),
+					input_.keystate(UserInput::KeyCodePageUp), input_.keystate(UserInput::KeyCodePageDown),
+					input_.keystate(UserInput::KeyCodeLetterUp), input_.keystate(UserInput::KeyCodeLetterDown) }, currentTime_);
 			}
 			if (!manager_.isOpen())
 			{

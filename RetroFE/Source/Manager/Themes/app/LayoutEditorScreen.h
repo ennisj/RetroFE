@@ -44,8 +44,10 @@
 //
 // As in the widget editor, the preview page is built in update(), never
 // while drawing, the `layout` setting points at the theme while it's open,
-// and -editorScript runs here too (the layout commands in EditorScript.h
-// plus the screen's own).
+// -editorScript runs here too (the layout commands in EditorScript.h plus
+// the screen's own), and RetroFE's mapped controls drive it (EditorPad.h):
+// the regions, the canvas's Pick / Move / Resize modes over the elements and
+// menu items, the dialogs and the on-screen keyboard.
 class LayoutEditorScreen : public Manager::ImGuiScreen
 {
 public:
@@ -63,6 +65,10 @@ public:
     bool takeBack() override;
     void retire() override;
     void shutdown() override;
+    bool wantsControls() const override;
+    void controlsHeld(const ControlsHeld& held) override;
+    void control(Control control, bool repeat) override;
+    void beforeFrame() override;
 
 private:
     enum class Job { None, Save, SaveAndLeave, Restore, Import, NativePick };
@@ -125,6 +131,11 @@ private:
     void pickNative();
     void addFromPalette(const std::string& entry, const std::string& type);
     void syncPopup(const char* name, bool& show, bool& opened);
+    // The controller
+    bool dialogOpen() const;
+    void canvasControl(int press);
+    void setMode(ThemeEditor::EdCanvasMode mode);
+    std::string controllerHints() const;
 
     ThemeEditorScreen::Context ctx_;
     std::string folder_;
@@ -170,9 +181,13 @@ private:
     bool back_ = false;
     bool leaveWithoutSaving_ = false;
     bool retired_ = false;
-    bool navFlagsSaved_ = false, savedNavKeyboard_ = false;
     bool nudging_ = false;
     float sinceNudge_ = 0.0f;
+
+    // RetroFE's mapped controls
+    Themes::EditorPad pad_;
+    ThemeEditor::EdCanvasMode mode_ = ThemeEditor::ECM_PICK;
+    int repeats_ = 0;
 
     // Adding elements and files
     bool showPalette_ = false, paletteOpen_ = false;

@@ -121,6 +121,11 @@ LayoutEditorScreen::LayoutEditorScreen(const ThemeEditorScreen::Context& context
     openPage(first);
 
     Themes::takeEditorScript(ctx_.config, script_, scriptPath_);
+
+    // The on-screen keyboard for text fields, as for the forms
+    std::string keyboard = "yes";
+    if (ctx_.config) ctx_.config->getProperty("onScreenKeyboard", keyboard);
+    pad_.setKeyboardEnabled(Forms::isTruthy(keyboard));
 }
 
 LayoutEditorScreen::~LayoutEditorScreen()
@@ -176,10 +181,7 @@ void LayoutEditorScreen::retire()
         ctx_.config->setProperty(OPTION_LAYOUT, originalLayout_);
         layoutOverridden_ = false;
     }
-    if (navFlagsSaved_ && ImGui::GetCurrentContext()) {
-        if (savedNavKeyboard_) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        navFlagsSaved_ = false;
-    }
+    pad_.detach();
     retired_ = true;
 }
 
@@ -719,6 +721,10 @@ void LayoutEditorScreen::drawTargets()
 
 bool LayoutEditorScreen::escape()
 {
+    if (pad_.keyboardOpen()) {
+        pad_.cancelKeyboard();
+        return true;
+    }
     if (showClose_ || showRestore_ || showDelete_ || showPalette_ || chooser_.isOpen()) {
         showClose_ = showRestore_ = showDelete_ = showPalette_ = false;
         chooser_.close();
@@ -729,7 +735,169 @@ bool LayoutEditorScreen::escape()
         session_.cancelDrag();
         return true;
     }
+    // With the controller, Escape is Back: out of Move / Resize, out of a panel
+    if (mode_ != ECM_PICK) {
+        setMode(ECM_PICK);
+        return true;
+    }
+    if (pad_.controllerActive() && pad_.region() != EF_CANVAS) {
+        pad_.setRegion(EF_CANVAS);
+        return true;
+    }
     return false;
+}
+
+// ---- RetroFE's mapped controls ------------------------------------------------------
+
+bool LayoutEditorScreen::wantsControls() const
+{
+    return !retired_;
+}
+
+void LayoutEditorScreen::controlsHeld(const ControlsHeld& held)
+{
+    pad_.held(held);
+}
+
+void LayoutEditorScreen::beforeFrame()
+{
+    pad_.beforeFrame();
+}
+
+bool LayoutEditorScreen::dialogOpen() const
+{
+    return showClose_ || showRestore_ || showDelete_ || showPalette_ || chooser_.isOpen() || pad_.modalOpen();
+}
+
+void LayoutEditorScreen::control(Control control, bool repeat)
+{
+    if (retired_) return;
+    // A page that didn't open: Select (its Close button) or Back leaves
+    if (!session_.isOpen()) {
+        if (control == Control::Back || control == Control::Select) back_ = true;
+        return;
+    }
+    // A script is driving: nobody else does
+    if (scriptAt_ < script_.size()) return;
+    repeats_ = repeat ? repeats_ + 1 : 0;
+    if (pad_.takesControl(control)) return;
+    const int press = static_cast<int>(control);
+    if (dialogOpen()) {
+        if (press >= EP_PAGE_UP) return;
+        if (pad_.press(press, EL_DIALOG) == ER_CLOSE_DIALOG) escape();
+        return;
+    }
+    if (session_.dragging()) return;   // the mouse is busy
+    if (press == EP_PAGE_UP || press == EP_PAGE_DOWN) {
+        pad_.setRegion(regionCycle(pad_.region(), press == EP_PAGE_UP ? -1 : 1));
+        return;
+    }
+    if (pad_.region() == EF_CANVAS && !pad_.listOpen()) {
+        canvasControl(press);
+        return;
+    }
+    if (press >= EP_LETTER_UP) return;
+    if (pad_.press(press, EL_PANEL) == ER_LEAVE_REGION) pad_.setRegion(EF_CANVAS);
+}
+
+void LayoutEditorScreen::setMode(EdCanvasMode mode)
+{
+    // A run of nudges is one undo step, from entering Move or Resize to leaving it
+    if (mode_ != ECM_PICK || mode != ECM_PICK) session_.endCoalesce();
+    mode_ = mode;
+    if (mode != ECM_PICK) session_.setCoalesceKey("controller");
+}
+
+void LayoutEditorScreen::canvasControl(int press)
+{
+    const int sel = session_.selected();
+    const bool has = sel > 0 && session_.selectedElement() != nullptr;
+    const EdCanvasDecision d = canvasPress(mode_, press, has, has && session_.editableBox(sel));
+    if (d.mode != mode_ && d.action != ECA_MODE) setMode(d.mode);   // the selection went away mid-move
+    int dx = 0, dy = 0;
+    pressDirection(press, dx, dy);
+    // Shift + an arrow that's a mapped direction still nudges by 10, as it did before the controller
+    const bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    if (shift && d.action == ECA_PICK && has) {
+        session_.moveBy(dx * 10, dy * 10);
+        sinceNudge_ = 0.0f;
+        nudging_ = true;
+        return;
+    }
+    switch (d.action) {
+    case ECA_PICK: {
+        // Every element with a box on the page (menu items included), as the mouse picks them
+        std::vector<DragRect> rects;
+        std::vector<int> index;
+        int cur = -1;
+        for (int el : session_.listed()) {
+            if (el <= 0 || !session_.hasBox(el) || session_.hidden(el)) continue;
+            if (el == sel) cur = static_cast<int>(rects.size());
+            rects.push_back(session_.box(el));
+            index.push_back(el);
+        }
+        const int next = pickStep(rects, cur, dx, dy, session_.canvasW(), session_.canvasH());
+        if (next < 0) pad_.setRegion(regionStep(EF_CANVAS, dx, dy));   // nothing that way: the panel there
+        else session_.select(index[next]);
+        break;
+    }
+    case ECA_MOVE:
+    case ECA_RESIZE: {
+        const DragRect r = session_.box(sel);
+        const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, shift ? 12 : repeats_);
+        const DragRect n = d.action == ECA_MOVE ? canvasNudgeMove(r, dx, dy, step, session_.canvasW(), session_.canvasH())
+                                                : canvasNudgeResize(r, dx, dy, step, 1, 1, session_.canvasW(), session_.canvasH());
+        session_.setCoalesceKey("controller");
+        session_.setBox(n, d.action == ECA_RESIZE);
+        break;
+    }
+    case ECA_MODE:
+        setMode(d.mode);
+        break;
+    case ECA_ADD:
+        showPalette_ = true;
+        break;
+    case ECA_CANT_MOVE:
+        setStatus(session_.hasBox(sel) ? "This box is made from the menu's settings: change them in the panel, not here."
+                                       : "It isn't on the page as built: change it in the panel.", true);
+        break;
+    case ECA_LEAVE_EDITOR:
+        requestLeave("");
+        break;
+    case ECA_PREV:
+    case ECA_NEXT: {
+        // Every listed element, the page itself included
+        const std::vector<int> listed = session_.listed();
+        int cur = -1;
+        for (size_t i = 0; i < listed.size(); ++i) {
+            if (listed[i] == sel) cur = static_cast<int>(i);
+        }
+        const int next = listStep(cur, static_cast<int>(listed.size()), d.action == ECA_PREV ? -1 : 1);
+        if (next >= 0) session_.select(listed[next]);
+        break;
+    }
+    case ECA_NONE:
+        break;
+    }
+}
+
+std::string LayoutEditorScreen::controllerHints() const
+{
+    if (pad_.keyboardOpen()) return "";
+    if (dialogOpen()) return "Arrows: move   Select: choose   Back: close the dialog";
+    switch (pad_.region()) {
+    case EF_CANVAS:
+        if (mode_ == ECM_MOVE) return "MOVE: arrows move the element (hold to speed up)   Select: resize instead   Back: done";
+        if (mode_ == ECM_RESIZE) return "RESIZE: arrows size the element from its bottom-right corner   Select or Back: done";
+        return std::string("PICK: arrows choose an element (past the last one: the panel that way)   ") +
+               (session_.selected() > 0 ? "Select: move it" : "Select: add an element") +
+               "   Letter up/down: previous / next   Page up/down: regions   Back: leave the editor";
+    case EF_TOOLBAR:
+        return "Toolbar: arrows move   Select: press   Down: the canvas   Back: the canvas";
+    default:
+        return "Up / Down: rows   Left / Right: change a value   Select: press, or type with the on-screen keyboard   "
+               "Back: the canvas";
+    }
 }
 
 bool LayoutEditorScreen::askToLeave()
@@ -773,11 +941,12 @@ bool LayoutEditorScreen::takeBack()
 void LayoutEditorScreen::draw()
 {
     ImGuiIO& io = ImGui::GetIO();
-    if (!navFlagsSaved_) {
-        savedNavKeyboard_ = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
-        navFlagsSaved_ = true;
-    }
-    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    // ImGui's keyboard navigation off (the arrows nudge), its gamepad navigation on RetroFE's controls
+    pad_.attach();
+    pad_.beginFrame();
+    int edgeX = 0, edgeY = 0;
+    if (pad_.takeEdge(edgeX, edgeY)) pad_.setRegion(regionStep(pad_.region(), edgeX, edgeY));
+    if (pad_.region() != EF_CANVAS && mode_ != ECM_PICK) setMode(ECM_PICK);
     const float s = ctx_.scale;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
@@ -801,7 +970,9 @@ void LayoutEditorScreen::draw()
         return;
     }
 
+    pad_.beginRegion(EF_TOOLBAR, "##toolbar", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
     drawToolbar();
+    ImGui::EndChild();
     if (scriptAt_ < script_.size()) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.55f, 0.35f, 0.05f, 1.0f));
         ImGui::BeginChild("##scriptBanner", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 1.4f), ImGuiChildFlags_None);
@@ -817,7 +988,7 @@ void LayoutEditorScreen::draw()
     const float statusH = ImGui::GetTextLineHeightWithSpacing() * 4.2f;
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
-    ImGui::BeginChild("##pages", ImVec2(sideW, avail.y), ImGuiChildFlags_Borders);
+    pad_.beginRegion(EF_THEME, "##pages", ImVec2(sideW, avail.y), ImGuiChildFlags_Borders);
     drawLeft();
     ImGui::EndChild();
 
@@ -825,17 +996,22 @@ void LayoutEditorScreen::draw()
     float canvasW = std::max(100.0f, avail.x - sideW - propsW - ImGui::GetStyle().ItemSpacing.x * 2.0f);
     ImGui::BeginChild("##canvasColumn", ImVec2(canvasW, avail.y), ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::BeginChild("##canvas", ImVec2(canvasW, avail.y - statusH), ImGuiChildFlags_Borders,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    pad_.beginRegion(EF_CANVAS, "##canvas", ImVec2(canvasW, avail.y - statusH), ImGuiChildFlags_Borders,
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     drawCanvas();
     ImGui::EndChild();
     ImGui::BeginChild("##status", ImVec2(canvasW, 0), ImGuiChildFlags_None);
+    if (pad_.controllerActive() && !controllerHints().empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.77f, 0.16f, 1.0f));
+        ImGui::TextWrapped("%s", controllerHints().c_str());
+        ImGui::PopStyleColor();
+    }
     if (!status_.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
         ImGui::TextWrapped("%s", status_.c_str());
         ImGui::PopStyleColor();
     }
-    else {
+    else if (!pad_.controllerActive()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TextWrapped("Drag to move, drag a handle to resize, click again to pick the element underneath. Arrows nudge "
                            "(Shift: 10), Ctrl+Z / Ctrl+Y undo and redo, Ctrl+S saves. Dragging writes plain numbers: "
@@ -847,11 +1023,12 @@ void LayoutEditorScreen::draw()
     ImGui::EndChild();
 
     ImGui::SameLine();
-    ImGui::BeginChild("##props", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
+    pad_.beginRegion(EF_PROPS, "##props", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
     drawProperties();
     ImGui::EndChild();
 
     drawPopups();
+    pad_.endFrame(ctx_.scale);
     ImGui::End();
 }
 
@@ -906,12 +1083,24 @@ void LayoutEditorScreen::drawToolbar()
     ImGui::TextDisabled("Preview with:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f * ctx_.scale);
-    if (ImGui::BeginCombo("##previewCollection", previewName_.c_str())) {
+    const bool open = ImGui::BeginCombo("##previewCollection", previewName_.c_str());
+    // Left / Right: the previous / next collection
+    if (const int step = open ? 0 : pad_.choice("Preview with")) {
+        auto at = std::find(collections_.begin(), collections_.end(), previewName_);
+        const int next = choiceStep(at == collections_.end() ? -1 : static_cast<int>(at - collections_.begin()),
+                                    static_cast<int>(collections_.size()), step);
+        if (next >= 0) {
+            previewName_ = collections_[next];
+            previewDirty_ = true;
+        }
+    }
+    if (open) {
         for (const std::string& name : collections_) {
             if (ImGui::Selectable(name.c_str(), name == previewName_)) {
                 previewName_ = name;
                 previewDirty_ = true;
             }
+            if (name == previewName_) ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
@@ -920,7 +1109,8 @@ void LayoutEditorScreen::drawToolbar()
 void LayoutEditorScreen::drawLeft()
 {
     ImGui::SeparatorText("Pages");
-    ImGui::BeginChild("##pageList", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8.5f), ImGuiChildFlags_Borders);
+    // NavFlattened: the controller moves into the lists like any other rows
+    ImGui::BeginChild("##pageList", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8.5f), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     for (const std::string& page : pages_) {
         if (ImGui::Selectable(page.c_str(), page == session_.page()) && page != session_.page()) requestLeave(page);
     }
@@ -933,7 +1123,7 @@ void LayoutEditorScreen::drawLeft()
     ImGui::TextWrapped("This page's own elements, in file order, changed in place. New ones go after the selected "
                        "element, or at the end.");
     ImGui::PopStyleColor();
-    ImGui::BeginChild("##elementList", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("##elementList", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     for (int el : session_.listed()) {
         const LayoutElement& e = session_.element(el);
         ImGui::PushID(el);
@@ -970,9 +1160,12 @@ void LayoutEditorScreen::drawCanvas()
     }
     dl->AddRect(a, b, IM_COL32(90, 90, 100, 255));
 
+    // The whole canvas is one button, for the mouse (the controller has its own modes)
     ImGui::SetCursorScreenPos(origin);
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
     ImGui::InvisibleButton("##canvasInput", size, ImGuiButtonFlags_MouseButtonLeft);
-    const bool hovered = ImGui::IsItemHovered();
+    ImGui::PopItemFlag();
+    const bool hovered = ImGui::IsItemHovered() && !pad_.keyboardOpen();
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const float sx = mouse.x - origin.x, sy = mouse.y - origin.y;
     const float grab = 6.0f * ctx_.scale;
@@ -982,8 +1175,9 @@ void LayoutEditorScreen::drawCanvas()
         else session_.pointerUp();
     }
 
+    // An arrow that's also a mapped direction acts as the controller's, not twice
     ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsWindowFocused() && !io.WantTextInput) {
+    if (ImGui::IsWindowFocused() && !io.WantTextInput && !pad_.directionHeld() && !pad_.keyboardOpen()) {
         int step = io.KeyShift ? 10 : 1;
         int dx = 0, dy = 0;
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) dx -= step;
@@ -997,7 +1191,7 @@ void LayoutEditorScreen::drawCanvas()
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Delete) && session_.selected() > 0) showDelete_ = true;
     }
-    if (!io.WantTextInput && io.KeyCtrl) {
+    if (!io.WantTextInput && io.KeyCtrl && !pad_.keyboardOpen()) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) io.KeyShift ? session_.redo() : session_.undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) session_.redo();
         if (ImGui::IsKeyPressed(ImGuiKey_S, false) && session_.dirty()) job_ = Job::Save;
@@ -1051,19 +1245,26 @@ void LayoutEditorScreen::drawCanvas()
         ImVec2 p1 = toStage(static_cast<float>(r.x), static_cast<float>(r.y));
         ImVec2 p2 = toStage(static_cast<float>(r.x + r.w), static_cast<float>(r.y + r.h));
         dl->AddRectFilled(p1, p2, colourFor(name, 40));
-        dl->AddRect(p1, p2, colourFor(name, 255), 0.0f, 0, 2.0f);
+        // The controller's Move and Resize modes show in the outline
+        const ImU32 modeColour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255) : 0;
+        dl->AddRect(p1, p2, modeColour ? modeColour : colourFor(name, 255), 0.0f, 0, modeColour ? 3.0f * ctx_.scale : 2.0f);
         if (editable) {
             for (int hnd = 0; hnd < 8; ++hnd) {
                 float hx, hy;
                 handlePoint(r, hnd, hx, hy);
                 ImVec2 c = toStage(hx, hy);
-                float hs = 4.0f * ctx_.scale;
-                dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), IM_COL32(255, 255, 255, 255));
+                // Resize nudges move the bottom-right corner
+                float hs = (mode_ == ECM_RESIZE && hnd == CH_SE ? 7.0f : 4.0f) * ctx_.scale;
+                dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs),
+                                  mode_ == ECM_RESIZE && hnd == CH_SE ? modeColour : IM_COL32(255, 255, 255, 255));
                 dl->AddRect(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), IM_COL32(0, 0, 0, 255));
             }
         }
         std::string label = session_.label(sel);
-        if (session_.dragMoved()) {
+        if (mode_ != ECM_PICK) {
+            label += "  " + std::to_string(r.x) + ", " + std::to_string(r.y) + "  " + std::to_string(r.w) + " x " + std::to_string(r.h);
+        }
+        else if (session_.dragMoved()) {
             label += "  " + std::to_string(r.x) + ", " + std::to_string(r.y) + "  " + std::to_string(r.w) + " x " + std::to_string(r.h);
         }
         ImVec2 ts = ImGui::CalcTextSize(label.c_str());
@@ -1080,6 +1281,18 @@ void LayoutEditorScreen::drawCanvas()
         }
     }
     if (hot >= 0 && hot != sel) ImGui::SetTooltip("%s", session_.label(hot).c_str());
+    // The controller's mode, while the canvas has its focus
+    if (pad_.region() == EF_CANVAS && (pad_.controllerActive() || mode_ != ECM_PICK)) {
+        const char* text = mode_ == ECM_MOVE ? "MOVE" : mode_ == ECM_RESIZE ? "RESIZE" : "PICK";
+        const ImU32 colour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255)
+                                                                                                   : IM_COL32(255, 196, 40, 255);
+        const ImVec2 ts = ImGui::CalcTextSize(text);
+        const float pad = 6.0f * ctx_.scale;
+        const ImVec2 at(origin.x + pad, origin.y + pad);
+        dl->AddRectFilled(at, ImVec2(at.x + ts.x + pad * 2.0f, at.y + ts.y + pad), IM_COL32(0, 0, 0, 200), 4.0f * ctx_.scale);
+        dl->AddRect(at, ImVec2(at.x + ts.x + pad * 2.0f, at.y + ts.y + pad), colour, 4.0f * ctx_.scale);
+        dl->AddText(ImVec2(at.x + pad, at.y + pad * 0.5f), colour, text);
+    }
     dl->PopClipRect();
 }
 
@@ -1116,11 +1329,13 @@ void LayoutEditorScreen::drawAttribute(const LayoutElement& e, const std::string
     }
     const float buttonW = ImGui::CalcTextSize("x").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
     ImGui::SetNextItemWidth(std::max(60.0f, ImGui::GetContentRegionAvail().x * 0.46f));
-    if (ImGui::InputTextWithHint("##value", hint.c_str(), &value)) {
+    const bool typed = ImGui::InputTextWithHint("##value", hint.c_str(), &value);
+    const bool keyboard = pad_.text(name.c_str(), value);
+    if (typed || keyboard) {
         session_.setCoalesceKey("attr:" + name);
         session_.setAttribute(name, value);
     }
-    if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+    if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(name.c_str());
@@ -1218,9 +1433,11 @@ void LayoutEditorScreen::drawProperties()
     ImGui::PopID();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
     ImGui::InputTextWithHint("##newName", "name", &newName_);
+    pad_.text("New attribute's name", newName_);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
     ImGui::InputTextWithHint("##newValue", "value", &newValue_);
+    pad_.text("New attribute's value", newValue_);
     ImGui::SameLine();
     const std::string problem = newName_.empty() ? "" : LayoutSession::attributeNameProblem(newName_);
     ImGui::BeginDisabled(newName_.empty() || !problem.empty());
@@ -1263,12 +1480,24 @@ void LayoutEditorScreen::drawShows(int element)
     ImGui::TextUnformatted(attr == "imageType" ? "Art when there's no video:" : "Shows:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x));
-    if (ImGui::BeginCombo("##shows", current.empty() ? "(not set)" : current.c_str())) {
+    const bool open = ImGui::BeginCombo("##shows", current.empty() ? "(not set)" : current.c_str());
+    // Left / Right: the previous / next type
+    if (const int step = open ? 0 : pad_.choice("Shows")) {
+        auto at = std::find(entry->types.begin(), entry->types.end(), current);
+        const int next = choiceStep(at == entry->types.end() ? -1 : static_cast<int>(at - entry->types.begin()),
+                                    static_cast<int>(entry->types.size()), step);
+        if (next >= 0 && entry->types[next] != current) {
+            session_.endCoalesce();
+            session_.setAttribute(attr, entry->types[next]);
+        }
+    }
+    if (open) {
         for (const std::string& t : entry->types) {
             if (ImGui::Selectable(t.c_str(), t == current) && t != current) {
                 session_.endCoalesce();
                 session_.setAttribute(attr, t);
             }
+            if (t == current) ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
@@ -1283,11 +1512,13 @@ bool LayoutEditorScreen::drawAnimField(int element, const char* name, const char
     ImGui::PushID(name);
     ImGui::SetNextItemWidth(width);
     bool changed = false;
-    if (ImGui::InputTextWithHint("##v", hint, &value)) {
+    const bool typed = ImGui::InputTextWithHint("##v", hint, &value);
+    const bool keyboard = pad_.text(name, value);
+    if (typed || keyboard) {
         session_.setCoalesceKey(key);
         changed = session_.setAttributeOf(element, name, value);
     }
-    if (ImGui::IsItemDeactivated()) session_.endCoalesce();
+    if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
     if (ImGui::IsItemHovered() && !ImGui::IsItemActive()) ImGui::SetTooltip("%s", name);
     ImGui::PopID();
     return changed;
@@ -1299,7 +1530,20 @@ bool LayoutEditorScreen::drawAnimChoice(int element, const char* name, const std
     bool changed = false;
     ImGui::PushID(name);
     ImGui::SetNextItemWidth(width);
-    if (ImGui::BeginCombo("##c", current.empty() ? none : current.c_str())) {
+    const bool open = ImGui::BeginCombo("##c", current.empty() ? none : current.c_str());
+    // Left / Right: the previous / next choice
+    if (const int step = open ? 0 : pad_.choice(name)) {
+        int cur = -1;
+        for (size_t i = 0; i < choices.size(); ++i) {
+            if (Utils::toLower(choices[i]) == Utils::toLower(current)) cur = static_cast<int>(i);
+        }
+        const int next = choiceStep(cur, static_cast<int>(choices.size()), step);
+        if (next >= 0 && next != cur) {
+            session_.endCoalesce();
+            changed = session_.setAttributeOf(element, name, choices[next]);
+        }
+    }
+    if (open) {
         bool known = false;
         for (const std::string& c : choices) known = known || Utils::toLower(c) == Utils::toLower(current);
         if (!current.empty() && !known) ImGui::Selectable(current.c_str(), true);   // as the file has it
@@ -1309,6 +1553,7 @@ bool LayoutEditorScreen::drawAnimChoice(int element, const char* name, const std
                 session_.endCoalesce();
                 changed = session_.setAttributeOf(element, name, c);
             }
+            if (same) ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
@@ -1343,6 +1588,7 @@ void LayoutEditorScreen::drawAnimations(int element)
             openEvent_.clear();
         }
         const bool open = ImGui::TreeNodeEx("##event", ImGuiTreeNodeFlags_SpanAvailWidth, "%s", label.c_str());
+        pad_.node();
         const std::string engineName = engineEventName(event.name);
         const float playW = ImGui::CalcTextSize("Play").x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
         ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - playW - buttonW));
@@ -1410,9 +1656,17 @@ void LayoutEditorScreen::drawAnimations(int element)
 
     // A new event
     ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x * 0.6f));
-    if (ImGui::BeginCombo("##newEvent", newEvent_.c_str())) {
+    const bool eventsOpen = ImGui::BeginCombo("##newEvent", newEvent_.c_str());
+    if (const int step = eventsOpen ? 0 : pad_.choice("New event")) {
+        const std::vector<std::string> names = LayoutSession::eventNames();
+        auto at = std::find(names.begin(), names.end(), newEvent_);
+        const int next = choiceStep(at == names.end() ? -1 : static_cast<int>(at - names.begin()), static_cast<int>(names.size()), step);
+        if (next >= 0) newEvent_ = names[next];
+    }
+    if (eventsOpen) {
         for (const std::string& name : LayoutSession::eventNames()) {
             if (ImGui::Selectable(name.c_str(), name == newEvent_)) newEvent_ = name;
+            if (name == newEvent_) ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
@@ -1484,9 +1738,17 @@ void LayoutEditorScreen::drawPalette()
                 std::string& chosen = paletteTypes_[entry.id];
                 if (chosen.empty()) chosen = entry.types[0];
                 ImGui::SetNextItemWidth(-1.0f);
-                if (ImGui::BeginCombo("##type", chosen.c_str())) {
+                const bool open = ImGui::BeginCombo("##type", chosen.c_str());
+                if (const int step = open ? 0 : pad_.choice("Type")) {
+                    auto at = std::find(entry.types.begin(), entry.types.end(), chosen);
+                    const int next = choiceStep(at == entry.types.end() ? -1 : static_cast<int>(at - entry.types.begin()),
+                                                static_cast<int>(entry.types.size()), step);
+                    if (next >= 0) chosen = entry.types[next];
+                }
+                if (open) {
                     for (const std::string& t : entry.types) {
                         if (ImGui::Selectable(t.c_str(), t == chosen)) chosen = t;
+                        if (t == chosen) ImGui::SetItemDefaultFocus();
                     }
                     ImGui::EndCombo();
                 }
@@ -1557,13 +1819,15 @@ void LayoutEditorScreen::drawPopups()
     if (ImGui::BeginPopupModal(UNSAVED, &showClose_, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!showClose_) ImGui::CloseCurrentPopup();
         ImGui::Text("Save the changes to %s?", session_.page().c_str());
-        if (ImGui::Button("Save (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+        // Keyboard answers too, but not a key that's a mapped control: the controller presses the focused button
+        const bool keys = !pad_.selectHeld() && !pad_.controllerActive();
+        if (ImGui::Button("Save (Enter)") || (keys && ImGui::IsKeyPressed(ImGuiKey_Enter, false))) {
             job_ = Job::SaveAndLeave;
             showClose_ = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Don't save (D)") || ImGui::IsKeyPressed(ImGuiKey_D, false)) {
+        if (ImGui::Button("Don't save (D)") || (keys && ImGui::IsKeyPressed(ImGuiKey_D, false))) {
             showClose_ = false;
             ImGui::CloseCurrentPopup();
             if (pendingPage_.empty()) {
@@ -1592,7 +1856,7 @@ void LayoutEditorScreen::drawPopups()
         ImGui::TextWrapped("Put back layouts/%s/%s as it was before the editor first saved it?", folder_.c_str(), session_.page().c_str());
         ImGui::TextWrapped("The page as it is now is kept in manage/backups as a numbered copy. Undo brings back what "
                            "you were editing, as unsaved changes.");
-        if (ImGui::Button("Put it back (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+        if (ImGui::Button("Put it back (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld() && !pad_.controllerActive())) {
             job_ = Job::Restore;
             showRestore_ = false;
             ImGui::CloseCurrentPopup();
@@ -1602,6 +1866,7 @@ void LayoutEditorScreen::drawPopups()
             showRestore_ = false;
             ImGui::CloseCurrentPopup();
         }
+
         ImGui::EndPopup();
     }
 
@@ -1611,7 +1876,7 @@ void LayoutEditorScreen::drawPopups()
         if (!showDelete_) ImGui::CloseCurrentPopup();
         ImGui::Text("Delete %s from the page?", session_.label(session_.selected()).c_str());
         ImGui::TextDisabled("Undo brings it back until you leave the editor.");
-        if (ImGui::Button("Delete (Enter)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+        if (ImGui::Button("Delete (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld() && !pad_.controllerActive())) {
             session_.deleteSelected();
             showDelete_ = false;
             ImGui::CloseCurrentPopup();
@@ -1621,6 +1886,7 @@ void LayoutEditorScreen::drawPopups()
             showDelete_ = false;
             ImGui::CloseCurrentPopup();
         }
+
         ImGui::EndPopup();
     }
 }

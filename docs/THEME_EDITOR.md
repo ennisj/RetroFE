@@ -6,7 +6,8 @@ videos, logos, fixed images and text. You place them on a canvas, size them,
 set their options and save; the editor writes the layout files for you. It
 was ported from One Saucier's editor.
 
-It's drawn with the mouse in mind and runs inside Manage.
+It runs inside Manage, and works with a mouse and keyboard or with only a
+controller or arcade controls (see [With a controller](#with-a-controller)).
 
 ## What it edits
 
@@ -73,9 +74,84 @@ hand-made ones included, that has no `splash.xml`.
 
 Save shows what it did when there's something to know: warnings, and **pages
 it removed** (a page an earlier save wrote that the theme no longer has).
-Leaving with unsaved changes (Close, Escape or the Settings key) asks first:
-Save (Enter) / Don't save (D) / Cancel (Escape). In Add widget, type to
+Leaving with unsaved changes (Close, Escape, Back or the Settings key) asks
+first: Save (Enter) / Don't save (D) / Cancel (Escape). In Add widget, type to
 search and press Enter to add the first match.
+
+## With a controller
+
+Both editors work with RetroFE's own controls (`controls.conf`: a gamepad,
+arcade controls, or the keyboard keys mapped there), no mouse needed. The
+screen has four regions: the **toolbar** at the top, the **theme panel** (in
+the layout editor: pages and elements) on the left, the **canvas** in the
+middle and the **properties** on the right. The focused region has a gold
+frame, the focused item a gold outline, and the line under the canvas says
+what the controls do there.
+
+- **The canvas** (where the editor starts) has three modes, shown in its top
+  left corner:
+  - **Pick**: the directions select the nearest widget (element, menu item)
+    that way; with nothing selected, the first press picks the one nearest the
+    middle. Past the last one in a direction, the focus moves to the region
+    that way (left: the theme panel, right: the properties, up: the
+    toolbar). Letter up / Letter down select the previous / next one in list
+    order. Select starts moving it (with nothing selected, it opens Add
+    widget / Add element). Back leaves the editor, asking first about
+    unsaved changes.
+  - **Move** (cyan outline): the directions move the selection by the snap
+    grid (5 units, or 1 with *Snap to grid* off). Holding a direction speeds
+    up: four times the step after a moment, ten times after a while. Select
+    switches to Resize; Back goes back to Pick.
+  - **Resize** (pink outline, the bottom-right handle enlarged): the
+    directions move the bottom-right corner, with the same speed-up. Select
+    or Back go back to Pick.
+  A run of moves and resizes is one undo step. A vertical menu's generated
+  slots can't be moved (the status line says so): change the menu's settings
+  instead.
+- **Panels and the toolbar**: Up and Down move between rows, Left and Right
+  between the items of a row (a field's *Choose...* and *x*). Where nothing
+  is that way, the focus moves to the region that way (Up from the top of a
+  panel: the toolbar; Down from the toolbar: the canvas). Back returns to the
+  canvas. Page Up / Page Down step through the regions from anywhere.
+  - Numbers (position, size, layer, opacity, a widget's number settings):
+    Left / Right step them; Select types one on the on-screen keyboard.
+  - Choices (drop-downs): Left / Right pick the previous / next; Select opens
+    the list (Up / Down, Select chooses, Back closes it).
+  - Text fields (names, attribute values, animation values, search and filter
+    boxes): Select types on the **on-screen keyboard**, the same keys as the
+    Manage screens' keyboard. Colours are typed as six hex digits (`FFAA00`).
+  - Sections and animation events fold with Left / Right or Select.
+  - Buttons, checkboxes and list rows: Select.
+- **Dialogs** (Add widget, Add element, the template dialogs, the file
+  chooser, Saved, Unsaved changes, Delete, Put back the original): Up / Down
+  / Left / Right move between their items, Select presses, Back closes the
+  dialog (as Cancel). A dialog opens on the button its Enter label names
+  (*Save (Enter)*, *Delete (Enter)*), so Enter does what it says whether or
+  not it's mapped as Select. In the file chooser Select opens a folder and
+  chooses a file.
+- **The on-screen keyboard**: the directions move between keys, Select
+  presses one, Done keeps the text and Back cancels. Typing on a real
+  keyboard while it's up types there instead (Enter keeps it, Escape cancels).
+  With `onScreenKeyboard = no` Select starts typing into the field with a
+  real keyboard instead.
+
+The mouse and keyboard keep working alongside, but a keyboard key that's
+mapped in `controls.conf` acts as that control while no field is being typed
+into:
+
+- With the shipped `controls.conf`, Left and Right are mapped (directions)
+  but Up and Down aren't (Keypad 8 / 2 are), so on the canvas Left / Right
+  pick a widget while Up / Down nudge it by 1. Shift with a mapped arrow
+  still nudges by 10, as before.
+- **B** is Back (it leaves the editor from the canvas, asking about unsaved
+  changes first), **M** / **N** are Letter up / down (the previous / next
+  widget), and Return is Select. Typing into a field (a click puts the cursor
+  there) or on the on-screen keyboard isn't affected.
+- Enter mapped as Select presses the focused button in a dialog; *D* (Don't
+  save) works from the keyboard as before (any key that isn't mapped hands
+  the dialogs back to the keyboard's shortcuts).
+- A control mapped to a mouse button doesn't act in the editor: the mouse
+  clicks.
 
 ## Files
 
@@ -251,7 +327,8 @@ the theme in the widget editor instead.
 
 ## Limits in this version
 
-- No controller driving: the editor needs a mouse and keyboard.
+- With a controller, colour pickers are typed as hex rather than picked, and
+  a widget is moved and resized by its box only (not by its other handles).
 - The layout editor edits one page at a time (`layout.xml` and `layout
   4x3.xml` are separate), adds raw elements rather than the widget editor's
   widgets, and shows only where `onEnter` leaves an element (not the other

@@ -366,6 +366,39 @@ static Test::Suite layoutEdit("layout-native editing", [] {
         check(checkLayoutXml(text) == checkLayoutXml(HAND), "the layout check says the same as before");
     });
 
+    Test::run("layout session: a run of controller resizes is one undo step", [] {
+        std::string root = makeHandRoot("layout_resize_run");
+        LayoutSession s;
+        std::string error;
+        check(s.open(root, "Hand", "layout.xml", error), "opened: " + error);
+        feedGeometry(s);
+        const int logo = s.doc().find("image[1]");
+        s.select(logo);
+        const std::string original = s.text();
+        // What the screen's Resize mode does: a key, then a box per nudge
+        s.setCoalesceKey("controller");
+        for (int i = 1; i <= 3; ++i) {
+            DragRect r = s.box(logo);
+            r.w += 5;
+            check(s.setBox(r, true), "resize nudge " + std::to_string(i));
+        }
+        check(s.selectedElement()->value("width") == "415", "the width after three: " + s.selectedElement()->value("width"));
+        s.endCoalesce();
+        check(s.undo() && s.text() == original && !s.canUndo(), "one undo step takes all three back");
+
+        // Without a key (a script's resize) each is a step of its own
+        LayoutSession t;
+        check(t.open(root, "Hand", "layout.xml", error), "opened again");
+        feedGeometry(t);
+        t.select(logo);
+        for (int i = 0; i < 2; ++i) {
+            DragRect r = t.box(logo);
+            r.h += 5;
+            t.setBox(r, true);
+        }
+        check(t.undo() && t.canUndo() && t.undo() && t.text() == original, "two resizes, two steps");
+    });
+
     Test::run("layout session: attributes, undo and redo", [] {
         std::string root = makeHandRoot("layout_undo");
         LayoutSession s;

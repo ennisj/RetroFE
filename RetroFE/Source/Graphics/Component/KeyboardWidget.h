@@ -18,6 +18,7 @@
 #include "Component.h"
 #include "FormWidget.h"
 #include "WidgetPainter.h"
+#include "../../Forms/KeyboardKeys.h"
 #include <SDL2/SDL.h>
 #include <memory>
 #include <string>
@@ -37,20 +38,16 @@ class Image;
 //             backgroundColor="0d1014" backgroundAlpha="1"/>
 //
 // Arrows move between keys, Select presses one, Back cancels. For a
-// multi-line field it has a New line key and a row of cursor keys.
+// multi-line field it has a New line key and a row of cursor keys. The keys
+// and how the controls move over them are Forms::KeyboardKeys, shared with
+// the theme editor's keyboard.
 class KeyboardWidget : public Component
 {
 public:
     // LineUp / LineDown: the owner moves the cursor a line as the field draws it
-    enum class Result { None, Done, Cancel, LineUp, LineDown };
-
-    enum class Action { Insert, Shift, Space, Delete, Done, NewLine, CursorLeft, CursorRight, LineUp, LineDown };
-    struct Key
-    {
-        std::string label;
-        Action action = Action::Insert;
-        int units = 1;     // width in key widths
-    };
+    using Result = Forms::KeyboardKeys::Result;
+    using Action = Forms::KeyboardKeys::Action;
+    using Key = Forms::KeyboardKeys::Key;
 
     struct Style
     {
@@ -82,20 +79,13 @@ public:
     void draw() override;
 
 private:
-    const std::vector<std::vector<Key>>& keys() const;
-    void press(const Key& key);
-    void clampFocus();
     float fontSize() const;
 
     WidgetPainter painter_;
     Style style_;
     Forms::TextEdit* text_ = nullptr;
     std::string title_;
-    bool numeric_ = false;
-    bool multiline_ = false;
-    bool shift_ = false;
-    int row_ = 1;
-    int column_ = 0;
+    Forms::KeyboardKeys keys_;
 
     std::unique_ptr<Image> keyImage_;
     std::unique_ptr<Image> focusKeyImage_;
