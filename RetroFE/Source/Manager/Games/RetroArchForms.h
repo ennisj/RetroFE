@@ -24,4 +24,7 @@ namespace Manager
     // "game-controls") or a system's core-wide ones ("system-..."). One set of
     // templates (RetroArchForms.cpp); the Games and Systems tables add them.
     const Forms::BuiltinTable& retroArchForms(bool system);
+    // A launcher's core-wide screens ("emulator-retroarch"...; params id + scope),
+    // worded as a system's; the Emulators table adds them
+    const Forms::BuiltinTable& retroArchLauncherForms();
 }

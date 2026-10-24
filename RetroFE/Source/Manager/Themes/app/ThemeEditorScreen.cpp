@@ -27,6 +27,7 @@
 #include "../../../Graphics/Page.h"
 #include "../../../Graphics/PageBuilder.h"
 #include "../../../Library/Indexer.h"
+#include "../../../ThemeEditor/EditorSelection.h"
 #include "../../../ThemeEditor/LayoutCheck.h"
 #include "../../../SDL.h"
 #include "../../../Utility/Log.h"
@@ -819,6 +820,11 @@ bool ThemeEditorScreen::escape()
         pad_.setRegion(EF_CANVAS);
         return true;
     }
+    // Several selected: only the last one picked stays
+    if (session_.selectionCount() > 1) {
+        session_.select(session_.selected());
+        return true;
+    }
     return false;
 }
 
@@ -832,6 +838,12 @@ bool ThemeEditorScreen::wantsControls() const
 void ThemeEditorScreen::controlsHeld(const ControlsHeld& held)
 {
     pad_.held(held);
+    // Select let go in Pick with nothing pressed while it was held: it acts now (Move, or Add)
+    if (heldSelect_.release(held[static_cast<size_t>(Control::Select)]) && !retired_ && session_.isOpen() &&
+        !dialogOpen() && pad_.region() == EF_CANVAS && mode_ == ECM_PICK && scriptAt_ >= script_.size() &&
+        !session_.dragging()) {
+        canvasControl(EP_SELECT, true);
+    }
 }
 
 void ThemeEditorScreen::beforeFrame()
@@ -883,11 +895,62 @@ void ThemeEditorScreen::setMode(EdCanvasMode mode)
     if (mode != ECM_PICK) session_.setCoalesceKey("controller");
 }
 
-void ThemeEditorScreen::canvasControl(int press)
+void ThemeEditorScreen::heldControl(int press)
 {
+    const auto& widgets = session_.page().widgets;
+    switch (heldSelectPress(press)) {
+    case EHA_ADD_DIR: {
+        int dx = 0, dy = 0;
+        pressDirection(press, dx, dy);
+        std::vector<DragRect> rects;
+        std::vector<int> index;
+        int cur = -1;
+        for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
+            if (widgets[i].canvasHide) continue;
+            DragRect r;
+            canvasHitRect(widgets[i], r.x, r.y, r.w, r.h);
+            if (i == session_.selected()) cur = static_cast<int>(rects.size());
+            rects.push_back(r);
+            index.push_back(i);
+        }
+        const int next = pickStep(rects, cur, dx, dy, session_.project().canvasW(), session_.project().canvasH());
+        if (next < 0) setStatus("Nothing that way to add.", false);
+        else session_.addSelected(index[next]);
+        break;
+    }
+    case EHA_ADD_PREV:
+    case EHA_ADD_NEXT: {
+        const int next = listStep(session_.selected(), static_cast<int>(widgets.size()), press == EP_LETTER_UP ? -1 : 1);
+        if (next >= 0) session_.addSelected(next);
+        break;
+    }
+    case EHA_DROP:
+        session_.dropPrimary();
+        break;
+    case EHA_NONE:
+        break;
+    }
+    if (session_.selectionCount() > 1) {
+        setStatus(std::to_string(session_.selectionCount()) + " widgets selected. Let go of Select, then Select moves them all; "
+                  "the properties panel lines them up.", false);
+    }
+}
+
+void ThemeEditorScreen::canvasControl(int press, bool released)
+{
+    // Select in Pick acts when it's let go: held, the directions add to the selection
+    if (mode_ == ECM_PICK && press == EP_SELECT && !released) {
+        heldSelect_.press();
+        return;
+    }
+    if (heldSelect_.armed && heldSelectPress(press) != EHA_NONE) {
+        if (heldSelect_.combine(repeats_ > 0)) heldControl(press);   // one per press
+        return;
+    }
     const ThemeProject& p = session_.project();
     const WidgetInstance* sel = session_.selectedWidget();
-    const EdCanvasDecision d = canvasPress(mode_, press, sel != nullptr, sel != nullptr);
+    const bool multi = session_.selectionCount() > 1;
+    const EdCanvasDecision d = canvasPress(mode_, press, sel != nullptr, sel != nullptr, multi);
     if (d.mode != mode_ && d.action != ECA_MODE) setMode(d.mode);   // the selection went away mid-move
     int dx = 0, dy = 0;
     pressDirection(press, dx, dy);
@@ -921,21 +984,38 @@ void ThemeEditorScreen::canvasControl(int press)
     }
     case ECA_MOVE:
     case ECA_RESIZE: {
-        DragRect r;
-        canvasHitRect(*sel, r.x, r.y, r.w, r.h);
-        const WidgetDef* def = session_.selectedDef();
         const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, shift ? 12 : repeats_);
-        const DragRect n = d.action == ECA_MOVE
-            ? canvasNudgeMove(r, dx, dy, step, p.canvasW(), p.canvasH())
-            : canvasNudgeResize(r, dx, dy, step, def ? def->minW : 8, def ? def->minH : 8, p.canvasW(), p.canvasH());
         session_.setCoalesceKey("controller");
-        // As with the mouse: moving keeps a warped widget's shape, resizing makes it a plain box
-        if (d.action == ECA_MOVE) session_.moveTo(n.x, n.y);
-        else session_.setRect(n.x, n.y, n.w, n.h);
+        if (d.action == ECA_MOVE) {
+            // The selection as one box (one widget: its own), kept on the canvas; as with the
+            // mouse, moving keeps a warped widget's shape
+            const DragRect u = unionRect(session_.selectionBoxes());
+            const DragRect n = canvasNudgeMove(u, dx, dy, step, p.canvasW(), p.canvasH());
+            session_.shiftSelection(n.x - u.x, n.y - u.y);
+        }
+        else {
+            // From the handle Letter up / down chose; resizing makes a warped widget a plain box
+            DragRect r;
+            canvasHitRect(*sel, r.x, r.y, r.w, r.h);
+            const WidgetDef* def = session_.selectedDef();
+            const DragRect n = canvasNudgeResizeFrom(r, resizeHandle_, dx, dy, step, def ? def->minW : 8, def ? def->minH : 8,
+                                                     p.canvasW(), p.canvasH());
+            session_.setRect(n.x, n.y, n.w, n.h);
+        }
         break;
     }
     case ECA_MODE:
+        if (d.mode == ECM_RESIZE) resizeHandle_ = CH_SE;   // Resize starts from the bottom-right corner
         setMode(d.mode);
+        break;
+    case ECA_HANDLE_PREV:
+    case ECA_HANDLE_NEXT:
+        resizeHandle_ = resizeHandleStep(resizeHandle_, d.action == ECA_HANDLE_PREV ? -1 : 1);
+        setStatus(std::string("Resizing from the ") + resizeHandleLabel(resizeHandle_) + ".", false);
+        break;
+    case ECA_COLLAPSE:
+        session_.select(session_.selected());
+        setStatus("Only " + (sel ? sel->name : std::string("one")) + " is selected now.", false);
         break;
     case ECA_ADD:
         showAdd_ = true;
@@ -962,11 +1042,19 @@ std::string ThemeEditorScreen::controllerHints() const
     if (dialogOpen()) return "Arrows: move   Select: choose   Back: close the dialog";
     switch (pad_.region()) {
     case EF_CANVAS:
+        if (mode_ == ECM_MOVE && session_.selectionCount() > 1) {
+            return "MOVE: arrows move the " + std::to_string(session_.selectionCount()) + " widgets (hold to speed up)   Select or Back: done";
+        }
         if (mode_ == ECM_MOVE) return "MOVE: arrows move the widget (hold to speed up)   Select: resize instead   Back: done";
-        if (mode_ == ECM_RESIZE) return "RESIZE: arrows size the widget from its bottom-right corner   Select or Back: done";
+        if (mode_ == ECM_RESIZE) {
+            return std::string("RESIZE: arrows move its ") + resizeHandleLabel(resizeHandle_) +
+                   "   Letter up/down: another corner or edge   Select or Back: done";
+        }
+        if (heldSelect_.armed) return "Holding Select: arrows add the widget that way, Letter up/down the previous / next, Back drops the last one";
         return std::string("PICK: arrows choose a widget (past the last one: the panel that way)   ") +
                (session_.selectedWidget() ? "Select: move it" : "Select: add a widget") +
-               "   Letter up/down: previous / next   Page up/down: regions   Back: leave the editor";
+               "   Hold Select + arrows: select several   Letter up/down: previous / next   Page up/down: regions   " +
+               (session_.selectionCount() > 1 ? "Back: keep only the last one" : "Back: leave the editor");
     case EF_TOOLBAR:
         return "Toolbar: arrows move   Select: press   Down: the canvas   Back: the canvas";
     default:
@@ -1238,6 +1326,11 @@ void ThemeEditorScreen::drawThemePanel()
     ImGui::SeparatorText("Widgets on this page");
     const auto& widgets = session_.page().widgets;
     if (widgets.empty()) ImGui::TextDisabled("None yet: choose Add widget.");
+    else if (widgets.size() > 1) ImGui::TextDisabled("Ctrl-click or Shift-click for several.");
+    // A widget picked elsewhere (the canvas, the controller) is scrolled to here
+    bool scrollTo = session_.selected() != listPrimary_ && !listClicked_;
+    listClicked_ = false;
+    listPrimary_ = session_.selected();
     for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
         const WidgetInstance& w = widgets[i];
         const WidgetDef* def = session_.library().find(w.def);
@@ -1249,7 +1342,21 @@ void ThemeEditorScreen::drawThemePanel()
         ImGui::SameLine();
         if (w.canvasHide) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         std::string label = w.name + "##w" + std::to_string(i);
-        if (ImGui::Selectable(label.c_str(), i == session_.selected())) session_.select(i);
+        if (ImGui::Selectable(label.c_str(), session_.isSelected(i))) {
+            const ImGuiIO& io = ImGui::GetIO();
+            if (io.KeyCtrl) session_.toggleSelected(i);
+            else if (io.KeyShift && session_.selected() >= 0) {
+                std::vector<int> order;
+                for (int k = 0; k < static_cast<int>(widgets.size()); ++k) order.push_back(k);
+                session_.setSelection(selectionRange(order, session_.selected(), i));
+            }
+            else session_.select(i);
+            listClicked_ = true;
+        }
+        if (scrollTo && i == session_.selected()) {
+            if (!ImGui::IsItemVisible()) ImGui::SetScrollHereY(0.5f);
+            scrollTo = false;
+        }
         if (w.canvasHide) ImGui::PopStyleColor();
         ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("L19").x);
         ImGui::TextDisabled("L%d", w.layer);
@@ -1597,10 +1704,12 @@ void ThemeEditorScreen::drawCanvas()
     ImGui::InvisibleButton("##canvasInput", size, ImGuiButtonFlags_MouseButtonLeft);
     ImGui::PopItemFlag();
     const bool hovered = ImGui::IsItemHovered() && !pad_.keyboardOpen();
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 mouse = io.MousePos;
     const float sx = mouse.x - origin.x, sy = mouse.y - origin.y;
     const float grab = 6.0f * ctx_.scale;
-    if (ImGui::IsItemActivated()) session_.pointerDown(fit_, sx, sy, grab);
+    // Ctrl or Shift: toggle the widget clicked, or a marquee that adds
+    if (ImGui::IsItemActivated()) session_.pointerDown(fit_, sx, sy, grab, io.KeyCtrl || io.KeyShift);
     if (session_.dragging()) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) session_.pointerMove(fit_, sx, sy);
         else session_.pointerUp();
@@ -1609,7 +1718,6 @@ void ThemeEditorScreen::drawCanvas()
     // Keyboard, while the canvas has focus and no field is being typed in. An
     // arrow that's also a mapped direction acts as the controller's (Pick,
     // Move, Resize), not twice.
-    ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsWindowFocused() && !io.WantTextInput && !pad_.directionHeld() && !pad_.keyboardOpen()) {
         int step = io.KeyShift ? 10 : 1;
         int dx = 0, dy = 0;
@@ -1628,6 +1736,8 @@ void ThemeEditorScreen::drawCanvas()
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) io.KeyShift ? session_.redo() : session_.undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) session_.redo();
         if (ImGui::IsKeyPressed(ImGuiKey_S, false)) job_ = Job::Save;
+        if (ImGui::IsKeyPressed(ImGuiKey_A, false)) session_.selectAll();
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false)) session_.duplicateSelected();
     }
 
     // The wireframe, from the project (never from the engine)
@@ -1639,7 +1749,7 @@ void ThemeEditorScreen::drawCanvas()
     int hoveredWidget = hovered ? canvasPick(session_.page(), canvasToThemeX(fit_, sx), canvasToThemeY(fit_, sy)) : -1;
     for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
         const WidgetInstance& w = widgets[i];
-        if (w.canvasHide || i == session_.selected()) continue;
+        if (w.canvasHide || session_.isSelected(i)) continue;
         const WidgetDef* def = session_.library().find(w.def);
         int x, y, ww, hh;
         canvasHitRect(w, x, y, ww, hh);
@@ -1648,7 +1758,57 @@ void ThemeEditorScreen::drawCanvas()
                     toStage(static_cast<float>(x + ww), static_cast<float>(y + hh)),
                     colourOf(def ? def->color : "", hot ? 230 : 120), 0.0f, 0, hot ? 2.0f : 1.0f);
     }
-    if (const WidgetInstance* sel = session_.selectedWidget()) {
+    // The controller's Move and Resize modes show in the outline
+    const ImU32 modeColour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255) : 0;
+    const bool multi = session_.selectionCount() > 1;
+    // Several selected: each one filled and outlined, moving with a group drag
+    if (multi) {
+        const int ox = session_.groupDrag() && session_.dragMoved() ? session_.dragDx() : 0;
+        const int oy = session_.groupDrag() && session_.dragMoved() ? session_.dragDy() : 0;
+        for (int i : session_.selection()) {
+            const WidgetInstance& w = widgets[i];
+            if (w.canvasHide) continue;
+            const WidgetDef* def = session_.library().find(w.def);
+            DragRect r;
+            canvasHitRect(w, r.x, r.y, r.w, r.h);
+            ImVec2 p1 = toStage(static_cast<float>(r.x + ox), static_cast<float>(r.y + oy));
+            ImVec2 p2 = toStage(static_cast<float>(r.x + r.w + ox), static_cast<float>(r.y + r.h + oy));
+            dl->AddRectFilled(p1, p2, colourOf(def ? def->color : "", 40));
+            const bool primary = i == session_.selected();
+            dl->AddRect(p1, p2, modeColour ? modeColour : colourOf(def ? def->color : "", 255), 0.0f, 0,
+                        (primary ? 3.0f : 2.0f) * (modeColour ? ctx_.scale : 1.0f));
+        }
+        // The box around them, dashed
+        std::vector<DragRect> boxes = session_.selectionBoxes();
+        DragRect u = unionRect(boxes);
+        u.x += ox;
+        u.y += oy;
+        const ImVec2 u1 = toStage(static_cast<float>(u.x), static_cast<float>(u.y));
+        const ImVec2 u2 = toStage(static_cast<float>(u.x + u.w), static_cast<float>(u.y + u.h));
+        const float dash = 5.0f * ctx_.scale;
+        for (float t = u1.x; t < u2.x; t += dash * 2.0f) {
+            dl->AddLine(ImVec2(t, u1.y - 3.0f), ImVec2(std::min(t + dash, u2.x), u1.y - 3.0f), IM_COL32(255, 255, 255, 200));
+            dl->AddLine(ImVec2(t, u2.y + 3.0f), ImVec2(std::min(t + dash, u2.x), u2.y + 3.0f), IM_COL32(255, 255, 255, 200));
+        }
+        for (float t = u1.y; t < u2.y; t += dash * 2.0f) {
+            dl->AddLine(ImVec2(u1.x - 3.0f, t), ImVec2(u1.x - 3.0f, std::min(t + dash, u2.y)), IM_COL32(255, 255, 255, 200));
+            dl->AddLine(ImVec2(u2.x + 3.0f, t), ImVec2(u2.x + 3.0f, std::min(t + dash, u2.y)), IM_COL32(255, 255, 255, 200));
+        }
+        std::string label = std::to_string(session_.selectionCount()) + " widgets";
+        if (mode_ != ECM_PICK || session_.dragMoved()) label += "  " + std::to_string(u.x) + ", " + std::to_string(u.y);
+        ImVec2 ts = ImGui::CalcTextSize(label.c_str());
+        ImVec2 at(u1.x, std::max(origin.y, u1.y - ts.y - 6.0f));
+        dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 180));
+        dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(255, 255, 255, 255), label.c_str());
+    }
+    if (session_.marqueeActive() && session_.dragMoved()) {
+        const DragRect m = session_.marqueeBox();
+        const ImVec2 m1 = toStage(static_cast<float>(m.x), static_cast<float>(m.y));
+        const ImVec2 m2 = toStage(static_cast<float>(m.x + m.w), static_cast<float>(m.y + m.h));
+        dl->AddRectFilled(m1, m2, IM_COL32(120, 180, 255, 40));
+        dl->AddRect(m1, m2, IM_COL32(120, 180, 255, 220), 0.0f, 0, 1.5f);
+    }
+    if (const WidgetInstance* sel = multi ? nullptr : session_.selectedWidget()) {
         const WidgetDef* def = session_.selectedDef();
         DragRect r;
         if (session_.dragMoved()) r = session_.dragRect();
@@ -1656,17 +1816,15 @@ void ThemeEditorScreen::drawCanvas()
         ImVec2 p1 = toStage(static_cast<float>(r.x), static_cast<float>(r.y));
         ImVec2 p2 = toStage(static_cast<float>(r.x + r.w), static_cast<float>(r.y + r.h));
         dl->AddRectFilled(p1, p2, colourOf(def ? def->color : "", 40));
-        // The controller's Move and Resize modes show in the outline
-        const ImU32 modeColour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255) : 0;
         dl->AddRect(p1, p2, modeColour ? modeColour : colourOf(def ? def->color : "", 255), 0.0f, 0, modeColour ? 3.0f * ctx_.scale : 2.0f);
         for (int hnd = 0; hnd < 8; ++hnd) {
             float hx, hy;
             handlePoint(r, hnd, hx, hy);
             ImVec2 c = toStage(hx, hy);
-            // Resize nudges move the bottom-right corner
-            float hs = (mode_ == ECM_RESIZE && hnd == CH_SE ? 7.0f : 4.0f) * ctx_.scale;
-            dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs),
-                              mode_ == ECM_RESIZE && hnd == CH_SE ? modeColour : IM_COL32(255, 255, 255, 255));
+            // Resize nudges move the handle Letter up / down chose
+            const bool active = mode_ == ECM_RESIZE && hnd == resizeHandle_;
+            float hs = (active ? 7.0f : 4.0f) * ctx_.scale;
+            dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), active ? modeColour : IM_COL32(255, 255, 255, 255));
             dl->AddRect(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), IM_COL32(0, 0, 0, 255));
         }
         std::string label = sel->name;
@@ -1716,7 +1874,17 @@ void ThemeEditorScreen::drawProperties()
     if (!w) {
         ImGui::SeparatorText("Widget");
         ImGui::TextWrapped("Click a widget on the canvas or in the list to change it, or choose Add widget.");
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("Several at once: Ctrl-click or Shift-click them, or drag a box around them from an empty part of "
+                           "the canvas (with Ctrl or Shift, from anywhere). With a controller, hold Select and press a direction.");
+        ImGui::PopStyleColor();
         return;
+    }
+    if (session_.selectionCount() > 1) {
+        drawSelectionTools();
+        w = session_.selectedWidget();
+        def = session_.selectedDef();
+        if (!w) return;
     }
     ImGui::SeparatorText(def ? def->name.c_str() : w->def.c_str());
     if (def && !def->summary.empty()) {
@@ -1809,7 +1977,67 @@ void ThemeEditorScreen::drawProperties()
     }
     ImGui::Spacing();
     ImGui::Separator();
+    if (session_.selectionCount() > 1) return;   // the group's Duplicate and Delete are at the top
+    if (ImGui::Button("Duplicate")) {
+        if (session_.duplicateSelected()) setStatus("Added a copy, 20 units down and right (Ctrl+D).", false);
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Delete widget")) session_.removeSelected();
+}
+
+void ThemeEditorScreen::alignSelection(int op)
+{
+    static const char* const what[] = { "left edges", "centres", "right edges", "tops", "middles", "bottoms" };
+    const int n = session_.selectionCount();
+    if (session_.alignSelected(op)) setStatus("Lined up the " + std::to_string(n) + " widgets' " + what[op] + ". Undo takes it back.", false);
+    else setStatus("They're lined up that way already.", false);
+}
+
+void ThemeEditorScreen::distributeSelection(bool horizontal)
+{
+    const int n = session_.selectionCount();
+    if (session_.distributeSelected(horizontal)) {
+        setStatus("Spaced the " + std::to_string(n) + " widgets evenly " + (horizontal ? "across" : "down") +
+                  ": the outer two stayed where they were.", false);
+    }
+    else setStatus("They're evenly spaced that way already.", false);
+}
+
+void ThemeEditorScreen::drawSelectionTools()
+{
+    const int n = session_.selectionCount();
+    const WidgetInstance* primary = session_.selectedWidget();
+    ImGui::SeparatorText((std::to_string(n) + " widgets selected").c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("Dragging one moves them all; the arrows nudge them all; Delete deletes them all. They line up on the "
+                       "box around them.");
+    ImGui::PopStyleColor();
+    const float third = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+    const char* const labels[6] = { "Left", "Centre", "Right", "Top", "Middle", "Bottom" };
+    for (int op = 0; op < 6; ++op) {
+        if (op % 3) ImGui::SameLine();
+        if (ImGui::Button(labels[op], ImVec2(third, 0))) alignSelection(op);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Line their %s up", labels[op]);
+    }
+    const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    ImGui::BeginDisabled(n < 3);
+    if (ImGui::Button("Space across", ImVec2(half, 0))) distributeSelection(true);
+    ImGui::SameLine();
+    if (ImGui::Button("Space down", ImVec2(half, 0))) distributeSelection(false);
+    ImGui::EndDisabled();
+    if (n < 3 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Spacing needs three or more");
+    if (ImGui::Button("Duplicate them")) {
+        if (session_.duplicateSelected()) setStatus("Added " + std::to_string(n) + " copies, 20 units down and right; they're selected.", false);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete them")) session_.removeSelected();
+    if (primary) {
+        if (ImGui::Button("Only this one")) session_.select(session_.selected());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keep only %s selected", primary->name.c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("Below: %s, the last one picked.", primary->name.c_str());
+        ImGui::PopStyleColor();
+    }
 }
 
 void ThemeEditorScreen::drawVar(const WidgetVar& var)

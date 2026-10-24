@@ -53,9 +53,13 @@ namespace ThemeEditor
     // tplnew COLLECTION blank|default|PRIMARY NAME..., tplassign COLLECTION
     // PRIMARY|default, tpldelete PRIMARY [REPLACEMENT|default], tplrename
     // PRIMARY NAME...; theme properties: font PATH|default, sound KIND
-    // PATH|none, splashtext TEXT, splashbg PATH|none. Coordinates and
-    // distances are theme units. NotSession for anything else. `note` says
-    // what happened (the selection, the widget's new rect).
+    // PATH|none, splashtext TEXT, splashbg PATH|none; several at once:
+    // addselect N, toggleselect N, selectall, selection (notes it), clickadd
+    // X Y (a Ctrl-click), marquee X1 Y1 X2 Y2 [add] (without add it must
+    // start on empty canvas), align left|center|right|top|middle|bottom,
+    // distribute h|v, duplicate. Coordinates and distances are theme units.
+    // NotSession for anything else. `note` says what happened (the
+    // selection, the widget's new rect).
     CommandResult runSessionCommand(EditorSession& session, const EditorCommand& command, std::string& note);
 
     // The same for the layout-native mode (LayoutSession): select N (in the
@@ -67,6 +71,10 @@ namespace ThemeEditor
     // for the element itself): event NAME, addset EVENT, addanimate SET,
     // rmanim PATH, animattr PATH NAME VALUE..., rmanimattr PATH NAME,
     // getanim PATH NAME, copyanims SOURCEPATH, events (notes them), endbox
-    // (notes where onEnter leaves it). NotSession for anything else.
+    // [EVENT] (notes where onEnter, or that event, leaves it), movingevents;
+    // several at once: addpath PATH, togglepath PATH, selectall, selection,
+    // clickadd X Y, marquee X1 Y1 X2 Y2 [add], align ..., distribute h|v
+    // (duplicate and delete take every selected element). NotSession for
+    // anything else.
     CommandResult runLayoutCommand(LayoutSession& session, const EditorCommand& command, std::string& note);
 }

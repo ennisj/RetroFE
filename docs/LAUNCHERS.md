@@ -12,6 +12,7 @@ options
 |------------|---------------------------------------------------------------|
 | executable | Path of where the executable exists                           |
 | arguments  | Arguments to pass when executing the launcher (i.e. ROM name) |
+| currentDirectory | The folder the program runs in (see below) |
 
     executable = D:/Emulators/Nestopia/nestopia.exe
     arguments  = "%ITEM_FILEPATH%"
@@ -40,6 +41,16 @@ command with more than two quotes, such as
 `/c "%RETROFE_PATH%/scripts/switch.bat" "%ITEM_FILEPATH%"`, is wrapped in one
 more pair of quotes, because cmd drops the first and the last quote of such a
 command.
+
+Without `currentDirectory` the program runs in its own folder: the folder of
+`executable` when it's a path (`D:/Emulators/Nestopia`), RetroFE's root for a
+program there, and on Windows the folder where a bare name was found on the
+system path (`mame.exe` on `PATH` runs in MAME's folder, where it looks for
+its ini files). Windows' own tools found that way (`cmd.exe`,
+`powershell.exe`, under the Windows folder) run in RetroFE's root instead, so
+a relative path in their arguments means the same as anywhere else in
+RetroFE. Elsewhere a bare name found on `PATH` (installed system-wide, e.g.
+`/usr/bin/retroarch`) runs in RetroFE's root.
 
 Launcher variables
 

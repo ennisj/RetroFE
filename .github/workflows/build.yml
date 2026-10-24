@@ -1,52 +1,60 @@
 name: RetroFE Continuous Integration
 
+# Builds RetroFE and the retrofe_tests unit tests on Windows, Linux (x86_64 and arm64)
+# and macOS, and runs the tests on each (docs/CI.md). Runs on pushes to master and to
+# feature/** and ci/** branches, on pull requests to master and feature/**, and by hand.
 on:
   push:
     branches:
       - master
+      - 'feature/**'
+      - 'ci/**'
     paths:
       - 'RetroFE/CMake/**'
       - 'RetroFE/Source/**'
       - 'RetroFE/ThirdParty/**'
+      - 'RetroFE/ThirdPartyMac/**'
+      - 'RetroFE/Tests/**'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
   pull_request:
     branches:
       - master
+      - 'feature/**'
     paths:
       - 'RetroFE/CMake/**'
       - 'RetroFE/Source/**'
       - 'RetroFE/ThirdParty/**'
-      
+      - 'RetroFE/ThirdPartyMac/**'
+      - 'RetroFE/Tests/**'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch replaces a run still going, except on master, where
+# every push's run finishes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
-  build:
-    runs-on: ubuntu-24.04
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: ubuntu-24.04, arch: x86_64 }
+          - { os: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.config.os }}
+    name: Linux ${{ matrix.config.arch }}
 
     steps:
-    # Checkout the repository
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Cache apt packages
-      uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: |
-          cmake
-          zlib1g-dev
-          libsdl2-dev
-          libsdl2-mixer-dev
-          libsdl2-image-dev
-          libsdl2-ttf-dev
-          libgstreamer1.0-dev
-          libgstreamer-plugins-base1.0-dev
-          libgstreamer-plugins-good1.0-dev
-          gstreamer1.0-libav
-          libglib2.0-dev
-          libminizip-dev
-          libwebp-dev
-          libevdev-dev
-          libusb-1.0-0-dev
-        version: 1.0
-
-    # Install dependencies
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -67,10 +75,98 @@ jobs:
           libevdev-dev \
           libusb-1.0-0-dev
 
-    # Configure the build
     - name: Configure CMake
-      run: cmake RetroFE/Source -BRetroFE/Build
+      run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
 
-    # Build the project
     - name: Build
-      run: cmake --build RetroFE/Build
+      # As many jobs as cores: an unbounded make -j runs the runner out of memory
+      run: cmake --build RetroFE/Build --parallel "$(nproc)"
+
+    - name: Run the unit tests
+      run: ctest --test-dir RetroFE/Build --output-on-failure
+
+    - name: Check that retrofe starts
+      # --version prints and exits before any window opens
+      env:
+        RETROFE_PATH: ${{ runner.temp }}/retrofe-root
+      run: |
+        mkdir -p "$RETROFE_PATH"
+        RetroFE/Build/retrofe --version
+
+  windows:
+    runs-on: windows-2022
+    name: Windows x64
+
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Cache GStreamer
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/gstreamer-downloads
+        key: gstreamer-msvc-${{ hashFiles('.github/scripts/install-gstreamer-windows.ps1') }}
+
+    - name: Install GStreamer
+      shell: pwsh
+      run: .github/scripts/install-gstreamer-windows.ps1
+
+    - name: Configure
+      shell: pwsh
+      run: |
+        cmake -A x64 -B .\RetroFE\Build -D "GSTREAMER_ROOT=$env:GSTREAMER_ROOT" -D RETROFE_BUILD_TESTS=ON -S .\RetroFE\Source
+
+    - name: Build
+      run: |
+        cmake --build RetroFE/Build --config Release --parallel 4
+
+    - name: Run the unit tests
+      # With Tests/test_server.py running, so the Catalog's and self-update's real HTTP
+      # tests run too (only Windows has an HTTP client so far)
+      shell: pwsh
+      run: |
+        $server = Start-Process -FilePath python -ArgumentList '-I', 'RetroFE\Tests\test_server.py', '8765' -PassThru -NoNewWindow
+        try {
+          $ready = $false
+          foreach ($i in 1..50) {
+            try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/index.json | Out-Null; $ready = $true; break } catch { Start-Sleep -Milliseconds 200 }
+          }
+          if (-not $ready) { throw "test_server.py didn't start" }
+          $env:RETROFE_TEST_SERVER = 'http://127.0.0.1:8765'
+          ctest --test-dir RetroFE/Build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "The unit tests failed" }
+        } finally {
+          Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+        }
+
+  macos:
+    runs-on: macos-14
+    name: macOS arm64 (Homebrew)
+    # Homebrew's libraries, as a developer's Mac would have them; build-macos.yml makes
+    # the universal RetroFE.app against the frameworks instead
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        brew install pkg-config sdl2 sdl2_image sdl2_mixer sdl2_ttf gstreamer minizip webp libusb
+
+    - name: Configure CMake
+      run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
+
+    - name: Build
+      run: cmake --build RetroFE/Build --parallel "$(sysctl -n hw.ncpu)"
+
+    - name: Run the unit tests
+      run: ctest --test-dir RetroFE/Build --output-on-failure
+
+    - name: Check that retrofe starts
+      env:
+        RETROFE_PATH: ${{ runner.temp }}/retrofe-root
+      run: |
+        mkdir -p "$RETROFE_PATH"
+        RetroFE/Build/retrofe --version

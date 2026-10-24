@@ -118,7 +118,18 @@ bool MetadataDatabase::importDirectory()
     // Function to process directory
     auto processDirectory = [&](const std::string& path, const std::string& extension,
         const std::function<void(const std::string&, const std::string&)>& importFunc) {
-            if (!fs::exists(path) || !fs::is_directory(path)) {
+            // Each metadata folder is optional (a bare install has none)
+            std::error_code ec;
+            bool exists = fs::exists(path, ec);
+            if (ec) {
+                LOG_WARNING("MetadataDatabase", "Could not read directory \"" + path + "\": " + ec.message());
+                return;
+            }
+            if (!exists) {
+                LOG_INFO("MetadataDatabase", "No metadata folder \"" + path + "\" (optional)");
+                return;
+            }
+            if (!fs::is_directory(path, ec)) {
                 LOG_WARNING("MetadataDatabase", "Could not read directory \"" + path + "\"");
                 return;
             }

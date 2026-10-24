@@ -58,6 +58,7 @@ const char* const gameForm = R"(
   <link label="Media" open="game-media" status="game:mediaStatus" visibleWhen="game:isFound"/>
   <link label="Playlists and collections" open="game-playlists" status="game:playlistsStatus" visibleWhen="game:isFound"/>
   <link label="Description" open="game-description" status="game:descriptionStatus" visibleWhen="game:isFound"/>
+  <link label="Saves" open="game-saves" status="saves:status" visibleWhen="game:isFound"/>
   <actions>
     <button label="Start this game" action="game.launch" visibleWhen="game:isFound"/>
     <button label="Hide this game" action="game.hide" visibleWhen="game:isFound"
@@ -200,6 +201,49 @@ const char* const descriptionForm = R"(
 </form>
 )";
 
+// A game's save files and save states (SavesProvider, prefix saves)
+const char* const savesForm = R"(
+<form id="game-saves" title="Saves" bind="saves:screenTitle">
+  <note bind="saves:why"/>
+  <value label="Save files in" bind="saves:savesFolder"/>
+  <value label="Save states in" bind="saves:statesFolder"/>
+  <note bind="saves:notes"/>
+  <section label="This game's files" visibleWhen="saves:isKnown">
+    <note bind="saves:filesText"/>
+    <note bind="saves:filesNote"/>
+  </section>
+  <actions>
+    <button label="Back up now" action="saves.backup" visibleWhen="saves:isKnown"/>
+    <button label="Delete these saves" action="saves.delete" visibleWhen="saves:hasFiles"
+            confirm="Delete this game's saves and save states? A backup is made first, in manage/saves."/>
+  </actions>
+  <section label="Backups">
+    <note bind="saves:backupsNote"/>
+    <results bind="saves:backups" open="game-saves-backup" param="backup" empty="No backups yet."/>
+  </section>
+</form>
+)";
+
+// One backup of a game's saves (param backup)
+const char* const savesBackupForm = R"(
+<form id="game-saves-backup" title="Backup" bind="saves:backupTitle">
+  <note bind="saves:backupProblem"/>
+  <value label="Made" bind="saves:backupWhen"/>
+  <value label="Why" bind="saves:backupReason"/>
+  <value label="Size" bind="saves:backupSize"/>
+  <value label="Kept in" bind="saves:backupFolder"/>
+  <section label="Files">
+    <note bind="saves:backupFilesText"/>
+  </section>
+  <note bind="saves:why"/>
+  <actions>
+    <button label="Restore this backup" action="saves.restore"
+            confirm="Restore this backup? The game's current saves are backed up first, then replaced by these."/>
+    <button label="Delete this backup" action="saves.deleteBackup" confirm="Delete this backup? Its files are deleted for good."/>
+  </actions>
+</form>
+)";
+
 }
 
 Forms::BuiltinTable Forms::gamesForms()
@@ -213,6 +257,8 @@ Forms::BuiltinTable Forms::gamesForms()
         { "game-media-slot", mediaSlotForm },
         { "game-playlists", playlistsForm },
         { "game-description", descriptionForm },
+        { "game-saves", savesForm },
+        { "game-saves-backup", savesBackupForm },
     };
     // The game's RetroArch screens (RetroArchForms.cpp, RetroArchProvider)
     const BuiltinTable& retroArch = Manager::retroArchForms(false);

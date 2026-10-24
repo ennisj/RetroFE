@@ -847,6 +847,7 @@ static void runGamesTests()
     run("games: play count and time played", [] {
         using Manager::GameProvider;
         std::string root = makeInstall("games-plays");
+        Test::writeFile(root + "/settings.conf", "firstCollection = Main\nlastPlayedSkipCollection = THEMES\n");
         Test::writeFile(root + "/collections/playCount.txt", "a;1;1700000000\n_Arcade:a;3;1700000000\n_NES:mario;1;\n# comment\n");
         Test::writeFile(root + "/collections/timeSpent.txt", "_Arcade:a;4380\n_Arcade:b;oops\n");
         GameProvider::PlayStats a = GameProvider::readPlayStats(root, "Arcade", "a");
@@ -866,5 +867,26 @@ static void runGamesTests()
         f.open("game", gameParams("Arcade", "b"));
         checkEqual(f.model.get("game:played"), "Never", "never");
         checkEqual(f.model.get("game:timePlayed"), "", "no time");
+    });
+
+    run("games: a game with no plays says when RetroFE doesn't count them", [] {
+        using Manager::GameProvider;
+        checkEqual(GameProvider::playsNotCounted("", "10", "Arcade"),
+                   "Not counted (set lastPlayedSkipCollection to count plays)", "not set: upstream counts nothing");
+        checkEqual(GameProvider::playsNotCounted("  ", "10", "Arcade"),
+                   "Not counted (set lastPlayedSkipCollection to count plays)", "blank");
+        checkEqual(GameProvider::playsNotCounted("THEMES", "10", "Arcade"), "", "set, another collection: counted");
+        checkEqual(GameProvider::playsNotCounted("THEMES, Arcade", "10", "Arcade"),
+                   "Not counted (lastPlayedSkipCollection skips Arcade)", "its system is skipped");
+        checkEqual(GameProvider::playsNotCounted("THEMES", "0", "Arcade"), "Not counted (lastplayedSize is 0)", "size 0");
+        checkEqual(GameProvider::playsNotCounted("THEMES", "", "Arcade"), "", "size unset: the default 10");
+
+        std::string root = makeInstall("games-plays-off");   // settings.conf without lastPlayedSkipCollection
+        Test::writeFile(root + "/collections/playCount.txt", "_Arcade:a;2;1700000000\n");
+        Fixture f(root);
+        f.open("game", gameParams("Arcade", "b"));
+        checkEqual(f.model.get("game:played"), "Not counted (set lastPlayedSkipCollection to count plays)", "the game screen");
+        f.open("game", gameParams("Arcade", "a"));
+        check(f.model.get("game:played").rfind("2 times", 0) == 0, "plays counted before still show: " + f.model.get("game:played"));
     });
 }

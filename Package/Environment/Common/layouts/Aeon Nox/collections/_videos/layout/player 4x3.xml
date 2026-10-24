@@ -10,10 +10,11 @@
 
     <image src="../../../images/black.png" x="0" y="0" width="1600" height="1200" layer="0"/>
 
-    <reloadableVideo type="video" jukebox="true" x="center" y="center" width="1600" maxHeight="1200" xOrigin="center" yOrigin="center" layer="1"/>
+    <reloadableVideo type="video" imageType="screenshot" jukebox="true" x="center" y="center" width="1600" maxHeight="1200" xOrigin="center" yOrigin="center" layer="1"/>
 
     <!-- The list it moves through -->
     <menu type="custom" orientation="horizontal" textFallback="true">
+        <itemDefaults alpha="0"/>
         <item x="0" y="0" alpha="0" fontSize="10" selected="true" layer="2"/>
     </menu>
 

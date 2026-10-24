@@ -22,14 +22,18 @@
 // rebuilds the index in the background and marks "changes pending").
 // RetroFE itself only sees changes after it reloads.
 //
-// Never written here: executable, arguments, list.path or any other path key
-// of an existing file (a new launcher file is written whole, once), and menu
-// lines are only added, removed or moved one at a time.
+// Never written here: list.path or any other path key of a collection, and
+// menu lines are only added, removed or moved one at a time. A launcher's
+// executable, arguments, currentDirectory and reboot are written only by
+// addLauncher (a new file, whole) and editLauncher (the Emulators edit form,
+// validated there and here, in place).
 
 #include "Backups.h"
 #include "Index.h"
 #include "Media.h"
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Library
@@ -191,6 +195,62 @@ namespace Library
         // Removes a launcher's file, only when no system (default or
         // alternative) and no game uses it. The original is kept in the backups.
         EditResult removeLauncher(const Index& index, LauncherScope scope, const std::string& id);
+
+        // Changes an existing launcher file in place: only the fields set, as
+        // executable / arguments / currentDirectory / reboot lines, keeping
+        // every other line, comment and line ending (ConfFile). An empty
+        // arguments or currentDirectory, or reboot = false, removes the line.
+        // currentDirectory and reboot are refused for collection and local
+        // launchers (RetroFE reads them for global launchers only). Values
+        // are one line without '#'. The original is kept in the backups.
+        struct LauncherChange
+        {
+            std::optional<std::string> executable;
+            std::optional<std::string> arguments;
+            std::optional<std::string> currentDirectory;
+            std::optional<bool> reboot;
+            bool empty() const { return !executable && !arguments && !currentDirectory && !reboot; }
+        };
+        EditResult editLauncher(const Index& index, LauncherScope scope, const std::string& id, const LauncherChange& change);
+
+        // Renaming a global launcher: its file in every launchers.<os> folder
+        // (windows, linux, apple: a system's "launcher =" is shared by all of
+        // them), the "launcher =" lines of collections' settings*.conf /
+        // info.conf naming it (defaults and alternatives), and the first line
+        // of every game's launcher file that names it (unless its collection
+        // has a local launcher of that name, which a game's pick means). The
+        // plan lists each change as a sentence for a preview; problem says why
+        // it can't be done (a name that's taken, a reference set outside a
+        // collection's folder...). A failure part way puts back what was written.
+        struct RenamePlan
+        {
+            std::string problem;
+            std::vector<std::string> changes;   // for the screen
+            std::vector<std::pair<std::string, std::string>> renames;   // old file -> new file
+            std::vector<std::string> settingsFiles;   // files whose launcher = line changes
+            std::vector<std::string> gameFiles;       // collections/<c>/launchers/<game>.conf
+        };
+        // The part that doesn't depend on the new name (reads every
+        // collection's settings files): a screen keeps it per launcher and
+        // snapshot and plans each name typed from it
+        struct RenameScan
+        {
+            struct Setting
+            {
+                std::string collection, fileName, path, value;
+            };
+            std::string id;
+            std::string problem;
+            std::vector<std::pair<std::string, std::string>> files;   // ("launchers.<os>", folder) holding its file
+            std::vector<std::pair<std::string, std::string>> taken;   // ("launchers.<os>", file name) of every file there
+            std::vector<Setting> settings;
+            std::vector<std::pair<std::string, std::string>> games;   // (collection, launcher file)
+            std::vector<std::string> gameNames;
+        };
+        RenameScan scanLauncherRename(const Index& index, const std::string& id) const;
+        RenamePlan planLauncherRename(const Index& index, const RenameScan& scan, const std::string& newName) const;
+        RenamePlan planLauncherRename(const Index& index, const std::string& id, const std::string& newName) const;
+        EditResult renameLauncher(const Index& index, const std::string& id, const std::string& newName);
 
         // Puts a file changed here back as it was before the first change
         EditResult restoreOriginal(const std::string& file);

@@ -20,6 +20,7 @@
 #include "../../../Graphics/PageBuilder.h"
 #include "../../../Graphics/ViewInfo.h"
 #include "../../../ThemeEditor/LayoutSession.h"
+#include "../../../ThemeEditor/LayoutTwin.h"
 #include "imgui.h"
 #include <filesystem>
 #include <map>
@@ -40,7 +41,12 @@
 // file of an image or video, copied into the theme), and edits their
 // animations (events, steps, changes), playing an event on the preview.
 // Saving changes only the bytes edited and keeps the original in
-// manage/backups.
+// manage/backups. Several elements can be selected at once (moved, aligned,
+// spaced, duplicated, deleted together). A page with a 4:3 twin (layout.xml
+// and "layout 4x3.xml") can be edited together with it: the twin is a
+// second LayoutSession, edits here are copied there (ThemeEditor/
+// LayoutTwin.h) as linked undo steps, Show switches between the two with
+// the same elements selected, and Save saves both.
 //
 // As in the widget editor, the preview page is built in update(), never
 // while drawing, the `layout` setting points at the theme while it's open,
@@ -131,9 +137,24 @@ private:
     void pickNative();
     void addFromPalette(const std::string& entry, const std::string& type);
     void syncPopup(const char* name, bool& show, bool& opened);
+    // Several selected: align, distribute, duplicate, delete
+    void drawSelectionTools();
+    void alignSelection(int op);
+    void distributeSelection(bool horizontal);
+    // The page's twin (layout.xml / layout 4x3.xml), edited together
+    std::string twinName() const;
+    bool openTwin();
+    void closeTwin();
+    void syncTwin();              // copies this page's edits since the last sync to the twin
+    void switchToTwin();          // from update(): the twin becomes the page shown, the same elements selected
+    void undoBoth();              // undo / redo here, and the twin's linked step with it
+    void redoBoth();
+    bool anyDirty() const;
+    void drawTwinInfo(int element);
     // The controller
     bool dialogOpen() const;
-    void canvasControl(int press);
+    void canvasControl(int press, bool released = false);
+    void heldControl(int press);
     void setMode(ThemeEditor::EdCanvasMode mode);
     std::string controllerHints() const;
 
@@ -188,6 +209,20 @@ private:
     Themes::EditorPad pad_;
     ThemeEditor::EdCanvasMode mode_ = ThemeEditor::ECM_PICK;
     int repeats_ = 0;
+    ThemeEditor::HeldSelect heldSelect_;     // Select held in Pick: adds to the selection
+    int resizeHandle_ = ThemeEditor::CH_SE;  // the handle Resize mode drags
+
+    // The element list follows a selection made elsewhere (the canvas, the controller)
+    int listPrimary_ = -1;
+    bool listClicked_ = false;
+
+    // The twin page (layout.xml and layout 4x3.xml)
+    ThemeEditor::LayoutSession twin_;
+    std::vector<std::string> twinIssues_;   // the layout check when the twin was opened
+    bool alsoTwin_ = false;      // edits here are copied to the twin
+    bool switchTwin_ = false;    // switch on the next update()
+    ThemeEditor::TwinSync twinSync_;   // what has been copied to the twin so far
+    std::string twinNote_;       // what the last copy did
 
     // Adding elements and files
     bool showPalette_ = false, paletteOpen_ = false;
@@ -202,7 +237,8 @@ private:
     std::string newEvent_ = "onEnter";
     std::string copySource_;      // the path of the element to copy animations from
     std::string replay_;          // an event to play on the preview (engine name), from update()
-    bool showEnd_ = true;         // dashed boxes where onEnter leaves elements
+    bool showEnd_ = true;         // dashed boxes where an event leaves elements
+    std::string endEvent_ = "onEnter";   // which event: onEnter, onMenuScroll..., or "*" for every one
     bool scrollToAnimations_ = false;   // a script's showanims: the panel scrolls to Animations
     std::string openEvent_;       // a script's openevent: the event (full path) to unfold
 

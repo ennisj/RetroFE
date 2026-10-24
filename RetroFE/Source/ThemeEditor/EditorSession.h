@@ -36,6 +36,14 @@
 //   pointerUp    commits, snapped, as one undo step; a drag that ends where
 //                it started changes nothing
 // Escape cancels a drag (cancelDrag).
+//
+// Several widgets can be selected (selection(); the last is the primary,
+// the one the properties panel shows): Ctrl/Shift-click toggles one, a drag
+// that starts on empty canvas (or with Ctrl/Shift anywhere) draws a marquee
+// that selects the widgets wholly inside it, and a drag on any selected
+// widget moves them all. Nudges, delete, duplicate, align and distribute
+// act on all of them, each one undo step. Resizing is one widget's (the
+// primary's): with several selected there are no handles.
 
 #include "EditorCanvas.h"
 #include "ThemeGenerate.h"
@@ -79,32 +87,62 @@ namespace ThemeEditor
         // splash pages, "collections/<c>/layout" for a template
         std::string pageFolder() const;
 
-        // Selection on the current page; -1 = none
+        // Selection on the current page: the primary (-1 = none) and every
+        // selected widget, the primary last. select() makes it just one.
         int selected() const { return selected_; }
         void select(int index);
         bool selectId(const std::string& id);
         const WidgetInstance* selectedWidget() const;
         const WidgetDef* selectedDef() const;
+        const std::vector<int>& selection() const { return selection_; }
+        int selectionCount() const { return static_cast<int>(selection_.size()); }
+        bool isSelected(int index) const;
+        // Several at once (the last one the primary); indices that aren't widgets are dropped
+        void setSelection(const std::vector<int>& indices);
+        void toggleSelected(int index);   // Ctrl-click
+        void addSelected(int index);      // joins as the primary
+        bool dropPrimary();               // the primary leaves; the one picked before it is the primary
+        void selectAll();                 // every widget not hidden in the editor
+        // The selected widgets' boxes (canvasHitRect), in selection() order
+        std::vector<DragRect> selectionBoxes() const;
 
-        // The canvas
-        void pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx);
+        // The canvas. additive: Ctrl or Shift was held (toggle, or a marquee that adds)
+        void pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx, bool additive = false);
         void pointerMove(const CanvasFit& fit, float sx, float sy);
         void pointerUp();
         void cancelDrag();
         bool dragging() const { return drag_.active; }
         bool dragMoved() const { return drag_.active && drag_.moved; }
         int dragHandle() const { return drag_.handle; }
-        // While dragging, where the wireframe is drawn (theme units)
+        // While dragging, where the wireframe is drawn (theme units); for a
+        // group, the box around them
         DragRect dragRect() const { return drag_.rect; }
+        // A drag of several: every selected widget's wireframe moves by this
+        bool groupDrag() const { return drag_.active && drag_.group; }
+        int dragDx() const { return drag_.rect.x - drag_.start.x; }
+        int dragDy() const { return drag_.rect.y - drag_.start.y; }
+        // A marquee being drawn, theme units
+        bool marqueeActive() const { return drag_.active && drag_.marquee; }
+        DragRect marqueeBox() const;
         // Snapping to the 5-unit grid; off moves by whole units
         bool snap = true;
 
-        // Edits on the selected widget; false when nothing changed
-        bool moveBy(int dx, int dy);   // keyboard nudge, not snapped
-        // Moves the selection so its box (canvasHitRect) starts at x, y, as a
-        // drag of its body does: a warped widget keeps its corners' shape.
-        // Coalesces with the current key (setCoalesceKey).
+        // Edits on the selection; false when nothing changed
+        bool moveBy(int dx, int dy);   // keyboard nudge, not snapped; a group stays on the canvas as one box
+        // Moves the primary so its box (canvasHitRect) starts at x, y, and
+        // the others with it, as a drag of its body does: a warped widget
+        // keeps its corners' shape. Coalesces with the current key (setCoalesceKey).
         bool moveTo(int x, int y);
+        // Every selected widget moves by dx, dy (as is: no snapping or
+        // clamping). Coalesces with the current key.
+        bool shiftSelection(int dx, int dy);
+        // Copies of the selected widgets, 20 units down and right (up and
+        // left where that's off the canvas), which become the selection
+        bool duplicateSelected();
+        // Lines the selected widgets up on the box around them (AlignOp,
+        // EditorSelection.h), or spaces three or more evenly
+        bool alignSelected(int op);
+        bool distributeSelected(bool horizontal);
         // Sets the box; a warped widget becomes a plain box (as a resize drag does)
         bool setRect(int x, int y, int w, int h);
         bool setName(const std::string& name);
@@ -114,7 +152,7 @@ namespace ThemeEditor
         bool setVar(const std::string& token, const std::string& value);
         bool resetVar(const std::string& token);
         bool setCanvasHidden(bool hidden);
-        bool removeSelected();
+        bool removeSelected();   // every selected widget
         // Places a widget from the library, centred, and selects it
         bool addWidget(const std::string& defId);
 
@@ -208,6 +246,7 @@ namespace ThemeEditor
             ThemeProject project;
             int page = 0;
             int selected = -1;
+            std::vector<int> selection;
             unsigned revision = 0;
         };
         struct Drag
@@ -215,14 +254,23 @@ namespace ThemeEditor
             bool active = false;
             bool moved = false;
             bool cycleOnClick = false;   // began on the selected widget's body
+            bool group = false;          // several selected widgets move together
+            bool marquee = false;        // a marquee from empty canvas
+            bool additive = false;       // Ctrl / Shift: the marquee adds to the selection
+            int clicked = -1;            // a group drag: the widget it began on (a click selects just it)
             int handle = CH_NONE;
             float startSx = 0, startSy = 0;
             float startTx = 0, startTy = 0;
+            float endTx = 0, endTy = 0;  // a marquee's other corner
             DragRect start;
             DragRect rect;
         };
 
         WidgetInstance* selectedMutable();
+        // Moves widget i by dx, dy (a warp's corners too), no undo step
+        void shiftWidget(int i, int dx, int dy);
+        // Sets the selection list and the primary from it
+        void assignSelection(const std::vector<int>& indices);
         // Takes an undo snapshot (unless coalescing) before a change
         void beginChange(const std::string& key);
         void changed();
@@ -245,6 +293,7 @@ namespace ThemeEditor
         ThemeProject project_;
         int page_ = 0;
         int selected_ = -1;
+        std::vector<int> selection_;   // every selected widget, selected_ last
         Drag drag_;
         std::vector<Snapshot> undo_;
         std::vector<Snapshot> redo_;

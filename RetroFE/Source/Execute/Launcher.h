@@ -30,6 +30,9 @@ public:
     bool run(std::string collection, Item *collectionItem, Page *currentPage = NULL, bool isAttractMode = false);
     // Why the last run() didn't start the game (a sentence), or "" when it did
     const std::string& failure() const { return failure_; }
+    // Whether the last run() started its program at all (it may still have
+    // ended with an error): what counts as a play
+    bool started() const { return started_; }
     void startScript();
     void exitScript();
 	void LEDBlinky( int command, std::string collection = "", Item *collectionItem = NULL);
@@ -47,4 +50,5 @@ private:
     Configuration &config_;
     RetroFE &retroFeInstance_;
     std::string failure_;
+    bool started_ = false;
 };

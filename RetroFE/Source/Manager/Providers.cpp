@@ -33,6 +33,9 @@
 // retroarch (a game's and a system's RetroArch screens)
 #include "Games/RetroArchProvider.h"
 
+// saves (a game's save files and save states)
+#include "Games/SavesProvider.h"
+
 // menus
 #include "Menus/MenuProvider.h"
 
@@ -57,6 +60,9 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
 
     // retroarch
     model.addProvider(std::make_unique<Manager::RetroArchProvider>(services));
+
+    // saves
+    model.addProvider(std::make_unique<Manager::SavesProvider>(services));
 
     // menus
     model.addProvider(std::make_unique<Manager::MenuProvider>(services));

@@ -109,7 +109,7 @@ static const char* const videosLayout = R"(
   </menu>
 
   <container x="530" y="110" width="710" height="400" backgroundColor="000000" backgroundAlpha="0.6" layer="1"/>
-  <reloadableVideo type="video" x="885" y="310" xOrigin="center" yOrigin="center" width="710" maxHeight="400" layer="2"/>
+  <reloadableVideo type="video" imageType="screenshot" x="885" y="310" xOrigin="center" yOrigin="center" width="710" maxHeight="400" layer="2"/>
   <reloadableText type="title" x="885" y="555" xOrigin="center" yOrigin="center" fontSize="30" maxWidth="710" layer="2"/>
 
   <text value="Enter: play    Esc: back    Q: quit" x="center" y="675" xOrigin="center" yOrigin="center" fontSize="20" alpha="0.4" layer="1"/>
@@ -122,9 +122,10 @@ static const char* const videosLayout = R"(
 static const char* const playerLayout = R"(
 <layout width="1280" height="720" loadFontSize="48" fontColor="ffffff">
   <container x="0" y="0" width="1280" height="720" backgroundColor="000000" backgroundAlpha="1" layer="0"/>
-  <reloadableVideo type="video" jukebox="true" x="center" y="center" xOrigin="center" yOrigin="center" width="1280" maxHeight="720" layer="1"/>
+  <reloadableVideo type="video" imageType="screenshot" jukebox="true" x="center" y="center" xOrigin="center" yOrigin="center" width="1280" maxHeight="720" layer="1"/>
 
   <menu menuIndex="0" type="custom" orientation="horizontal" textFallback="true" layer="2">
+    <itemDefaults alpha="0"/>
     <item selected="true" x="0" y="0" alpha="0" fontSize="10"/>
   </menu>
 

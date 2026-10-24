@@ -1983,6 +1983,328 @@ EditResult Editor::removeLauncher(const Index& index, LauncherScope scope, const
     return EditResult{ true, "Deleted the launcher " + def.id + ". Its program stays on the drive.", { def.file } };
 }
 
+EditResult Editor::editLauncher(const Index& index, LauncherScope scope, const std::string& id, const LauncherChange& change)
+{
+    int launcher = index.findLauncher(scope, id);
+    if (launcher < 0) {
+        return EditResult::fail("There's no launcher called \"" + id + "\".");
+    }
+    const LauncherDef& def = index.launchers[static_cast<size_t>(launcher)];
+    if (change.empty()) {
+        return EditResult::fail("No changes to save.");
+    }
+    if (!isInside(def.file, root_)) {
+        return EditResult::fail(def.file + " isn't in RetroFE's folder, so it's left alone.");
+    }
+    if (def.scope != LauncherScope::Global && (change.currentDirectory || change.reboot)) {
+        return EditResult::fail("RetroFE reads the working folder and the restart setting for global launchers only.");
+    }
+    std::vector<std::pair<std::string, std::string>> values;
+    if (change.executable) {
+        std::string value = Utils::trimEnds(*change.executable);
+        if (value.empty()) {
+            return EditResult::fail("Choose the program the launcher runs.");
+        }
+        values.emplace_back("program", value);
+    }
+    if (change.arguments) values.emplace_back("arguments", Utils::trimEnds(*change.arguments));
+    if (change.currentDirectory) values.emplace_back("working folder", Utils::trimEnds(*change.currentDirectory));
+    for (const auto& [what, value] : values) {
+        std::string problem = checkLauncherValue(value, what);
+        if (!problem.empty()) {
+            return EditResult::fail(problem);
+        }
+    }
+
+    ConfFile conf(def.file);
+    std::string error;
+    if (!conf.load(&error) || !conf.exists()) {
+        return EditResult::fail("Couldn't read " + def.file + (error.empty() ? "." : ": " + error));
+    }
+    auto setOrRemove = [&](const std::string& key, const std::string& value) {
+        if (value.empty()) {
+            conf.remove(key);
+            return true;
+        }
+        return conf.set(key, value, error);
+    };
+    bool ok = true;
+    if (change.executable) ok = ok && conf.set("executable", Utils::trimEnds(*change.executable), error);
+    if (change.arguments) ok = ok && setOrRemove("arguments", Utils::trimEnds(*change.arguments));
+    if (change.currentDirectory) ok = ok && setOrRemove("currentDirectory", Utils::trimEnds(*change.currentDirectory));
+    if (change.reboot) ok = ok && setOrRemove("reboot", *change.reboot ? "yes" : "");
+    if (!ok) {
+        return EditResult::fail(error);
+    }
+    if (!conf.dirty()) {
+        return EditResult{ true, "The launcher " + def.id + " already has these settings.", {} };
+    }
+    if (!conf.save(error, &backups_)) {
+        return EditResult::fail(error);
+    }
+    return EditResult{ true, "Saved the launcher " + def.id + ".", { def.file } };
+}
+
+namespace
+{
+    // "a, b, c" with every token equal to from replaced by to; changed says whether any was
+    std::string replaceLauncherToken(const std::string& value, const std::string& from, const std::string& to, bool& changed)
+    {
+        changed = false;
+        std::vector<std::string> names;
+        if (value.find(',') == std::string::npos) {
+            names.push_back(Utils::trimEnds(value));
+        }
+        else {
+            Utils::listToVector(value, names, ',');
+        }
+        std::string out;
+        for (size_t i = 0; i < names.size(); i++) {
+            std::string name = Utils::trimEnds(names[i]);
+            if (name == from) {
+                name = to;
+                changed = true;
+            }
+            out += (i ? ", " : "") + name;
+        }
+        return changed ? out : value;
+    }
+
+    bool hasToken(const std::string& value, const std::string& name)
+    {
+        bool changed = false;
+        replaceLauncherToken(value, name, name + "\x01", changed);
+        return changed;
+    }
+}
+
+Editor::RenameScan Editor::scanLauncherRename(const Index& index, const std::string& id) const
+{
+    RenameScan scan;
+    scan.id = id;
+    int launcher = index.findLauncher(LauncherScope::Global, id);
+    if (launcher < 0) {
+        scan.problem = "There's no global launcher called \"" + id + "\". Only global launchers can be renamed: a collection's "
+                       "own launcher is named after its collection.";
+        return scan;
+    }
+    const LauncherDef& def = index.launchers[static_cast<size_t>(launcher)];
+    if (!isInside(def.file, root_)) {
+        scan.problem = def.file + " isn't in RetroFE's folder, so it's left alone.";
+        return scan;
+    }
+
+    // Its file in every platform's folder: a system's "launcher =" is shared by
+    // all of them. Every file name there, for the new name's clash check.
+    for (const char* os : { "windows", "linux", "apple" }) {
+        std::string folder = Utils::combinePath(root_, std::string("launchers.") + os);
+        std::error_code ec;
+        if (!fs::is_directory(folder, ec)) {
+            continue;
+        }
+        for (const auto& entry : fs::directory_iterator(folder, ec)) {
+            std::string file;
+            if (!narrowName(entry.path().filename(), file)) {
+                continue;
+            }
+            scan.taken.emplace_back(std::string("launchers.") + os, file);
+            if (file == def.name + ".conf") {
+                scan.files.emplace_back(std::string("launchers.") + os, folder);
+            }
+        }
+    }
+    if (scan.files.empty()) {
+        scan.problem = "Its file " + def.file + " wasn't found.";
+        return scan;
+    }
+
+    // Systems' "launcher =" lines and games' launcher files that name it
+    for (const CollectionRecord& record : index.collections) {
+        const std::string& c = record.name;
+        ConfLayers layers(record.folder, ConfLayers::collectionFileNames());
+        layers.load();
+        bool fromFolder = false;
+        std::string source = normalPath(index.properties.sourceFile("collections." + c + ".launcher"));
+        for (size_t i = 0; i < layers.size(); i++) {
+            const ConfFile& file = layers.file(i);
+            if (!source.empty() && iequals(normalPath(file.path()), source)) {
+                fromFolder = true;
+            }
+            std::optional<std::string> value = file.get("launcher");
+            if (value && hasToken(*value, def.id)) {
+                // Every file naming it, also one another file overrides, so it still works if that one goes
+                scan.settings.push_back(RenameScan::Setting{ c, layers.fileName(i), file.path(), *value });
+            }
+        }
+        // RetroFE reads the global settings first and a collection's own files
+        // over them (settings.conf, settings1..15.conf, info.conf: the last
+        // one wins); the value it ends up with must come from one of those
+        std::string effective = index.properties.getOr("collections." + c + ".launcher", "");
+        // (no source and a launcher file of its own: RetroFE named the collection's own launcher)
+        bool ownFile = source.empty() && index.properties.prefixExists("collectionLaunchers." + c);
+        if (hasToken(effective, def.id) && !fromFolder && !ownFile) {
+            scan.problem = c + " gets its launcher (" + effective + ") from outside its own folder"
+                + (source.empty() ? std::string() : " (" + source + ")") + ", so it can't be changed here. Change it there first.";
+            return scan;
+        }
+        // A game's pick means the collection's local launcher of that name when there is one (Launcher::run)
+        bool localOfThatName = index.properties.prefixExists("localLaunchers." + c + "." + def.id);
+        for (const auto& [game, line] : record.launcherOverrides) {
+            if (line && *line == def.id && !localOfThatName) {
+                scan.games.emplace_back(c, Utils::combinePath(record.folder, "launchers", game + ".conf"));
+                scan.gameNames.push_back(game);
+            }
+        }
+    }
+    return scan;
+}
+
+Editor::RenamePlan Editor::planLauncherRename(const Index& index, const std::string& id, const std::string& newName) const
+{
+    return planLauncherRename(index, scanLauncherRename(index, id), newName);
+}
+
+Editor::RenamePlan Editor::planLauncherRename(const Index& index, const RenameScan& scan, const std::string& newName) const
+{
+    RenamePlan plan;
+    const std::string& id = scan.id;
+    std::string name = newName;
+    if (!scan.problem.empty()) {
+        plan.problem = scan.problem;
+        return plan;
+    }
+    if (name.empty()) {
+        plan.problem = "Type the new name.";
+        return plan;
+    }
+    if (name == id) {
+        plan.problem = "That's its name already.";
+        return plan;
+    }
+    if (iequals(name, id)) {
+        plan.problem = "Only the case would change. Rename it to another name first, then to this one.";
+        return plan;
+    }
+    plan.problem = checkNewLauncherName(index, name);
+    if (!plan.problem.empty()) {
+        return plan;
+    }
+    for (const auto& [folder, file] : scan.taken) {
+        if (iequals(file, name + ".conf")) {
+            plan.problem = "There's already a launcher file called " + folder + "/" + file + ".";
+            return plan;
+        }
+    }
+    int launcher = index.findLauncher(LauncherScope::Global, id);
+    std::string stem = launcher >= 0 ? index.launchers[static_cast<size_t>(launcher)].name : id;
+    for (const auto& [label, folder] : scan.files) {
+        plan.renames.emplace_back(Utils::combinePath(folder, stem + ".conf"), Utils::combinePath(folder, name + ".conf"));
+        plan.changes.push_back(label + "/" + stem + ".conf becomes " + name + ".conf");
+    }
+    for (const RenameScan::Setting& setting : scan.settings) {
+        bool changed = false;
+        plan.settingsFiles.push_back(setting.path);
+        plan.changes.push_back(setting.collection + "/" + setting.fileName + ": launcher = " + setting.value
+                               + " becomes launcher = " + replaceLauncherToken(setting.value, id, name, changed));
+    }
+    for (size_t i = 0; i < scan.games.size(); i++) {
+        plan.gameFiles.push_back(scan.games[i].second);
+        plan.changes.push_back(scan.games[i].first + "/launchers/" + scan.gameNames[i] + ".conf: the game " + scan.gameNames[i]
+                               + " picks " + name);
+    }
+    return plan;
+}
+
+EditResult Editor::renameLauncher(const Index& index, const std::string& id, const std::string& newName)
+{
+    RenamePlan plan = planLauncherRename(index, id, newName);
+    if (!plan.problem.empty()) {
+        return EditResult::fail(plan.problem);
+    }
+    // What each touched file held before, to put it back if a step fails
+    struct Before
+    {
+        std::string path;
+        bool existed = false;
+        std::string content;
+    };
+    std::vector<Before> touched;
+    auto remember = [&](const std::string& path) {
+        Before before;
+        before.path = path;
+        before.existed = readFile(path, before.content);
+        touched.push_back(before);
+    };
+    auto undo = [&](const std::string& why) {
+        std::string ignored;
+        for (auto it = touched.rbegin(); it != touched.rend(); ++it) {
+            std::error_code ec;
+            if (it->existed) {
+                writeFileAtomic(it->path, it->content, ignored);
+            }
+            else {
+                fs::remove(it->path, ec);
+            }
+        }
+        EditResult result = EditResult::fail(why + " Nothing was changed.");
+        return result;
+    };
+
+    std::string error;
+    for (const auto& [from, to] : plan.renames) {
+        remember(to);
+        if (!backups_.beforeChange(to, error) || !copyFileAtomic(from, to, error)) {
+            return undo("Couldn't write " + to + ": " + error + ".");
+        }
+    }
+    for (const std::string& path : plan.settingsFiles) {
+        ConfFile file(path);
+        if (!file.load(&error)) {
+            return undo("Couldn't read " + path + ": " + error + ".");
+        }
+        bool changed = false;
+        std::string value = replaceLauncherToken(file.get("launcher", ""), id, newName, changed);
+        remember(path);
+        if (changed && (!file.set("launcher", value, error) || !file.save(error, &backups_))) {
+            return undo("Couldn't change " + path + ": " + error + ".");
+        }
+    }
+    for (const std::string& path : plan.gameFiles) {
+        std::string content;
+        if (!readFile(path, content)) {
+            return undo("Couldn't read " + path + ".");
+        }
+        Lines lines = Lines::parse(content);
+        if (lines.lines.empty() || lines.lines[0].text != id) {
+            continue;   // changed since the index was built
+        }
+        remember(path);
+        lines.lines[0].text = newName;
+        lines.lines[0].eol = "\n";   // as setGameLauncher writes it: RetroFE reads only this line
+        if (!backups_.beforeChange(path, error) || !writeFileAtomic(path, lines.join(), error)) {
+            return undo("Couldn't change " + path + ": " + error + ".");
+        }
+    }
+    for (const auto& [from, to] : plan.renames) {
+        remember(from);
+        if (!backups_.removeKeepingOriginal(from, error)) {
+            return undo("Couldn't remove " + from + ": " + error + ".");
+        }
+    }
+    EditResult result;
+    result.ok = true;
+    for (const Before& before : touched) {
+        result.files.push_back(before.path);
+    }
+    size_t systems = plan.settingsFiles.size();
+    size_t games = plan.gameFiles.size();
+    result.message = "Renamed " + id + " to " + newName + "."
+        + (systems + games == 0 ? std::string()
+           : " Changed " + (systems ? count(systems, "settings file", "settings files") : std::string())
+             + (systems && games ? " and " : "") + (games ? count(games, "game's launcher file", "games' launcher files") : std::string()) + ".");
+    return result;
+}
+
 EditResult Editor::writeMediaText(const MediaSlot& slot, const std::string& text)
 {
     if (slot.kind != MediaKind::Text) {

@@ -1076,6 +1076,11 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
         size_ = game->file.empty() || ec ? "" : describeSize(bytes);
         PlayStats stats = readPlayStats(idx->options.root, own.name, game->name);
         played_ = describePlays(stats);
+        if (stats.count <= 0) {
+            std::string why = playsNotCounted(idx->properties.getOr("lastPlayedSkipCollection"),
+                                              idx->properties.getOr("lastplayedSize", "10"), own.name);
+            if (!why.empty()) played_ = why;
+        }
         timePlayed_ = stats.seconds >= 1 ? describeTime(stats.seconds) : "";
         overrides_ = services_.editor ? services_.editor->metadataOverrides(*idx, own.name, game->name)
                                       : std::map<std::string, std::string>();
@@ -1825,6 +1830,32 @@ GameProvider::PlayStats GameProvider::readPlayStats(const std::string& root, con
         }
     });
     return stats;
+}
+
+std::string GameProvider::playsNotCounted(const std::string& skipCollections, const std::string& lastPlayedSize,
+                                          const std::string& system)
+{
+    // RetroFE (as upstream) counts a play only when lastPlayedSkipCollection is
+    // set and doesn't name the game's system, and lastplayedSize isn't 0
+    std::string skip = Utils::trimEnds(skipCollections);
+    if (skip.empty()) {
+        return "Not counted (set lastPlayedSkipCollection to count plays)";
+    }
+    size_t start = 0;
+    while (start <= skip.size()) {
+        size_t comma = skip.find(',', start);
+        std::string name = Utils::trimEnds(skip.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+        if (name == system) {
+            return "Not counted (lastPlayedSkipCollection skips " + system + ")";
+        }
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    std::string size = Utils::trimEnds(lastPlayedSize);
+    if (!size.empty() && std::atoi(size.c_str()) <= 0) {
+        return "Not counted (lastplayedSize is 0)";
+    }
+    return "";
 }
 
 std::string GameProvider::describePlays(const PlayStats& stats)

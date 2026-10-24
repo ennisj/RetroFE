@@ -62,7 +62,7 @@
     </menu>
 
     <!-- The selected video, playing (its own file); the title and details under it -->
-    <reloadableVideo type="video" x="1225" y="490" width="630" maxHeight="700" xOrigin="center" yOrigin="center" layer="9">
+    <reloadableVideo type="video" imageType="screenshot" x="1225" y="490" width="630" maxHeight="700" xOrigin="center" yOrigin="center" layer="9">
         <onEnter>          <set duration=".2"><animate type="alpha" from="0" to="1"/></set></onEnter>
         <onExit>           <set duration=".1"><animate type="alpha" to="0"/></set></onExit>
         <onMenuEnter>      <set duration=".2"><animate type="alpha" from="0" to="1"/></set></onMenuEnter>

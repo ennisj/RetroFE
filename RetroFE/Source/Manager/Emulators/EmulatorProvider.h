@@ -17,6 +17,7 @@
 
 #include "Launchers.h"
 #include "../EditBuffer.h"
+#include "../../Library/Edits.h"
 #include "../Provider.h"
 #include <map>
 #include <memory>
@@ -35,10 +36,14 @@
 //                      emulator:games rows, opening the system / game screens)
 //   emulator-new       add a launcher; param name prefills the name (from an
 //                      unresolved row), params from + fromScope copy a launcher
+//   emulator-edit      change a launcher in place (id + scope): program,
+//                      arguments, and for global launchers the working folder
+//                      and restart; Save / Reset / Put back the original
+//   emulator-rename    rename a global launcher and every reference to it,
+//                      with a preview of the files that change
 //
-// Existing launchers are read-only (their program and arguments are never
-// changed); a copy can be changed before it's created. Writes go through
-// Library::Editor::addLauncher / removeLauncher.
+// Writes go through Library::Editor::addLauncher / removeLauncher /
+// editLauncher / renameLauncher.
 class EmulatorProvider : public Manager::Provider
 {
 public:
@@ -54,6 +59,7 @@ public:
     std::string get(const std::string& key, const Manager::Screen& screen) override;
     void set(const std::string& key, const std::string& value, const Manager::Screen& screen) override;
     Forms::Rows rows(const std::string& key, size_t limit, const Manager::Screen& screen) override;
+    std::vector<std::string> list(const std::string& key, const Manager::Screen& screen) override;
     std::vector<std::pair<std::string, std::string>> options(const std::string& key, const Manager::Screen& screen) override;
     std::string actionProblem(const std::string& action, const Manager::Screen& screen) override;
     Forms::Model::Result runAction(const std::string& action, const Manager::Screen& screen) override;
@@ -102,6 +108,22 @@ private:
     std::string createProblem();
     Forms::Model::Result create();
 
+    // emulator-edit: the buffer holds the file's values (read from disk, so
+    // a save shows at once, before the index catches up)
+    std::string editKey(const Manager::Screen& screen) const;
+    bool syncEdit(const Manager::Screen& screen);   // false while the launcher can't be found
+    void loadEdit(const Manager::Screen& screen);
+    std::string editExecutable();   // as it would be written
+    std::string editArguments();
+    Library::Editor::LauncherChange editChange();
+    std::string saveProblem(const Manager::Screen& screen);
+    Forms::Model::Result saveEdit(const Manager::Screen& screen);
+    Forms::Model::Result restoreEdit(const Manager::Screen& screen);
+
+    // emulator-rename
+    const Library::Editor::RenamePlan& renamePlan(const Manager::Screen& screen);
+    Forms::Model::Result rename(const Manager::Screen& screen);
+
     Manager::Services services_;
     std::shared_ptr<const Library::Index> snapshot_;
     std::vector<Entry> entries_;
@@ -121,4 +143,27 @@ private:
     Manager::EditBuffer draft_;
     std::string checkedExecutable_ = "\x01";
     Emulators::ExecutableCheck executableCheck_;
+
+    Manager::EditBuffer edit_;
+    std::string editFile_;
+    bool editGlobal_ = false;
+    bool editHasOriginal_ = false;      // a copy of the file is kept and the file differs from it
+    std::vector<std::string> editOtherPlatforms_;   // launchers.<other os> folders with a file of the same name
+    std::string editCheckedExecutable_ = "\x01";
+    Emulators::ExecutableCheck editExecutableCheck_;
+
+    std::string renameTo_;
+    std::string renameFor_;
+    std::string plannedKey_ = "\x01";
+    const Library::Index* plannedIn_ = nullptr;
+    Library::Editor::RenamePlan plan_;
+    const Library::Index* scannedIn_ = nullptr;
+    Library::Editor::RenameScan scan_;
+
+public:
+    // How many times the rename screen read the collections' settings (tests)
+    unsigned renameScans() const { return scans_; }
+
+private:
+    unsigned scans_ = 0;
 };

@@ -197,6 +197,8 @@ namespace Library
 
         // RetroArch's key = "value" files: the first line for a key wins
         std::map<std::string, std::string> parseConfig(const std::string& text);
+        // A file's values as RetroArch reads them, following #include lines (empty when it can't be read)
+        std::map<std::string, std::string> readConfigFile(const std::string& path);
         // Sets (value) or removes (nullopt) keys, keeping every other line as it was
         std::string editConfig(const std::string& text, const std::map<std::string, std::optional<std::string>>& edits);
         // Equal as RetroArch would read them: the same text ignoring case, or the same number
