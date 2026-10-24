@@ -50,6 +50,10 @@ public:
     void deInitialize();
     virtual void onNewItemSelected();
     virtual void onNewScrollItemSelected();
+    // Fork compat (OneSauce): reloadable media showing a file of a media
+    // folder move to its next file; the others are left alone
+    // (ReloadableMedia::pickAnotherMedia)
+    void pickAnotherMedia();
     void returnToRememberSelectedItem();
     void rememberSelectedItem();
     std::map<std::string, size_t> getLastPlaylistOffsets() const;

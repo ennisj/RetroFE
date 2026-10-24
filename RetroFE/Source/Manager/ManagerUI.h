@@ -79,6 +79,13 @@ public:
 
     void close();
 
+    // RetroFE's window was closed: asks the screens as closing Manage does
+    // (Provider::leaving; a screen with its own unsaved-changes dialog shows
+    // it). True when Manage closed and RetroFE may quit (a reload the changes
+    // asked for is dropped: they're saved, and RetroFE is quitting); false
+    // when it warned instead, and closing the window again leaves, dropping them.
+    bool requestQuit();
+
     // The Catalog, which keeps working while the screens are closed; null before initialize()
     Catalog::Service* catalog() { return catalog_.get(); }
 

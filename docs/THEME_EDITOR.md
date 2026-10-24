@@ -445,6 +445,9 @@ window, and anything it logs is reported. It also checks the theme has
 report goes to the console and, if given, the report file. A hand-made menu
 without `<itemDefaults>` (which used to crash RetroFE; it now gets empty
 defaults) is reported, as is a vertical menu whose items have no height.
+Names from OneSauce's themes that [ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md)
+lists as ignored (`hwdec`, `Height`, `pauseTime`, ...) aren't problems
+here: one "ignored (OneSauce)" line counts them.
 
 ## For testing: scripted editing
 

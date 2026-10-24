@@ -59,9 +59,59 @@ namespace LayoutCompat
     constexpr float maxCoordinate = 100000.0f;
 
     // mode="layout_preferred": layoutFolder when it has <basename>.<one of
-    // extensions>, else normalFolder
+    // extensions> (or a media folder <basename>/, below), else normalFolder
     std::string preferredFolder(const std::string& layoutFolder, const std::string& normalFolder,
                                 const std::string& basename, const std::vector<std::string>& extensions);
+
+    // Media folders. Where <prefix>.<ext> is missing, a folder <prefix>/
+    // holding files with those extensions (any names) stands for it:
+    // system_artwork/video/ for system_artwork/video.mp4,
+    // medium_artwork/video/<game>/ for medium_artwork/video/<game>.mp4,
+    // medium_artwork/background/default/ for .../default.png. One of its
+    // files is shown; the media lookup's "another" request (removePlaylist,
+    // OneSauce's B: "play different video") moves to the next.
+
+    // The folder's files with one of extensions (compared ignoring case), in
+    // natural order (naturalLess); empty when it isn't a folder. Full paths.
+    std::vector<std::string> mediaFolderFiles(const std::string& folder, const std::vector<std::string>& extensions);
+
+    // Which of files to show. current is the file showing now ("" if none):
+    // it stays while it's one of them (the same folder serves the next item
+    // too), or, when another is asked for, the next one in order does
+    // (wrapping). Otherwise random picks one (any number: rand()).
+    // files must not be empty.
+    size_t pickMediaFile(const std::vector<std::string>& files, const std::string& current, bool another, unsigned random);
+
+    // Names compared ignoring case, runs of digits as numbers ("Video 2" before "Video 10")
+    bool naturalLess(const std::string& a, const std::string& b);
+
+    // A file of the media folder <prefix>/ chosen by pickMediaFile, or false.
+    // prefix is relative to RetroFE's folder or absolute. Cached for the run,
+    // like findMatchingFile: each parent folder's subfolder names are read
+    // once (so a miss costs no file system call), each media folder's files
+    // once per extension list (pass the caller's static list).
+    bool findMediaFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
+                             const std::string& current, bool another, unsigned random, std::string& file);
+
+    // RetroFE's lookup of <prefix>.<ext> (Utils::findMatchingFile, unchanged
+    // when such a file exists), else findMediaFolderFile.
+    bool findMedia(const std::string& prefix, const std::vector<std::string>& extensions,
+                   const std::string& current, bool another, unsigned random, std::string& file);
+
+    // One step of the reloadable media lookup (ReloadableMedia::findComponent):
+    // <folder>/<basename>.<one of fileExtensions> as upstream (file set,
+    // fromFolder false), else a media folder's file (fromFolder true), else
+    // nothing. No media folder at a game's own ROM folder step (romFolder:
+    // a PC game's video\ or music\ there isn't art), nor when a file with one
+    // of folderExtensions exists (the image builders also take .webp).
+    struct MediaLookup
+    {
+        std::string file;
+        bool fromFolder = false;
+    };
+    MediaLookup lookupMediaStep(const std::string& folder, const std::string& basename, bool romFolder,
+                                const std::vector<std::string>& fileExtensions, const std::vector<std::string>& folderExtensions,
+                                const std::string& current, bool another, unsigned random);
 
     // <scrollingText src>: src against the page's folder, then the layout's
     // folder, as an image's src; "" when neither exists. Normalised.

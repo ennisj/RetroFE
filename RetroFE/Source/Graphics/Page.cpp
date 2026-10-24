@@ -21,6 +21,7 @@
 #include "Component/Text.h"
 #include "../Utility/Log.h"
 #include "Component/ScrollingList.h"
+#include "Component/ReloadableMedia.h"
 #include "../Sound/Sound.h"
 #include "ComponentItemBindingBuilder.h"
 #include "PageBuilder.h"
@@ -196,6 +197,18 @@ void Page::onNewItemSelected()
         for (Component* component : layer) {
             if (component) {
                 component->setNewItemSelected();
+            }
+        }
+    }
+}
+
+
+void Page::pickAnotherMedia()
+{
+    for (auto& layer : LayerComponents_) {
+        for (Component* component : layer) {
+            if (auto* media = dynamic_cast<ReloadableMedia*>(component)) {
+                media->pickAnotherMedia();
             }
         }
     }

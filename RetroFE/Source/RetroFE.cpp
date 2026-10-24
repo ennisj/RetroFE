@@ -24,6 +24,7 @@
 #include "Collection/Item.h"
 #include "Collection/MenuParser.h"
 #include "Collection/VideoCollections.h"
+#include "Control/InputToken.h"
 #include "Control/UserInput.h"
 #include "Database/Configuration.h"
 #include "Database/GlobalOpts.h"
@@ -276,6 +277,8 @@ void RetroFE::launchExit()
 			input_.update(e);
 		}
 	}
+	// A close while the game ran was meant for the game, not RetroFE
+	windowCloseRequested_ = false;
 	input_.resetStates();
 	//attract_.reset();
 	currentPage_->updateReloadables(0);
@@ -322,8 +325,19 @@ void RetroFE::freeGraphicsMemory()
 		}
 
 		manager_.deInitialize();
+		// SDL_Quit drops event watches: allocateGraphicsMemory adds it back
+		watchWindowClose(false);
 		SDL::deInitialize();
 		input_.clearJoysticks();
+	}
+}
+
+void RetroFE::watchWindowClose(bool on)
+{
+	SDL_DelEventWatch(windowCloseWatch, this);   // never twice
+	if (on)
+	{
+		SDL_AddEventWatch(windowCloseWatch, this);
 	}
 }
 
@@ -337,6 +351,7 @@ void RetroFE::allocateGraphicsMemory()
 	if (unloadSDL)
 	{
 		SDL::initialize(config_);
+		watchWindowClose(true);
 		currentPage_->initializeFonts();
 		manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0), &fontcache_);
 	}
@@ -409,11 +424,27 @@ bool RetroFE::deInitialize()
 }
 
 // Run RetroFE
+int SDLCALL RetroFE::windowCloseWatch(void* context, SDL_Event* event)
+{
+	if (event->type == SDL_QUIT || (event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_CLOSE))
+	{
+		static_cast<RetroFE*>(context)->windowCloseRequested_ = true;
+	}
+	return 0;
+}
+
 bool RetroFE::run()
 {
 	// Initialize SDL
 	if (!SDL::initialize(config_))
 		return false;
+	windowCloseRequested_ = false;
+	watchWindowClose(true);
+	struct WatchRemover
+	{
+		RetroFE* self;
+		~WatchRemover() { self->watchWindowClose(false); }
+	} watchRemover{ this };
 	if (!fontcache_.initialize())
 		return false;
 	manager_.initialize(SDL::getWindow(0), SDL::getRenderer(0), &fontcache_);
@@ -544,6 +575,7 @@ bool RetroFE::run()
 	state = RETROFE_ENTER;
 	bool splashMode = true;
 	bool exitSplashMode = false;
+	bool leavingSplash = false;   // quit (key or window close) on the splash page: leave once started
 	// don't show splash
 	bool screensaver = false;
 	config_.getProperty(OPTION_SCREENSAVER, screensaver);
@@ -606,12 +638,62 @@ bool RetroFE::run()
 					input_.resetStates();
 					attract_.reset();
 				}
-				else if (input_.keystate(UserInput::KeyCodeQuit))
+				else if (input_.keystate(UserInput::KeyCodeQuit) && !leavingSplash)
 				{
-					l.exitScript();
-					running = false;
-					break;
+					LOG_INFO("RetroFE", "Quitting once RetroFE has finished starting");
+					leavingSplash = true;
 				}
+			}
+		}
+
+		// Quitting from the splash page: the start-up thread may still be filling
+		// the databases (a first run imports all the metadata), so the splash
+		// keeps drawing until it's done, then RetroFE leaves
+		if (leavingSplash && (initialized || initializeError))
+		{
+			SDL_WaitThread(initializeThread, &initializeStatus);
+			initializeThread = nullptr;
+			l.exitScript();
+			running = false;
+			break;
+		}
+
+		// The window was closed: quit as the quit control does, once RetroFE is
+		// idle (or still on the splash page). Kiosk mode ignores it; Manage
+		// asks its screens about unsaved changes first (closing again leaves).
+		if (windowCloseRequested_ && (splashMode || state == RETROFE_IDLE))
+		{
+			windowCloseRequested_ = false;
+			// quit = (bound to nothing) means nobody may leave
+			std::string quitInputs;
+			bool quitUnbound = config_.getProperty("controls.quit", quitInputs) &&
+				InputToken::split(quitInputs).empty();
+			if (kioskLock_)
+			{
+				LOG_NOTICE("RetroFE", "Window close ignored: kiosk mode is on (the quit control still quits)");
+			}
+			else if (quitUnbound)
+			{
+				LOG_NOTICE("RetroFE", "Window close ignored: the quit control is bound to nothing");
+			}
+			else if (splashMode)
+			{
+				LOG_INFO("RetroFE", "Window closed: quitting once RetroFE has finished starting");
+				leavingSplash = true;
+			}
+			else if (!manager_.isOpen() || manager_.requestQuit())
+			{
+				LOG_INFO("RetroFE", "Window closed: quitting");
+				if (player_.isOpen())
+				{
+					player_.close();
+				}
+				attract_.reset();
+				input_.resetStates();
+#ifdef WIN32
+				Utils::postMessage("MediaplayerHiddenWindow", 0x8001, 51, 0);
+#endif
+				state = RETROFE_QUIT_REQUEST;
 			}
 		}
 
@@ -688,7 +770,7 @@ bool RetroFE::run()
 			}
 
 			// Handle end of splash mode
-			if ((initialized || initializeError) && splashMode &&
+			if ((initialized || initializeError) && splashMode && !leavingSplash &&
 				(exitSplashMode ||
 					(currentPage_->getMinShowTime() <= (currentTime_ - preloadTime) && !(currentPage_->isPlaying()))))
 			{
@@ -3089,6 +3171,9 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 		{
 			attract_.reset();
 			page->rememberSelectedItem();
+			// Fork compat: OneSauce's themes say "B: play different video (if
+			// available)" on menus, B being removePlaylist: a media folder shows its next file
+			page->pickAnotherMedia();
 			page->removePlaylist();
 
 			// don't trigger playlist change events but refresh item states
