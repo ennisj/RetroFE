@@ -14,12 +14,18 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../../Forms/BuiltinForms.h"
+#include "../Games/RetroArchForms.h"
 #include "SystemForms.h"
 
 // The Systems screens, opened from Manage: "systems", "system" and the
 // "system-..." screens below it, served by SystemProvider (prefix "system").
-// Their templates are shared with Videos (SystemForms.cpp).
+// Their templates are shared with Videos (SystemForms.cpp). The system's
+// RetroArch screens ("system-retroarch"...) are the core-wide ones, served by
+// RetroArchProvider (Manager/Games/RetroArchForms.cpp).
 Forms::BuiltinTable Forms::systemsForms()
 {
-    return Manager::systemForms(false);
+    BuiltinTable table = Manager::systemForms(false);
+    const BuiltinTable& retroArch = Manager::retroArchForms(true);
+    table.insert(table.end(), retroArch.begin(), retroArch.end());
+    return table;
 }

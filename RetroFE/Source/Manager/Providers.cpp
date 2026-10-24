@@ -30,6 +30,9 @@
 // games
 #include "Games/GameProvider.h"
 
+// retroarch (a game's and a system's RetroArch screens)
+#include "Games/RetroArchProvider.h"
+
 // menus
 #include "Menus/MenuProvider.h"
 
@@ -51,6 +54,9 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
 
     // games
     model.addProvider(std::make_unique<Manager::GameProvider>(services));
+
+    // retroarch
+    model.addProvider(std::make_unique<Manager::RetroArchProvider>(services));
 
     // menus
     model.addProvider(std::make_unique<Manager::MenuProvider>(services));
