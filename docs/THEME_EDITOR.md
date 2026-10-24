@@ -61,8 +61,10 @@ hand-made ones included, that has no `splash.xml`.
   - Drag to move; drag one of the eight handles to resize. Moves snap to a
     5-unit grid (*Snap to grid* turns that off). The page is rebuilt when you
     let go.
-  - Arrow keys nudge the selection by 1 (Shift: 10); Delete removes it.
+  - Arrow keys nudge the selection by 1 (Shift: 10); Delete removes it;
+    Ctrl+D duplicates it (the copy goes 20 units down and right).
   - *Show* turns art and video, text, and animations off in the preview only.
+  - Several at once: see [Several at once](#several-at-once).
 - **Right: the selected widget.** Name, position and size, layer (0 is
   drawn first, 19 on top), opacity, text colour where it has one, and the
   widget's own settings: switches, choices, numbers, colours, text and files.
@@ -72,11 +74,42 @@ hand-made ones included, that has no `splash.xml`.
   Ctrl+Y and Ctrl+S work too. Under the canvas the editor says what the
   generator warned about and anything RetroFE logged building the page.
 
+The widget list follows the selection: a widget picked on the canvas (or
+with the controller) is scrolled into view there.
+
 Save shows what it did when there's something to know: warnings, and **pages
 it removed** (a page an earlier save wrote that the theme no longer has).
 Leaving with unsaved changes (Close, Escape, Back or the Settings key) asks
 first: Save (Enter) / Don't save (D) / Cancel (Escape). In Add widget, type to
 search and press Enter to add the first match.
+
+## Several at once
+
+Both editors can select several widgets (in the layout editor, elements)
+and change them together:
+
+- **Selecting**: Ctrl-click or Shift-click one on the canvas to add it to
+  the selection or take it out; in the list, Ctrl-click adds or removes one
+  and Shift-click takes everything between the last one picked and the one
+  clicked. Dragging from an empty part of the canvas draws a box: what's
+  wholly inside it is selected. With Ctrl or Shift held the box can start
+  anywhere (a hand-made page's background usually covers the whole page)
+  and adds to the selection. Ctrl+A selects everything on the canvas.
+  Escape (or Back) keeps only the last one picked.
+- **Moving**: dragging any of them moves them all, snapped as one box;
+  the arrow keys nudge them all. A group stays on the page as one box.
+- **The properties panel** shows *N selected* with **Left, Centre, Right,
+  Top, Middle, Bottom** (they line up on the box around them; sizes don't
+  change), **Space across / Space down** (three or more: the outer two stay
+  and the others get equal gaps), **Duplicate them**, **Delete them** and
+  **Only this one**. Below that are the settings of the last one picked.
+- Every one of these is a single undo step.
+- Resizing is one at a time: with several selected there are no handles.
+- In the layout editor, positions are written as numbers, as a drag writes
+  them (aligning a `x="center"` element sideways makes its `x` a number); an
+  element that can't be moved here (a vertical menu's generated slots) can be
+  selected but stays put. Duplicate copies each element right after itself;
+  one inside another selected element (a menu's item) goes with it.
 
 ## With a controller
 
@@ -95,16 +128,26 @@ what the controls do there.
     middle. Past the last one in a direction, the focus moves to the region
     that way (left: the theme panel, right: the properties, up: the
     toolbar). Letter up / Letter down select the previous / next one in list
-    order. Select starts moving it (with nothing selected, it opens Add
-    widget / Add element). Back leaves the editor, asking first about
-    unsaved changes.
+    order. Select (when it's let go) starts moving it (with nothing selected,
+    it opens Add widget / Add element). Back leaves the editor, asking first
+    about unsaved changes; with several selected it keeps only the last one
+    picked instead.
+  - **Several at once: hold Select** and press a direction: the nearest one
+    that way joins the selection (and becomes the one the next press goes
+    on from), one per press (holding the direction doesn't add a run). Letter up / down while holding Select add the previous / next
+    in list order, Back drops the last one added. Let go of Select and press
+    it again to move them all.
   - **Move** (cyan outline): the directions move the selection by the snap
     grid (5 units, or 1 with *Snap to grid* off). Holding a direction speeds
     up: four times the step after a moment, ten times after a while. Select
-    switches to Resize; Back goes back to Pick.
-  - **Resize** (pink outline, the bottom-right handle enlarged): the
-    directions move the bottom-right corner, with the same speed-up. Select
-    or Back go back to Pick.
+    switches to Resize (with several selected, back to Pick); Back goes back
+    to Pick.
+  - **Resize** (pink outline, the handle being dragged enlarged): the
+    directions move that handle, with the same speed-up. It starts on the
+    bottom-right corner; **Letter up / Letter down** step round the eight
+    handles (bottom edge, bottom-left corner, left edge, top-left corner...),
+    as the mouse can grab any of them: an edge moves one way only, the
+    opposite edge stays put. Select or Back go back to Pick.
   A run of moves and resizes is one undo step. A vertical menu's generated
   slots can't be moved (the status line says so): change the menu's settings
   instead.
@@ -225,7 +268,8 @@ spacing, the order of attributes, quotes, line endings.
   the Manage screens' pages (`forms/**`). Under it, the page's elements in
   file order: the page itself (`<layout>`: its size, font and colour), then
   each element, with a menu's `<itemDefaults>` and `<item>`s under it.
-  Elements greyed out draw nothing on the page (sounds, for instance).
+  Elements greyed out draw nothing on the page (sounds, for instance). An
+  element picked on the canvas is scrolled into view in the list.
 - **Middle: the canvas.** The page as RetroFE builds it, from the text being
   edited, with the collection in *Preview with* (a collection's own page
   previews with that collection), and every element's box over it (*All
@@ -246,8 +290,55 @@ spacing, the order of attributes, quotes, line endings.
 - **Top:** *Where animations end* draws a dashed box where an element's
   `onEnter` leaves it, when that isn't where it's placed (Aeon Nox's top bar
   is placed above the page and slides down to it); with *All boxes*, every
-  element's. *Play the start* builds the preview again, so every `onEnter`
-  plays.
+  element's. The list beside it picks another event (*after onMenuScroll*,
+  *after onHighlightEnter*...) or *every event*: then the selected element
+  gets a box, labelled, for each of its events that moves it. Each box
+  starts from where the element is placed and takes the last value each
+  change of the event gives, so an event that plays after another (a
+  `onMenuExit` after a `onMenuEnter`) is shown from the placed box, not from
+  where the other left it. *Play the start* builds the preview again, so
+  every `onEnter` plays.
+
+### layout.xml and layout 4x3.xml together
+
+Most hand-made themes have a 16:9 page and a 4:3 one with the same elements
+at different positions. When the page being edited has one (`layout.xml`
+and `layout 4x3.xml` in the same folder, either way round), a row under the
+toolbar offers:
+
+- **Also apply to layout 4x3.xml**: every change on this page is made to the
+  same element on the other page too, as text, changing only those bytes
+  there. *The same element* is looked for under the same parent (the page,
+  the same menu): the one in the same place among as many of its tag, with
+  the same `type`, `src`, `id` and the like; else the only one like it; else
+  the one in the same place that differs only by its file or text (`src`,
+  `value`). A wheel's items pair up by their place from its selected item,
+  so a 9-item wheel and a 7-item one match around the middle and the outer
+  two have no counterpart; a vertical menu's by their `index`. What's
+  copied:
+  - a position or size set to a number (`x`, `y`, `width`, `height`,
+    `xOffset`, `yOffset`, `maxWidth`, `maxHeight`): the same move there,
+    scaled to that page and rounded to whole units (moving 96 to the right
+    on a 1920-wide page moves it 80 on a 1600-wide one). `center` and `50%`
+    count as what they mean on each page;
+  - anything else (colours, fonts, layers, files, animation values, a
+    `center` typed in): only where the other page had the same value as this
+    one. Where it already had its own, it's left, and the line beside the
+    switch says so;
+  - not the page's own size, and not adding, deleting or duplicating
+    elements, events or steps (the line says so).
+  A run of separate moves is scaled as one (ten 1-unit nudges move the
+  1600-wide page 8, not 10), until the other page's value is changed there.
+  Undo and Redo take both pages' step back together; when the other page
+  was changed on its own since, Undo works on this page only and says so.
+  Save saves both (each keeps its original in `manage/backups`, as any page
+  does).
+- **Show layout 4x3.xml** (or choosing it in the Pages list): the other page
+  is shown with the same elements selected; neither page's unsaved changes
+  are lost, and Show layout.xml goes back. Leaving, or opening another page,
+  asks about both pages' changes.
+- The properties panel says where the selected element is on the other page
+  (or that it isn't there).
 
 ### Adding elements
 
@@ -327,12 +418,14 @@ the theme in the widget editor instead.
 
 ## Limits in this version
 
-- With a controller, colour pickers are typed as hex rather than picked, and
-  a widget is moved and resized by its box only (not by its other handles).
-- The layout editor edits one page at a time (`layout.xml` and `layout
-  4x3.xml` are separate), adds raw elements rather than the widget editor's
-  widgets, and shows only where `onEnter` leaves an element (not the other
-  events).
+- With a controller, colour pickers are typed as hex rather than picked.
+- Several selected move, line up and space together, but resize one at a
+  time.
+- The layout editor edits a page with its 4:3 twin only (not other variants
+  such as `layout - 1.xml`, nor several collections' pages), adds raw
+  elements rather than the widget editor's widgets, and draws where each
+  event leaves an element from where it's placed (not from where an earlier
+  event left it, and not frame by frame).
 - Second-screen pages (One Saucier's `layout1.xml`) are kept in the project
   but not saved.
 
@@ -374,7 +467,10 @@ units; blank lines and lines starting with `#` are skipped.
 | `click X Y` | clicks the canvas (click-through included) |
 | `move DX DY`, `resize nw\|n\|ne\|w\|e\|sw\|s\|se DX DY`, `nudge DX DY` | drags the selection |
 | `name TEXT`, `layer N`, `alpha N`, `colour RRGGBB`, `var TOKEN VALUE` | sets properties; `alpha` takes 0-1 as layouts write it (`0.8`; `1` is opaque) or a percent (`2` to `100`, or `80%`; `1%` for 1%) |
-| `delete`, `undo`, `redo` | |
+| `delete`, `undo`, `redo` | (`delete` takes every selected widget) |
+| `addselect N`, `toggleselect N`, `selectall`, `selection` | several at once (`selection` notes them) |
+| `clickadd X Y`, `marquee X1 Y1 X2 Y2 [add]` | a Ctrl-click; a box from one corner to the other (without `add` it must start on empty canvas) |
+| `align left\|center\|right\|top\|middle\|bottom`, `distribute h\|v`, `duplicate` | the selection |
 | `show media\|text\|anims on\|off`, `preview COLLECTION`, `rebuild` | preview options |
 | `save`, `use`, `report`, `addDialog` | |
 | `close` (asks if unsaved), `discard` (leaves without saving) | |
@@ -408,4 +504,7 @@ In the layout editor the commands are:
 | `event NAME`, `addset EVENT`, `addanimate SET`, `rmanim PATH` | animations, by paths inside the selected element (`onEnter[0]/set[0]/animate[1]`) |
 | `animattr PATH NAME VALUE...`, `rmanimattr PATH NAME`, `getanim PATH NAME` | an event's, step's or change's attributes (an empty value removes it) |
 | `showanims`, `openevent EVENT` | scrolls the panel to *Animations*; unfolds an event (`onEnter[0]`) |
-| `copyanims PATH`, `events`, `endbox`, `replay EVENT` | copies another element's animations; notes the events and where onEnter leaves it; plays an event on the preview |
+| `copyanims PATH`, `events`, `endbox [EVENT]`, `movingevents`, `replay EVENT` | copies another element's animations; notes the events, where onEnter (or EVENT) leaves it and which events move it; plays an event on the preview |
+| `endevent EVENT\|all` | which event's end boxes the canvas draws (`all`: every event) |
+| `addpath PATH`, `togglepath PATH`, `selectall`, `selection`, `clickadd X Y`, `marquee X1 Y1 X2 Y2 [add]`, `align ...`, `distribute h\|v` | several at once, as in the widget editor; `duplicate` and `delete` take every selected element |
+| `twin on\|off`, `switchtwin`, `twinnote`, `twinget NAME` | edits copied to the page's 4:3 twin (or not); shows the twin with the same elements selected; notes what the last copy did; notes the selected element's attribute on the twin |

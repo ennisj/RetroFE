@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "EditorScript.h"
+#include "EditorSelection.h"
 #include <cctype>
 #include <cstdlib>
 #include <sstream>
@@ -88,6 +89,13 @@ namespace ThemeEditor
             if (!w) return "nothing selected";
             return w->id + " at " + std::to_string(w->x) + "," + std::to_string(w->y) + " " +
                    std::to_string(w->w) + "x" + std::to_string(w->h);
+        }
+
+        // The marquee command: X1 Y1 X2 Y2 [add], as a drag from one corner to the other
+        bool marqueeWords(const std::vector<std::string>& words, float& x1, float& y1, float& x2, float& y2, bool& add)
+        {
+            add = words.size() > 4 && words[4] == "add";
+            return number(words, 0, x1) && number(words, 1, y1) && number(words, 2, x2) && number(words, 3, y2);
         }
     }
 
@@ -205,6 +213,57 @@ namespace ThemeEditor
         }
         if (n == "colour" || n == "color") return result(s.setFontColor(c.rest));
         if (n == "var") return result(!c.words.empty() && s.setVar(c.words[0], c.tail(1)));
+
+        // Several at once
+        auto selectionNote = [&s]() {
+            std::string text;
+            for (int i : s.selection()) text += (text.empty() ? "" : ", ") + s.page().widgets[i].id;
+            return text.empty() ? std::string("nothing selected") : std::to_string(s.selectionCount()) + " selected: " + text;
+        };
+        if (n == "addselect" || n == "toggleselect") {
+            int i = -1;
+            if (!integer(c.words, 0, i) || i < 0 || i >= static_cast<int>(s.page().widgets.size())) return CommandResult::Failed;
+            if (n == "addselect") s.addSelected(i);
+            else s.toggleSelected(i);
+            note = selectionNote();
+            return CommandResult::Ok;
+        }
+        if (n == "selectall") { s.selectAll(); note = selectionNote(); return result(s.selectionCount() > 0); }
+        if (n == "selection") { note = selectionNote(); return CommandResult::Ok; }
+        if (n == "clickadd") {
+            float x = 0, y = 0;
+            if (!number(c.words, 0, x) || !number(c.words, 1, y)) return CommandResult::Failed;
+            s.pointerDown(unit, x, y, 0.5f, true);
+            s.pointerUp();
+            note = selectionNote();
+            return CommandResult::Ok;
+        }
+        if (n == "marquee") {
+            float x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+            bool add = false;
+            if (!marqueeWords(c.words, x1, y1, x2, y2, add)) return CommandResult::Failed;
+            // Without add a marquee starts on empty canvas (on a widget the drag would move it)
+            if (!add && canvasPick(s.page(), x1, y1) >= 0) { note = "it begins on a widget, not on empty canvas"; return CommandResult::Failed; }
+            s.pointerDown(unit, x1, y1, 0.5f, add);
+            s.pointerMove(unit, x2, y2);
+            s.pointerUp();
+            note = selectionNote();
+            return CommandResult::Ok;
+        }
+        if (n == "align") {
+            const int op = c.words.empty() ? -1 : alignFromName(c.words[0]);
+            if (op < 0) { note = "align left|center|right|top|middle|bottom"; return CommandResult::Failed; }
+            bool ok = s.alignSelected(op);
+            note = selectionNote();
+            return result(ok);
+        }
+        if (n == "distribute") {
+            if (c.words.empty() || (c.words[0] != "h" && c.words[0] != "v")) { note = "distribute h|v"; return CommandResult::Failed; }
+            bool ok = s.distributeSelected(c.words[0] == "h");
+            note = selectionNote();
+            return result(ok);
+        }
+        if (n == "duplicate") { bool ok = s.duplicateSelected(); note = selectionNote(); return result(ok); }
         if (n == "delete") return result(s.removeSelected());
         if (n == "undo") return result(s.undo());
         if (n == "redo") return result(s.redo());
@@ -328,7 +387,56 @@ namespace ThemeEditor
             return CommandResult::Ok;
         }
         if (n == "layer") { int i = 0; s.endCoalesce(); return result(integer(c.words, 0, i) && s.setLayer(i)); }
-        if (n == "duplicate") { bool ok = s.duplicateSelected(); note = boxNote(); return result(ok); }
+        // Several at once
+        auto selectionNote = [&s]() {
+            std::string text;
+            for (int i : s.selection()) text += (text.empty() ? "" : ", ") + (s.element(i).path.empty() ? std::string("-") : s.element(i).path);
+            return text.empty() ? std::string("nothing selected") : std::to_string(s.selectionCount()) + " selected: " + text;
+        };
+        if (n == "addpath" || n == "togglepath") {
+            const int i = s.doc().find(c.rest == "-" ? std::string() : c.rest);
+            if (i < 0) return CommandResult::Failed;
+            if (n == "addpath") s.addSelected(i);
+            else s.toggleSelected(i);
+            note = selectionNote();
+            return CommandResult::Ok;
+        }
+        if (n == "selectall") { s.selectAll(); note = selectionNote(); return result(s.selectionCount() > 0); }
+        if (n == "selection") { note = selectionNote(); return CommandResult::Ok; }
+        if (n == "clickadd") {
+            float x = 0, y = 0;
+            if (!number(c.words, 0, x) || !number(c.words, 1, y)) return CommandResult::Failed;
+            s.pointerDown(unit, x, y, 0.5f, true);
+            s.pointerUp();
+            note = selectionNote();
+            return CommandResult::Ok;
+        }
+        if (n == "marquee") {
+            float x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+            bool add = false;
+            if (!marqueeWords(c.words, x1, y1, x2, y2, add)) return CommandResult::Failed;
+            // Without add a marquee starts on empty canvas (on an element the drag would move it)
+            if (!add && s.pick(x1, y1) >= 0) { note = "it begins on an element, not on empty canvas"; return CommandResult::Failed; }
+            s.pointerDown(unit, x1, y1, 0.5f, add);
+            s.pointerMove(unit, x2, y2);
+            s.pointerUp();
+            note = selectionNote();
+            return CommandResult::Ok;
+        }
+        if (n == "align") {
+            const int op = c.words.empty() ? -1 : alignFromName(c.words[0]);
+            if (op < 0) { note = "align left|center|right|top|middle|bottom"; return CommandResult::Failed; }
+            bool ok = s.alignSelected(op);
+            note = selectionNote();
+            return result(ok);
+        }
+        if (n == "distribute") {
+            if (c.words.empty() || (c.words[0] != "h" && c.words[0] != "v")) { note = "distribute h|v"; return CommandResult::Failed; }
+            bool ok = s.distributeSelected(c.words[0] == "h");
+            note = selectionNote();
+            return result(ok);
+        }
+        if (n == "duplicate") { bool ok = s.duplicateSelected(); note = s.selectionCount() > 1 ? selectionNote() : boxNote(); return result(ok); }
         if (n == "delete") return result(s.deleteSelected());
         if (n == "undo") return result(s.undo());
         if (n == "redo") return result(s.redo());
@@ -371,8 +479,13 @@ namespace ThemeEditor
         }
         if (n == "endbox") {
             DragRect r;
-            if (!s.enterEndBox(s.selected(), r)) { note = "no end box"; return CommandResult::Failed; }
-            note = "ends at " + std::to_string(r.x) + "," + std::to_string(r.y) + " " + std::to_string(r.w) + "x" + std::to_string(r.h);
+            const std::string event = c.words.empty() ? std::string("onEnter") : c.words[0];
+            if (!s.eventEndBox(s.selected(), event, r)) { note = "no end box for " + event; return CommandResult::Failed; }
+            note = (c.words.empty() ? std::string() : event + " ") + "ends at " + std::to_string(r.x) + "," + std::to_string(r.y) + " " + std::to_string(r.w) + "x" + std::to_string(r.h);
+            return CommandResult::Ok;
+        }
+        if (n == "movingevents") {
+            for (const std::string& e : s.movingEvents(s.selected())) note += (note.empty() ? "" : ", ") + e;
             return CommandResult::Ok;
         }
         return CommandResult::NotSession;

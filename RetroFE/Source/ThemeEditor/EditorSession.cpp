@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "EditorSession.h"
+#include "EditorSelection.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -89,6 +90,7 @@ namespace ThemeEditor
         project_ = std::move(project);
         page_ = 0;
         selected_ = -1;
+        selection_.clear();
         drag_ = Drag();
         undo_.clear();
         redo_.clear();
@@ -104,7 +106,7 @@ namespace ThemeEditor
         if (index < 0 || index >= pageCount() || index == page_) return;
         cancelDrag();
         page_ = index;
-        selected_ = -1;
+        assignSelection({});
         lastChangeKey_.clear();
     }
 
@@ -141,8 +143,81 @@ namespace ThemeEditor
     void EditorSession::select(int index)
     {
         if (index < -1 || index >= static_cast<int>(page().widgets.size())) index = -1;
-        if (index != selected_) lastChangeKey_.clear();
-        selected_ = index;
+        if (index != selected_ || selection_.size() > 1) lastChangeKey_.clear();
+        assignSelection(index < 0 ? std::vector<int>() : std::vector<int>{ index });
+    }
+
+    void EditorSession::assignSelection(const std::vector<int>& indices)
+    {
+        const int n = static_cast<int>(page().widgets.size());
+        selection_.clear();
+        // In the caller's order, the last valid one the primary (a repeat counts where it last appears)
+        for (int i : indices) {
+            if (i < 0 || i >= n) continue;
+            selection_ = selectionWith(selection_, i);
+        }
+        selected_ = selection_.empty() ? -1 : selection_.back();
+    }
+
+    bool EditorSession::isSelected(int index) const
+    {
+        return std::find(selection_.begin(), selection_.end(), index) != selection_.end();
+    }
+
+    void EditorSession::setSelection(const std::vector<int>& indices)
+    {
+        lastChangeKey_.clear();
+        assignSelection(indices);
+    }
+
+    void EditorSession::toggleSelected(int index)
+    {
+        if (index < 0 || index >= static_cast<int>(page().widgets.size())) return;
+        lastChangeKey_.clear();
+        assignSelection(selectionToggled(selection_, index));
+    }
+
+    void EditorSession::addSelected(int index)
+    {
+        if (index < 0 || index >= static_cast<int>(page().widgets.size())) return;
+        lastChangeKey_.clear();
+        assignSelection(selectionWith(selection_, index));
+    }
+
+    bool EditorSession::dropPrimary()
+    {
+        if (selection_.empty()) return false;
+        lastChangeKey_.clear();
+        assignSelection(selectionWithout(selection_, selected_));
+        return true;
+    }
+
+    void EditorSession::selectAll()
+    {
+        std::vector<int> all;
+        const auto& widgets = page().widgets;
+        for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
+            if (!widgets[i].canvasHide) all.push_back(i);
+        }
+        // The primary stays the primary
+        if (selected_ >= 0 && !widgets[selected_].canvasHide) all = selectionWith(all, selected_);
+        setSelection(all);
+    }
+
+    std::vector<DragRect> EditorSession::selectionBoxes() const
+    {
+        std::vector<DragRect> out;
+        for (int i : selection_) {
+            DragRect r;
+            canvasHitRect(page().widgets[i], r.x, r.y, r.w, r.h);
+            out.push_back(r);
+        }
+        return out;
+    }
+
+    DragRect EditorSession::marqueeBox() const
+    {
+        return marqueeRect(drag_.startTx, drag_.startTy, drag_.endTx, drag_.endTy);
     }
 
     bool EditorSession::selectId(const std::string& id)
@@ -177,24 +252,68 @@ namespace ThemeEditor
 
     // ---- pointer -----------------------------------------------------------
 
-    void EditorSession::pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx)
+    void EditorSession::pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx, bool additive)
     {
         drag_ = Drag();
         if (!fit.ok || !isOpen()) return;
         const float tx = canvasToThemeX(fit, sx);
         const float ty = canvasToThemeY(fit, sy);
+        auto begin = [&]() {
+            drag_.active = true;
+            drag_.startSx = sx;
+            drag_.startSy = sy;
+            drag_.startTx = drag_.endTx = tx;
+            drag_.startTy = drag_.endTy = ty;
+        };
+        auto marquee = [&]() {
+            begin();
+            drag_.marquee = true;
+            drag_.additive = additive;
+        };
+
+        // Ctrl / Shift: a click toggles the widget under it, a drag (from anywhere,
+        // so a full-page background doesn't get in the way) is a marquee that adds
+        if (additive) {
+            marquee();
+            drag_.clicked = canvasPick(page(), tx, ty);
+            return;
+        }
+
+        // Several selected: a press on any of them moves them all (no handles)
+        if (selection_.size() > 1) {
+            int on = -1, onLayer = -1;
+            for (int i : selection_) {
+                const WidgetInstance& w = page().widgets[i];
+                if (w.canvasHide || !canvasHit(w, tx, ty)) continue;
+                if (w.layer > onLayer || (w.layer == onLayer && i > on)) { on = i; onLayer = w.layer; }
+            }
+            if (on >= 0) {
+                begin();
+                drag_.group = true;
+                drag_.handle = CH_BODY;
+                drag_.clicked = on;
+                drag_.start = unionRect(selectionBoxes());
+                drag_.rect = drag_.start;
+                return;
+            }
+        }
 
         int handle = CH_NONE;
-        if (const WidgetInstance* sel = selectedWidget()) {
-            DragRect r;
-            canvasHitRect(*sel, r.x, r.y, r.w, r.h);
-            if (!sel->canvasHide) handle = canvasHandleAt(fit, r, sx, sy, grabPx);
+        if (selection_.size() == 1) {
+            if (const WidgetInstance* sel = selectedWidget()) {
+                DragRect r;
+                canvasHitRect(*sel, r.x, r.y, r.w, r.h);
+                if (!sel->canvasHide) handle = canvasHandleAt(fit, r, sx, sy, grabPx);
+            }
         }
         if (handle == CH_NONE) {
-            // Not on the selection: pick what's on top here
+            // Not on the selection: pick what's on top here; nothing there starts a marquee
             int picked = canvasPick(page(), tx, ty);
             select(picked);
-            if (picked < 0) return;
+            if (picked < 0) {
+                marquee();
+                return;
+            }
             handle = CH_BODY;
         }
         else if (handle == CH_BODY) {
@@ -202,12 +321,8 @@ namespace ThemeEditor
         }
 
         const WidgetInstance* sel = selectedWidget();
-        drag_.active = true;
+        begin();
         drag_.handle = handle;
-        drag_.startSx = sx;
-        drag_.startSy = sy;
-        drag_.startTx = tx;
-        drag_.startTy = ty;
         canvasHitRect(*sel, drag_.start.x, drag_.start.y, drag_.start.w, drag_.start.h);
         drag_.rect = drag_.start;
     }
@@ -222,7 +337,11 @@ namespace ThemeEditor
         const float dx = (sx - drag_.startSx) / fit.scale;
         const float dy = (sy - drag_.startSy) / fit.scale;
         const int grid = snap ? CANVAS_SNAP_GRID : 1;
-        if (drag_.handle == CH_BODY) {
+        if (drag_.marquee) {
+            drag_.endTx = canvasToThemeX(fit, sx);
+            drag_.endTy = canvasToThemeY(fit, sy);
+        }
+        else if (drag_.handle == CH_BODY) {
             drag_.rect = canvasMove(drag_.start, dx, dy, grid, project_.canvasW(), project_.canvasH());
         }
         else {
@@ -237,6 +356,40 @@ namespace ThemeEditor
         if (!drag_.active) return;
         Drag d = drag_;
         drag_ = Drag();
+        if (d.marquee) {
+            if (!d.moved) {
+                // A click: on empty canvas nothing is selected; with Ctrl / Shift the widget under it toggles
+                if (d.additive && d.clicked >= 0) toggleSelected(d.clicked);
+                return;
+            }
+            const DragRect box = marqueeRect(d.startTx, d.startTy, d.endTx, d.endTy);
+            std::vector<DragRect> rects;
+            std::vector<int> index;
+            const auto& widgets = page().widgets;
+            for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
+                if (widgets[i].canvasHide) continue;
+                DragRect r;
+                canvasHitRect(widgets[i], r.x, r.y, r.w, r.h);
+                rects.push_back(r);
+                index.push_back(i);
+            }
+            std::vector<int> picked = d.additive ? selection_ : std::vector<int>();
+            for (int k : marqueePick(rects, box)) {
+                if (!isSelected(index[k]) || !d.additive) picked.push_back(index[k]);
+            }
+            setSelection(picked);
+            return;
+        }
+        if (d.group) {
+            // A click on one of several: just that one; a drag moves them all
+            if (!d.moved) { select(d.clicked); return; }
+            const int dx = d.rect.x - d.start.x, dy = d.rect.y - d.start.y;
+            if (dx == 0 && dy == 0) return;
+            beginChange("");
+            for (int i : selection_) shiftWidget(i, dx, dy);
+            changed();
+            return;
+        }
         if (!d.moved) {
             // A click on the selection: the next widget under the point
             if (d.cycleOnClick) select(canvasPickNext(page(), d.startTx, d.startTy, selected_));
@@ -281,6 +434,7 @@ namespace ThemeEditor
         s.project = project_;
         s.page = page_;
         s.selected = selected_;
+        s.selection = selection_;
         s.revision = revision_;
         return s;
     }
@@ -289,16 +443,15 @@ namespace ThemeEditor
     {
         project_ = s.project;
         page_ = s.page < pageCount() ? s.page : 0;
-        selected_ = s.selected;
+        assignSelection(s.selection);
         revision_ = s.revision;
-        clampSelection();
         drag_ = Drag();
         lastChangeKey_.clear();
     }
 
     void EditorSession::clampSelection()
     {
-        if (selected_ >= static_cast<int>(page().widgets.size())) selected_ = -1;
+        assignSelection(selection_);
     }
 
     void EditorSession::beginChange(const std::string& key)
@@ -319,22 +472,25 @@ namespace ThemeEditor
         revision_ = nextRevision_++;
     }
 
+    void EditorSession::shiftWidget(int i, int dx, int dy)
+    {
+        WidgetInstance& m = project_.pages[page_].widgets[i];
+        if (m.warp) {
+            for (int k = 0; k < 4; ++k) { m.wx[k] += dx; m.wy[k] += dy; }
+        }
+        m.x += dx;
+        m.y += dy;
+    }
+
     bool EditorSession::moveBy(int dx, int dy)
     {
-        const WidgetInstance* w = selectedWidget();
-        if (!w || (dx == 0 && dy == 0)) return false;
-        DragRect start;
-        canvasHitRect(*w, start.x, start.y, start.w, start.h);
-        DragRect r = canvasMove(start, static_cast<float>(dx), static_cast<float>(dy), 1, project_.canvasW(), project_.canvasH());
-        if (r.x == start.x && r.y == start.y) return false;
+        if (selection_.empty() || (dx == 0 && dy == 0)) return false;
+        // The selection as one box: it stays on the canvas, or where it already was
+        int mx = 0, my = 0;
+        groupMoveDelta(selectionBoxes(), static_cast<float>(dx), static_cast<float>(dy), 1, project_.canvasW(), project_.canvasH(), mx, my);
+        if (mx == 0 && my == 0) return false;
         beginChange("nudge");   // a run of nudges is one step, until endCoalesce()
-        WidgetInstance* m = selectedMutable();
-        const int mx = r.x - start.x, my = r.y - start.y;
-        if (m->warp) {
-            for (int i = 0; i < 4; ++i) { m->wx[i] += mx; m->wy[i] += my; }
-        }
-        m->x += mx;
-        m->y += my;
+        for (int i : selection_) shiftWidget(i, mx, my);
         changed();
         return true;
     }
@@ -345,15 +501,72 @@ namespace ThemeEditor
         if (!w) return false;
         DragRect start;
         canvasHitRect(*w, start.x, start.y, start.w, start.h);
-        const int dx = x - start.x, dy = y - start.y;
-        if (dx == 0 && dy == 0) return false;
+        return shiftSelection(x - start.x, y - start.y);
+    }
+
+    bool EditorSession::shiftSelection(int dx, int dy)
+    {
+        if (selection_.empty() || (dx == 0 && dy == 0)) return false;
         beginChange(coalesce_);
-        WidgetInstance* m = selectedMutable();
-        if (m->warp) {
-            for (int i = 0; i < 4; ++i) { m->wx[i] += dx; m->wy[i] += dy; }
+        for (int i : selection_) shiftWidget(i, dx, dy);
+        changed();
+        return true;
+    }
+
+    bool EditorSession::duplicateSelected()
+    {
+        if (selection_.empty()) return false;
+        const int offset = 20;
+        const std::vector<DragRect> boxes = selectionBoxes();
+        int dx = 0, dy = 0;
+        groupMoveDelta(boxes, static_cast<float>(offset), static_cast<float>(offset), 1, project_.canvasW(), project_.canvasH(), dx, dy);
+        if (dx == 0 && dy == 0) {
+            groupMoveDelta(boxes, static_cast<float>(-offset), static_cast<float>(-offset), 1, project_.canvasW(), project_.canvasH(), dx, dy);
         }
-        m->x += dx;
-        m->y += dy;
+        cancelDrag();
+        beginChange("");
+        ThemePage& p = project_.pages[page_];
+        // In page order, so the copies stack as the originals do
+        std::vector<int> order = selection_;
+        std::sort(order.begin(), order.end());
+        std::vector<int> copies;
+        for (int i : order) {
+            WidgetInstance copy = p.widgets[i];
+            const WidgetDef* def = lib_ ? lib_->find(copy.def) : nullptr;
+            nextIdentity(p, copy.def, def ? def->name : copy.name, copy.id, copy.name);
+            p.widgets.push_back(copy);
+            copies.push_back(static_cast<int>(p.widgets.size()) - 1);
+            shiftWidget(copies.back(), dx, dy);
+        }
+        assignSelection(copies);
+        changed();
+        return true;
+    }
+
+    bool EditorSession::alignSelected(int op)
+    {
+        if (selection_.size() < 2) return false;
+        const std::vector<DragRect> before = selectionBoxes();
+        const std::vector<DragRect> after = alignRects(before, op);
+        bool any = false;
+        for (size_t k = 0; k < before.size(); ++k) any = any || before[k].x != after[k].x || before[k].y != after[k].y;
+        if (!any) return false;
+        beginChange("");
+        for (size_t k = 0; k < before.size(); ++k) shiftWidget(selection_[k], after[k].x - before[k].x, after[k].y - before[k].y);
+        changed();
+        return true;
+    }
+
+    bool EditorSession::distributeSelected(bool horizontal)
+    {
+        if (selection_.size() < 3) return false;
+        const std::vector<DragRect> before = selectionBoxes();
+        const std::vector<DragRect> after = distributeRects(before, horizontal);
+        bool any = false;
+        for (size_t k = 0; k < before.size(); ++k) any = any || before[k].x != after[k].x || before[k].y != after[k].y;
+        if (!any) return false;
+        beginChange("");
+        for (size_t k = 0; k < before.size(); ++k) shiftWidget(selection_[k], after[k].x - before[k].x, after[k].y - before[k].y);
         changed();
         return true;
     }
@@ -483,11 +696,13 @@ namespace ThemeEditor
 
     bool EditorSession::removeSelected()
     {
-        if (!selectedWidget()) return false;
+        if (selection_.empty()) return false;
         beginChange("");
         auto& widgets = project_.pages[page_].widgets;
-        widgets.erase(widgets.begin() + selected_);
-        selected_ = -1;
+        std::vector<int> order = selection_;
+        std::sort(order.rbegin(), order.rend());
+        for (int i : order) widgets.erase(widgets.begin() + i);
+        assignSelection({});
         changed();
         return true;
     }
@@ -505,7 +720,7 @@ namespace ThemeEditor
         canvasPlaceCenter(*def, project_.canvasW(), project_.canvasH(), w.x, w.y, w.w, w.h);
         w.layer = clampLayer(def->layer);
         p.widgets.push_back(w);
-        selected_ = static_cast<int>(p.widgets.size()) - 1;
+        assignSelection({ static_cast<int>(p.widgets.size()) - 1 });
         changed();
         return true;
     }
@@ -708,7 +923,7 @@ namespace ThemeEditor
             splash->widgets.insert(splash->widgets.begin(), bg);
         }
         // The selection index may now point elsewhere on the splash page
-        if (ThemeProject::isSplashPage(page().collection)) selected_ = -1;
+        if (ThemeProject::isSplashPage(page().collection)) assignSelection({});
         changed();
         return true;
     }
@@ -750,7 +965,7 @@ namespace ThemeEditor
         }
         const int before = page_;
         page_ = found < 0 ? 0 : found;
-        if (page_ != before || found < 0) selected_ = -1;
+        if (page_ != before || found < 0) assignSelection({});
         drag_ = Drag();
         clampSelection();
     }
@@ -830,7 +1045,7 @@ namespace ThemeEditor
             reassign(project_, c, collection);
         }
         pagesChanged({}, collection);
-        selected_ = -1;
+        assignSelection({});
         changed();
         return true;
     }
