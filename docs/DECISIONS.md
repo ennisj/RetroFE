@@ -366,6 +366,20 @@ QA follow-ups:
 - Upstream's `CHANGELOG.md` is left alone so upstream merges stay clean. The
   fork's rounds are summarized in [FORK-CHANGELOG.md](FORK-CHANGELOG.md).
 
+### W3. CI: two macOS builds, Xcode project left unused — Decided
+- `build.yml` builds macOS with Homebrew's libraries (quick, like a
+  developer's Mac); `build-macos.yml` builds the universal app bundle with
+  the frameworks in `ThirdPartyMac`. Both through CMake [keeping the Xcode
+  project, which had none of the fork's code].
+- `RetroFE/xcode` is left in place but unused and stale (`docs/CI.md` says
+  so); it can be deleted later.
+- The GStreamer installer used on Windows CI and releases is pinned by
+  version and SHA-256; bumping the version means bumping the hash.
+- A newer push cancels a branch's running build, except on `master`.
+- Not run yet: `release-windows.yml` (needs a tag, see C1) and
+  `build-windows.yml` (GitHub won't start a workflow the fork has never run
+  by hand); both use the same install script as the Windows job that passed.
+
 ---
 
 ## Library (Manage data layer)

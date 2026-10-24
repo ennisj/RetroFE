@@ -30,6 +30,15 @@ Unit tests: 4,966 → 5,473 checks.
   failed launch counted as a play; Aeon Nox's video pages failed the theme
   check; false warnings on an empty root and for quick programs; "Played:
   Never" next to a time played now says why plays aren't counted.
+- **CI runs the tests everywhere.** GitHub Actions builds and runs the unit
+  tests on Windows, Linux x86_64, Linux arm64 and macOS for `master`,
+  `feature/**` and `ci/**` (details in [CI.md](CI.md)). The macOS app is now
+  built with CMake (the Xcode project lacked all the fork's code) as a
+  universal, signed bundle that's checked to load nothing from outside it.
+  The Windows GStreamer install (Chocolatey's package was taken down) now
+  unpacks GStreamer 1.24.13's installer, checked against its published
+  SHA-256, in the release workflow too. Two tests that only failed with
+  GCC/Clang were fixed.
 
 ## Round 5 — videos in RetroFE, layout editor additions, clean logs (2026-10-23)
 
