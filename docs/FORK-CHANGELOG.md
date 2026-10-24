@@ -4,6 +4,31 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 8 — controls, third QA (2026-10-24)
+
+Unit tests: 6,103 → 6,329 checks.
+
+- **Game-controller names in controls.conf.** `joyA`, `joyDPUp`,
+  `joyLeftY-`, `joyRightTrigger` and the rest of SDL's controller names now
+  work beside the old joystick, keyboard and mouse names, so RetroFE starts on
+  OneSauce's controls.conf without a remap. An input RetroFE doesn't know is
+  skipped with a warning instead of stopping RetroFE; pads plugged in while
+  it runs work. A bare install gives Select/Back to Controller A/B, and to
+  buttons 0/1 on joysticks SDL has no controller mapping for (arcade USB
+  encoders), so one button never acts as both.
+- **Settings → Controls.** Every control with its inputs; add one by
+  pressing it (hold any input two seconds to cancel), remove one, put back
+  the default. It warns when an input already belongs to another control
+  (including the same button under another name on the pads connected now),
+  and won't save without inputs for Up, Down, Select and Back. Saving writes
+  only that line to the file the value comes from, with a backup, and the new
+  controls work straight away.
+- **Third QA pass** on copies of the OnesaUCE data, including one in
+  OneSauce's real folder layout: report in [QA-ROUND8.md](QA-ROUND8.md).
+  Fixed: Settings' Layout list offered folders RetroFE can't start with (and
+  sorted by case); a `cmd.exe` launcher's working folder was described
+  wrongly; a pageless theme folder showed the editor's note.
+
 ## Round 7 — launchers and saves, editor groups, OnesaUCE themes (2026-10-24)
 
 Unit tests: 5,473 → 6,103 checks.

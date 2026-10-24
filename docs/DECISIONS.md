@@ -396,6 +396,28 @@ OnesaUCE themes:
   `maxwidth`), `reloadablePanningImage`, `<view ref>`, `onJumpEnter`,
   `pauseTime` and others listed in ONESAUCE-COMPAT.md.
 
+### M19. Round 8 choices — Decided
+- **An input RetroFE doesn't know is skipped with a warning** [stopping, as
+  upstream did]. A control set but left blank (`quit =`) stays unbound, as
+  upstream; the built-in default applies only when a control isn't set or
+  none of its inputs works.
+- **Built-in Select/Back use controller names first** (`joyA`/`joyB`), with
+  buttons 0/1 only for joysticks SDL has no controller mapping for (a
+  defaults-only `joyUnmapped…` form) [raw buttons for everything, which puts
+  Select and Back on one button on some pads; controller names only, which
+  leaves arcade USB encoders without buttons on a bare install]. A
+  `joyButtonN` written in controls.conf still counts on every joystick.
+- **Capture ends after five seconds, or by holding any input for two**
+  [a reserved cancel key, which then couldn't be captured]. Every input can
+  be captured, Escape included; controller names are kept over raw button
+  numbers, without a pad number.
+- **Saves go to the file the value comes from** (the last `controlsN.conf`
+  that sets it, else controls.conf) [always controls.conf, which an
+  override would hide], and apply at once after Save [after closing
+  Manage], since the lock-out guard keeps that safe.
+- **Open Settings stays keyboard-only**, F10 when controls.manager lists no
+  key.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
