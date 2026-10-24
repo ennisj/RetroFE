@@ -568,12 +568,12 @@ static Test::Suite layoutEdit("layout-native editing", [] {
         fs::create_directories(root + "/layouts/Hand/collections/Linked");
         const std::string link = root + "/layouts/Hand/collections/Linked/layout";
         bool linked = false;
+        std::error_code ec;
 #ifdef _WIN32
         std::string command = "mklink /J \"" + fs::path(link).make_preferred().string() + "\" \"" +
                               fs::path(outside).make_preferred().string() + "\" >nul 2>&1";
         linked = std::system(command.c_str()) == 0 && fs::exists(link + "/layout.xml");
 #else
-        std::error_code ec;
         fs::create_directory_symlink(outside, link, ec);
         linked = !ec && fs::exists(link + "/layout.xml");
 #endif
@@ -584,7 +584,6 @@ static Test::Suite layoutEdit("layout-native editing", [] {
         LayoutSession t;
         check(!t.open(root, "Hand", "collections/Linked/layout/layout.xml", error) && error.find("isn't inside") != std::string::npos,
               "a page reached through a junction out of the theme isn't opened: " + error);
-        std::error_code ec;
         fs::remove(link, ec);   // the junction, not what it points at
         check(fs::exists(outside + "/layout.xml"), "the outside folder is untouched");
     });
