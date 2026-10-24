@@ -83,6 +83,27 @@ RetroFE::RetroFE(Configuration& c)
 	attractMode_ = false;
 	attractModePlaylistCollectionNumber_ = 0;
 	firstPlaylist_ = "all"; // todo
+
+	// A video played in RetroFE counts as a launch does: last played (and with
+	// it the play count), unless lastPlayedSkipCollection leaves its collection
+	// out; like a launch, only when lastPlayedSkipCollection is set
+	player_.setOnPlay([this](Item* item) {
+		std::string skip;
+		int size = 0;
+		config_.getProperty(OPTION_LASTPLAYEDSKIPCOLLECTION, skip);
+		config_.getProperty(OPTION_LASTPLAYEDSIZE, size);
+		if (skip.empty() || !item->collectionInfo || !currentPage_ || !metadb_)
+		{
+			return;
+		}
+		std::vector<std::string> skipped;
+		Utils::listToVector(skip, skipped, ',');
+		if (std::find(skipped.begin(), skipped.end(), item->collectionInfo->name) == skipped.end())
+		{
+			CollectionInfoBuilder cib(config_, *metadb_);
+			cib.updateLastPlayedPlaylist(currentPage_->getCollection(), item, size);
+		}
+	});
 }
 
 namespace fs = std::filesystem;
@@ -334,6 +355,8 @@ bool RetroFE::deInitialize()
 
 	bool retVal = true;
 
+	// A video still playing in RetroFE: its page goes before SDL and GStreamer do
+	player_.close(false);
 	manager_.deInitialize();
 
 	// Free textures
@@ -1989,6 +2012,7 @@ bool RetroFE::run()
 			{
 				nextPageItem_ = currentPage_->getSelectedItem();
 				// Attract mode doesn't start a video collection that plays in RetroFE
+				// (checked before ATTRACT_LAUNCH_ENTER; this only catches a late change)
 				if (nextPageItem_ && nextPageItem_->collectionInfo &&
 					VideoCollections::playsHere(config_, nextPageItem_->collectionInfo->name))
 				{
@@ -2407,7 +2431,14 @@ bool RetroFE::run()
 					}
 					if (attractModeLaunch && !kioskLock_ && attractReturn == 3) {
 						attract_.reset(attract_.isSet());
-						state = RETROFE_ATTRACT_LAUNCH_ENTER;
+						// A video collection that plays in RetroFE isn't launched: attract
+						// mode carries on scrolling and picks again next cycle
+						Item* target = currentPage_->getSelectedMenuItem();
+						bool playsHere = target && target->collectionInfo &&
+							VideoCollections::playsHere(config_, target->collectionInfo->name);
+						if (!playsHere) {
+							state = RETROFE_ATTRACT_LAUNCH_ENTER;
+						}
 					}
 				}
 				if (menuMode_ || manager_.isOpen() || onHome || player_.isOpen())
@@ -3252,7 +3283,8 @@ RetroFE::RETROFE_STATE RetroFE::processUserInput(Page* page)
 					{
 						config_.getProperty(OPTION_LAYOUT, layoutName);
 					}
-					page->playSelect();
+					// No select sound: the list page frees its sounds while the video plays
+					// (a player page can have its own load sound)
 					if (player_.open(*page, layoutName, getLayoutFileName()))
 					{
 						playerKeysHeld_.clear();

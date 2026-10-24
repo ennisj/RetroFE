@@ -5,6 +5,9 @@
      playing, so reloadableVideo and the texts show it. jukebox="true" lets Select pause the video and tells RetroFE
      when it ends (it then plays the next one). Left/Right: previous/next, Up/Down: seek, Back: the list. -->
 
+    <!-- Played as the page opens: the list page's own sounds are freed while a video plays -->
+    <sound type="load" src="../../../sounds/select.wav" />
+
     <image src="../../../images/black.png" x="0" y="0" width="1920" height="1080" layer="0"/>
 
     <reloadableVideo type="video" jukebox="true" x="center" y="center" width="1920" maxHeight="1080" xOrigin="center" yOrigin="center" layer="1"/>

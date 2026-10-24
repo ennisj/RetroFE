@@ -166,6 +166,33 @@ namespace
             check(!VideoCollections::useItemsAsVideoMedia(config, "Other"), "nor one whose media.video is set");
         });
 
+        run("videos: a list.path with %BASE_ITEM_PATH% or a relative one becomes an absolute media folder", [] {
+            std::string root = makeRoot("videos-config-base");
+            Configuration::absolutePath = root;
+            Configuration config;
+            config.setProperty("collections.Based.type", std::string("videos"));
+            config.setProperty("collections.Based.list.path", std::string("%BASE_ITEM_PATH%/films"));
+            config.setProperty("collections.Relative.type", std::string("videos"));
+            config.setProperty("collections.Relative.list.path", std::string("videos/clips"));
+
+            // getProperty expands %BASE_ITEM_PATH% (RetroFE fixes the base on its first call)
+            std::string expanded;
+            config.getProperty("collections.Based.list.path", expanded);
+            check(VideoCollections::useItemsAsVideoMedia(config, "Based"), "set");
+            std::string media;
+            config.getProperty("collections.Based.media.video", media);
+            check(media.find('%') == std::string::npos, "no variable left: " + media);
+            check(fs::path(media).is_absolute(), "absolute: " + media);
+            checkEqual(fs::path(media).lexically_normal().string(),
+                       fs::path(Configuration::convertToAbsolutePath(root, expanded)).lexically_normal().string(),
+                       "the expanded folder");
+
+            check(VideoCollections::useItemsAsVideoMedia(config, "Relative"), "set for a relative path too");
+            config.getProperty("collections.Relative.media.video", media);
+            checkEqual(fs::path(media).lexically_normal().string(), fs::path(root + "/videos/clips").lexically_normal().string(),
+                       "under RetroFE's folder");
+        });
+
         run("videos: a video collection's pages come from _videos, after its own", [] {
             std::string layout = makeRoot("videos-layoutpages");
             fs::create_directories(Utils::combinePath(layout, "collections", "_menu", "layout"));

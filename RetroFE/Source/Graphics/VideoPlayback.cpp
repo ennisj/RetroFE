@@ -94,6 +94,7 @@ bool VideoPlayback::open(Page& listPage, const std::string& layoutName, const st
     std::string file = layoutName.empty() ? "" : LayoutPages::playerFile(folder, source->name, layoutPage);
     Page* page = nullptr;
     CollectionInfo* list = nullptr;
+    std::string used;   // the layout file the page came from, "" for the built-in one
     for (int attempt = file.empty() ? 1 : 0; attempt < 2 && !page; attempt++) {
         PageBuilder builder(layoutName, "layout", config_, fonts_);
         if (attempt == 0) {
@@ -106,13 +107,20 @@ bool VideoPlayback::open(Page& listPage, const std::string& layoutName, const st
         if (!page) {
             continue;
         }
+        used = attempt == 0 ? file : "";
         // The page owns this collection (and deletes it); the items stay the list page's
         list = new CollectionInfo(config_, source->name, source->listpath, "", source->metadataType, "");
         list->items = videos;
         list->playlists["all"] = &list->items;
         page->pushCollection(list);
-        if (page->getCollectionSize() == 0) {
-            LOG_ERROR("VideoPlayback", "The player page " + file + " has no <menu>, so it can't follow the videos; using the built-in one");
+        // A layout's page needs a <menu> to follow the videos and a jukebox
+        // reloadableVideo to pause them and say when one ends
+        std::string missing = page->getCollectionSize() == 0 ? "no <menu>, so it can't follow the videos"
+                            : !page->isJukebox() ? "no reloadableVideo with jukebox=\"true\", so it can't pause or play the next video"
+                            : "";
+        if (!missing.empty()) {
+            LOG_ERROR("VideoPlayback", "The player page " + (attempt == 0 ? file : std::string("(built-in)")) + " has "
+                + missing + (attempt == 0 ? "; using the built-in one" : ""));
             freePage(page, list);
             page = nullptr;
             list = nullptr;
@@ -127,7 +135,7 @@ bool VideoPlayback::open(Page& listPage, const std::string& layoutName, const st
     list_ = list;
     listPage_ = &listPage;
     LOG_INFO("VideoPlayback", "Playing " + source->name + "/" + list->items[index]->name + " in RetroFE"
-        + (file.empty() ? " (built-in player page)" : " (" + file + ")"));
+        + (used.empty() ? " (built-in player page)" : " (" + used + ")"));
 
     // The list page stops its own videos while this one plays
     listPage.freeGraphicsMemory();
@@ -137,7 +145,7 @@ bool VideoPlayback::open(Page& listPage, const std::string& layoutName, const st
     return true;
 }
 
-void VideoPlayback::close()
+void VideoPlayback::close(bool backToList)
 {
     if (!page_) {
         return;
@@ -151,6 +159,9 @@ void VideoPlayback::close()
     // Back on the list, on the video played last
     Page* listPage = listPage_;
     listPage_ = nullptr;
+    if (!backToList || !listPage) {
+        return;
+    }
     listPage->allocateGraphicsMemory();
     const std::vector<Item*>& shown = shownItems(*listPage);
     for (size_t i = 0; i < shown.size(); i++) {
@@ -169,6 +180,7 @@ void VideoPlayback::select(size_t index)
     index_ = index;
     seenPlaying_ = false;
     updatesSinceSelect_ = 0;
+    waited_ = 0;
     LOG_INFO("VideoPlayback", "Now playing " + list_->items[index]->name);
     page_->setScrollOffsetIndex(index);
     page_->highlightLoadArt();   // the page's reloadables load the new video
@@ -222,11 +234,26 @@ void VideoPlayback::update(float dt)
         updatesSinceSelect_++;
         return;
     }
+    // One that never starts (a file the player can't open) is skipped after a while
+    bool stalled = false;
     if (page_->isJukeboxPlaying()) {
+        if (!seenPlaying_ && onPlay_) {
+            onPlay_(list_->items[index_]);
+        }
         seenPlaying_ = true;
     }
-    else if (seenPlaying_) {
-        LOG_INFO("VideoPlayback", list_->items[index_]->name + " has ended");
+    else if (!seenPlaying_) {
+        waited_ += dt;
+        stalled = waited_ > startTimeout;
+        if (stalled) {
+            LOG_ERROR("VideoPlayback", list_->items[index_]->name + " didn't start playing within "
+                + std::to_string(static_cast<int>(startTimeout)) + " seconds; skipping it");
+        }
+    }
+    if ((!page_->isJukeboxPlaying() && seenPlaying_) || stalled) {
+        if (!stalled) {
+            LOG_INFO("VideoPlayback", list_->items[index_]->name + " has ended");
+        }
         if (index_ + 1 < list_->items.size()) {
             select(index_ + 1);
         }

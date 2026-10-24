@@ -315,7 +315,11 @@ under Videos, not Systems, and each row says how its videos play.
   Left and Right go to the previous or next video, Up and Down seek, the skip
   keys jump a minute, and Back returns to the list on the video you were
   watching. When a video ends the next one starts; after the last one you're
-  back on the list. Sound follows RetroFE's video settings (`MuteVideo`, and
+  back on the list. A video that doesn't start within 10 seconds (a file the
+  player can't open) is skipped. Each video that starts counts as played in
+  last played and the play count, as a launched game does (RetroFE keeps those
+  only when `lastPlayedSkipCollection` is set). Attract mode doesn't start
+  these videos. Sound follows RetroFE's video settings (`MuteVideo`, and
   the layout's `volume`). RetroFE's player opens mp4, avi, mkv, mp3, wav and
   flac files.
 - **Plays with an external player** (`play = launcher`, or no `play` line, as
@@ -613,7 +617,10 @@ type="video">` shows the selected video. Its **player page** is `player.xml`
 `collections/_videos/layout/`, else RetroFE's built-in one. RetroFE gives the
 player page the list the collection's page shows: it needs a `<menu>` (it can
 be invisible, as in Aeon Nox's), and a `<reloadableVideo type="video"
-jukebox="true">` so Select can pause it and RetroFE knows when it ends. Texts
+jukebox="true">` so Select can pause it and RetroFE knows when it ends; a page
+without either is replaced by the built-in one (log.txt says why). The list
+page's sounds are off while a video plays, so give the player page its own
+`<sound type="load">` for a sound as it opens (Aeon Nox plays `select.wav`). Texts
 of type `title`, `collectionIndexSize`, `isPaused`, `current` and `duration`
 follow the video playing, and `onHighlightEnter` runs when it changes.
 

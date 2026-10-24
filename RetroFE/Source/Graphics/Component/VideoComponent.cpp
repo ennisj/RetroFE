@@ -137,8 +137,11 @@ bool VideoComponent::update(float dt) {
 		}
 
 		if (baseViewInfo.Restart && hasBeenOnScreen_) {
-			if (isPaused) {
-				pause();  // Resume if paused
+			// A restart plays it from the top: resume it, whatever paused it
+			// (being hidden, or pause()), as it always did
+			heldPaused_ = false;
+			if (videoInst_->isPaused()) {
+				videoInst_->pause();
 			}
 
 			GstClockTime currentTime = videoInst_->getCurrent();

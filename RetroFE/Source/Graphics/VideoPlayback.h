@@ -16,11 +16,13 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 
 class CollectionInfo;
 class Configuration;
 class FontCache;
+class Item;
 class Page;
 
 // Plays a video collection's videos in RetroFE, for collections whose
@@ -44,8 +46,15 @@ public:
     bool open(Page& listPage, const std::string& layoutName, const std::string& layoutPage);
     bool isOpen() const { return page_ != nullptr; }
 
-    // Back to the list page, on the video played last
-    void close();
+    // Back to the list page, on the video played last; backToList = false
+    // only frees the player page (RetroFE is closing)
+    void close(bool backToList = true);
+
+    // Called once for each video that starts playing (play count, last played)
+    void setOnPlay(std::function<void(Item*)> onPlay) { onPlay_ = std::move(onPlay); }
+
+    // How long a video may take to start before it's skipped
+    static constexpr float startTimeout = 10.0f;
 
     enum class Command { TogglePause, Next, Previous, SeekForward, SeekBack, JumpForward, JumpBack };
     void command(Command command);
@@ -65,4 +74,6 @@ private:
     size_t index_ = 0;
     bool seenPlaying_ = false;
     int updatesSinceSelect_ = 0;
+    float waited_ = 0;   // seconds since it was selected, until it plays
+    std::function<void(Item*)> onPlay_;
 };

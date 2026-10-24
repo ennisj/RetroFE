@@ -200,7 +200,10 @@ type="video"` previews the selected video. The player page is
 `collections/<c>/layout/player.xml`, then `collections/_videos/layout/player.xml`
 (`player 4x3.xml` for the page `layout 4x3`), else the built-in one; it needs a
 `<menu>` (it can be invisible) that RetroFE fills with the list the collection's
-page shows, and a `reloadableVideo type="video" jukebox="true"`.
+page shows, and a `reloadableVideo type="video" jukebox="true"`; without
+either RetroFE uses the built-in player page. A video that hasn't started
+after 10 seconds is skipped, and each video that starts is counted like a
+launch (last played and play count).
 
 ### Emulators (launchers)
 
