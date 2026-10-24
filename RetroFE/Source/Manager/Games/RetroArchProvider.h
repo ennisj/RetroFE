@@ -32,7 +32,8 @@ namespace Manager
     // modelled on One Saucier's RETROARCH / CORE OPTIONS / CONTROLS tiles. A
     // game's screens (collection + id) edit its own <rom>.cfg / .opt / .rmp;
     // a system's (id) edit the core-wide <Core>.cfg / .opt / .rmp of the core
-    // its default launcher runs. The logic is Library/RetroArch.h.
+    // its default launcher runs, and a launcher's (Emulators: id + scope) the
+    // same core-wide files of the core it runs. The logic is Library/RetroArch.h.
     //
     // Forms (RetroArchForms.cpp, {p} = game or system):
     //   {p}-retroarch      the core, the RetroArch settings rows, links to the other two
@@ -71,9 +72,11 @@ namespace Manager
         using IndexPtr = std::shared_ptr<const Library::Index>;
         using Tile = Library::RetroArch::Tile;
 
-        enum class Kind { None, GameLink, SystemLink, Hub, CoreOptions, CoreOption, Controls };
+        enum class Kind { None, GameLink, SystemLink, LauncherLink, Hub, CoreOptions, CoreOption, Controls };
         static Kind kindOf(const std::string& form);
         static bool isGameForm(const std::string& form);
+        // A launcher's screens (Emulators: "emulator", "emulator-retroarch"...; id + scope)
+        static bool isLauncherForm(const std::string& form);
         static bool tileOf(Kind kind, Tile& tile);
 
         // What the screen's game or system runs on

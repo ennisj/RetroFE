@@ -21,6 +21,7 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
 | `ConfFile.h`, `LineList.h`, `Files.h`, `Backups.h` | Editing primitives: conf files, one-entry-per-line lists, atomic writes, originals |
 | `Properties.h` | RetroFE's start-up key/value map, rebuilt without the singleton |
 | `RetroArch.h` | Which launchers run RetroArch, their core's settings folder, and the curated per-game / per-core RetroArch settings, core options and controls (see [manage-entities.md](manage-entities.md#retroarch-settings)) |
+| `Saves.h` | A game's save files and save states (where RetroArch keeps them, which files are the game's) and their backups under `manage/saves/` (see [manage-entities.md](manage-entities.md#saves)) |
 
 ## Threading and lifetime
 
@@ -204,6 +205,23 @@ OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
   (the Editor's), with the rules in
   [manage-entities.md](manage-entities.md#retroarch-settings). None of these
   is per-frame safe; nothing in the index changes, so no `changed()`.
+- `readConfigFile(path)`: a RetroArch file's values as RetroArch reads them
+  (`#include` followed, first line wins).
+
+### Saves
+- `Saves::forGame(setup, game)` works out where RetroArch keeps a game's save
+  files and states from `retroarch.cfg` (it reads it: call it when a screen
+  opens, with the `RetroArch::detect` result kept per launcher). Not known for
+  launchers that don't run RetroArch.
+- `belongsTo(fileName, stem, kind, ignoreCase)` is the pure rule for "this
+  file is the game's"; `list(folders)` reads the folders, ignoring the stem's
+  case when `Folders::ignoreCase` (`ignoresCase(folder)`: Windows, or a folder
+  found under its swapped case). `backupProblem(collection, game)` says why a
+  name can't be a backup folder.
+- `backUp`, `restore`, `removeAll`, `backups`, `findBackup`, `removeBackup`
+  copy to and from `manage/saves/<collection>/<game>/<id>/` (`saves/`,
+  `states/`, `backup.txt` with the reason). They read and write files; nothing
+  in the index changes, so no `changed()`.
 
 ### Themes
 `index->layouts` holds a `LayoutRecord` per layout:
@@ -275,6 +293,8 @@ After a successful write, call `indexer.changed("what")`.
 | `replaceMedia(slot, file)` / `clearMedia(slot)` | The slot's own folder, as `<basename>.<ext>`, with the extension lower-cased | The file kind must fit the slot. The slot's other files of that kind are moved aside. Clearing is refused when the slot only shows a fallback. Nothing is ever written into a fallback's folder. |
 | `addLauncher(index, NewLauncher{name, executable, arguments, currentDirectory})` | A new `launchers.<os>/<name>.conf` (os = the index's), written whole | `checkLauncherName`: a plain-ASCII file name, no `= , ; %`, at most 64 characters, not a Windows device name (the part before the first dot: `con.txt`, `aux.v2`). `checkNewLauncherName` also refuses, ignoring case, any launcher's id in any scope (RetroFE looks up local, then collection, then global launchers, so the new one would never run) and `<collection>.<x>` names, and a file of that name on disk. Values are one line without `#`. An existing launcher file is never changed. |
 | `removeLauncher(index, scope, id)` | Removes that launcher's file (global, collection or local) into the backups | Only when no system uses it as its default or an alternative and no game picks it. Refused for a collection's `launcher.<os>.conf` when a `launcher.conf` sits beside it, which would take over under the same name. |
+| `editLauncher(index, scope, id, LauncherChange{executable, arguments, currentDirectory, reboot})` | That launcher's file, in place (`ConfFile`) | Only the fields set (each `optional`). Every other line, unknown key (`LEDBlinkyEmulator`), comment and line ending stays; a new key is appended in the file's style. Empty arguments or working folder, or reboot = false, removes the line. Working folder and reboot are refused for collection and local launchers (RetroFE reads them only as `launchers.<name>.*`). Values are one line without `#`; the screen checks the program exists and the `%VARIABLES%` are RetroFE's (`Emulators::checkLauncherValues`). |
+| `scanLauncherRename(index, id)`, `planLauncherRename(index, scan or id, newName)` / `renameLauncher` | `launchers.<os>/<id>.conf` in every platform folder (windows, linux, apple) renamed to `<newName>.conf`, byte for byte; each collection's settings*.conf / info.conf `launcher =` line naming it (a token in an `a, b, c` list, the rest kept); the first line of each `collections/<c>/launchers/<game>.conf` naming it | Global launchers only; the new name passes `checkNewLauncherName` and no platform folder has that file; a case-only rename is refused. A game's pick of a name the collection also has as a local launcher means the local one and is left. A system whose effective `launcher` comes from a file outside its folder (`Properties::sourceFile`: the global settings' `collections.<c>.launcher`, which a collection's own files override) refuses the whole rename. The scan (every collection's settings files, the platform folders) doesn't depend on the name: keep it per launcher and snapshot, and plan each name from it; `renameLauncher` scans afresh. The plan's `changes` are sentences for a preview. Originals go to the backups; a failure part way writes back what each touched file held. |
 | `writeMediaText(slot, text)` | A text slot's own `<basename>.txt` (a game's story), with the text as given | Text slots only; empty text is refused (use `clearMedia`). An existing own file keeps its spelling. |
 | `restoreOriginal(file)` | Puts back the copy kept before the first change, or deletes a file that didn't exist then | |
 
@@ -289,8 +309,10 @@ way RetroFE's import builds it: `meta/hyperlist`, then `meta/mamelist`, then
   re-import on its next start. The message says so.
 
 Safety rules that hold for all of these:
-- **Never edited:** `executable`, `arguments`, `list.path` and any other path
-  key of an existing file (`addLauncher` writes a new launcher file whole). Menu lines are only ever added, removed or moved one at a time.
+- **Never edited:** `list.path` and any other path key of a collection. A
+  launcher's `executable`, `arguments`, `currentDirectory` and `reboot` are
+  written only by `addLauncher` (a new file, whole) and `editLauncher` (the
+  Emulators edit screen, validated). Menu lines are only ever added, removed or moved one at a time.
 - **Atomic and durable:** writes go to a temp file. It's flushed to the disk
   (`FlushFileBuffers`, or `fsync`) and then renamed into place
   (`MOVEFILE_WRITE_THROUGH`, or rename plus an fsync of the folder). A power cut

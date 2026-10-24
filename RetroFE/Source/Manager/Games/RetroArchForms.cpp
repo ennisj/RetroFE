@@ -176,3 +176,9 @@ const Forms::BuiltinTable& Manager::retroArchForms(bool system)
     static const Table systems(systemWords());
     return system ? systems.table : games.table;
 }
+
+const Forms::BuiltinTable& Manager::retroArchLauncherForms()
+{
+    static const Table launchers(Words{ { "{p}", "emulator" }, { "{useCore}", "" } });
+    return launchers.table;
+}
