@@ -34,8 +34,10 @@ void HiScores::loadHighScores(const std::string& zipPath, const std::string& ove
     
     // hi2txt is optional: an install without it simply has no high score tables
     std::error_code ec;
-    if (!std::filesystem::exists(zipPath, ec) && !std::filesystem::exists(overridePath, ec)) {
-        LOG_INFO("HiScores", "No hi2txt data (" + zipPath + "), so no high score tables");
+    std::string hi2txtFolder = std::filesystem::path(zipPath).parent_path().string();
+    if (!std::filesystem::exists(zipPath, ec) && !std::filesystem::exists(overridePath, ec)
+        && !std::filesystem::exists(hi2txtFolder, ec)) {
+        LOG_INFO("HiScores", "No hi2txt (" + hi2txtFolder + "), so no high score tables");
         return;
     }
 
@@ -44,7 +46,8 @@ void HiScores::loadHighScores(const std::string& zipPath, const std::string& ove
         loadFromZip(zipPath);
     }
     else {
-        LOG_INFO("HiScores", "No hi2txt defaults: " + zipPath);
+        // hi2txt is installed but its defaults aren't: most games will have no table
+        LOG_WARNING("HiScores", "hi2txt is set up but its defaults are missing: " + zipPath);
     }
 
     // Check if the override directory exists

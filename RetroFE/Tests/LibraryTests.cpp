@@ -588,6 +588,37 @@ static void runLibraryTests()
         for (const char* name : { "Arcade", "Empty", "Nope" }) {
             check(!CollectionInfoBuilder::isMenuOrMergedFolder(root + "/collections/" + name), std::string(name) + " should have some");
         }
+
+        // A menu that has games of its own too still needs its settings
+        writeFile(root + "/collections/MenuGames/menu.txt", "Arcade\n");
+        writeFile(root + "/collections/MenuGames/roms/x.zip", "x");
+        writeFile(root + "/collections/MenuKeys/menu.txt", "Arcade\n");
+        writeFile(root + "/collections/MenuKeys/info.conf", "list.extensions = zip\n");
+        // A system whose list.path is wrong: no games, but still a system
+        writeFile(root + "/collections/Broken/settings.conf", "list.path = nowhere\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        for (const char* name : { "Arcade", "MenuKeys", "Broken" }) {
+            for (const char* file : { "/settings.conf", "/info.conf" }) {
+                std::string path = root + "/collections/" + name + file;
+                if (fs::exists(path)) {
+                    config.import(name, std::string("collections.") + name, path, false);
+                }
+            }
+        }
+        for (const char* name : { "Main", "Consoles", "All", "Legacy" }) {
+            check(CollectionInfoBuilder::needsNoSettings(config, name), std::string(name) + ": a missing settings.conf is expected");
+        }
+        for (const char* name : { "MenuGames", "MenuKeys", "Arcade", "Empty" }) {
+            check(!CollectionInfoBuilder::needsNoSettings(config, name), std::string(name) + ": a missing settings.conf is a problem");
+        }
+        // Who gets the "launcher isn't set" notice: systems, found games or not
+        for (const char* name : { "Arcade", "Broken", "MenuKeys" }) {
+            check(CollectionInfoBuilder::isSystem(config, name), std::string(name) + " is a system");
+        }
+        for (const char* name : { "Main", "Consoles", "All", "Home", "Empty" }) {
+            check(!CollectionInfoBuilder::isSystem(config, name), std::string(name) + " is no system");
+        }
     });
 
     // --- Metadata overrides ---------------------------------------------------------

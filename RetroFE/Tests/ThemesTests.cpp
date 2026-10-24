@@ -241,9 +241,14 @@ static Test::Suite themes("themes", [] {
         checkEqual(alpha("40"), "40", "alpha 40 is a percent");
         checkEqual(alpha("25%"), "25", "alpha 25%");
         checkEqual(alpha("1.0"), "100", "alpha 1.0 is opaque");
+        checkEqual(alpha("0"), "0", "alpha 0");
+        checkEqual(alpha("1"), "100", "a bare 1 is opaque, as in a layout");
+        check(note == "100%", "and says so: " + note);
+        checkEqual(alpha("1%"), "1", "1% is a percent");
+        checkEqual(alpha("2"), "2", "2 is a percent");
         checkEqual(alpha(".5"), "50", "alpha .5");
         checkEqual(alpha(".5"), "50", "the same value again is fine");
-        for (const char* bad : { "1.5", "150", "-0.2", "half", "50%%", "", "0.5 0.6" }) {
+        for (const char* bad : { "1.5", "150", "-0.2", "half", "50%%", "", "0.5 0.6", "0x10", "1e1", "+5", ".", "1.2.3" }) {
             check(runSessionCommand(s, parseEditorCommand(std::string("alpha ") + bad), note) == CommandResult::Failed
                   && note.find("0-1") != std::string::npos && s.selectedWidget()->alphaPct == 50,
                   std::string("alpha ") + bad + " fails and says why: " + note);

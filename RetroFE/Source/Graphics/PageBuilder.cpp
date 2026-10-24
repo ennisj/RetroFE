@@ -181,9 +181,13 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			}
 		}
 
-		// "layout - N.xml" pages (one per extra monitor) are optional: most themes have none
+		// "layout - N.xml" (layoutIndex N + 1) is by convention monitor N's page. It's
+		// optional unless monitor N is in use: monitor 0 has the main page, and most
+		// setups have one screen, so a missing one is only worth a warning then.
+		// (The page's own monitor= attribute decides where it draws.)
 		auto missing = [layoutIndex](const std::string& message) {
-			if (layoutIndex == 0)
+			const int monitor = static_cast<int>(layoutIndex) - 1;
+			if (layoutIndex == 0 || (monitor >= 1 && monitor < SDL::getScreenCount()))
 				LOG_WARNING("Layout", message);
 			else
 				LOG_INFO("Layout", message);

@@ -63,6 +63,39 @@ bool CollectionInfoBuilder::isMenuOrMergedFolder(const std::string& folder)
     return false;
 }
 
+bool CollectionInfoBuilder::listFolderExists(Configuration& conf, const std::string& name)
+{
+    std::string paths;
+    conf.getCollectionAbsolutePath(name, paths);
+    std::vector<std::string> folders;
+    Utils::listToVector(paths, folders, ';');
+    std::error_code ec;
+    return std::any_of(folders.begin(), folders.end(), [&ec](const std::string& folder) {
+        return !folder.empty() && fs::is_directory(folder, ec);
+    });
+}
+
+bool CollectionInfoBuilder::isSystem(Configuration& conf, const std::string& name)
+{
+    std::string prefix = "collections." + name + ".list.";
+    std::string extensions;
+    if (conf.getProperty(prefix + "extensions", extensions) && !Utils::trimEnds(extensions).empty()) {
+        return true;
+    }
+    if (conf.propertyExists(prefix + "path")) {
+        return true;
+    }
+    return listFolderExists(conf, name)
+        && !isMenuOrMergedFolder(Utils::combinePath(Configuration::absolutePath, "collections", name));
+}
+
+bool CollectionInfoBuilder::needsNoSettings(Configuration& conf, const std::string& name)
+{
+    return isMenuOrMergedFolder(Utils::combinePath(Configuration::absolutePath, "collections", name))
+        && !conf.propertyPrefixExists("collections." + name + ".list")
+        && !listFolderExists(conf, name);
+}
+
 bool CollectionInfoBuilder::createCollectionDirectory(const std::string& name, const std::string& collectionType, const std::string& osType)
 {
     std::string collectionPath = Utils::combinePath(Configuration::absolutePath, "collections", name);
@@ -244,11 +277,12 @@ CollectionInfo *CollectionInfoBuilder::buildCollection(const std::string& name, 
 
     ImportDirectory(collection, mergedCollectionName);
 
-    // Only games of its own need a launcher: menus (Home, a menu.txt) and
-    // merged collections (whose games use their own systems') have none
-    if (!hasLauncher && !collection->items.empty()) {
-        LOG_NOTICE("Collections", "\"" + launcherKey + "\" isn't set, so the " + std::to_string(collection->items.size())
-            + " games of " + name + " can be viewed but not started.");
+    // Only a system needs a launcher: menus (Home, a menu.txt) and merged
+    // collections (whose games use their own systems') have none. A system
+    // with no games found (a wrong list.path) still gets the notice.
+    if (!hasLauncher && isSystem(conf_, name)) {
+        LOG_NOTICE("Collections", "\"" + launcherKey + "\" isn't set, so the games of " + name
+            + " can be viewed but not started.");
     }
 
     return collection;
