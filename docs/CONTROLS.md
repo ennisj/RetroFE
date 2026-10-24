@@ -42,15 +42,15 @@ RetroFE always has these, unless you leave one empty on purpose:
 - **Set to nothing** (`quit =`, e.g. on a kiosk so nobody can leave): nothing
   is bound to it, as upstream; the log says so.
 
-The built-in defaults name pads by controller button, so A selects and B
-goes back on any pad SDL has a mapping for:
+The built-in defaults are
 `up = Up,joyDPUp,joyLeftY-,joyHat0Up,joyAxis1-` (and the same for the other
-directions), `select = Return,joyA`, `back = Escape,joyB`, `quit = Q`. Raw
-button numbers aren't in them, because on some pads (a DualShock read through
-DirectInput) `joyButton1` is the same button as `joyA`, which would make one
-button both Select and Back. A joystick SDL has no mapping for (some arcade
-encoders) still moves with the first hat and stick; give it buttons in
-Settings > Controls or `controls.conf`.
+directions), `select = Return,joyA,joyUnmappedButton0`,
+`back = Escape,joyB,joyUnmappedButton1` and `quit = Q`. A pad SDL has a
+mapping for selects with A and goes back with B; a joystick it has no mapping
+for (an arcade encoder such as a Zero Delay) selects with button 0 and goes
+back with button 1, as RetroFE always did. Buttons 0 and 1 are written
+`joyUnmapped...` there because on some mapped pads (a DualShock read through
+DirectInput) button 1 is A, which would make one button both Select and Back.
 | Control | Description |
 |---------|-------------|
 | `up` | Scrolls menu up (for vertical menus) |
@@ -197,6 +197,7 @@ name a raw button number:
 | `joyXAxis2-` | Right analog stick, horizontal axis left (joystick X) |
 | `joyXAxis3+` | Right analog stick, vertical axis down (joystick X) |
 | `joyXAxis3-` | Right analog stick, vertical axis up (joystick X) |
+| `joyXUnmappedButtonY`, `joyXUnmappedHatY...`, `joyXUnmappedAxisY+` | The same inputs, but only on joysticks SDL has no game controller mapping for (arcade encoders); a pad that has one ignores them. The built-in defaults use them; `joyButtonY` itself counts on every joystick, as it always did. |
 
 If X is omitted, RetroFE will accept input from all controllers.
 (version 0.8.13+) An axis needs `+` or `-`.

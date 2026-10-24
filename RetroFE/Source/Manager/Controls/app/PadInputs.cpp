@@ -55,6 +55,9 @@ std::vector<std::string> padSameInputs(const std::string& token)
     InputToken::Input in = InputToken::parse(token);
     in.joystick = -1;   // compared as "any pad"
     std::vector<std::string> names;
+    if (in.unmappedOnly) {
+        return names;   // never acts on a game controller
+    }
     auto add = [&](InputToken::Input input) {
         input.joystick = -1;
         std::string name = InputToken::format(input);

@@ -99,6 +99,23 @@ namespace
             return invalid("\"" + token + "\" doesn't say which button.");
         }
 
+        // joyUnmappedButton0: a joystick input that only counts on joysticks
+        // SDL has no game controller mapping for (the built-in defaults' way
+        // to reach arcade encoders without crossing a mapped pad's buttons)
+        const std::string unmapped = "unmapped";
+        if (rest.compare(0, unmapped.size(), unmapped) == 0) {
+            std::string after = rest.substr(unmapped.size());
+            if (after.compare(0, 6, "button") != 0 && after.compare(0, 3, "hat") != 0 && after.compare(0, 4, "axis") != 0) {
+                return invalid("\"" + token + "\" can only name a joystick button, hat or axis, e.g. joyUnmappedButton0.");
+            }
+            InputToken::Input inner = parseJoy(token, after);
+            if (inner.kind != InputToken::Kind::Invalid) {
+                inner.joystick = input.joystick;
+                inner.unmappedOnly = true;
+            }
+            return inner;
+        }
+
         if (rest.compare(0, 6, "button") == 0) {
             std::string number = rest.substr(6);
             if (!allDigits(number) || number.size() > 3) {
@@ -240,22 +257,23 @@ Input parse(const std::string& raw)
 std::string format(const Input& input)
 {
     std::string joy = "joy" + (input.joystick >= 0 ? std::to_string(input.joystick) : std::string());
+    std::string raw = joy + (input.unmappedOnly ? "Unmapped" : "");
     switch (input.kind) {
     case Kind::Keyboard:
         return input.key;
     case Kind::Mouse:
         return input.index >= 1 && input.index <= 5 ? std::string("mouseButton") + mouseButtons[input.index] : "";
     case Kind::JoyButton:
-        return joy + "Button" + std::to_string(input.index);
+        return raw + "Button" + std::to_string(input.index);
     case Kind::JoyHat:
         for (size_t i = 0; i < sizeof(hats) / sizeof(hats[0]); i++) {
             if (hatValues[i] == input.value) {
-                return joy + "Hat" + std::to_string(input.index) + hats[i].token;
+                return raw + "Hat" + std::to_string(input.index) + hats[i].token;
             }
         }
         return "";
     case Kind::JoyAxis:
-        return joy + "Axis" + std::to_string(input.index) + (input.value < 0 ? "-" : "+");
+        return raw + "Axis" + std::to_string(input.index) + (input.value < 0 ? "-" : "+");
     case Kind::ControllerButton:
         if (input.index < 0 || input.index >= static_cast<int>(sizeof(controllerButtons) / sizeof(controllerButtons[0]))) {
             return "";
@@ -272,7 +290,23 @@ std::string format(const Input& input)
     return "";
 }
 
+static std::string describeInput(const Input& input);
+
 std::string describe(const Input& input)
+{
+    std::string text = describeInput(input);
+    if (input.unmappedOnly) {
+        text += " (joysticks with no controller mapping)";
+    }
+    return text;
+}
+
+bool applies(const Input& input, bool fromGameController)
+{
+    return !(input.unmappedOnly && fromGameController);
+}
+
+static std::string describeInput(const Input& input)
 {
     std::string number = input.joystick >= 0 ? " " + std::to_string(input.joystick) : "";
     switch (input.kind) {
@@ -324,6 +358,7 @@ bool same(const Input& a, const Input& b)
     if (a.kind == Kind::Keyboard) {
         return lower(a.key) == lower(b.key);
     }
+    // joyUnmappedButton0 is the same button as joyButton0 (on the joysticks it counts on)
     return a.joystick == b.joystick && a.index == b.index && a.value == b.value;
 }
 

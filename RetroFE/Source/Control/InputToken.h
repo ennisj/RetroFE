@@ -26,6 +26,8 @@
 //   Keyboard     an SDL scancode name: "Up", "Return", "Keypad 4", "F10"
 //   Mouse        mouseButtonLeft / Middle / Right / X1 / X2
 //   Joystick     joy[N]ButtonB, joy[N]HatH<Dir>, joy[N]AxisA+ / -
+//                joy[N]Unmapped... (e.g. joyUnmappedButton0): the same, but only on
+//                joysticks SDL has no game controller mapping for (arcade encoders)
 //                (Dir: Up, Down, Left, Right, LeftUp, LeftDown, RightUp, RightDown)
 //   Controller   joy[N]<SDL game controller name>: buttons A, B, X, Y, Back,
 //                Guide, Start, LeftStick, RightStick, LeftShoulder,
@@ -64,6 +66,7 @@ namespace InputToken
         int index = 0;        // button, hat, axis or mouse button number
         int value = 0;        // JoyHat: the Hat direction; axes: +1 or -1
         std::string key;      // Keyboard: the name as written
+        bool unmappedOnly = false;   // JoyButton/Hat/Axis written joyUnmapped...: only on joysticks SDL has no controller mapping for
         std::string problem;  // Invalid: why, as a sentence
     };
 
@@ -79,6 +82,11 @@ namespace InputToken
     // A short description for the screens, e.g. "Keyboard Return",
     // "Controller A", "Controller left stick up", "Joystick 2 button 3"
     std::string describe(const Input& input);
+
+    // Whether input acts on an event from a joystick that is (or isn't) a
+    // game controller SDL has a mapping for: joyUnmapped... inputs don't act
+    // on game controllers; everything else (joyButton0 included) always does
+    bool applies(const Input& input, bool fromGameController);
 
     // True when both name the same physical input (case and spelling aside)
     bool same(const Input& a, const Input& b);

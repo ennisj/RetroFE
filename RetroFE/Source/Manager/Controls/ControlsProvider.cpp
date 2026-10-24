@@ -206,8 +206,9 @@ std::vector<std::string> ControlsProvider::usedBy(const std::string& token, cons
         bool uses = false;
         for (const std::string& other : tokens(control.name)) {
             InputToken::Input theirs = InputToken::parse(other);
-            for (const InputToken::Input& input : inputs) {
-                uses = uses || InputToken::same(input, theirs);
+            for (size_t i = 0; i < inputs.size(); i++) {
+                // A pad's other name for it (i > 0) is a mapped pad's: joyUnmapped... doesn't act there
+                uses = uses || (InputToken::same(inputs[i], theirs) && (i == 0 || !theirs.unmappedOnly));
             }
         }
         if (uses) {

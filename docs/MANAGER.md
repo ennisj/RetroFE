@@ -516,8 +516,9 @@ controls share an input. From there:
   (`Keypad ,`) can't be added: `controls.conf` couldn't hold it.
 - Choosing an input opens it, with **Remove this input**.
 - **Put back the default**: RetroFE's built-in inputs for the control
-  (`Return, joyA` for Select, F10 for Open Settings), or none for controls
-  that have no default.
+  (Return, A on a pad, and button 0 on a joystick SDL has no mapping for,
+  for Select; F10 for Open Settings), or none for controls that have no
+  default.
 
 Changes to every control are kept together until **Save** (on the list or a
 control's screen); **Undo changes** drops them, and leaving the list with

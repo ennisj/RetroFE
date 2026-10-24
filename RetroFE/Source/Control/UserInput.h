@@ -124,6 +124,8 @@ private:
     bool updated_{ false };
     JoystickSlots slots_{ cMaxJoy };              // SDL instance ids of joy0, joy1...
     SDL_GameController* controllers_[cMaxJoy];   // by slot, for pads SDL has a mapping for
+    std::map<SDL_JoystickID, bool> mapped_;       // every joystick connected: is it a game controller?
+    bool eventFromController_ = false;            // the joystick event being handled comes from one
     std::vector<std::pair<InputHandler *, KeyCode_E> > keyHandlers_;
     bool lastKeyState_[KeyCodeMax]; 
     bool currentKeyState_[KeyCodeMax]; 

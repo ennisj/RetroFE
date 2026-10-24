@@ -179,7 +179,8 @@ static Test::Suite controlsSuite("controls", [] {
     });
 
     run("controls: built-in defaults and the control list", [] {
-        checkEqual(ControlList::builtinDefault("select"), "Return,joyA", "from Builtin::controls: pads by controller name");
+        checkEqual(ControlList::builtinDefault("select"), "Return,joyA,joyUnmappedButton0", "from Builtin::controls: pads by controller name, encoders by button");
+        checkEqual(ControlList::builtinDefault("back"), "Escape,joyB,joyUnmappedButton1", "the same for Back");
         checkEqual(ControlList::builtinDefault("manager"), "F10", "the Settings key");
         checkEqual(ControlList::builtinDefault("letterUp"), "", "none");
         int required = 0;
@@ -345,7 +346,7 @@ static Test::Suite controlsSuite("controls", [] {
         check(saved.ok && contains(saved.message, "controls1.conf") && contains(saved.message, "controls.conf"), "saved: " + saved.message);
         checkEqual(std::to_string(f.reloads), "1", "RetroFE re-reads its controls");
         checkEqual(readFile(root + "/controls1.conf"), "letterUp = M,joyButton5,PageUp\n", "letterUp in its override");
-        check(contains(readFile(root + "/controls.conf"), "select = Return,joyA\r\n"), "select's default in controls.conf");
+        check(contains(readFile(root + "/controls.conf"), "select = Return,joyA,joyUnmappedButton0\r\n"), "select's default in controls.conf");
         checkEqual(f.model->get("control:isDirty"), "no", "nothing waiting");
         check(f.model->leaving({ "controls", {} }).empty(), "leaving is fine now");
     });
@@ -376,7 +377,8 @@ static Test::Suite controlsSuite("controls", [] {
         Fixture f(root);
         f.model->setScreen("controls", {});
         const Forms::Row* select = f.row("Essential", "select");
-        check(select && select->detail == "Keyboard Return, Controller A", "built-in select");
+        check(select && select->detail == "Keyboard Return, Controller A, Joystick button 0 (joysticks with no controller mapping)",
+              "built-in select: " + (select ? select->detail : ""));
         const Forms::Row* letter = f.row("Navigation", "letterUp");
         check(letter && letter->detail == "No input", "nothing built in");
         checkEqual(f.model->get("control:deadZone"), "30", "built-in dead zone");
@@ -385,7 +387,8 @@ static Test::Suite controlsSuite("controls", [] {
         check(f.capture("Space").ok, "added");
         check(f.model->runAction("control.save").ok, "saved");
         std::string text = readFile(root + "/controls.conf");
-        check(contains(text, "select = Return,joyA,Space") && contains(text, "back = Escape,joyB"), "a full controls.conf: " + text);
+        check(contains(text, "select = Return,joyA,joyUnmappedButton0,Space") && contains(text, "back = Escape,joyB,joyUnmappedButton1"),
+              "a full controls.conf: " + text);
     });
 
     run("controls: an empty value stays empty, and Open Settings without a key is F10", [] {
@@ -415,6 +418,32 @@ static Test::Suite controlsSuite("controls", [] {
         Forms::Model::Result added = f.capture("joyA");
         check(added.ok && contains(added.message, "Back"), "warns it's Back's button too: " + added.message);
         check(contains(f.model->get("control:notes"), "Back"), "and the control says so");
+
+        // The built-in default's button 1 only counts on unmapped joysticks: no clash on a mapped pad
+        writeFile(root + "/controls.conf", "select = Return\nback = Escape,joyUnmappedButton1\nup = Up\ndown = Down\n");
+        Fixture g(root, [](const std::string& token) {
+            return token == "joyA" ? std::vector<std::string>{ "joyButton1" } : std::vector<std::string>{};
+        });
+        g.model->setScreen("control", { { "id", "select" } });
+        Forms::Model::Result clean = g.capture("joyA");
+        check(clean.ok && !contains(clean.message, "Back"), "no warning: " + clean.message);
+    });
+
+    run("controls: joyUnmapped... inputs count only on joysticks SDL has no controller mapping for", [] {
+        InputToken::Input encoder = InputToken::parse("joyUnmappedButton0");
+        check(encoder.kind == Kind::JoyButton && encoder.index == 0 && encoder.unmappedOnly, "parsed");
+        checkEqual(InputToken::format(encoder), "joyUnmappedButton0", "written back");
+        checkEqual(InputToken::format(InputToken::parse("joy1unmappedhat0up")), "joy1UnmappedHat0Up", "a hat, numbered, any case");
+        checkEqual(InputToken::format(InputToken::parse("joyUnmappedAxis1-")), "joyUnmappedAxis1-", "an axis");
+        check(!InputToken::applies(encoder, true), "not on a game controller (whose button 0 may be another button)");
+        check(InputToken::applies(encoder, false), "on an arcade encoder");
+        InputToken::Input plain = InputToken::parse("joyButton0");
+        check(!plain.unmappedOnly && InputToken::applies(plain, true) && InputToken::applies(plain, false),
+              "joyButton0 as written in a controls.conf means what it always did: any joystick");
+        check(InputToken::same(encoder, plain), "the same button where it counts");
+        check(InputToken::parse("joyUnmappedA").kind == Kind::Invalid, "only raw buttons, hats and axes");
+        check(InputToken::parse("joyUnmapped").kind == Kind::Invalid, "something after it");
+        check(contains(InputToken::describe(encoder), "no controller mapping"), "described: " + InputToken::describe(encoder));
     });
 
     run("controls: joystick slots never give a slot to an invalid id", [] {

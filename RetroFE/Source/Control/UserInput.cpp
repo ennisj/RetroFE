@@ -234,6 +234,9 @@ bool UserInput::HandleInputMapping(const std::string& token, KeyCode_E key, cons
         LOG_WARNING("Input", "Skipping an input of " + configKey + ": " + input.problem + " See docs/CONTROLS.md for valid inputs.");
         return false;
     }
+    if (input.unmappedOnly) {
+        handler = new UnmappedOnlyHandler(handler, &eventFromController_);
+    }
     LOG_INFO("Input", "Binding " + configKey + " to " + InputToken::describe(input));
     keyHandlers_.push_back(std::pair<InputHandler*, KeyCode_E>(handler, key));
     return true;
@@ -309,16 +312,24 @@ bool UserInput::update( SDL_Event &e )
         if ( id >= 0 && slots_.slotOf( id ) >= 0 ) {
             SDL_JoystickClose( joystick );   // told twice: one removal closes it, so keep one reference
         }
+        if ( id >= 0 ) {
+            mapped_[id] = SDL_IsGameController( e.jdevice.which ) == SDL_TRUE;
+        }
         openController( e.jdevice.which, slots_.add( id ) );
     }
 
     // A controller mapping can arrive after its joystick (a stale index gives -1: nothing opens)
     if ( e.type == SDL_CONTROLLERDEVICEADDED ) {
+        SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID( e.cdevice.which );
+        if ( id >= 0 ) {
+            mapped_[id] = true;
+        }
         openController( e.cdevice.which, slots_.slotOf( SDL_JoystickGetDeviceInstanceID( e.cdevice.which ) ) );
     }
 
     // Handle removing a joystick
     if ( e.type == SDL_JOYDEVICEREMOVED ) {
+        mapped_.erase( e.jdevice.which );
         int slot = slots_.remove( e.jdevice.which );
         if ( slot >= 0 ) {
             if ( controllers_[slot] ) {
@@ -334,6 +345,9 @@ bool UserInput::update( SDL_Event &e )
          e.type == SDL_JOYBUTTONUP   ||
          e.type == SDL_JOYBUTTONDOWN ||
          e.type == SDL_JOYHATMOTION ) {
+        // For joyUnmapped... inputs: does a game controller send it? (asked before the id becomes a slot)
+        auto mapped = mapped_.find( e.jdevice.which );
+        eventFromController_ = mapped != mapped_.end() && mapped->second;
         int slot = slots_.slotOf( e.jdevice.which );
         if ( slot >= 0 ) {
             e.jdevice.which = slot;
@@ -387,6 +401,7 @@ void UserInput::clearJoysticks( )
 {
     // SDL is going down: it closes them itself
     slots_.clear();
+    mapped_.clear();
     for ( unsigned int i = 0; i < cMaxJoy; i++ ) {
         controllers_[i] = nullptr;
     }

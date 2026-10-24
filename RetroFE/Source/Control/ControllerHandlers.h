@@ -54,3 +54,30 @@ private:
     Sint16 max_;
     bool pressed_ = false;
 };
+
+// A joystick input from the built-in defaults' joyUnmapped... form: it acts
+// only on joysticks SDL has no controller mapping for (arcade encoders),
+// never on a pad that also reports a controller button, whose numbering
+// differs (joyButton1 is A on some). UserInput says whether the event being
+// handled comes from such a pad. Owns inner.
+class UnmappedOnlyHandler : public InputHandler
+{
+public:
+    UnmappedOnlyHandler(InputHandler* inner, const bool* fromGameController)
+        : inner_(inner), fromGameController_(fromGameController) {}
+    ~UnmappedOnlyHandler() override { delete inner_; }
+    bool update(SDL_Event& e) override
+    {
+        bool joystick = e.type == SDL_JOYBUTTONDOWN || e.type == SDL_JOYBUTTONUP || e.type == SDL_JOYHATMOTION
+            || e.type == SDL_JOYAXISMOTION;
+        if (joystick && *fromGameController_) return false;
+        return inner_->update(e);
+    }
+    bool pressed() override { return inner_->pressed(); }
+    void reset() override { inner_->reset(); }
+    void updateKeystate() override { inner_->updateKeystate(); }
+
+private:
+    InputHandler* inner_;
+    const bool* fromGameController_;
+};
