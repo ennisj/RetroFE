@@ -156,6 +156,44 @@ namespace ThemeEditor
             return false;
         }
 
+        // Names in OneSauce's themes this engine doesn't read and
+        // docs/ONESAUCE-COMPAT.md lists as ignored: harmless, redundant, typos
+        // nobody saw, or unclear without changing what's drawn much. Only with
+        // checkLayoutXml's ignored list (--theme-check): reported apart, not as
+        // problems. Not here: what draws differently (reloadablePanningImage,
+        // view, the "quad" transform). { element ("*" any), name }
+        struct Known
+        {
+            const char* element;
+            const char* name;
+        };
+        const Known ONESAUCE_ATTRIBUTES[] = {
+            { "video", "hwdec" }, { "reloadableVideo", "hwdec" }, { "menu", "algorithm" }, { "menu", "miScrollTime" },
+            { "*", "keepOldWhileLoading" }, { "*", "scaleMode" }, { "*", "static" }, { "*", "delay" }, { "*", "reload" },
+            { "*", "reloadTransform" }, { "reloadableScrollingText", "endPosition" }, { "reloadableScrollingText", "uppercase" },
+            { "scrollingText", "pauseTime" }, { "reloadableVideo", "numLoops" }, { "reloadableVideo", "minShowTime" },
+            { "statusText", "value" }, { "animate", "angle" },
+            // Case variants of known names (RetroFE, like upstream, is case-sensitive)
+            { "*", "Height" }, { "*", "Width" }, { "*", "maxwidth" }, { "layout", "loadfontSize" }, { "*", "textFallBack" },
+            { "item", "textFormat" }, { "itemDefaults", "textFormat" },
+        };
+        // Child elements: animation events that look like typos or aren't read, and <stop> in an event
+        const char* const ONESAUCE_CHILDREN[] = {
+            "onJumpEnter", "onJumpExit", "onPlaylistJumpEnter", "onPlaylistJumpExit", "onMenuJump", "onMenuJumpEntrance",
+            "onMenuScrollEnter", "onEmpty", nullptr
+        };
+        // Top-level elements: the case variant, and events only in dead files
+        const char* const ONESAUCE_ELEMENTS[] = { "Reloadableimage", "onExit", "onIdle", "onHighlightExit", nullptr };
+        const char* const ONESAUCE_MENU_MODES[] = { "system", "systemlayout", nullptr };
+
+        bool knownAttribute(const std::string& element, const std::string& name)
+        {
+            for (const Known& k : ONESAUCE_ATTRIBUTES) {
+                if (name == k.name && (std::string(k.element) == "*" || element == k.element)) return true;
+            }
+            return false;
+        }
+
         std::string lower(std::string s)
         {
             std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -198,8 +236,17 @@ namespace ThemeEditor
         struct Checker
         {
             std::vector<std::string> issues;
+            std::vector<std::string>* ignored = nullptr;   // OneSauce names to set apart, when asked for
 
             void issue(const Node* n, const std::string& what) { issues.push_back(describe(n) + ": " + what); }
+
+            // A OneSauce name ONESAUCE-COMPAT.md ignores: noted apart when asked for
+            bool setApart(bool known, const std::string& note)
+            {
+                if (!known || !ignored) return false;
+                ignored->push_back(note);
+                return true;
+            }
 
             // The values the engine reads as plain numbers (convertInt/convertFloat
             // turn anything else into 0 without a word)
@@ -229,6 +276,7 @@ namespace ThemeEditor
                     const std::string name(a->name(), a->name_size());
                     if (inList(name, own)) continue;
                     if (viewInfo && (inList(name, VIEW_INFO) || inList(name, FONT))) continue;
+                    if (setApart(knownAttribute(nameOf(n), name), name)) continue;
                     issue(n, "attribute '" + name + "' isn't read by this engine");
                 }
             }
@@ -246,7 +294,10 @@ namespace ThemeEditor
                 checkNotEmpty(ev, "menuIndex", "it means menu 0; leave it out for every menu");
                 for (const Node* c = ev->first_node(); c; c = c->next_sibling()) {
                     if (c->type() != rapidxml::node_element) continue;
-                    if (nameOf(c) != "set") { issue(c, "isn't read inside " + describe(ev)); continue; }
+                    if (nameOf(c) != "set") {
+                        if (!setApart(nameOf(c) == "stop", "<stop>")) issue(c, "isn't read inside " + describe(ev));
+                        continue;
+                    }
                     checkAttributes(c, false, SET);
                     if (!attribute(c, "duration")) issue(c, "animation set has no duration");
                     for (const Node* a = c->first_node(); a; a = a->next_sibling()) {
@@ -300,6 +351,7 @@ namespace ThemeEditor
                         checkChildren(c, false);
                         continue;
                     }
+                    if (setApart(inList(name, ONESAUCE_CHILDREN), "<" + name + ">")) continue;
                     issue(c, "isn't read inside " + describe(n));
                 }
             }
@@ -313,7 +365,10 @@ namespace ThemeEditor
 
                 if (const rapidxml::xml_attribute<>* mode = attribute(n, "mode")) {
                     const std::string m(mode->value(), mode->value_size());
-                    if (!m.empty() && !inList(m, menu ? MENU_MODES : MEDIA_MODES)) issue(n, "mode '" + m + "' isn't supported here");
+                    if (!m.empty() && !inList(m, menu ? MENU_MODES : MEDIA_MODES) &&
+                        !setApart(menu && inList(m, ONESAUCE_MENU_MODES), "mode=\"" + m + "\" on <menu>")) {
+                        issue(n, "mode '" + m + "' isn't supported here");
+                    }
                 }
                 if ((name == "image" || name == "video" || name == "scrollingText") && !attribute(n, "src")) issue(n, "has no src");
                 if (name == "text" && !attribute(n, "value")) issue(n, "has no value");
@@ -357,7 +412,13 @@ namespace ThemeEditor
 
     std::vector<std::string> checkLayoutXml(const std::string& xml)
     {
+        return checkLayoutXml(xml, nullptr);
+    }
+
+    std::vector<std::string> checkLayoutXml(const std::string& xml, std::vector<std::string>* ignored)
+    {
         Checker check;
+        check.ignored = ignored;
         std::vector<char> buffer(xml.begin(), xml.end());
         buffer.push_back('\0');
         rapidxml::xml_document<> doc;
@@ -390,7 +451,10 @@ namespace ThemeEditor
             for (const auto& r : COMPONENTS) {
                 if (name == r.name) { rule = &r; break; }
             }
-            if (!rule) { check.issue(c, "isn't an element this engine builds"); continue; }
+            if (!rule) {
+                if (!check.setApart(inList(name, ONESAUCE_ELEMENTS), "<" + name + ">")) check.issue(c, "isn't an element this engine builds");
+                continue;
+            }
             check.checkComponent(c, *rule);
         }
         return check.issues;

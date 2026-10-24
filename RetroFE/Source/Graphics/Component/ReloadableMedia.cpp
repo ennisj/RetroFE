@@ -76,6 +76,7 @@ bool ReloadableMedia::update(float dt)
         newItemSelected = false;
         newScrollItemSelected = false;
         Component* foundComponent = reloadTexture();  // Removed the re-declaration here.
+        another_ = false;
         if (foundComponent) {
             foundComponent->playlistName = page.getPlaylistName();
             foundComponent->allocateGraphicsMemory();
@@ -100,6 +101,13 @@ bool ReloadableMedia::update(float dt)
 
     // needs to be ran at the end to prevent the NewItemSelected flag from being detected
     return Component::update(dt);
+}
+
+
+void ReloadableMedia::pickAnotherMedia()
+{
+    another_ = true;
+    newItemSelected = true;
 }
 
 
@@ -496,13 +504,12 @@ Component* ReloadableMedia::findComponent(
 
     // if file already loaded, don't load again
     // (A jukebox video that has played its loops is started again instead.)
-    if (loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying())) {
-        std::string filePath;
-        if (Utils::findMatchingFile(Utils::combinePath(imagePath, basename), extensions, filePath)) {
-            if (filePath == loadedComponent_->filePath()) {
-                return loadedComponent_;
-            }
-        }
+    const bool mayKeep = loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying());
+    const std::string prefix = Utils::combinePath(imagePath, basename);
+    std::string filePath;
+    const bool fileFound = Utils::findMatchingFile(prefix, extensions, filePath);
+    if (mayKeep && fileFound && filePath == loadedComponent_->filePath()) {
+        return loadedComponent_;
     }
 
     if(isVideo) {
@@ -513,6 +520,25 @@ Component* ReloadableMedia::findComponent(
     }
     else {
         component = imageBuild.CreateImage(imagePath, page, basename, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCache_);
+    }
+
+    // Fork compat (OneSauce): no <basename>.<ext>, but a folder <basename>/ of
+    // them: one of its files, kept while it's showing (LayoutCompat::findMedia)
+    if (!component && !fileFound) {
+        static const std::vector<std::string> folderImageExtensions = { "gif", "webp", "png", "jpg", "jpeg" };
+        const std::string current = loadedComponent_ ? std::string(loadedComponent_->filePath()) : std::string();
+        if (LayoutCompat::findMedia(prefix, isVideo ? ReloadableMedia::videoExtensions : folderImageExtensions, current, another_,
+                                    static_cast<unsigned>(rand()), filePath)) {
+            if (mayKeep && filePath == current) {
+                return loadedComponent_;
+            }
+            if (isVideo) {
+                component = new VideoComponent(page, filePath, baseViewInfo.Monitor, jukebox_ ? jukeboxNumLoops_ : -1, false, -1, nullptr);
+            }
+            else {
+                component = new Image(filePath, "", page, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCache_);
+            }
+        }
     }
 
     return component;

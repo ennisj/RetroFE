@@ -26,8 +26,10 @@
 #include "../Source/Library/Properties.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Themes/ThemeProvider.h"
+#include "../Source/ThemeEditor/LayoutCheck.h"
 #include "../Source/ThemeEditor/LayoutSession.h"
 #include "../Source/Utility/Utils.h"
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <string>
@@ -350,6 +352,119 @@ namespace
         });
     }
 
+    // --theme-check on OneSauce's themes: names ONESAUCE-COMPAT.md ignores are set apart
+    void themeCheckTests()
+    {
+        run("compat: the layout check sets OneSauce's ignored names apart, keeping real problems", [] {
+            // Bits of Cafe80s, Aeon Nox and Renee pages, plus two real problems
+            const std::string xml =
+                "<layout width=\"1920\" height=\"1080\" loadfontSize=\"64\">"
+                "<reloadableImage type=\"logo\" Height=\"540\" maxwidth=\"300\" keepOldWhileLoading=\"true\">"
+                "<onEmpty><set duration=\"0\"><animate type=\"alpha\" to=\"0\"/></set></onEmpty>"
+                "<onMenuScroll><stop/></onMenuScroll>"
+                "</reloadableImage>"
+                "<scrollingText src=\"text/menu.txt\" pauseTime=\"1\"/>"
+                "<reloadableScrollingText type=\"title\" uppercase=\"1\"/>"
+                "<video src=\"v.mp4\" hwdec=\"yes\"/>"
+                "<menu mode=\"system\" algorithm=\"easeincircular\"><itemDefaults/></menu>"
+                "<Reloadableimage type=\"logo\"/>"
+                "<image src=\"a.png\" colour=\"red\"/>"          // real: a name nobody documented
+                "<reloadablePanningImage type=\"artwork_front\"/>"  // real: draws differently (nothing)
+                "</layout>";
+            std::vector<std::string> ignored;
+            const std::vector<std::string> problems = ThemeEditor::checkLayoutXml(xml, &ignored);
+            std::string all;
+            for (const std::string& p : problems) all += p + "; ";
+            check(problems.size() == 2, "two real problems: " + all);
+            check(all.find("colour") != std::string::npos && all.find("reloadablePanningImage") != std::string::npos, "the real ones: " + all);
+            for (const char* name : { "loadfontSize", "Height", "maxwidth", "keepOldWhileLoading", "<onEmpty>", "<stop>", "pauseTime",
+                                      "uppercase", "hwdec", "algorithm", "mode=\"system\" on <menu>", "<Reloadableimage>" }) {
+                check(std::find(ignored.begin(), ignored.end(), name) != ignored.end(), std::string("set apart: ") + name);
+            }
+            check(ignored.size() == 12, "each once: " + std::to_string(ignored.size()));
+            check(ThemeEditor::checkLayoutXml(xml).size() == problems.size() + ignored.size(),
+                  "without the list (the theme editor), every one is still a problem");
+            // Media modes stay strict: mode="system" is only OneSauce's on a menu
+            ignored.clear();
+            check(ThemeEditor::checkLayoutXml("<layout width=\"1\" height=\"1\"><reloadableImage type=\"logo\" mode=\"weird\"/></layout>", &ignored).size() == 1 &&
+                  ignored.empty(), "an unknown mode is still a problem");
+        });
+    }
+
+    // OneSauce's media folders: system_artwork/video/<any name>.mp4 for system_artwork/video.mp4
+    void mediaFolderTests()
+    {
+        run("compat: media folders list their files in natural order", [] {
+            check(LayoutCompat::naturalLess("ARCADES 2.mp4", "ARCADES 10.mp4"), "2 before 10");
+            check(!LayoutCompat::naturalLess("ARCADES 10.mp4", "ARCADES 2.mp4"), "not 10 before 2");
+            check(LayoutCompat::naturalLess("arcade3.mp4", "Arcade Classics.mp4") == LayoutCompat::naturalLess("arcade3.mp4", "arcade classics.mp4"),
+                  "case ignored");
+            check(LayoutCompat::naturalLess("Racing-1.mp4", "Racing-2.mp4"), "dash-numbered");
+            check(LayoutCompat::naturalLess("v02.mp4", "v3.mp4"), "leading zeros are numbers too");
+            check(!LayoutCompat::naturalLess("same.mp4", "same.mp4"), "irreflexive");
+
+            std::string root = makeRoot("compat-media-folder");
+            std::string folder = at(root, "collections/1 ARCADES/system_artwork/video");
+            for (const char* name : { "ARCADES 10.mp4", "ARCADES 2.mp4", "ARCADES 1.MP4", "notes.txt", "cover.png" }) {
+                writeFile(at(folder, name), "x");
+            }
+            fs::create_directories(at(folder, "sub.mp4"));   // a folder, not a file
+            const std::vector<std::string> video = { "mp4", "avi", "mkv" };
+            const std::vector<std::string> files = LayoutCompat::mediaFolderFiles(folder, video);
+            check(files.size() == 3, "only the videos: " + std::to_string(files.size()));
+            if (files.size() == 3) {
+                checkEqual(fs::path(files[0]).filename().string(), "ARCADES 1.MP4", "first (any case of the extension)");
+                checkEqual(fs::path(files[1]).filename().string(), "ARCADES 2.mp4", "second");
+                checkEqual(fs::path(files[2]).filename().string(), "ARCADES 10.mp4", "tenth last");
+            }
+            check(LayoutCompat::mediaFolderFiles(at(root, "nothing"), video).empty(), "no folder: nothing");
+            check(LayoutCompat::mediaFolderFiles(at(folder, "ARCADES 2.mp4"), video).empty(), "a file isn't a folder");
+        });
+
+        run("compat: which file of a media folder shows", [] {
+            const std::vector<std::string> files = { "a/1.mp4", "a/2.mp4", "a/3.mp4" };
+            check(LayoutCompat::pickMediaFile(files, "", false, 0) == 0, "nothing showing: random 0");
+            check(LayoutCompat::pickMediaFile(files, "", false, 7) == 1, "nothing showing: random 7 -> 1");
+            check(LayoutCompat::pickMediaFile(files, "b/other.mp4", false, 5) == 2, "another folder's file showing: random");
+            check(LayoutCompat::pickMediaFile(files, "a/2.mp4", false, 0) == 1, "the one showing stays");
+            check(LayoutCompat::pickMediaFile(files, "a/2.mp4", true, 0) == 2, "another: the next");
+            check(LayoutCompat::pickMediaFile(files, "a/3.mp4", true, 0) == 0, "another: wraps");
+            check(LayoutCompat::pickMediaFile({ "a/1.mp4" }, "a/1.mp4", true, 9) == 0, "one file: always it");
+        });
+
+        run("compat: the media lookup takes a file first, else a media folder", [] {
+            const std::string saved = Configuration::absolutePath;
+            std::string root = makeRoot("compat-media-lookup");
+            Configuration::absolutePath = root;
+            const std::vector<std::string> video = { "mp4", "avi" };
+            // A collection with one video file, and one with a folder of them (K:'s 1 CONSOLES and 1 ARCADES)
+            writeFile(at(root, "media/1 CONSOLES/system_artwork/video.mp4"), "x");
+            writeFile(at(root, "media/1 CONSOLES/system_artwork/video/extra.mp4"), "x");   // the file wins, as upstream
+            writeFile(at(root, "media/1 ARCADES/system_artwork/video/ARCADES 1.mp4"), "x");
+            writeFile(at(root, "media/1 ARCADES/system_artwork/video/ARCADES 2.mp4"), "x");
+            std::string file;
+            check(LayoutCompat::findMedia(at(root, "media/1 CONSOLES/system_artwork/video"), video, "", false, 1, file) &&
+                  fs::path(file).filename() == "video.mp4", "a single file is used as before: " + file);
+            check(LayoutCompat::findMedia(at(root, "media/1 ARCADES/system_artwork/video"), video, "", false, 1, file) &&
+                  fs::path(file).filename() == "ARCADES 2.mp4", "a folder: random 1 picks the second: " + file);
+            const std::string showing = file;
+            check(LayoutCompat::findMedia(at(root, "media/1 ARCADES/system_artwork/video"), video, showing, false, 0, file) && file == showing,
+                  "kept while showing");
+            check(LayoutCompat::findMedia(at(root, "media/1 ARCADES/system_artwork/video"), video, showing, true, 0, file) &&
+                  fs::path(file).filename() == "ARCADES 1.mp4", "another: the next, wrapping: " + file);
+            check(!LayoutCompat::findMedia(at(root, "media/1 ARCADES/system_artwork/logo"), video, "", false, 0, file), "nothing there");
+            // Relative to RetroFE's folder, as findMatchingFile takes it
+            check(LayoutCompat::findMedia("media/1 ARCADES/system_artwork/video", video, "", false, 0, file) &&
+                  fs::path(file).filename() == "ARCADES 1.mp4", "relative prefix: " + file);
+            // layout_preferred counts a folder in the layout as the layout's copy
+            writeFile(at(root, "layouts/Cafe80s/collections/1 ARCADES/medium_artwork/video/default/ARCADES 1.mp4"), "x");
+            checkEqual(LayoutCompat::preferredFolder(at(root, "layouts/Cafe80s/collections/1 ARCADES/medium_artwork/video"), "normal",
+                                                     "default", video),
+                       at(root, "layouts/Cafe80s/collections/1 ARCADES/medium_artwork/video"), "layout_preferred sees the folder");
+            Configuration::absolutePath = saved;
+        });
+    }
+
     // A OneSauce-shaped install: root appdata/retrofe, layouts in base_assets/layouts
     std::string splitInstall(const std::string& name, std::string& layouts)
     {
@@ -452,6 +567,8 @@ static Test::Suite compatSuite("compat", [] {
     transformTests();
     transformEdgeTests();
     pathTests();
+    mediaFolderTests();
+    themeCheckTests();
     settingsTests();
     layoutsFolderTests();
 });

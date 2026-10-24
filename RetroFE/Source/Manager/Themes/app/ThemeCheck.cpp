@@ -32,6 +32,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -214,9 +215,23 @@ int Themes::runThemeCheck(Configuration& config, const std::string& layout, cons
     else if (!readText(dir / "layout.xml", mainXml)) problem("no layout.xml");
     else if (kind == TF_EDITOR && !mainPageProblem(mainXml).empty()) problem("layout.xml: " + mainPageProblem(mainXml));
 
-    // The vocabulary this fork's PageBuilder reads
+    // The vocabulary this fork's PageBuilder reads. Names from OneSauce's themes
+    // that docs/ONESAUCE-COMPAT.md lists as ignored are counted apart.
+    std::vector<std::string> ignored;
     for (const CheckPage& page : pages) {
-        for (const std::string& issue : checkLayoutXml(page.xml)) problem(page.label + ": " + issue);
+        for (const std::string& issue : checkLayoutXml(page.xml, &ignored)) problem(page.label + ": " + issue);
+    }
+    if (!ignored.empty()) {
+        std::map<std::string, int> counts;
+        for (const std::string& name : ignored) counts[name]++;
+        std::vector<std::pair<std::string, int>> sorted(counts.begin(), counts.end());
+        std::stable_sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::string list;
+        for (const auto& [name, count] : sorted) {
+            list += (list.empty() ? "" : ", ") + name + (count > 1 ? " x" + std::to_string(count) : "");
+        }
+        say("  ignored (OneSauce): " + std::to_string(ignored.size()) + " use(s) of names RetroFE doesn't read that "
+            "docs/ONESAUCE-COMPAT.md lists as harmless or unclear, not counted as problems: " + list);
     }
 
     // The real engine: build each page in a hidden window and collect what it logs

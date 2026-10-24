@@ -409,6 +409,15 @@ bool ManagerUI::requestClose()
     return true;
 }
 
+bool ManagerUI::requestQuit()
+{
+    if (!requestClose()) {
+        return false;
+    }
+    reloadRequested_ = false;
+    return true;
+}
+
 void ManagerUI::show()
 {
     const Navigator::Frame* frame = nav_.current();

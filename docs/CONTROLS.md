@@ -59,7 +59,7 @@ DirectInput) button 1 is A, which would make one button both Select and Back.
 | `right` | Scrolls menu right (for horizontal menus) |
 | `select` | Selects the active menu item |
 | `back` | Leaves current menu |
-| `quit` | Exits the frontend |
+| `quit` | Exits the frontend. Closing the window (title-bar X, Alt+F4) does the same, asking Manage's screens about unsaved changes first if one is open (closing again leaves, dropping them); it does nothing in kiosk mode or when `quit` is bound to nothing. |
 | `manager` | Opens Settings (default F10). Keyboard keys only: the first one listed is used, and F10 when it lists none. |
 
 The Manage screens use `up`, `down`, `left`, `right`, `select` and `back`

@@ -17,6 +17,21 @@
 #include "Sound.h"
 
 #include "../Utility/Log.h"
+#include <mutex>
+#include <set>
+
+namespace
+{
+    // Each missing file is warned about once: the splash and the main page
+    // both load a layout's sounds (pages are built on two threads)
+    bool firstWarning(const std::string& file)
+    {
+        static std::mutex mutex;
+        static std::set<std::string> warned;
+        std::lock_guard<std::mutex> lock(mutex);
+        return warned.insert(file).second;
+    }
+}
 
 Sound::Sound(std::string file, std::string altfile)
     : file_(file)
@@ -26,7 +41,7 @@ Sound::Sound(std::string file, std::string altfile)
     if(file_ != "" && !allocate())
     {
         file_ = altfile;
-        if (file_ != "" && !allocate())
+        if (file_ != "" && !allocate() && firstWarning(file_))
         {
             LOG_WARNING("Sound", "Cannot load " + file_);
         }

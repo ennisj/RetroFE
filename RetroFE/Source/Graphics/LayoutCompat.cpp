@@ -14,9 +14,12 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "LayoutCompat.h"
+#include "../Database/Configuration.h"
 #include "../Utility/Utils.h"
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
+#include <map>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -404,10 +407,109 @@ std::string preferredFolder(const std::string& layoutFolder, const std::string& 
                             const std::string& basename, const std::vector<std::string>& extensions)
 {
     std::string found;
-    if (!layoutFolder.empty() && Utils::findMatchingFile(Utils::combinePath(layoutFolder, basename), extensions, found)) {
+    if (!layoutFolder.empty() && findMedia(Utils::combinePath(layoutFolder, basename), extensions, "", false, 0, found)) {
         return layoutFolder;
     }
     return normalFolder;
+}
+
+bool naturalLess(const std::string& a, const std::string& b)
+{
+    auto digit = [](char c) { return c >= '0' && c <= '9'; };
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size()) {
+        if (digit(a[i]) && digit(b[j])) {
+            size_t ei = i;
+            size_t ej = j;
+            while (ei < a.size() && digit(a[ei])) ++ei;
+            while (ej < b.size() && digit(b[ej])) ++ej;
+            // Compare the numbers without converting: skip leading zeros, then length, then digits
+            size_t si = i;
+            size_t sj = j;
+            while (si + 1 < ei && a[si] == '0') ++si;
+            while (sj + 1 < ej && b[sj] == '0') ++sj;
+            if (ei - si != ej - sj) return ei - si < ej - sj;
+            int c = a.compare(si, ei - si, b, sj, ej - sj);
+            if (c != 0) return c < 0;
+            i = ei;
+            j = ej;
+            continue;
+        }
+        const int ca = std::tolower(static_cast<unsigned char>(a[i]));
+        const int cb = std::tolower(static_cast<unsigned char>(b[j]));
+        if (ca != cb) return ca < cb;
+        ++i;
+        ++j;
+    }
+    if (a.size() - i != b.size() - j) return a.size() - i < b.size() - j;
+    return a < b;  // same apart from case or leading zeros: any fixed order
+}
+
+std::vector<std::string> mediaFolderFiles(const std::string& folder, const std::vector<std::string>& extensions)
+{
+    std::vector<std::string> files;
+    std::error_code ec;
+    if (folder.empty() || !fs::is_directory(folder, ec)) {
+        return files;
+    }
+    std::vector<std::string> wanted;
+    for (const std::string& extension : extensions) {
+        wanted.push_back(Utils::toLower(extension));
+    }
+    std::vector<std::pair<std::string, std::string>> named;  // name, full path
+    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+        std::error_code entryEc;
+        if (!it->is_regular_file(entryEc)) continue;
+        std::string extension = it->path().extension().string();
+        if (extension.size() < 2) continue;
+        extension = Utils::toLower(extension.substr(1));
+        if (std::find(wanted.begin(), wanted.end(), extension) == wanted.end()) continue;
+        named.emplace_back(it->path().filename().string(), it->path().string());
+    }
+    std::sort(named.begin(), named.end(), [](const auto& x, const auto& y) { return naturalLess(x.first, y.first); });
+    for (auto& entry : named) {
+        files.push_back(std::move(entry.second));
+    }
+    return files;
+}
+
+size_t pickMediaFile(const std::vector<std::string>& files, const std::string& current, bool another, unsigned random)
+{
+    if (files.empty()) return 0;
+    if (!current.empty()) {
+        auto it = std::find(files.begin(), files.end(), current);
+        if (it != files.end()) {
+            const size_t index = static_cast<size_t>(it - files.begin());
+            return another ? (index + 1) % files.size() : index;
+        }
+    }
+    return random % files.size();
+}
+
+bool findMedia(const std::string& prefix, const std::vector<std::string>& extensions,
+               const std::string& current, bool another, unsigned random, std::string& file)
+{
+    if (Utils::findMatchingFile(prefix, extensions, file)) {
+        return true;
+    }
+    // A missing file is the common case: each folder is listed once per run
+    static std::map<std::string, std::vector<std::string>> listed;
+    const std::string folder = Utils::combinePath(Configuration::absolutePath, prefix);
+    std::string key = folder;
+    for (const std::string& extension : extensions) {
+        key += "|" + extension;
+    }
+    auto it = listed.find(key);
+    if (it == listed.end()) {
+        it = listed.emplace(key, mediaFolderFiles(folder, extensions)).first;
+    }
+    const std::vector<std::string>& files = it->second;
+    if (files.empty()) {
+        return false;
+    }
+    file = files[pickMediaFile(files, current, another, random)];
+    return true;
 }
 
 std::string themeFile(const std::string& pageFolder, const std::string& themeFolder, const std::string& src)

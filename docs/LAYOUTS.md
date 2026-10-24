@@ -509,6 +509,21 @@ systems have in the layout (cabinet) and others only in the collection
 The item path also depends on whether the selected item is a collection
 or a game; it will select the first found file.
 
+**Media folders (fork compat, reloadableImage/Video/Audio).** Where a file
+`<name>.<ext>` the lookup tries is missing, a folder `<name>/` holding
+files of the right kind (any names) stands for it: OneSauce keeps menu
+videos as `collections/1 ARCADES/system_artwork/video/ARCADES 1.mp4`,
+`ARCADES 2.mp4`... instead of `system_artwork/video.mp4`, and some themes
+have `medium_artwork/video/<game>/`, `medium_artwork/background/<entry>/`
+or `medium_artwork/<type>/default/` folders. One file of the folder is
+shown, picked at random when the folder comes up; it keeps playing while
+the next item uses the same folder (as one file would), and the
+removePlaylist control (OneSauce's B, "play different video (if
+available)") moves to the next file in name order (numbers counted as
+numbers). A file `<name>.<ext>` beside the folder wins, as before. Menu
+(scrolling list) art doesn't use folders. See
+[ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md).
+
 Example:
 
 You're in the Main collection, have the SNES collection selected, and
