@@ -20,6 +20,7 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
 | `MetadataOverrides.h` | The user metadata layer (`manage/metadata/*.xml`) and its fields |
 | `ConfFile.h`, `LineList.h`, `Files.h`, `Backups.h` | Editing primitives: conf files, one-entry-per-line lists, atomic writes, originals |
 | `Properties.h` | RetroFE's start-up key/value map, rebuilt without the singleton |
+| `RetroArch.h` | Which launchers run RetroArch, their core's settings folder, and the curated per-game / per-core RetroArch settings, core options and controls (see [manage-entities.md](manage-entities.md#retroarch-settings)) |
 
 ## Threading and lifetime
 
@@ -190,6 +191,19 @@ OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
 - **Platform:** `ScanOptions::os` picks which `launchers.<os>` folder to read.
   The default is this platform's. Set it to "linux" to inspect a cabinet's
   launchers from Windows.
+
+### RetroArch
+- `RetroArch::detect(root, launcher)` says whether a launcher runs RetroArch
+  and finds its `retroarch.cfg`, folders and core (library name). It reads
+  files: call it when a screen opens and keep the result per launcher and
+  snapshot.
+- `gameTarget(setup, game)` / `coreTarget(setup)` name whose files;
+  `files(target, tile)` gives them; `read(target, tile, backups)` gives the
+  curated rows with their choices and current values (a few small files).
+- `apply`, `useCoreSettings` and `restoreOriginal` write through a `Backups`
+  (the Editor's), with the rules in
+  [manage-entities.md](manage-entities.md#retroarch-settings). None of these
+  is per-frame safe; nothing in the index changes, so no `changed()`.
 
 ### Themes
 `index->layouts` holds a `LayoutRecord` per layout:

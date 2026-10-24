@@ -48,7 +48,7 @@ const char* const detailsForm = R"(
   <results bind="{p}:games" open="games" param="collection"/>
   <link label="Settings" open="{p}-settings" status="{p}:settingsStatus"/>
   <link label="{launcherLink}" open="{p}-launcher" status="{p}:launcherStatus"/>
-  <link label="Info" open="{p}-info" status="{p}:infoStatus"/>
+  {raLink}<link label="Info" open="{p}-info" status="{p}:infoStatus"/>
   <link label="Media" open="{p}-media" status="{p}:mediaStatus"/>
   <link label="Playlists" open="{p}-playlists" status="{p}:playlistsStatus"/>
   <link label="Check this {noun}" open="{p}-check" status="{p}:checkStatus"/>
@@ -239,6 +239,8 @@ Words systemWords()
         { "{programHelp}", "The program that runs the games, e.g. an emulator's .exe." },
         { "{launcherLink}", "Launcher" }, { "{defaultLauncherLabel}", "Default launcher" },
         { "{playsValue}", "" }, { "{playChoice}", "" }, { "{addPlayChoice}", "" },
+        // The core-wide RetroArch screens (Manager/Games/RetroArchForms.cpp)
+        { "{raLink}", "<link label=\"RetroArch\" open=\"system-retroarch\" status=\"retroarch:status\" visibleWhen=\"retroarch:runs\"/>\n  " },
     };
 }
 
@@ -258,6 +260,7 @@ Words videoWords()
         { "{playsValue}", "<value label=\"Plays\" bind=\"video:playsText\"/>\n  " },
         { "{playChoice}", "<choice label=\"Plays\" bind=\"video:play\" options=\"video:plays\" help=\"In RetroFE: full screen on its player page. With an external player: its launcher starts, e.g. VLC. Kept in its info.conf as play = here or play = launcher.\"/>\n  " },
         { "{addPlayChoice}", "<choice label=\"Plays\" bind=\"video:addPlay\" options=\"video:plays\" help=\"In RetroFE needs no player program (one can be added later in Playback). With an external player, choose it below.\"/>\n  " },
+        { "{raLink}", "" },
     };
 }
 
