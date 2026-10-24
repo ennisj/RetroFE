@@ -233,7 +233,28 @@ static Test::Suite themes("themes", [] {
         check(runSessionCommand(s, parseEditorCommand("var VALUE Two words"), note) == CommandResult::Ok &&
               s.selectedWidget()->varValue("VALUE", "") == "Two words", "var takes the rest of the line");
         check(runSessionCommand(s, parseEditorCommand("layer 30"), note) == CommandResult::Ok && s.selectedWidget()->layer == 19, "layer");
+        // alpha: 0-1 with a decimal point, or a percent
+        auto alpha = [&](const std::string& value) {
+            return runSessionCommand(s, parseEditorCommand("alpha " + value), note) == CommandResult::Ok ? std::to_string(s.selectedWidget()->alphaPct) : std::string("failed: ") + note;
+        };
+        checkEqual(alpha("0.8"), "80", "alpha 0.8 is 80%");
+        checkEqual(alpha("40"), "40", "alpha 40 is a percent");
+        checkEqual(alpha("25%"), "25", "alpha 25%");
+        checkEqual(alpha("1.0"), "100", "alpha 1.0 is opaque");
+        checkEqual(alpha("0"), "0", "alpha 0");
+        checkEqual(alpha("1"), "100", "a bare 1 is opaque, as in a layout");
+        check(note == "100%", "and says so: " + note);
+        checkEqual(alpha("1%"), "1", "1% is a percent");
+        checkEqual(alpha("2"), "2", "2 is a percent");
+        checkEqual(alpha(".5"), "50", "alpha .5");
+        checkEqual(alpha(".5"), "50", "the same value again is fine");
+        for (const char* bad : { "1.5", "150", "-0.2", "half", "50%%", "", "0.5 0.6", "0x10", "1e1", "+5", ".", "1.2.3" }) {
+            check(runSessionCommand(s, parseEditorCommand(std::string("alpha ") + bad), note) == CommandResult::Failed
+                  && note.find("0-1") != std::string::npos && s.selectedWidget()->alphaPct == 50,
+                  std::string("alpha ") + bad + " fails and says why: " + note);
+        }
         check(runSessionCommand(s, parseEditorCommand("select -1"), note) == CommandResult::Ok && s.selected() == -1, "deselect");
+        check(runSessionCommand(s, parseEditorCommand("alpha 0.3"), note) == CommandResult::Failed && note == "nothing selected", "alpha needs a widget");
         check(runSessionCommand(s, parseEditorCommand("click 1000 530"), note) == CommandResult::Ok && s.selected() == 0, "click: " + note);
         check(runSessionCommand(s, parseEditorCommand("save"), note) == CommandResult::NotSession, "save is the screen's");
         check(runSessionCommand(s, parseEditorCommand("undo"), note) == CommandResult::Ok, "undo");

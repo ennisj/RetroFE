@@ -548,6 +548,79 @@ static void runLibraryTests()
               && readFile(root + "/collections/Arcade/medium_artwork/logo/a.jpg") == "old", "the original comes back");
     });
 
+    run("library: hidden games are read with their metadata, apart from the games", [&] {
+        // Arcade's exclude.txt names b
+        std::string root = makeInstall("lib-hidden");
+        writeFile(root + "/meta/hyperlist/Arcade.xml",
+                  "<?xml version=\"1.0\"?>\n<menu>\n<game name=\"b\"><description>Bravo</description><year>1982</year></game>\n</menu>\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        {
+            DB db(root + "/meta.db");
+            check(db.initialize(), "open meta.db");
+            MetadataDatabase meta(db, config);
+            check(meta.initialize(), "import");
+        }
+        auto index = scan(root);
+        check(index->findGame("Arcade", "b") == -1, "not one of the games");
+        std::vector<std::string> all = names(*index, index->itemsOf(index->findCollection("All")));
+        check(std::find(all.begin(), all.end(), "Arcade:b") == all.end() && !all.empty(), "nor on a merged page");
+        int h = index->findHiddenGame("Arcade", "b");
+        check(h >= 0 && index->hiddenGames.size() == 1, "one hidden game");
+        if (h >= 0) {
+            const GameRecord& b = index->hiddenGames[static_cast<size_t>(h)];
+            checkEqual(b.title, "Bravo", "its title from meta.db");
+            checkEqual(b.meta.year, "1982", "and the rest of its metadata");
+            check(b.hasMetadata && fs::path(b.file).filename() == "b.zip", "with its file");
+            check(b.searchText.find("bravo") != std::string::npos, "searchable by title");
+        }
+        check(index->findHiddenGame("Arcade", "a") == -1, "a listed game isn't hidden");
+    });
+
+    run("library: RetroFE expects no settings of menus and merged collections", [&] {
+        // Main.cpp logs a missing settings.conf as an error only for other folders
+        std::string root = makeInstall("lib-nosettings");
+        writeFile(root + "/collections/Legacy/menu.xml", "<menu/>");
+        writeFile(root + "/collections/Empty/readme.txt", "x");
+        for (const char* name : { "Main", "Consoles", "All", "Legacy" }) {
+            check(CollectionInfoBuilder::isMenuOrMergedFolder(root + "/collections/" + name), std::string(name) + " needs none");
+        }
+        for (const char* name : { "Arcade", "Empty", "Nope" }) {
+            check(!CollectionInfoBuilder::isMenuOrMergedFolder(root + "/collections/" + name), std::string(name) + " should have some");
+        }
+
+        // A menu that has games of its own too still needs its settings
+        writeFile(root + "/collections/MenuGames/menu.txt", "Arcade\n");
+        writeFile(root + "/collections/MenuGames/roms/x.zip", "x");
+        writeFile(root + "/collections/MenuKeys/menu.txt", "Arcade\n");
+        writeFile(root + "/collections/MenuKeys/info.conf", "list.extensions = zip\n");
+        // A system whose list.path is wrong: no games, but still a system
+        writeFile(root + "/collections/Broken/settings.conf", "list.path = nowhere\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        for (const char* name : { "Arcade", "MenuKeys", "Broken" }) {
+            for (const char* file : { "/settings.conf", "/info.conf" }) {
+                std::string path = root + "/collections/" + name + file;
+                if (fs::exists(path)) {
+                    config.import(name, std::string("collections.") + name, path, false);
+                }
+            }
+        }
+        for (const char* name : { "Main", "Consoles", "All", "Legacy" }) {
+            check(CollectionInfoBuilder::needsNoSettings(config, name), std::string(name) + ": a missing settings.conf is expected");
+        }
+        for (const char* name : { "MenuGames", "MenuKeys", "Arcade", "Empty" }) {
+            check(!CollectionInfoBuilder::needsNoSettings(config, name), std::string(name) + ": a missing settings.conf is a problem");
+        }
+        // Who gets the "launcher isn't set" notice: systems, found games or not
+        for (const char* name : { "Arcade", "Broken", "MenuKeys" }) {
+            check(CollectionInfoBuilder::isSystem(config, name), std::string(name) + " is a system");
+        }
+        for (const char* name : { "Main", "Consoles", "All", "Home", "Empty" }) {
+            check(!CollectionInfoBuilder::isSystem(config, name), std::string(name) + " is no system");
+        }
+    });
+
     // --- Metadata overrides ---------------------------------------------------------
 
     run("library: metadata changes survive a re-import", [&] {

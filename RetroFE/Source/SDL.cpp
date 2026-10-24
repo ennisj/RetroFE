@@ -57,7 +57,12 @@ bool SDL::initialize(Configuration& config)
 #ifdef WIN32
 	if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE))
 	{
-		LOG_ERROR("SDL", "Unable to set DPI awareness hint");
+		// ERROR_ACCESS_DENIED: it's set already (by an earlier start, after a reload, or the manifest)
+		DWORD error = GetLastError();
+		if (error == ERROR_ACCESS_DENIED)
+			LOG_INFO("SDL", "DPI awareness was already set");
+		else
+			LOG_WARNING("SDL", "Unable to set DPI awareness (error " + std::to_string(error) + ")");
 	}
 #endif
 

@@ -213,6 +213,12 @@ Example:
 
     <reloadableVideo imageType="screenshot" x="400" y="300" xOrigin="center" yOrigin="center" height="480" maxWidth="640" layer="3"/>
 
+When the newly selected item uses the same video file as the one playing
+(the same game again, or a shared default video), the video keeps playing
+instead of starting over, as images are kept. (This fork restores the
+behaviour from before upstream #221, which lost it by accident.) A jukebox
+video that has played its loops is started again.
+
   
 ## \<reloadableImage> Parameters
 

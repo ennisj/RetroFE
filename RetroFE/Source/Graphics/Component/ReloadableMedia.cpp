@@ -478,7 +478,8 @@ Component* ReloadableMedia::findComponent(
     // if file already loaded, don't load again
     const std::vector<std::string>& extensions = isVideo ? ReloadableMedia::videoExtensions : ReloadableMedia::imageExtensions;
     
-    if (loadedComponent_ != nullptr && !imagePath.empty()) {
+    // (A jukebox video that has played its loops is started again instead.)
+    if (loadedComponent_ != nullptr && !imagePath.empty() && !(jukebox_ && isVideo && !loadedComponent_->isPlaying())) {
         std::string filePath;
         if (Utils::findMatchingFile(Utils::combinePath(imagePath, basename), extensions, filePath)) {
             if (filePath == loadedComponent_->filePath()) {

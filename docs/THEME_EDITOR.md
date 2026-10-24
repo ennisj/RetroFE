@@ -296,7 +296,7 @@ units; blank lines and lines starting with `#` are skipped.
 | `add DEFID` | places a widget (e.g. `wheel_vertical`, `game_title`); one that needs a file opens the chooser, as the dialog does |
 | `click X Y` | clicks the canvas (click-through included) |
 | `move DX DY`, `resize nw\|n\|ne\|w\|e\|sw\|s\|se DX DY`, `nudge DX DY` | drags the selection |
-| `name TEXT`, `layer N`, `alpha N`, `colour RRGGBB`, `var TOKEN VALUE` | sets properties |
+| `name TEXT`, `layer N`, `alpha N`, `colour RRGGBB`, `var TOKEN VALUE` | sets properties; `alpha` takes 0-1 as layouts write it (`0.8`; `1` is opaque) or a percent (`2` to `100`, or `80%`; `1%` for 1%) |
 | `delete`, `undo`, `redo` | |
 | `show media\|text\|anims on\|off`, `preview COLLECTION`, `rebuild` | preview options |
 | `save`, `use`, `report`, `addDialog` | |

@@ -206,9 +206,9 @@ void VideoComponent::draw() {
 	}
 }
 
-std::string_view VideoComponent::filePath() const  // Add const since this doesn't modify state
+std::string_view VideoComponent::filePath()
 {
-	return videoFile_;  // This is fine as is since string_view is safe with empty strings
+	return videoFile_;
 }
 
 void VideoComponent::skipForward()
