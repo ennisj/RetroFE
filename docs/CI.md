@@ -6,8 +6,10 @@ The GitHub Actions workflows are in `.github/workflows`.
 
 `build.yml` builds RetroFE and the `retrofe_tests` unit tests (`RetroFE/Tests`), then runs the tests. It runs:
 
-- on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests` or `.github/workflows` changes
+- on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, `.github/workflows` or `.github/scripts` changes
 - by hand: `gh workflow run build.yml --ref <branch>`, or "Run workflow" on the Actions tab
+
+A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`); `release-windows.yml` alone can write, to publish releases.
 
 It has four jobs:
 
@@ -34,7 +36,7 @@ ctest --test-dir RetroFE/Build -C Release --output-on-failure
 
 ### GStreamer on Windows
 
-The Windows workflows (`build.yml`, `build-windows.yml`, `release-windows.yml`) get GStreamer through `.github/scripts/install-gstreamer-windows.ps1`. The script unpacks the MSVC x86_64 development MSI from gstreamer.freedesktop.org with an administrative install and sets `GSTREAMER_ROOT`. GStreamer removes older releases from that site; Chocolatey's `gstreamer-devel` 1.24.11 broke that way. If the download starts failing with 404, raise the script's `$Version`. Only the headers and import libraries come from there. The DLLs RetroFE ships with are in the `Package/Environment/Windows/retrofe` submodule.
+The Windows workflows (`build.yml`, `build-windows.yml`, `release-windows.yml`) get GStreamer through `.github/scripts/install-gstreamer-windows.ps1`. The script unpacks the MSVC x86_64 development MSI from gstreamer.freedesktop.org with an administrative install and sets `GSTREAMER_ROOT`. GStreamer removes older releases from that site; Chocolatey's `gstreamer-devel` 1.24.11 broke that way. If the download starts failing with 404, raise the script's `$Version` and `$Sha256`. Take the hash from the `.sha256sum` file GStreamer publishes beside the MSI, and check it against the file you download. The script checks the MSI against `$Sha256` both after downloading it and when it comes from the Actions cache. A copy that doesn't match is deleted and the job fails. Only the headers and import libraries come from there. The DLLs RetroFE ships with are in the `Package/Environment/Windows/retrofe` submodule.
 
 ## Packages
 
@@ -51,6 +53,6 @@ These run only by hand (`workflow_dispatch`) and upload the package as an artifa
 macOS builds with CMake in one of two ways (`RETROFE_MACOS_BUNDLE`):
 
 - Against Homebrew's libraries (`brew install pkg-config sdl2 sdl2_image sdl2_mixer sdl2_ttf gstreamer minizip webp libusb`), giving a plain `retrofe` executable. This is what `build.yml` does, and is the default.
-- `RetroFE.app` against the frameworks in `RetroFE/ThirdPartyMac`: SDL2, SDL2_image (and its `webp.framework`), SDL2_mixer and SDL2_ttf from their release disk images, `GStreamer.framework` from GStreamer's installer, and the universal `libminizip.dylib` and `libusb-1.0.0.dylib` already there. `build-macos.yml` puts those in place. Once `SDL2.framework` is in `ThirdPartyMac` this is the default. CMake copies the frameworks into `RetroFE.app/Contents/Frameworks` and signs the bundle ad hoc (`RetroFE/CMake/EmbedMacFrameworks.sh`). `build-macos.yml` then slims `GStreamer.framework` (`Scripts/macOS`), signs the bundle again, checks that it starts, and makes the disk image.
+- `RetroFE.app` against the frameworks in `RetroFE/ThirdPartyMac`: SDL2, SDL2_image (and its `webp.framework`), SDL2_mixer and SDL2_ttf from their release disk images, `GStreamer.framework` from GStreamer's installer, and the universal `libminizip.dylib` and `libusb-1.0.0.dylib` already there. `build-macos.yml` puts those in place. Once `SDL2.framework` is in `ThirdPartyMac` this is the default. CMake copies the frameworks into `RetroFE.app/Contents/Frameworks` and signs the bundle ad hoc (`RetroFE/CMake/EmbedMacFrameworks.sh`). `build-macos.yml` then slims `GStreamer.framework` (`Scripts/macOS`), signs the bundle again and checks the signature (`codesign --verify --deep --strict`). It then checks that `RetroFE.app` is self-contained: every run path must be under `@executable_path/../Frameworks`, and starting it with `DYLD_PRINT_LIBRARIES=1` (both halves, x86_64 under Rosetta) must load nothing from outside the bundle, `/usr/lib` or `/System`. Last, it makes the disk image.
 
 The Xcode project in `RetroFE/xcode` predates the management UI and doesn't build the current source. CI doesn't use it.

@@ -49,6 +49,13 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "prerelease=$(if ($version.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
 
+      - name: Cache GStreamer
+        # The script checks the cached MSI's SHA-256 before using it
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/gstreamer-downloads
+          key: gstreamer-msvc-${{ hashFiles('.github/scripts/install-gstreamer-windows.ps1') }}
+
       - name: Install GStreamer
         # Its headers and libraries to build with (Chocolatey's 1.24.11 is gone upstream)
         shell: pwsh

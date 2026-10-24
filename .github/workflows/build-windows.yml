@@ -2,6 +2,9 @@ name: Windows Package
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-2022
@@ -12,6 +15,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Cache GStreamer
+        # The script checks the cached MSI's SHA-256 before using it
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/gstreamer-downloads
+          key: gstreamer-msvc-${{ hashFiles('.github/scripts/install-gstreamer-windows.ps1') }}
 
       - name: Install GStreamer
         shell: pwsh

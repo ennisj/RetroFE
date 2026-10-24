@@ -623,6 +623,10 @@ if(RETROFE_BUILD_TESTS)
 	else()
 		# sqlite3 needs libdl and threads; the library index builds on a thread
 		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+		if(APPLE AND RETROFE_MACOS_BUNDLE)
+			# ThirdPartyMac's libminizip.dylib is @rpath/libminizip.dylib
+			set_target_properties(retrofe_tests PROPERTIES BUILD_RPATH "${MAC_FRAMEWORKS_DIR}")
+		endif()
 	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)
@@ -750,9 +754,10 @@ else()
     # The same warnings on every architecture
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-reorder")
-    # x86-64 tuning, unless this is a universal (arm64 and x86_64) macOS build
-    list(LENGTH CMAKE_OSX_ARCHITECTURES RETROFE_OSX_ARCHITECTURE_COUNT)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" AND RETROFE_OSX_ARCHITECTURE_COUNT LESS 2)
+    # x86-64 tuning, only when building for x86-64 alone: not for a macOS build that
+    # targets arm64, or both (universal), from an Intel Mac
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" AND
+       (NOT CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"))
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -march=x86-64-v2 -msse4.2 -mavx -funroll-loops")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -march=x86-64-v2 -msse4.2 -mavx -funroll-loops")
     endif()
