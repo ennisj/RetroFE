@@ -32,6 +32,8 @@
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Systems/SystemProvider.h"
 #include "../Source/Utility/Utils.h"
+#include <algorithm>
+#include <climits>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -347,6 +349,28 @@ namespace
             checkEqual(std::to_string(loopDecrement(1, 9, count)), "1", "page up");
             checkEqual(std::to_string(loopIncrement(1, 9, count)), "1", "page down");
             checkEqual(std::to_string(loopDecrement(5, 2, 0)), "0", "an empty list");
+        });
+
+        // ReloadableMedia & co. show page.getSelectedItem(selectedOffset)
+        run("menus: a negative selectedOffset is the item before the selected one, whatever the list's length", [] {
+            for (size_t size : { size_t(2), size_t(3), size_t(5), size_t(7), size_t(10), size_t(6467) }) {
+                for (size_t index = 0; index < std::min<size_t>(size, 4); index++) {
+                    const std::string at = std::to_string(size) + " items, at " + std::to_string(index);
+                    checkEqual(std::to_string(itemAtOffset(index, -1, size)), std::to_string((index + size - 1) % size), at + ": -1");
+                    checkEqual(std::to_string(itemAtOffset(index, -2, size)), std::to_string((index + 2 * size - 2) % size), at + ": -2");
+                    checkEqual(std::to_string(itemAtOffset(index, 1, size)), std::to_string((index + 1) % size), at + ": +1");
+                    checkEqual(std::to_string(itemAtOffset(index, 0, size)), std::to_string(index), at + ": 0");
+                }
+            }
+            // One item: every offset is that item
+            for (int offset : { -3, -1, 0, 1, 4 }) {
+                checkEqual(std::to_string(itemAtOffset(0, offset, 1)), "0", "one item, offset " + std::to_string(offset));
+                checkEqual(std::to_string(loopIncrement(0, static_cast<size_t>(offset < 0 ? -offset : offset), 1)), "0", "one item, loopIncrement");
+                checkEqual(std::to_string(loopDecrement(0, static_cast<size_t>(offset < 0 ? -offset : offset), 1)), "0", "one item, loopDecrement");
+            }
+            checkEqual(std::to_string(itemAtOffset(1, -12, 5)), "4", "further back than the list is long");
+            checkEqual(std::to_string(itemAtOffset(0, INT_MIN, 3)), std::to_string((3 - (2147483648ULL % 3)) % 3), "INT_MIN doesn't overflow");
+            checkEqual(std::to_string(itemAtOffset(3, -1, 0)), "0", "an empty list");
         });
     }
 

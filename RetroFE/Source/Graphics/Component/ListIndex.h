@@ -32,3 +32,12 @@ inline size_t loopDecrement(size_t offset, size_t i, size_t size)
     if (size == 0) return 0;
     return (offset % size + size - i % size) % size;
 }
+
+// The item `offset` places from `index` (negative: before it), wrapping
+// round; what a reloadable's selectedOffset shows
+inline size_t itemAtOffset(size_t index, int offset, size_t size)
+{
+    if (offset >= 0) return loopIncrement(index, static_cast<size_t>(offset), size);
+    // -offset without overflow for INT_MIN
+    return loopDecrement(index, static_cast<size_t>(-(static_cast<long long>(offset))), size);
+}

@@ -2076,12 +2076,13 @@ bool RetroFE::run()
 
 				nextPageItem_ = currentPage_->getSelectedItem();
 
+				bool updateLastPlayed = false;
 				if (lastPlayedSkipCollection != "")
 				{
 					// Check if current collection is in the skip list
 					std::stringstream ss(lastPlayedSkipCollection);
 					std::string collection = "";
-					bool updateLastPlayed = true;
+					updateLastPlayed = true;
 					while (ss.good())
 					{
 						getline(ss, collection, ',');
@@ -2091,16 +2092,19 @@ bool RetroFE::run()
 							break;
 						}
 					}
-					if (updateLastPlayed)
-					{
-						cib.updateLastPlayedPlaylist(currentPage_->getCollection(), nextPageItem_, size);
-						currentPage_->updateReloadables(0);
-					}
 				}
 
 				l.LEDBlinky(3, nextPageItem_->collectionInfo->name, nextPageItem_);
 				// Run and check if we need to reboot
-				if (l.run(nextPageItem_->collectionInfo->name, nextPageItem_, currentPage_))
+				bool rebootAfter = l.run(nextPageItem_->collectionInfo->name, nextPageItem_, currentPage_);
+				// Last played and the play count: only for a program that started
+				// (it used to count before the launch, failed ones too)
+				if (updateLastPlayed && l.started())
+				{
+					cib.updateLastPlayedPlaylist(currentPage_->getCollection(), nextPageItem_, size);
+					currentPage_->updateReloadables(0);
+				}
+				if (rebootAfter)
 				{
 					attract_.reset();
 					bool unloadSDL = false;
@@ -3631,18 +3635,21 @@ RetroFE::RETROFE_STATE RetroFE::launchFromManager(const ManagerUI::LaunchRequest
 	int size = 0;
 	config_.getProperty(OPTION_LASTPLAYEDSKIPCOLLECTION, lastPlayedSkipCollection);
 	config_.getProperty(OPTION_LASTPLAYEDSIZE, size);
+	bool updateLastPlayed = false;
 	if (!lastPlayedSkipCollection.empty())
 	{
 		std::vector<std::string> skipped;
 		Utils::listToVector(lastPlayedSkipCollection, skipped, ',');
-		if (std::find(skipped.begin(), skipped.end(), item->collectionInfo->name) == skipped.end())
-		{
-			CollectionInfoBuilder cib(config_, *metadb_);
-			cib.updateLastPlayedPlaylist(info, item, size);
-		}
+		updateLastPlayed = std::find(skipped.begin(), skipped.end(), item->collectionInfo->name) == skipped.end();
 	}
 	l.LEDBlinky(3, item->collectionInfo->name, item);
 	bool reboot = l.run(item->collectionInfo->name, item, currentPage_);
+	// Counted only when the program started (as a page launch)
+	if (updateLastPlayed && l.started())
+	{
+		CollectionInfoBuilder cib(config_, *metadb_);
+		cib.updateLastPlayedPlaylist(info, item, size);
+	}
 	if (reboot)
 	{
 		attract_.reset();

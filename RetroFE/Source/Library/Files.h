@@ -75,8 +75,14 @@ namespace Library
     std::string cmdArguments(const std::string& arguments);
 
     // The folder a launcher's program runs in when it sets no currentDirectory:
-    // the program's own folder ("/" and "\" both count on Windows), or root for
-    // a bare name such as cmd.exe, which has none.
+    // - a path ("C:\MAME\mame.exe", "emulators/x.exe"): its own folder ("/" and
+    //   "\" both count on Windows);
+    // - a bare name of a program in root: root;
+    // - on Windows, a bare name found on the system path (findProgram): that
+    //   program's folder, except Windows' own tools (cmd.exe, under the Windows
+    //   folder), which get root, so relative paths in `cmd /c` arguments are
+    //   taken from RetroFE's root as before;
+    // - anything else (not found; on PATH elsewhere, e.g. /usr/bin): root.
     std::string programFolder(const std::string& executable, const std::string& root);
 
     // A file's lines, each with the ending it had ("\r\n", "\n", or "" for a

@@ -271,16 +271,10 @@ Item *ScrollingList::getItemByOffset(int offset)
     // First, check if items_ is nullptr or empty
     if (!items_ || items_->empty()) return nullptr;
     
-    size_t itemSize = items_->size();
-    size_t index = getSelectedIndex();
-    if (offset >= 0) {
-        index = loopIncrement(index, offset, itemSize);
-    }
-    else {
-        index = loopDecrement(index, offset, itemSize);
-    }
-    
-    return (*items_)[index];
+    // A negative offset (selectedOffset="-1") is the item before the selected
+    // one. (Upstream passed it to loopDecrement as a huge unsigned number,
+    // which wrapped round to the item after.)
+    return (*items_)[::itemAtOffset(getSelectedIndex(), offset, items_->size())];
 }
 
 Item* ScrollingList::getSelectedItem()

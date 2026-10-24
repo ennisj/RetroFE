@@ -328,6 +328,7 @@ The other tags all support a general set of parameters:
 | layer              | Layer on which the item should be displayed: 0 = back, 19 = front                                                                                                           |
 | monitor            | Monitor number on which the element should be displayed, starting from monitor 0.                                                                                           |
 | menuScrollReload   | Reload the art while the menu is scrolling when set to yes/true                                                                                                             |
+| selectedOffset     | Reloadable images, videos, texts and hiscores: show the item this many places from the selected one, wrapping round the list; 1 is the next item, -1 the previous one. (A deliberate change: upstream's arithmetic made -1 show the next item, -2 the one after that, and so on.) |
 
 RetroFE supports 20 layers of images (0-19) to allow items to overlap in
 a controlled fashion.

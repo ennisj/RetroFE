@@ -120,7 +120,12 @@ bool MetadataDatabase::importDirectory()
         const std::function<void(const std::string&, const std::string&)>& importFunc) {
             // Each metadata folder is optional (a bare install has none)
             std::error_code ec;
-            if (!fs::exists(path, ec)) {
+            bool exists = fs::exists(path, ec);
+            if (ec) {
+                LOG_WARNING("MetadataDatabase", "Could not read directory \"" + path + "\": " + ec.message());
+                return;
+            }
+            if (!exists) {
                 LOG_INFO("MetadataDatabase", "No metadata folder \"" + path + "\" (optional)");
                 return;
             }

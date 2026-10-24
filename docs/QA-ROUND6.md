@@ -131,7 +131,7 @@ Severity: **High** breaks a task, **Medium** misleads or loses work,
 |---|-----|-------|---------|--------|
 | 1 | High | Launching (any launch, Start this game) | A launcher whose `executable` is a bare name found on the system path (`cmd.exe`, round 3's fix) and that sets no `currentDirectory` never starts: the default folder is "the executable's folder", which for `cmd.exe` came out as `<root>\cmd.exe`, so CreateProcess fails with error 267. RetroFE then sat 40 s in "fullscreen detection" (the window frozen) and recorded 40 s of play time for a game that never ran (`r6-24`, `r6-25`). Steps: launcher `executable = cmd.exe`, no `currentDirectory`; start a game. (OnesaUCE's THEMES sets `currentDirectory`, so it wasn't hit.) | Fixed |
 | 2 | Medium | Video player, any short menu | With fewer items than the menu's selected slot (Aeon Nox's video list selects its 5th slot; 3 videos), `ScrollingList`'s wrap-around arithmetic underflowed: the list opened on the 2nd video (`r6-51`), and Back from the player after the 1st video landed on the 2nd (`r6-57` then `r6-58`; `r6-60a` then `r6-60b`). The same arithmetic serves every menu (page up/down, selecting by index), so any collection shorter than its layout's selected slot was affected. | Fixed |
-| 3 | Medium | Play counts (stock) | RetroFE records plays (`playCount.txt`, `lastplayed.txt`) only when `lastPlayedSkipCollection` is set, for launches, Start this game and videos alike; time played is always kept. On a default install the game screen says "Played: Never" with "Time played: 40 s" (`r6-34`). Upstream's launch code wraps the update in `if (lastPlayedSkipCollection != "")`; round 5 kept that on purpose for videos. | Report: needs a decision (doc note added to MANAGER.md) |
+| 3 | Medium | Play counts (stock) | RetroFE records plays (`playCount.txt`, `lastplayed.txt`) only when `lastPlayedSkipCollection` is set, for launches, Start this game and videos alike; time played is always kept. On a default install the game screen says "Played: Never" with "Time played: 40 s" (`r6-34`). Upstream's launch code wraps the update in `if (lastPlayedSkipCollection != "")`; round 5 kept that on purpose for videos. Also, a launch counted as a play before it ran, so a launch that failed to start counted too (`flagrall;1` after the QA slip below). | Decided: upstream's rule stays; fixed what Manage says and failed launches (review follow-up) |
 | 4 | Low | Log | Still false warnings: (a) a bare root logs three `[WARNING] [MetadataDatabase] Could not read directory meta/hyperlist|mamelist|emuarc` at every start; (b) a program that ends within a second logs `[WARNING] Invalid item or gameplay duration`; (c) every open of the video list or player logs `Menu tag is missing <itemDefaults>` and `<reloadableImage> ... does not specify an imageType` (Aeon Nox's `_videos` pages and the built-in player), and `--theme-check` on Aeon Nox failed with 4 problems on `player.xml`. (d) Once, while skipping videos: `[ERROR] [GStreamerLog] libav: negotiation failed`; playback carried on. | (a)-(c) Fixed; (d) report |
 | 5 | Low | Home (Aeon Nox) | Manage's tagline and description still described round 1's Manage ("Your collections, packages and sources"; "Add a collection from a folder of games... add or remove the sources") (`r6-02`). | Fixed |
 | 6 | Low | Editor script (theme editor) | `importfont`, `importsound`, `importsplash` and `import` take paths relative to the process's current folder (`retrofe\`), unlike `browsedir`, which is relative to RetroFE's root: `importfont layouts/Aeon Nox/fonts/Oswald-Regular.ttf` fails with "can't read Oswald-Regular.ttf", sound imports with "not a readable file". Absolute paths work. `sound load none` fails when no load sound is set (nothing to clear) without saying why. | Report only (theme editor area) |
@@ -147,25 +147,43 @@ nothing ran.
 
 | # | Change | Files | Test |
 |---|--------|-------|------|
-| 1 | `Library::programFolder`: a launcher with no `currentDirectory` runs in the program's own folder, or in RetroFE's root for a bare name. When CreateProcess or ShellExecute fails, the launcher no longer waits 40 s for a fullscreen window and records no time played. Checked live: the fixture now starts and returns at once (`r6-38`, `r6-39`). | `Library/Files.*`, `Execute/Launcher.cpp`, `docs/LAUNCHERS.md` | LibraryTests: "a launcher's program runs in its own folder, a bare name in RetroFE's" |
+| 1 | `Library::programFolder`: a launcher with no `currentDirectory` runs in the program's own folder, or in RetroFE's root for a bare name (refined in R2 below). When CreateProcess or ShellExecute fails, the launcher no longer waits 40 s for a fullscreen window and records no time played. Checked live: the fixture now starts and returns at once (`r6-38`, `r6-39`). | `Library/Files.*`, `Execute/Launcher.cpp`, `docs/LAUNCHERS.md` | LibraryTests: "a launcher's program runs in its own folder, a bare name in RetroFE's" |
 | 2 | Wrap-around index arithmetic in a header of its own (`Graphics/Component/ListIndex.h`), reducing both operands modulo the size first; `ScrollingList`'s helpers use it. Checked live: the list opens on video 1, Back lands on the video played (`r6-63`, `r6-64b`, `r6-64c`). | `Graphics/Component/ListIndex.h`, `ScrollingList.cpp` | VideosTests: "a list shorter than the menu's selected slot opens on, and comes back to, the right video" |
 | 3 | `<itemDefaults>` in the player pages' menu and `imageType="screenshot"` on the video pages' `reloadableVideo` (Aeon Nox 16:9 and 4:3, built-in). `--theme-check "Aeon Nox"` is clean again; no warnings on opening them. | `layouts/Aeon Nox/collections/_videos/layout/*.xml`, `Builtin/Builtin.cpp` | VideosTests: "Aeon Nox's video pages pass the layout check"; the built-in pages test checks both |
 | 4 | A missing optional metadata folder logs INFO; a program that ran under a second logs INFO (time spent unchanged). Checked live on the empty root (`r6-142`: NOTICE lines only). | `Database/MetadataDatabase.cpp`, `Collection/CollectionInfoBuilder.cpp` | GUI (logging only) |
 | 5 | Manage's Home tagline and description. | `layouts/Aeon Nox/collections/Home/medium_artwork/*/Manage.txt`, `Scripts/aeon-nox/gen_layouts.py` | GUI (`r6-92`) |
 | 3 (doc) | MANAGER.md says plays are counted only with `lastPlayedSkipCollection`. | `docs/MANAGER.md` | - |
 
-Tests: 4,986/4,986 checks pass (`retrofe_tests.exe`; 4,966 before).
+Note on 3: the video pages' `imageType="screenshot"` means a video that's
+missing or won't load now shows the collection's screenshot art (or its
+`default.png`) where nothing showed before. That's the usual RetroFE
+fallback and harmless for a video collection, which normally has no
+screenshot art, so it was kept.
+
+### Review follow-up (adversarial review of 160e3ffd)
+
+| # | Change | Files | Test |
+|---|--------|-------|------|
+| R1 | Regression in fix 2: `getItemByOffset` passed a negative `selectedOffset` to `loopDecrement` as a huge unsigned number; with the new modulo the result depended on the list's length. Now `itemAtOffset` (ListIndex.h) takes the magnitude, so -1 is the item before the selected one. **A deliberate change from upstream**, whose arithmetic made -1 show the next item (-2 the one after); documented under `selectedOffset` in LAYOUTS.md. No shipped layout uses a negative offset. | `ListIndex.h`, `ScrollingList.cpp`, `docs/LAYOUTS.md` | VideosTests: "a negative selectedOffset is the item before the selected one, whatever the list's length" (lengths 1 to 6,467, INT_MIN) |
+| R2 | Fix 1's folder rule now follows the program as Launcher resolves it: a path, its own folder; a program in RetroFE's root, the root; on Windows a bare name found on the system path, that program's folder (`mame.exe` on PATH runs in MAME's folder), except Windows' own tools under the Windows folder (`cmd.exe`, `powershell.exe`), which run in RetroFE's root so relative paths in `cmd /c` arguments keep meaning what they mean everywhere else in RetroFE (System32 as the working folder would break `cmd /c scripts\x.bat`); elsewhere a name found on PATH (`/usr/bin`) runs in the root. Re-checked live: the fixture starts in the root (`r6-176`). | `Library/Files.*`, `docs/LAUNCHERS.md` | LibraryTests: a fake emulator put on PATH runs in its folder; cmd.exe and cmd in the root; a program in the root; paths |
+| R3 | A meta folder that can't be checked (access denied...) warns with the reason; INFO only when it doesn't exist. | `Database/MetadataDatabase.cpp` | - |
+| R4 | Problem 3, decided: the rule stays upstream's, but a game with no plays says "Not counted (set lastPlayedSkipCollection to count plays)", "Not counted (lastPlayedSkipCollection skips MAME)" or "Not counted (lastplayedSize is 0)" instead of "Never". | `Manager/Games/GameProvider.*` | GamesTests: "a game with no plays says when RetroFE doesn't count them" |
+| R5 | Last played and the play count are written after the launch, and only when the program started (`Launcher::started()`: false when no launcher, extension or folder was found, or CreateProcess/ShellExecute/fork failed). A program that started and then exited with an error still counts. Both the page launch and Start this game. Checked live: "2 times, last on 23:51" after a fixture launch (`r6-175`). | `Execute/Launcher.*`, `RetroFE.cpp` | GUI (RetroFE.cpp is app-only) |
+
+Seen once during the re-check: one fixture launch took 27 s before cmd.exe
+ran the batch file; the next one took under a second. Not reproduced; probably
+load on the machine.
+
+Tests: 5,101/5,101 checks pass (`retrofe_tests.exe`; 4,966 before this round).
 
 Nothing was changed in ThemeEditor/EditorNav*, Manager/Themes/*Screen*,
 Library/RetroArch* or the Games/Systems RetroArch forms.
 
 ## Recommendations
 
-1. **Play counts** (3): count plays when `lastPlayedSkipCollection` is
-   empty (empty = skip nothing, as its name says), or show "Not counted
-   (lastPlayedSkipCollection isn't set)" on the game screen instead of
-   "Never". The first changes what stock RetroFE writes (new
-   `lastplayed.txt` files), so it's a decision.
+1. **Play counts** (3): done as R4/R5. Counting with an empty
+   `lastPlayedSkipCollection` stays a possible later change (it would make
+   stock installs start writing `lastplayed.txt`).
 2. **Editor script paths** (6): resolve `import*` paths against RetroFE's
    root like `browsedir`, and say why `sound KIND none` did nothing.
 3. **Theme check in CI**: `--theme-check "Aeon Nox"` would have caught 4;

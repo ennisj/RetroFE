@@ -157,14 +157,31 @@ static void runLibraryTests()
         check(!findProgram("sh").empty(), "sh is found on PATH");
 #endif
     });
-    run("library: a launcher's program runs in its own folder, a bare name in RetroFE's", [&] {
-        checkEqual(programFolder("cmd.exe", "/rfe"), "/rfe", "a bare name has no folder of its own");
-        checkEqual(programFolder("", "/rfe"), "/rfe", "no program");
-        checkEqual(programFolder("/rfe/emulators/mame/mame", "/rfe"), "/rfe/emulators/mame", "a path: its folder");
+    run("library: a launcher's program runs in its own folder; a system tool or one not found in RetroFE's", [&] {
+        std::string root = makeRoot("lib-progfolder");
+        checkEqual(programFolder("", root), root, "no program");
+        checkEqual(programFolder("no-such-program-qa-7f3e.exe", root), root, "a name that isn't found: root");
+        checkEqual(programFolder("/rfe/emulators/mame/mame", root), "/rfe/emulators/mame", "a path: its folder");
+        checkEqual(programFolder("emulators/mame/mame.exe", root), "emulators/mame", "a relative path: its folder, taken from root");
+        writeFile(root + "/qa-in-root.exe", "x");
+        checkEqual(programFolder("qa-in-root.exe", root), root, "a bare name of a program in root: root");
 #ifdef WIN32
-        checkEqual(programFolder("E:\\rfe/emulators/mame.exe", "E:\\rfe"), "E:\\rfe/emulators",
+        checkEqual(programFolder("E:\\rfe/emulators/mame.exe", root), "E:\\rfe/emulators",
                    "%RETROFE_PATH%/... on Windows: the last separator of either kind");
-        checkEqual(programFolder("C:\\Emus\\mame.exe", "E:\\rfe"), "C:\\Emus", "backslashes");
+        checkEqual(programFolder("C:\\Emus\\mame.exe", root), "C:\\Emus", "backslashes");
+        checkEqual(programFolder("cmd.exe", root), root, "cmd.exe (a Windows tool on the system path): root");
+        checkEqual(programFolder("cmd", root), root, "cmd, .exe added: root");
+        // An emulator on PATH: its own folder
+        std::string emus = makeRoot("lib-progfolder-path");
+        writeFile(emus + "/qa-fake-emulator-9d1.exe", "x");
+        const char* old = std::getenv("PATH");
+        std::string saved = old ? old : "";
+        _putenv_s("PATH", (fs::path(emus).make_preferred().string() + ";" + saved).c_str());
+        std::string folder = programFolder("qa-fake-emulator-9d1.exe", root);
+        _putenv_s("PATH", saved.c_str());
+        check(iequals(normalPath(folder), normalPath(emus)), "a program found on PATH: its folder (" + folder + ")");
+#else
+        checkEqual(programFolder("sh", root), root, "on PATH elsewhere (/bin/sh): root");
 #endif
     });
     run("library: conf edits keep comments, spacing and CRLF", [&] {

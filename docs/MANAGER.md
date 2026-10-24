@@ -165,7 +165,9 @@ merged collection or under a menu, optionally only games without metadata,
 or only hidden games. Choosing a game shows its facts and artwork (with how
 often it was played, when last, and for how long, from
 `collections/playCount.txt` and `timeSpent.txt`; RetroFE counts plays only
-when `lastPlayedSkipCollection` is set, while time played is always kept),
+when `lastPlayedSkipCollection` is set, and only of programs that started,
+while time played is always kept; a game with no plays says when they aren't
+counted),
 with a screen for each thing you can change:
 
 - **Metadata**: title, year, manufacturer, developer, genre, players, rating,

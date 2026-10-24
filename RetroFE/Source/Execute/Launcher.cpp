@@ -489,6 +489,7 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	std::string executablePath, selectedItemsDirectory, selectedItemsPath, extensionstr, matchedExtension, args;
 
 	failure_.clear();
+	started_ = false;
 	if (!launcherExecutable(executablePath, launcherName)) {
 		LOG_ERROR("Launcher", "Launcher executable not found for: " + launcherName);
 		failure_ = "It couldn't start: there's no launcher called " + launcherName + " with a program.";
@@ -1429,6 +1430,9 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 		proc_thread.join();
 	}
 
+	// (On Linux and macOS a failed fork returned above; a program the child
+	// couldn't exec ends with an error status.)
+	started_ = !launchFailed;
 	if (!isAttractMode && !launchFailed) {
 		endTime = std::chrono::steady_clock::now();
 		double gameplayDuration = static_cast<double>(std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count());
