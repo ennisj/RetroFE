@@ -3,6 +3,8 @@ name: RetroFE Continuous Integration
 # Builds RetroFE and the retrofe_tests unit tests on Windows, Linux (x86_64 and arm64)
 # and macOS, and runs the tests on each (docs/CI.md). Runs on pushes to master and to
 # feature/** and ci/** branches, on pull requests to master and feature/**, and by hand.
+# Development is Windows-first for now (docs/DECISIONS.md W4): Linux and macOS run only
+# for master and when started by hand.
 on:
   push:
     branches:
@@ -42,6 +44,7 @@ concurrency:
 
 jobs:
   linux:
+    if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -142,6 +145,7 @@ jobs:
         }
 
   macos:
+    if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     name: macOS arm64 (Homebrew)
     # Homebrew's libraries, as a developer's Mac would have them; build-macos.yml makes

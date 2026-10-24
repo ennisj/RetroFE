@@ -4,6 +4,13 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## After round 10 — your answers (2026-10-24)
+
+- The upstream-style package's `settings.conf` now uses Aeon Nox (L7).
+- Development is Windows-first (W4): CI runs Linux and macOS only for
+  `master` and by hand.
+- Things to check on a real setup are tracked in [VERIFY.md](VERIFY.md).
+
 ## Round 10 — media folders in Manage, fourth QA (2026-10-24)
 
 Unit tests: 6,540 → 6,718 checks (also run on Linux in WSL; CI is green on

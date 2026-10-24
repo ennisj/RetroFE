@@ -11,13 +11,8 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 
 ## Needs your input
 
-| Item | Question |
-|------|----------|
-| [L4](#l4-fonts-and-artwork-with-unclear-licences--partly-resolved-partly-open) | Aeon Nox's panel images and `intro.mp4` have unclear licences: redraw/replace them before publishing release packages? |
-| [L7](#l7-the-packaged-settingsconf-still-says-arcades--open) | Should the upstream-style package's `settings.conf` switch from Arcades to Aeon Nox? |
-| [C1](#c1-this-fork-from-github--decided-publishing-is-open) | Publish the first GitHub release (push a version tag)? |
-| [M17](#m17-round-6-choices--decided), [M18](#m18-round-7-choices--decided) | Worth one check on a cabinet with a real RetroArch: the RetroArch settings' "Default (…)" values, and where saves are found when "in content folder" and sorting are combined. Both come from reading RetroArch's source. |
-| [M19](#m19-round-8-choices--decided) | Built-in Select/Back on an arcade USB encoder (a joystick with no SDL controller mapping) only checked by unit tests: worth trying on a cabinet. |
+Nothing right now. Behaviour that still needs a check on a real setup is
+tracked in [VERIFY.md](VERIFY.md).
 
 ---
 
@@ -50,7 +45,9 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   manufacturer logos have unclear redistribution terms, so if the fork ever
   publishes its own packages it may be worth dropping it from them (see L4).
 
-### L4. Fonts and artwork with unclear licences — Partly resolved, partly Open
+### L4. Fonts and artwork with unclear licences — Partly resolved, rest Deferred
+- **Your answer (2026-10-24): not for now.** The panel images and intro stay
+  as they are; revisit before publishing release packages.
 - **Fixed in round 1:** Aeon Nox's `MC360.ttf` turned out to be Ubuntu
   Condensed shipped without its licence (removed; Roboto Condensed used
   instead). Its `BebasNeue.ttf` 1.002 had a no-redistribution EULA (replaced
@@ -84,11 +81,11 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   (`randomLayout`, e.g. `layout 4x3`), so a 4:3 setup gets 4:3 forms instead
   of squashed 16:9 ones. Aeon Nox ships 4:3 versions of all its pages.
 
-### L7. The packaged `settings.conf` still says Arcades — Open
+### L7. The packaged `settings.conf` uses Aeon Nox — Decided (was Open)
 - `Package/Environment/Common/settings.conf` (the upstream-style package)
-  keeps `layout=Arcades`, because its bundled collections were made for it.
-  New installs created by RetroFE itself get Aeon Nox. Say if the package
-  should switch too.
+  kept `layout=Arcades`, because its bundled collections were made for it.
+- **Your answer (2026-10-24): switch.** It now says `layout=Aeon Nox`, like
+  installs RetroFE creates itself. Arcades stays in the repository (L3).
 
 ---
 
@@ -474,15 +471,16 @@ OnesaUCE themes:
 
 ## Catalog
 
-### C1. This fork from GitHub — Decided (publishing is Open)
+### C1. This fork from GitHub — Decided (publishing Deferred)
 - Neither the fork nor upstream publishes GitHub releases; CI only uploads
   build artifacts, which need a GitHub login to download.
 - Chosen: a `github` source type reading a repository's releases, a one-step
   "Add RetroFE from GitHub" on the Sources screen, an `app` package kind that
   updates RetroFE itself (only from GitHub sources), and a release workflow
   that runs when a version tag is pushed.
-- **Open:** creating the first release (pushing a tag) publishes a build
-  publicly, so it's left to you.
+- **Deferred (your answer, 2026-10-24):** a release will come eventually,
+  but nothing is published at this early stage. Creating it (pushing a tag)
+  stays with you.
 
 ## Working method
 
@@ -496,6 +494,15 @@ OnesaUCE themes:
 ### W2. The fork's changelog is separate from upstream's — Decided
 - Upstream's `CHANGELOG.md` is left alone so upstream merges stay clean. The
   fork's rounds are summarized in [FORK-CHANGELOG.md](FORK-CHANGELOG.md).
+
+### W4. Windows first — Decided (your direction, 2026-10-24)
+- The design is still being iterated on, so development focuses on Windows;
+  other platforms get tested much later.
+- What changes: agents build, test and check on Windows only (no WSL runs).
+  CI runs Windows on every push; the Linux and macOS jobs run only for
+  `master`, pull requests to it, and by hand. Code stays portable as
+  before (the existing platform splits are kept), but a Linux or macOS
+  failure doesn't hold up a round.
 
 ### W3. CI: two macOS builds, Xcode project left unused — Decided
 - `build.yml` builds macOS with Homebrew's libraries (quick, like a

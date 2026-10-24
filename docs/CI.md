@@ -20,6 +20,8 @@ It has four jobs:
 | Windows x64 | `windows-2022` | GStreamer's development MSI, the rest from `RetroFE/ThirdParty` |
 | macOS arm64 | `macos-14` | Homebrew (`sdl2`, `gstreamer`, `minizip`, ...) |
 
+**For now only Windows x64 runs on every push** (development is Windows-first, [DECISIONS.md](DECISIONS.md) W4). The Linux and macOS jobs run for `master`, pull requests to `master`, and runs started by hand, so a branch can still be checked on every platform with `gh workflow run build.yml --ref <branch>`.
+
 Each configures with `-DRETROFE_BUILD_TESTS=ON`, builds everything, and runs the tests with `ctest --test-dir RetroFE/Build --output-on-failure` (`-C Release` on Windows). ctest runs `retrofe_tests`, which exits non-zero if any check fails and prints each failure, so a failing check fails the job. The Linux and macOS jobs also run `retrofe --version`, which exits before opening a window: a quick check that the executable starts and its libraries load.
 
 On Windows the tests run with `RetroFE/Tests/test_server.py` listening on port 8765 and `RETROFE_TEST_SERVER` pointing to it, so the Catalog's and self-update's real HTTP tests run too. Linux and macOS have no HTTP client yet (`Catalog/Http.cpp`), so those tests skip themselves there.
