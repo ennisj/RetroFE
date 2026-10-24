@@ -169,11 +169,41 @@ launcher.
 ### Videos
 
 Stock RetroFE has no video collections. A **video collection** is a system
-whose extensions are video types and whose launcher is a player (or, later, a
-layout that plays the item in-page with jukebox mode). Videos reuses the
-Systems screens with a video preset: extensions `mp4,mkv,avi`, a "Video
-player" launcher, and video previews in Media. The Videos list shows only
-collections marked as video collections (`info.conf: type = videos`).
+whose extensions are video types, marked `info.conf: type = videos`. Its
+`info.conf: play` says how its videos play:
+
+- `play = here`: **in RetroFE**. Select opens a full-screen player page
+  instead of a launcher (`Graphics/VideoPlayback`, reusing the GStreamer
+  video component). New video collections made in Manage play here.
+- `play = launcher`, or no `play` line: **with an external player**, its
+  launcher (e.g. the shared `VideoPlayer`, VLC or mpv), as before. Video
+  collections made before the setting keep working this way.
+
+Videos reuses the Systems screens with a video preset (extensions
+`mp4,mkv,avi`). The Videos list shows only collections marked
+`type = videos`.
+
+| Link | Shows / edits | Writes |
+|------|---------------|--------|
+| Details | As for systems, plus **Plays** (in RetroFE / with an external player; which extensions RetroFE can't play) | read-only |
+| Playback (the Launcher screen) | **Plays**: In RetroFE / With an external player; the video player (a launcher) when external | `info.conf play =`, `settings.conf launcher =` |
+| Add a video collection | **Plays** (default In RetroFE: no player program needed); the player choice and program only for an external player | `settings.conf`, `info.conf type = videos` and `play =`, `launchers.<os>/VideoPlayer.conf` only for a new external player |
+| Check | For one that plays here: no launcher findings; extensions RetroFE's player can't open (it plays mp4, avi, mkv, mp3, wav, flac) | — |
+
+**Pages.** A video collection without a page of its own uses the layout's
+`collections/_videos/layout/` (before `_menu`, the same rule:
+`LayoutPages::collectionFolder`), else the layout's main page; with no layout
+installed, the built-in video list. Its own files are its `video` media
+(`collections.<c>.media.video` defaults to its first `list.path`, unless that
+is set or it has a `medium_artwork/video` folder), so a `reloadableVideo
+type="video"` previews the selected video. The player page is
+`collections/<c>/layout/player.xml`, then `collections/_videos/layout/player.xml`
+(`player 4x3.xml` for the page `layout 4x3`), else the built-in one; it needs a
+`<menu>` (it can be invisible) that RetroFE fills with the list the collection's
+page shows, and a `reloadableVideo type="video" jukebox="true"`; without
+either RetroFE uses the built-in player page. A video that hasn't started
+after 10 seconds is skipped, and each video that starts is counted like a
+launch (last played and play count).
 
 ### Emulators (launchers)
 
@@ -198,11 +228,11 @@ Later: RetroArch core detection and the core-wide settings tiles.
 | `emulator` (`id`, `scope` = global, collection or local) | Name, where it's defined, program and whether it's found (relative paths are relative to RetroFE's folder; `%RETROFE_PATH%` is expanded; a bare name is looked up on the system path; per-game programs and another platform's launchers aren't checked; a relative path with a folder in a Linux or macOS launcher is flagged "Windows only", since there RetroFE runs it from the working folder), arguments, working folder, restart (both marked "ignored" for collection and local launchers, as RetroFE only reads them for global ones). Links: **Used by** and **The file**. Actions: **Duplicate and edit**, **Delete launcher** (only when nothing uses it, and not a collection's `launcher.<os>.conf` with a `launcher.conf` beside it; confirmed). |
 | `emulator-users` | The systems that use it by default (or through their own launcher file) or as an alternative, opening `system` with `id`; the games that pick it, opening `game` with `collection` + `id`. |
 | `emulator-file` | The conf file as read-only notes, comments included. |
-| `emulator-new` (`name`, or `from` + `fromScope`) | Name, program (file field: type with Right, or browse), arguments from a preset (`"%ITEM_FILEPATH%"`, RetroArch `-L "<core>" "%ITEM_FILEPATH%"` with a core file field, MAME `%ITEM_NAME% -rompath "%ITEM_DIRECTORY%."`: RetroFE ends `%ITEM_DIRECTORY%` with a separator, which on Windows would escape the closing quote) or custom text, working folder, and the command it will run. Paths inside RetroFE's folder are written as `%RETROFE_PATH%\...`. A name another launcher already answers to in any scope is refused, with why. Creates `launchers.<os>/<name>.conf` through `Editor::addLauncher`, shows it in the list at once ("Updating the list..." until the index catches up), then goes back. |
+| `emulator-new` (`name`, or `from` + `fromScope`) | Name, program (file field: type with Right, or browse), arguments from a preset (`"%ITEM_FILEPATH%"`, RetroArch `-L "<core>" "%ITEM_FILEPATH%"` with a core file field, MAME `%ITEM_NAME% -rompath "%ITEM_DIRECTORY%."`: RetroFE ends `%ITEM_DIRECTORY%` with a separator, which on Windows would escape the closing quote) or custom text, working folder, whether RetroFE restarts after it (`reboot = yes`, carried over by Duplicate), and the command it will run. Paths inside RetroFE's folder are written as `%RETROFE_PATH%\...`. A name another launcher already answers to in any scope is refused, with why. Creates `launchers.<os>/<name>.conf` through `Editor::addLauncher`, shows it in the list at once ("Updating the list..." until the index catches up), then goes back. |
 
 Existing launchers stay read-only, as in One Saucier: the details screen says
 so and offers **Duplicate and edit**, which opens the add form filled in from
-the launcher (arguments as custom text, name "`<name>` copy"), so the copy can
+the launcher (arguments as custom text, its restart setting, name "`<name>` copy"), so the copy can
 be changed before it exists. Deferred: RetroArch core detection and settings
 tiles, and payload checks beyond "the program exists".
 

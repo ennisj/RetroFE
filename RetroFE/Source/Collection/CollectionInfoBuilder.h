@@ -40,6 +40,20 @@ public:
     static bool createCollectionDirectory(const std::string& collectionName, const std::string& collectionType = NULL, const std::string& osType = NULL);
     bool ImportBasicList(CollectionInfo *info, const std::string& file, std::vector<Item *> &list);
 
+    // A collection folder that lists other collections or their games: menu.txt,
+    // a menu/ folder, menu.xml, or <source>.sub files. Such a folder needs no
+    // settings.conf (or launcher) of its own, so their absence isn't a problem.
+    static bool isMenuOrMergedFolder(const std::string& folder);
+    // A list folder of the collection's own (list.path, else baseItemPath/<name>,
+    // else collections/<name>/roms; any of a ';' list) exists
+    static bool listFolderExists(Configuration& conf, const std::string& name);
+    // Has games of its own, as the library's KindSystem: list.extensions or
+    // list.path set, or a list folder for a folder that's no menu or merged one
+    static bool isSystem(Configuration& conf, const std::string& name);
+    // A menu or merged folder with no sign of games of its own (no list.* keys,
+    // no list folder): a missing settings.conf is expected, not a problem
+    static bool needsNoSettings(Configuration& conf, const std::string& name);
+
 private:
     Configuration &conf_;
     MetadataDatabase &metaDB_;

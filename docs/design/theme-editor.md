@@ -1,8 +1,11 @@
 # Design: the theme editor
 
 Status: the core is ported (rounds 1–3 of the porting plan: core port,
-widget dialect audit, storage and saving), and the first UI round is done:
-the Themes screens and the editor screen (see "UI round 1" below). The core
+widget dialect audit, storage and saving), the first UI round is done (the
+Themes screens and the editor screen, "UI round 1" below) and so is the
+next (templates, files, theme properties, "Editor round 3" below), and
+hand-made themes can be edited in place ("Layout-native mode" below,
+decision M10 option 3). The core
 lives in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is
 tested by `RetroFE/Tests/ThemeEditorTests.cpp`; the screens are in
 `RetroFE/Source/Manager/Themes/`, tested by `RetroFE/Tests/ThemesTests.cpp`.
@@ -148,7 +151,8 @@ is split:
 1. **`LayoutCheck`** (`checkLayoutXml`) parses with rapidxml and checks each
    element and attribute against the vocabulary PageBuilder reads, the
    required attributes it logs errors for, mode values, `<itemDefaults>` in
-   menus (PageBuilder dereferences it), animations (`duration`, tween types,
+   menus (without one PageBuilder uses empty defaults, so the items have no
+   size; it used to crash), animations (`duration`, tween types,
    `to`, algorithm names), layers in 0–19, alpha in 0–1, and numbers where
    the engine reads numbers (`duration`, `layer`, `loadFontSize`). Saving
    runs it over every page and reports issues as warnings, which catches
@@ -215,9 +219,11 @@ What a folder is (`probeTheme`):
 | Doesn't exist, empty, or holding only `editor/` and/or `assets/` folders (and no project) | fresh |
 | `layout.xml` starts with the marker (either editor's) | editor-made |
 | No `layout.xml` but a file `editor/project.xml` | editor-made (a save that stopped early) |
-| Anything else | **foreign**: never written to, duplicated or deleted |
+| Anything else | **foreign**: the widget editor never writes to, duplicates or deletes it |
 
-The fork's default Aeon Nox is foreign.
+The fork's default Aeon Nox is foreign. Its pages can be edited in place by
+the layout-native mode (below), which has its own backups and never touches
+an editor-made page.
 
 Inside an editor-made theme, a page somebody wrote by hand (a page position
 without the marker, e.g. `collections/NES/layout/layout.xml`) is guarded
@@ -319,8 +325,10 @@ the `--theme-check` branch in `Main.cpp`, and the Themes slots in
   to the window), inside `drawTargets()` under the mutex; the canvas shows it
   with the theme's own aspect (`canvasFit`), so a portrait theme on a
   landscape screen comes out the right shape.
-- A page with no components isn't built: `Page::draw` logs an error every
-  frame for one.
+- A page with no components isn't built: there's nothing to draw. (`Page::draw`
+  used to log an error every frame for one, and drew nothing at all on a page
+  whose only components were menus, such as a theme that is just a wheel;
+  editor round 3 fixed that in `Page::draw`.)
 - What PageBuilder logs while building (warnings and errors) is shown under
   the canvas, as are the generator's warnings.
 
@@ -412,22 +420,155 @@ details, New theme, Edit, scripted editing, the Add widget, Saved and
 Unsaved changes dialogs, the leaving warning, Duplicate, Delete with
 confirm, Use this theme, and RetroFE running the new theme with its wheel.
 
-### Next round
+### Next round (as left by round 1)
 
-- Templates: add (`createNamed`), reassign, delete (`deleteTemplateTo`),
-  preview cover with `effectiveCover`.
+- ~~Templates: add, reassign, delete, coverage~~ (round 3).
 - Controller editing (`EditorNav.h` is ready) and an on-screen keyboard for
   the text fields.
 - Guides and alignment snapping between widgets; multi-select.
-- Ask for a file when placing Static Image / Static Video (their defaults
-  don't exist in a new theme).
-- The wheel's selected item highlight for text wheels; theme fonts and
-  sounds in the theme panel.
-- Hand-made themes (see below).
+- ~~Ask for a file when placing Static Image / Static Video~~ (round 3).
+- ~~The selected item highlight for text wheels; theme fonts and sounds~~
+  (round 3).
+- ~~Hand-made themes~~ (layout-native mode, below).
 
-## Open question: hand-made themes
+## Editor round 3: templates, files, theme properties
 
-The editor only edits editor-made themes. CoinOPS users mostly have
+### What was built
+
+| Where | What |
+|---|---|
+| `EditorSession` | Templates: `newTemplate` (blank, from the Default page or a copy of a template, optionally with more collections), `assignTemplate` (one or many, one undo step), `removesTemplate` (what a move would delete), `deleteTemplate` (with a replacement), `renameTemplate`, `templateProblem`, `handMadePage`. Theme properties: `setThemeFont`, `setSound`, the splash page (`makeSplashPage`, `setSplashText`, `setSplashBackground`). Files: `missingFiles` (the selected widget's file settings whose file isn't in the theme), `themeHasFile`. Every one is an undo step; page changes keep the splash page last and keep editing the page that was being edited (found again by a collection it covered). |
+| `ThemeProject` | `pageShownFor` (which page this engine shows for a collection) and `MENUS_TEMPLATE` (`_menu`). |
+| `ThemeStore` | `importFile` (`importAsset` into any folder of the theme; a file already inside the theme is used where it is), `themeFiles` (a folder's files by extension), `handMadeCollectionPage`. |
+| `ThemeExport` | `defaultSplashPage`, shared by the save plan's fallback and the editor's "make a splash page". |
+| `ThemeGenerate` | Wheels: the selected slot gets `fontSize` × 1.3; a text wheel's other slots rest at alpha 0.60. |
+| `EditorScript` | `tplnew`, `tplassign`, `tpldelete`, `tplrename`, `font`, `sound`, `splashtext`, `splashbg`. |
+| `ThemeEditorScreen` | The theme panel's *Font and sounds*, *Splash*, *Pages* (new / copy / rename / delete, the template's collections) and *Collections* (the menu tree from `Services::library`, each collection's page); the template and delete dialogs; the ImGui file chooser; asking for a file after placing a widget; the screen-only script commands (`import*`, `browse`, `browsedir`, `choose`, `tpldialog`, `tpldeletedialog`, `closedialogs`, `open`). |
+| `Graphics/MenuXml.h`, `PageBuilder.cpp`, `Page.cpp` | The engine fixes below. |
+| `ManagerUI.cpp` | One line: the editor's context gets `library_`. |
+
+### Engine fixes (shared code)
+
+- **A `<menu>` without `<itemDefaults>` crashed RetroFE** (access violation):
+  `PageBuilder::buildMenu` passed the missing node to `addFont`, which
+  dereferences it, and `buildVerticalMenu` reads attributes from it.
+  `MenuXml::itemDefaults` now gives such a menu an empty `<itemDefaults/>`
+  (allocated in the document, so it lives as long as the parse) and
+  PageBuilder logs a warning, as if the layout had written one. Options
+  considered: skip the menu with a warning (a hand-made page then has no
+  wheel at all, so RetroFE has nothing to browse with), null checks at every
+  use (several sites, easy to miss one). Empty defaults keep the menu and
+  touch one line of `buildMenu`.
+- **A vertical menu whose items have no height looped forever**, adding slots
+  until memory ran out (each slot is `-1` high, so the running height never
+  reaches the menu's). `MenuXml::verticalMenuFull` also ends the menu when a
+  slot adds no height, but only once every slot from there on takes
+  `<itemDefaults>` (past the last `<item index=>`), so an overridden slot of
+  height 0 or with negative spacing is left alone; 1024 slots is the
+  backstop. PageBuilder warns when the menu stops short of its height.
+- **A custom menu with no `<item>`s** reaches `ScrollingList::setPoints`
+  with an empty list. Checked in RetroFE (a `ZeroItems` layout as the Home
+  page): it builds, scrolls in all four directions and selects without
+  crashing, and draws nothing. No guard was needed; PageBuilder and
+  `LayoutCheck` now say the menu shows nothing.
+- **A page whose only components are menus drew nothing** and logged "Layer
+  index out of bounds" every frame: `Page::LayerComponents_` is sized when
+  the first non-menu component is added, and `Page::draw` drew menus inside
+  that per-layer loop. `Page::draw` now sizes it first. Found in the GUI
+  check (a template page holding a wheel and an image whose file was
+  missing); by the code, a page that is just a wheel does the same in
+  RetroFE itself.
+- Tested: `MenuXml` is header-only and SDL-free, so `retrofe_tests` checks
+  both helpers on parsed XML; the drift test reads `MenuXml.h` with
+  `PageBuilder.cpp`. `retrofe --theme-check` built a hand-made layout with
+  both kinds of broken menu (`NoDefaults` in the test root) without crashing
+  or hanging, and reported the warnings. `Page::draw` needs SDL, so it was
+  checked in the GUI only.
+- `layoutBuildBlocker` (the editor and `--theme-check` refused to build such
+  pages) is relaxed to "it doesn't parse"; `LayoutCheck` still reports a menu
+  without `<itemDefaults>`, now as "its items have no size".
+
+### Decisions
+
+- **Coverage is shown as this engine resolves it, not inherited down the
+  menu tree.** One Saucier's engine keeps the current page when a
+  collection has no override, so its editor shows a parent's template as
+  inherited by everything below. This fork's RetroFE builds a new page on
+  every collection change (`RetroFE.cpp`, the NEXT_PAGE state) from
+  `LayoutPages::collectionFolder`: the collection's own folder, else
+  `collections/_menu/layout` for a menu of collections, else the theme's
+  `layout.xml`. Showing inheritance would promise pages RetroFE doesn't show.
+  Instead: the Collections list shows each collection's real page
+  (`pageShownFor`), the template dialog's *Also the N collections under it*
+  puts a whole branch on a template explicitly (One Saucier's cascade), and
+  `_menu` is offered as a template for every menu. Considered: emulating
+  inheritance by writing a page for every descendant at save time (many
+  files, and pages appearing in folders the user never chose).
+- **Templates keep One Saucier's model** (a primary collection plus members;
+  a template can't exist without a collection). Moving a template's only
+  collection off it deletes it, as in One Saucier; the dialog says so and
+  Undo brings it back. Considered: refusing that move (then the only way to
+  reuse a collection is delete-then-create).
+- **A collection with a hand-made page can't get a template**: the dialog
+  and "Add a collection" refuse it with the reason, instead of letting save
+  fail later (save still refuses too). Which collections have one is read
+  when the menu tree is (re)read and after each save, not per frame.
+- **Collection names that differ only in case** (`nes` while `NES` is on a
+  template) are refused: on Windows they're one folder. Template names are
+  unique ignoring case, renames included.
+- **Fonts are checked before they're copied**: `.ttf`/`.otf` with a
+  TrueType or OpenType header. A file over 16 MB is announced in the status
+  line one frame before its (blocking) copy.
+- **Files: an ImGui chooser inside the RetroFE folder first, the system
+  dialog as "Somewhere else..."**. It works the same on every platform,
+  never leaves the editor, and the files a theme uses usually come from the
+  RetroFE folder (artwork, other layouts). The system dialog blocks, so it
+  runs from `update()` (`Job::NativePick`), never while drawing. Directory
+  listings are read once per folder, not per frame.
+- **Fonts go into `fonts/`, everything else into `assets/`**; a file already
+  inside the theme folder isn't copied again.
+- **Asking for a file after placing** uses the same chooser, with *Not now*:
+  the widget stays with its placeholder and saving warns, so placing never
+  fails. It asks for the first missing file only.
+- **Splash: text and background, made of widgets**: a splash page gets a
+  Static Text (the theme's name) and, for a background, a full-page Static
+  Image or Static Video (a video plays once, so the splash ends). No new
+  project fields, so the page stays editable as a page.
+- **Text wheel highlight**: the selected name 1.3× larger (the size tweens
+  between slots), the others at 60% opacity, *Selected Text Color* if set.
+  No default colour: the theme's own colour stays the user's choice.
+- **The left column is wider** (340 instead of 270) for the new sections.
+
+### Checked
+
+`retrofe_tests`: templates (new, blank, copy, assign, members, primary moving,
+deleting by moving, undo, rename, delete with replacement, the splash page
+staying last, hand-made refusals, scripts), `pageShownFor` (own, member,
+`_menu` for menus only, Default), saving writes member pages, font import
+into `fonts/` and listing, in-theme files not copied, sounds in the page,
+the splash page (text, video then image background, removal, undo), missing
+files after placing, `MenuXml`. The GUI check (2026-10-23, private test root
+`E:\Storage\Agents\editor3`, scripted): text wheel, the file chooser opened
+by placing a Static Image (theme folder, then `media/backgrounds`), import,
+font and sound import, splash text and background, two templates (one a copy
+of Default joined by NES and SNES, one blank), the Collections list with
+each page, the template and delete dialogs, save, the splash page preview,
+Use this theme; then RetroFE running the theme: the Home and NES text wheels
+with the selected name highlighted, Main on the Default page, Consoles and
+NES on the Console Look template. `--theme-check` on the result: clean.
+
+### Left for later
+
+- Controller editing and an on-screen keyboard; guides, alignment snapping,
+  multi-select (as before).
+- Previewing a page as one of its member collections from the Pages list
+  (the Collections list does it).
+- A template's own font or sounds (they're the theme's).
+- Second-screen pages; ~~hand-made themes~~ (layout-native mode, below).
+
+## Hand-made themes: the options (decided: M10, option 3)
+
+Before the layout-native mode the editor only edited editor-made themes. CoinOPS users mostly have
 hand-made layouts, including this fork's default (Aeon Nox), and those are
 foreign: the editor won't touch them. Options:
 
@@ -450,7 +591,274 @@ foreign: the editor won't touch them. Options:
    editable one.
 
 Option 3 probably gives CoinOPS users the most per round; option 2 is the
-most faithful to One Saucier. This needs the user's call.
+most faithful to One Saucier. Option 3 was approved (M10) and is built:
+
+## Layout-native mode
+
+A second editor for hand-made themes: the elements of one page file, edited
+in place. User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#hand-made-themes-the-layout-editor).
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/LayoutText.{h,cpp}` | The page as text. A scanner (not a DOM) that finds every element and attribute and remembers its byte offsets: start tag, name end, attributes (whitespace before, name, value span, quote), end. Element paths (`image[3]`, `menu[0]/item[2]`, the root is `""`). Edits return new text with only those bytes changed: `withAttribute` (replace a value in its own quotes, or add one after the last attribute with the same spacing and quote), `withoutAttribute`, `withoutElement` and `withDuplicate` (whole lines when the element is alone on its lines). Entities decoded for display, encoded on write. Pure. |
+| `Graphics/LayoutNodePath.h` | The same path from a rapidxml node, header-only and SDL-free. |
+| `Graphics/PageBuilder.{h,cpp}` | The hook: `setTrace(std::vector<TraceEntry>*)`. When set, every component built records `{component, slot, path}` in build order; a menu's slots follow it with `slot` = the slot's `ViewInfo` (custom menus: each `<item>`; vertical menus: the node each slot was built from). One inline null check per component when unused. |
+| `ThemeEditor/LayoutSession.{h,cpp}` | The controller, SDL- and ImGui-free: the theme's pages (`themePages`), opening one (refusing paths outside the theme, editor-marked pages and pages rapidxml can't read), the element list, geometry by path (fed by the screen), picking and click-through by layer then build order, the pointer protocol (`EditorCanvas.h`'s moves and resizes), turning a box back into attribute values, attribute edits, duplicate/delete, undo/redo (text snapshots, 100 deep, coalesced typing), dirty = text differs from what's on disk, save and put back the original. |
+| `ThemeEditor/LayoutSession` `pageBoxes` | The pure part of finding the boxes: traced views (path, component, slot, the ViewInfo's numbers) to one box per element plus extra boxes, the guesses, read-only vertical-menu slots, the box around a size-less menu (kept apart from its resolved x / y), and slots built from the empty `<itemDefaults>` a menu without one gets, which count as the menu's. Tested. |
+| `ThemeEditor/EditorScript.{h,cpp}` | `runLayoutCommand`: the session's script commands. |
+| `Manager/Themes/app/LayoutEditorScreen.{h,cpp}` | The ImGui screen (form `theme-layout-editor`): pages and elements, the canvas (preview + boxes + handles), the attribute panel, Save / Put back the original / Unsaved changes / Delete dialogs, the screen's script commands. |
+| `Manager/Themes/ThemeProvider`, `ThemesForms.cpp` | `theme:canOpen`; Edit opens the layout editor for a hand-made theme; the new note. |
+| `ThemeEditorScreen.{h,cpp}` | `Themes::makeEditorScreen` (which editor for which form) and `Themes::takeEditorScript` (one script per session, whichever editor opens first). |
+| `ManagerUI.cpp` | Two lines: the layout editor's form is an ImGui screen too, built by `makeEditorScreen`. |
+
+### How the boxes are found
+
+The preview is built as in the widget editor (`setLayoutXml` with the text
+being edited, the page's own folder for relative paths, `layout` pointed at
+the theme until the screen is left), plus `setTrace`. Right after
+`buildPage`, before anything animates, each traced component's
+`baseViewInfo` (or the slot's `ViewInfo`) is copied: resolved x and y
+("center" is already 960 there), offsets, origins (fractions) and
+`ScaledWidth/Height`. The box is `x + xOffset - xOrigin * w` across, the same
+down. Sizes the engine doesn't know until it draws are guessed and marked
+(text without a width: its font size and value length; art not loaded yet:
+the layout's width/height/max size), and art that loads later (reloadable
+images and videos) gets its real size from the live component's
+`ImageWidth/Height` while the page runs. A custom menu without a size of
+its own gets the box around its items, to select it by. A vertical menu's
+slots are drawn but not dragged (they're generated from its settings).
+
+### Decisions made in this round
+
+- **Edit the text, never re-serialise.** rapidxml drops comments and
+  formatting; a DOM writer that kept them would have to be written and kept
+  exactly compatible. Editing byte ranges in the original keeps everything
+  else identical by construction, and the tests compare bytes. The scanner
+  follows rapidxml's `parse<0>` where they differ from strict XML: an end
+  tag closes the innermost element whatever its name (shipped layouts have
+  `<onMenuScroll>...</onMenuJumpScroll>`), and attributes needn't be
+  separated by spaces. Considered: pugixml (another dependency, and
+  formatting still isn't preserved exactly), rapidxml's printer (loses
+  comments and entities).
+- **Paths, not offsets, join components to text.** `name[index among
+  same-named siblings]` from the root is stable across attribute edits and
+  computed the same way from rapidxml and from the scanner (a test checks
+  every element of every shipped page). Byte offsets would shift with every
+  edit; a document-order index would shift for unrelated element kinds.
+  After a duplicate or delete the paths after it shift, so the boxes are
+  dropped until the next build (`structure()` moves).
+- **Dragging writes numbers, only where the box changed.** A move writes
+  the axes it moved (so a straight-down drag keeps `x="center"`; an axis the
+  pointer moved less than 3 pixels along isn't snapped either); a resize
+  writes the sizes that changed and the x / y that keep the undragged edges
+  in place. Elements positioned by `xOffset` with no `x` of their own (menu
+  items under `<itemDefaults>`) move by `xOffset`. Typing in the panel keeps
+  any value as typed ("center", "50%", "stretch"). Considered: writing
+  `center`/percentages back when the result is centred (guessing what the
+  author meant), and always writing x, y, width and height (loses `stretch`
+  on an untouched axis).
+- **Backups: Library's, not the theme's.** Originals go to
+  `<root>/manage/backups/layouts/<theme>/<page>` through `Library::Backups`,
+  the same store and rules as every Manage screen: the original is taken
+  before the first change only, and putting it back keeps what was there as
+  a numbered copy. The theme folder stays clean (it can be zipped for the
+  Catalog without an `editor/original/` in it). Considered: a copy inside
+  the theme (travels with it, but ships with it too).
+- **Writes stay in the theme.** The page path must be relative with no
+  `..`, and the file must resolve (`weakly_canonical`, so links count)
+  inside `layouts/<theme>`; save checks again. A page that changed on disk
+  since it was read, or went away, isn't written.
+- **Editor-made pages aren't opened here.** The widget editor regenerates
+  them from its project; edits here would be lost on its next save.
+- **Undo is text snapshots.** Pages are tens of KB; a snapshot per step (100
+  deep) is simpler and exact. Putting back the original (confirmed first) is a
+  step too: Undo brings back the text being edited, as unsaved changes. Like
+  save, it's refused when the file changed on disk since it was read.
+- **Moves are exact deltas; resizes solve for the dragged edge.** A move adds
+  the box's movement to the attribute (so a nudge is exactly 1 unit even for a
+  centred box of odd width, whose left edge sits on a half unit); a resize puts
+  a dragged edge where it was dropped and keeps an undragged one exactly where
+  it was. Positions are written with up to two decimals when they aren't whole
+  (`x="1012.5"`), so nothing drifts by rounding.
+- **Pages switch in `update()`.** Choosing another page frees the preview (and
+  the components the boxes were traced from) before the new page is read; the
+  trace itself is dropped as soon as the boxes are made.
+- **Delete asks** (the canvas's Delete key too), though Undo brings it back:
+  it removes the element's whole lines, animations and all.
+- **Duplicate and delete were in scope** (whole-line copies and removals keep
+  the rest of the file); adding new elements is the next step.
+- **Animations are listed, not edited**, with a note when they change the
+  position or size (Aeon Nox's top bar animates `y` from 0 to 50, so its
+  box as the layout says it sits above the page).
+- **One script per session**, shared by both editors (`takeEditorScript`).
+
+### Checked
+
+`retrofe_tests` (`Tests/LayoutEditTests.cpp`): the scanner on a page with a
+BOM, a declaration, CRLF, a comment holding a tag, single and double quotes,
+entities, self-closing tags, attributes one per line and a custom menu;
+broken pages refused with their line; paths equal to rapidxml +
+`LayoutNodePath` on that page and on every page shipped in
+`Package/Environment/Common/layouts`; edits change only the edited bytes
+(values, new attributes in self-closing and open tags and on their own line,
+removal, entities and the other quote); whole-line delete and duplicate;
+opening and refusing (outside the theme, absolute paths, `..` folders,
+unparseable and editor-made pages); drags that keep `center`, numbers after a
+sideways drag, a resize with a centred origin, an item moving by its
+`xOffset`, nudges, layer clamping, the layout check unchanged; typing as one
+undo step, undo back to the exact original, redo, duplicate/delete and
+their undo; saving keeps the original first and only once, refuses a file
+changed or removed elsewhere, and putting back the original restores the
+bytes; script commands. After review: encoded values read back by rapidxml in
+both quotes, exact nudges and on-grid drags for a half-unit box, W and N
+resizes, an element with both `x` and `xOffset`, put back refused after an
+external change and undoable, hidden boxes cleared when paths shift, no write
+when the backup can't be kept (`manage` is a file), a page reached through a
+junction out of the theme refused, and `pageBoxes` on traced views. The Themes
+provider tests cover `canOpen` and Edit opening the layout editor.
+
+GUI check (2026-10-23, private root `E:\Storage\Agents\native`, scripted):
+Aeon Nox's details with the note and Edit, the layout editor on `layout.xml`
+(boxes over the built page), moving and resizing the information wall,
+moving the wheel's selected item, attribute edits with undo/redo, duplicate
+and delete, save, the Put back the original dialog, `_menu`'s page and a
+`forms` page. The saved `layout.xml` differed from the original in exactly
+the edited values (a git word diff), `retrofe --theme-check "Aeon Nox"`
+passed on it, closing the manager reloaded RetroFE, and Put back the original
+restored the file byte for byte.
+
+### Left for later (as left by that round)
+
+- ~~Adding elements~~, ~~editing animations~~, ~~showing where an
+  animation ends~~ (next section).
+- Editing several pages at once (`layout.xml` and `layout 4x3.xml` usually
+  move together).
+- Snapping a centred box of odd width puts its edge, not its centre, on the grid.
+
+## Layout-native mode: adding elements and animations
+
+User-facing: [THEME_EDITOR.md](../THEME_EDITOR.md#adding-elements).
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/LayoutText` `withChild` | Inserts an element's text as a child: after a given child or the last one, else into an empty parent (a self-closing one opens). The style comes from the file: on a line of its own after a sibling that starts its line and has only space or comments after it there, indented as that sibling; inline after a sibling that shares its line, spaced as the siblings are; into an empty page element (root, component, menu item) on lines of its own, into an empty event or set inline. Fragments are written with `\n` and 4-space levels and re-expressed in the file's line ending and `indentUnit` (the most common parent-to-child indentation difference). `fragmentOf` turns an element's own text back into such a fragment (for copying animations between elements at different depths). |
+| `ThemeEditor/LayoutPalette.{h,cpp}` | The palette: image, video, text, statusText, container, reloadableImage (`type`), reloadableVideo (`imageType`), reloadableText and reloadableScrollingText (`type`), reloadableHiscores, a vertical menu and a custom wheel menu with `<itemDefaults>` (and items). Each a template placed by its top-left corner and layer. The animation fragments (`eventFragment`, `setFragment`, `animateFragment`), the tween types and algorithms in the case layouts write them, `engineEventName` (`onMenuEnter` -> `menuEnter`). Pure. |
+| `ThemeEditor/LayoutSession` | `addElement` (after the selection's page element, else at the end; centred; `newElementLayer`; selects it by the path found at the insert offset), `importFolder`; animations: `events`, `childrenNamed`, `addEvent`/`addSet`/`addAnimate`, `removeAnimation`, `setAttributeOf`/`removeAttributeOf` (inside the selection only; an empty value inside an animation removes the attribute), `copyAnimationsFrom`, `findInSelected`; `enterEndBox`. Animation edits keep the boxes: the "paths changed" test now compares only paths outside animation events. |
+| `ThemeEditor/ThemeStore` `importIntoTheme` | `importFile` without the editor-made guard, for hand-made themes (adds, never replaces; `-2` for a different file of the same name). |
+| `ThemeEditor/EditorScript` | `add`, `event`, `addset`, `addanimate`, `rmanim`, `animattr`, `rmanimattr`, `getanim`, `copyanims`, `events`, `endbox`. |
+| `Manager/Themes/app/FileChooser.{h,cpp}` | The widget editor's file chooser, moved out of `ThemeEditorScreen` so both editors use it (same behaviour; *Cancel* / *Not now* is reported apart from closing it). |
+| `Manager/Themes/app/LayoutEditorScreen` | *Add element...* and the palette dialog, the chooser for a new image or video and *Choose...* beside `src`, *Shows* for reloadable types, the *Animations* panel (events as tree nodes with *Play* and *x*; steps with duration; changes with type, algorithm, from, to; *+ change*, *+ step*, *Add event*, *Copy its animations*), dashed end boxes and *Play the start*; script commands `palette`, `addfile`, `srcfile`, `browse`, `browsedir`, `replay`, `endboxes`, `showanims`, `openevent`. |
+
+### Decisions made in this round
+
+- **Raw elements, not widgets.** The palette writes RetroFE's own elements
+  with the attributes PageBuilder reads (a test runs every entry, every
+  type, through the layout check and rapidxml, alone and inserted into an
+  Aeon Nox-style page). Considered: the widget library's fragments (they
+  carry `{TOKEN}`s and the editor's ids, and are built for the widget
+  model).
+- **Where it goes: after the selection, else at the end.** After the page
+  element the selection is part of (its menu, for an item), so a new
+  element lands next to what you're looking at; with nothing selected after
+  the page's last element (a trailing comment stays last). Only same-named
+  elements after it change path (PageBuilder builds by name, in file
+  order), which the tests check. Considered: always at the end (simple, but
+  far from where you are in a long file), before `</layout>` (after a
+  footer comment).
+- **Style from the neighbours.** Indentation from the sibling (or the
+  parent plus the file's unit), the line ending of the sibling's (or
+  parent's) line, inline between two siblings that share a line, a byte
+  order mark not counted as part of the first line, one line per
+  element when the sibling is on its own line, inline when it shares one,
+  so an Aeon Nox one-line event gets `<animate/><animate/>` and a
+  multi-line file gets lines. Considered: always a new line (breaks the
+  one-line event style), a fixed 4 spaces (wrong for tab files).
+- **Placed numerically in the middle, on top.** `x`/`y` are the numbers
+  that centre the default size; the layer is one above the highest the page
+  uses (at most 19). Considered: `x="center"` with `xOrigin="center"` (the
+  first sideways drag turns it into a number anyway), the selection's layer
+  (may be under other things).
+- **Files: the theme's own folders, paths from the page.** Images go to the
+  page folder's `images/` when it has one, else the theme's (videos:
+  `video/` or `videos/`; Aeon Nox has `images/` and `video/`), else
+  `assets/`, through the same copy rules as the widget editor
+  (`importIntoTheme`). `src` is relative to the page's own folder, because
+  PageBuilder resolves it there first and only then in
+  `layouts/<configured layout>/`: a theme-relative path on a collection's
+  page would work only while the theme is the configured one (found in
+  review). A file already in the theme gets a page-relative path too.
+  Choosing comes first for an image or video; *Not now* adds it with a
+  placeholder name. Considered: one `assets/` for everything (out of place
+  in a hand-made theme), asking for the file after adding (an element that
+  draws nothing until then), copying into a new `images/` beside every
+  collection page (duplicates art the theme already has).
+- **The chooser is shared.** Moved from `ThemeEditorScreen` into
+  `FileChooser` rather than copied.
+- **Animations are edited where they're written.** Each event, step and
+  change is its element in the text; *+ change* / *+ step* / *Add event*
+  insert one-line defaults (alpha), *x* removes one. An empty value inside
+  an animation removes the attribute: PageBuilder reads `from=""` as 0 (not
+  "where it is"), `to=""` as 0 and `menuIndex=""` as menu 0. It also read
+  the last character of an empty `from`/`to` (undefined behaviour); that's
+  guarded now (`getAnimationEvents`, a two-line change), and the layout
+  check reports empty `from`, `to`, `menuIndex` and a `to` it would read
+  as 0. Considered: a structured editor that rewrites the whole event
+  (loses the author's alignment, as in Aeon Nox's column-aligned events).
+- **Copy animations replaces.** The element's events become copies of the
+  other element's, as written (re-indented); Undo brings back its own.
+  Considered: merging by event name (unclear which wins when both have
+  one).
+- **Play uses the engine's own trigger.** `Page::triggerEventOnAllMenus`
+  (as RetroFE does for menu events; `Page::triggerEvent` when there's no
+  selected item), from `update()`, after a pending rebuild so it plays the
+  page as edited; *Play the start* rebuilds so every `onEnter` plays.
+- **End boxes from `onEnter` only.** The last value each change of the
+  element's first `onEnter` (one without `menuIndex` preferred) gives
+  `x`, `y`, `xOffset`, `yOffset`, `width`, `height`, resolved as PageBuilder
+  does (`center` is half the page, `50%` of its width or height), drawn
+  dashed when that box isn't the placed one. Other events (onMenuEnter,
+  onIdle loops) and origin tweens aren't shown. Considered: running the
+  tweens (needs the engine's clock), every event's end (a stack of boxes).
+
+### Checked
+
+`retrofe_tests` (`Tests/LayoutAddTests.cpp`, on an Aeon Nox-style page with
+a BOM, CRLF, comments heading elements, blank lines and one-line events):
+inserts at the end (before a trailing comment), after a sibling (before the
+blank line and comment of the next), after a sibling with a comment on its
+line, multi-line fragments in the file's unit, tab and two-space files, the
+last line without a line ending, self-closing and empty parents (root,
+component, set, event), inline siblings and an `after` that isn't a child;
+every palette entry and type passes the layout check and rapidxml, alone
+and inserted; tween names equal LayoutCheck's; adding at the end keeps
+every other element's path and text, after an element shifts only its
+kind, after a menu item goes after the menu, a wheel with its items; save;
+animate add/edit/remove back to the exact bytes, empty values removed,
+steps and events added on their own lines, refusals; copying onto a
+self-closing element and replacing an element's own; end boxes (the top
+bar, alpha-only, `center`, `50%`); `importIntoTheme` and `importFolder`;
+the script commands.
+
+GUI check (2026-10-23, private root `E:\Storage\Agents\native5`, scripted):
+the details note, the top bar's dashed end box, the palette, a text, game
+art and an image from a file outside the theme added (copied to
+`images/badge.png`), the top bar's animations copied onto the text and
+edited (3 s, a second change with easeOutCubic), *Play* mid-animation, the
+file chooser, save. The saved `layout.xml` differed from the original by
+the ten inserted lines only, `retrofe --theme-check "Aeon Nox"` passed,
+and RetroFE reloaded the theme when the manager closed.
+
+### Left for later
+
+- Editing `layout.xml` and `layout 4x3.xml` together.
+- Selecting an off-page element by its end box on the canvas (the list
+  selects it).
+- End boxes for other events, and previewing an event's frames by a slider.
+- Adding a sound (`<sound>`) and menu items from the palette.
 
 ## Other open items
 
@@ -458,5 +866,5 @@ most faithful to One Saucier. This needs the user's call.
 - The Xcode project doesn't list the new files (it hasn't been updated for
   the fork's other additions either).
 - `static_video`'s default `videos/background.mp4` and `static_image`'s
-  `images/background.png` don't exist in a new theme; saving warns. The UI
-  should ask for a file when placing them.
+  `images/background.png` don't exist in a new theme; the editor asks for a
+  file when they're placed (round 3), and saving warns if it's still missing.

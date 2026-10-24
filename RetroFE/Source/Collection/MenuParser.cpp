@@ -54,7 +54,7 @@ void MenuParser::buildMenuFromCollectionLaunchers(CollectionInfo* collection, st
 
         menuItems.push_back(item);
     }
-    std::sort(menuItems.begin(), menuItems.end(), [](Item const* a, Item const* b) { return Utils::toLower(a->fullTitle) <= Utils::toLower(b->fullTitle); });
+    std::sort(menuItems.begin(), menuItems.end(), [](Item const* a, Item const* b) { return Utils::toLower(a->fullTitle) < Utils::toLower(b->fullTitle); });
     collection->items.insert(collection->items.begin(), menuItems.begin(), menuItems.end());
 }
 
@@ -80,7 +80,8 @@ bool MenuParser::buildTextMenu(CollectionInfo* collection, bool sort)
         std::string path = Utils::combinePath(Configuration::absolutePath, "collections", collection->name, "menu");
 
         if (!fs::exists(path) || !fs::is_directory(path)) {
-            LOG_WARNING("Menu", "Menu directory does not exist: \"" + path + "\"");
+            // Normal for a collection of games: it has no menu
+            LOG_INFO("Menu", "Menu directory does not exist: \"" + path + "\"");
             return false;
         }
 
@@ -108,7 +109,7 @@ bool MenuParser::buildTextMenu(CollectionInfo* collection, bool sort)
             }
         }
 
-        std::sort(menuItems.begin(), menuItems.end(), [](Item const* a, Item const* b) { return Utils::toLower(a->fullTitle) <= Utils::toLower(b->fullTitle); });
+        std::sort(menuItems.begin(), menuItems.end(), [](Item const* a, Item const* b) { return Utils::toLower(a->fullTitle) < Utils::toLower(b->fullTitle); });
     }
     else {
         std::ifstream includeStream(menuFile.c_str());

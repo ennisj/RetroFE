@@ -24,6 +24,7 @@
 // tested; the screen runs the rest (wait, save, use, show, ...).
 
 #include "EditorSession.h"
+#include "LayoutSession.h"
 #include <string>
 #include <vector>
 
@@ -48,8 +49,24 @@ namespace ThemeEditor
 
     // Runs a command that only needs the session: page, select, selectid,
     // add, click X Y, move DX DY, resize HANDLE DX DY, nudge DX DY, name,
-    // layer, alpha, colour, var, delete, undo, redo. Coordinates and
+    // layer, alpha, colour, var, delete, undo, redo; templates:
+    // tplnew COLLECTION blank|default|PRIMARY NAME..., tplassign COLLECTION
+    // PRIMARY|default, tpldelete PRIMARY [REPLACEMENT|default], tplrename
+    // PRIMARY NAME...; theme properties: font PATH|default, sound KIND
+    // PATH|none, splashtext TEXT, splashbg PATH|none. Coordinates and
     // distances are theme units. NotSession for anything else. `note` says
     // what happened (the selection, the widget's new rect).
     CommandResult runSessionCommand(EditorSession& session, const EditorCommand& command, std::string& note);
+
+    // The same for the layout-native mode (LayoutSession): select N (in the
+    // element list's order), selectpath PATH ("-" = the page itself), click
+    // X Y, move DX DY, resize HANDLE DX DY, nudge DX DY, attr NAME VALUE...,
+    // rmattr NAME, get NAME (notes the value), layer N, duplicate, delete,
+    // undo, redo, snap on|off; add PALETTEID [TYPE|-] [SRC...]; animations,
+    // by paths relative to the selected element ("onEnter[0]/set[0]", "-"
+    // for the element itself): event NAME, addset EVENT, addanimate SET,
+    // rmanim PATH, animattr PATH NAME VALUE..., rmanimattr PATH NAME,
+    // getanim PATH NAME, copyanims SOURCEPATH, events (notes them), endbox
+    // (notes where onEnter leaves it). NotSession for anything else.
+    CommandResult runLayoutCommand(LayoutSession& session, const EditorCommand& command, std::string& note);
 }

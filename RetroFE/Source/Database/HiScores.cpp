@@ -32,11 +32,29 @@ void HiScores::loadHighScores(const std::string& zipPath, const std::string& ove
     hiFilesDirectory_ = Utils::combinePath(Configuration::absolutePath, "emulators", "mame", "hi");
     scoresDirectory_ = Utils::combinePath(Configuration::absolutePath, "hi2txt", "scores");
     
+    // hi2txt is optional: an install without it simply has no high score tables
+    std::error_code ec;
+    std::string hi2txtFolder = std::filesystem::path(zipPath).parent_path().string();
+    if (!std::filesystem::exists(zipPath, ec) && !std::filesystem::exists(overridePath, ec)
+        && !std::filesystem::exists(hi2txtFolder, ec)) {
+        LOG_INFO("HiScores", "No hi2txt (" + hi2txtFolder + "), so no high score tables");
+        return;
+    }
+
     // Load defaults from the ZIP file
-    loadFromZip(zipPath);
+    if (std::filesystem::exists(zipPath, ec)) {
+        loadFromZip(zipPath);
+    }
+    else {
+        // hi2txt is installed but its defaults aren't: most games will have no table
+        LOG_WARNING("HiScores", "hi2txt is set up but its defaults are missing: " + zipPath);
+    }
 
     // Check if the override directory exists
-    if (std::filesystem::exists(overridePath) && std::filesystem::is_directory(overridePath)) {
+    if (!std::filesystem::exists(overridePath, ec)) {
+        LOG_INFO("HiScores", "No hi2txt scores folder yet: " + overridePath);
+    }
+    else if (std::filesystem::is_directory(overridePath, ec)) {
         // Load override XML files from the directory
         for (const auto& file : std::filesystem::directory_iterator(overridePath)) {
             if (file.path().extension() == ".xml") {
@@ -54,7 +72,7 @@ void HiScores::loadHighScores(const std::string& zipPath, const std::string& ove
             }
         }
     } else {
-        LOG_ERROR("HiScores", "Override directory does not exist or is not accessible: " + overridePath);
+        LOG_ERROR("HiScores", "Override directory is not a folder or is not accessible: " + overridePath);
     }
 }
 
@@ -292,6 +310,12 @@ bool HiScores::runHi2Txt(const std::string& gameName) {
 
 // Wrapper function to run hi2txt asynchronously
 void HiScores::runHi2TxtAsync(const std::string& gameName) {
+    // Nothing to read without hi2txt, or when the game saved no scores
+    std::error_code ec;
+    if (!std::filesystem::is_directory(Utils::combinePath(Configuration::absolutePath, "hi2txt"), ec) || !hasHiFile(gameName)) {
+        LOG_INFO("HiScores", "No hi2txt or no .hi file for " + gameName + "; scores not updated");
+        return;
+    }
     std::thread([this, gameName]() {
         try {
             if (runHi2Txt(gameName)) {

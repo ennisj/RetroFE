@@ -16,9 +16,10 @@
 #include "../../Forms/BuiltinForms.h"
 
 // The Themes screens, opened from Manage (bindings in ThemeProvider.h).
-// theme-editor is drawn by the theme editor itself, with ImGui
-// (Manager/Themes/app/ThemeEditorScreen.h); its form only has to exist so
-// the screen can be opened and returned from like any other.
+// theme-editor and theme-layout-editor are drawn by the theme editor itself,
+// with ImGui (Manager/Themes/app/ThemeEditorScreen.h, LayoutEditorScreen.h);
+// their forms only have to exist so the screens can be opened and returned
+// from like any other.
 namespace
 {
 
@@ -40,7 +41,7 @@ const char* const themeForm = R"(
   <note bind="theme:problem"/>
   <note bind="theme:editNote"/>
   <button label="Use this theme" action="theme.use" visibleWhen="!theme:isActive"/>
-  <button label="Edit" action="theme.edit" visibleWhen="theme:isEditor"/>
+  <button label="Edit" action="theme.edit" visibleWhen="theme:canOpen"/>
   <button label="Duplicate" action="theme.duplicate" visibleWhen="theme:isEditor"/>
   <button label="Delete" action="theme.delete" visibleWhen="theme:isEditor" confirm="Delete this theme and its files?"/>
 </form>
@@ -61,6 +62,12 @@ const char* const themeEditorForm = R"(
 </form>
 )";
 
+const char* const themeLayoutEditorForm = R"(
+<form id="theme-layout-editor" title="Layout editor">
+  <note value="The layout editor draws this screen itself."/>
+</form>
+)";
+
 }
 
 Forms::BuiltinTable Forms::themesForms()
@@ -70,5 +77,6 @@ Forms::BuiltinTable Forms::themesForms()
         { "theme", themeForm },
         { "theme-new", themeNewForm },
         { "theme-editor", themeEditorForm },
+        { "theme-layout-editor", themeLayoutEditorForm },
     };
 }

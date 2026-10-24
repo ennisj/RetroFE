@@ -57,6 +57,13 @@ namespace Manager
     // A collection Videos lists: info.conf "type = videos"
     bool isVideoCollection(const Library::CollectionRecord& record);
 
+    // A video collection RetroFE plays itself: info.conf "play = here"
+    // (VideoCollections::playsHere); otherwise its launcher plays its videos
+    bool playsHere(const Library::CollectionRecord& record);
+
+    // Its extensions RetroFE's own player can't open (VideoCollections::playableExtensions)
+    std::vector<std::string> unplayableExtensions(const Library::CollectionRecord& record);
+
     // The launcher a new video collection gets by default
     extern const char* const videoPlayerLauncher;   // "VideoPlayer"
 
@@ -135,6 +142,8 @@ namespace Manager
         Forms::Model::Result create();
         std::string addFolderCount();
         bool addIsNewLauncher() const;
+        // A system, or a video collection added to play with an external player
+        bool addUsesLauncher() const;
 
         std::string deleteProblem(const Screen& screen);
         Forms::Model::Result remove(const Screen& screen);

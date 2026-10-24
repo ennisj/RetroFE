@@ -23,8 +23,16 @@ namespace LayoutPages
     // The folder a collection's pages come from, in the layout's folder:
     // collections/<collection>/layout when the layout has it, else
     // collections/_menu/layout for a collection of collections (isMenu), else
-    // the layout's folder itself.
-    std::string collectionFolder(const std::string& layoutFolder, const std::string& collection, bool isMenu);
+    // the layout's folder itself. A video collection (isVideos: info.conf
+    // "type = videos") uses collections/_videos/layout the same way, before _menu.
+    std::string collectionFolder(const std::string& layoutFolder, const std::string& collection, bool isMenu,
+                                 bool isVideos = false);
+
+    // The page a video collection's videos play on ("player" for the page
+    // "layout", "player 4x3" for "layout 4x3"): collections/<collection>/layout/
+    // then collections/_videos/layout/, each <player page>.xml then player.xml.
+    // "" when the layout has none (RetroFE then uses its built-in player page).
+    std::string playerFile(const std::string& layoutFolder, const std::string& collection, const std::string& page);
 
     // The page for a management screen, in the layout's forms folder, for the
     // page RetroFE draws collections with (e.g. "layout", or "layout 4x3"):

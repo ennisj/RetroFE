@@ -21,6 +21,7 @@
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Forms/SettingsFile.h"
+#include "../Source/Library/ConfFile.h"
 #include "../Source/Manager/EditBuffer.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Navigator.h"
@@ -141,6 +142,33 @@ void runFormsTests()
                    "horizontal = 1600 # number of horizontal pixels, or use stretch\r\n"
                    "attractModeTime\t= 30\r\n",
                    "file content");
+    });
+
+    run("a settings.conf another editor created meanwhile is read, never replaced", [&] {
+        std::string root = makeRoot("created-meanwhile");
+        SettingsFile manager(root);   // loaded while there's no settings.conf
+        SettingsFile themes(root);
+        check(themes.set("layout", "Mine", "# defaults\nlayout = Aeon Nox\n", error), "the other editor creates it: " + error);
+        std::string created = readFile(root + "/settings.conf");
+        check(created.find("layout = Mine") != std::string::npos, "with its value");
+
+        check(manager.ensureExists("# defaults\nlayout = Aeon Nox\nvideoEnable = yes\n", error), "ensureExists: " + error);
+        checkEqual(readFile(root + "/settings.conf"), created, "not overwritten with the defaults");
+        checkEqual(manager.get("layout"), "Mine", "and read from disk");
+
+        SettingsFile late(root);
+        std::filesystem::remove(root + "/settings.conf");
+        late.load();   // missing again
+        writeFile(root + "/settings.conf", "layout = Other\n");
+        check(late.set("videoEnable", "no", "# defaults\n", error), "setting a key reads the new file: " + error);
+        checkEqual(readFile(root + "/settings.conf"), "layout = Other\nvideoEnable = no\n", "the key is added to it");
+
+        Library::ConfFile stale(root + "/settings2.conf");
+        stale.load();
+        writeFile(root + "/settings2.conf", "horizontal = 1280\n");
+        check(stale.set("vertical", "720", error), "set in memory");
+        check(!stale.save(error) && !error.empty(), "saving a copy read as missing refuses to overwrite");
+        checkEqual(readFile(root + "/settings2.conf"), "horizontal = 1280\n", "the other file is untouched");
     });
 
     run("LF files stay LF and new keys are appended", [&] {
@@ -474,6 +502,23 @@ void runFormsTests()
         checkEqual(nav.current()->form, "sources", "so Back still ends where it started");
     });
 
+    run("a screen can take the place of the one it came from", [&] {
+        Navigator nav;
+        nav.open("manage");
+        Forms::Focus onList;
+        onList.field = 3;
+        nav.push("systems", {}, Forms::Focus{});
+        nav.push("system-add", {}, onList);
+        nav.replace("system", { { "id", "Arcade" } });
+        check(nav.depth() == 3 && nav.current()->form == "system" && nav.current()->params.at("id") == "Arcade",
+              "the new system's screen replaces the add form");
+        check(nav.back() && nav.current()->form == "systems" && nav.current()->focus.field == 3,
+              "Back goes to the list, where the user was");
+        Navigator empty;
+        empty.replace("manage", {});
+        check(empty.depth() == 1 && empty.current()->form == "manage", "with nothing open it just opens");
+    });
+
     run("the Settings key opens, switches to and closes Settings", [&] {
         Navigator nav;
         check(nav.toggle("settings") && nav.depth() == 1 && nav.current()->form == "settings", "opens");
@@ -542,5 +587,24 @@ void runFormsTests()
         check(opened.ok && opened.open == "game-media" && opened.keepParams, "open.<form> works like a link");
         Forms::Model::Result back = model.runAction("back");
         check(back.ok && back.back && back.open.empty(), "back");
+    });
+
+    run("leaving Settings with unsaved changes warns once, then drops them", [&] {
+        std::string root = makeRoot("settings-leaving");
+        writeFile(root + "/settings.conf", "hideMouse = no\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        model.refresh();
+        Manager::Screen settings{ "settings", {} };
+        model.setScreen("settings", {});
+        checkEqual(model.leaving(settings), "", "nothing changed: no warning");
+        model.set("settings:hideMouse", "yes");
+        check(!model.leaving(settings).empty(), "a changed setting warns");
+        checkEqual(model.leaving(Manager::Screen{ "manage", {} }), "", "other screens don't mind");
+        model.discard(settings);
+        checkEqual(model.leaving(settings), "", "dropped");
+        checkEqual(model.get("settings:hideMouse"), "no", "back to the saved value");
+        checkEqual(readFile(root + "/settings.conf"), "hideMouse = no\n", "nothing was written");
     });
 }

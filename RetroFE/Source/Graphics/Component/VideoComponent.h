@@ -45,7 +45,9 @@ public:
     unsigned long long getCurrent( ) override;
     unsigned long long getDuration( ) override;
     bool isPaused( ) override;
-    std::string_view filePath() const;
+    // Overrides Component's, so ReloadableMedia keeps a video that's already playing
+    // (a const here, from #221, hid it and made every reload restart the video)
+    std::string_view filePath() override;
 
 private:
     std::string videoFile_;
@@ -60,4 +62,5 @@ private:
     int perspectiveCorners_[8]{ 0 }; // Initialize to zeros
     bool hasPerspective_{ false };
     bool dimensionsUpdated_ = false; // Track if dimensions have been updated for the current video
+    bool heldPaused_ = false;        // paused by pause(), not by being hidden
 };

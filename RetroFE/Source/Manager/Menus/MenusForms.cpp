@@ -97,7 +97,7 @@ const char* const menuSourcesForm = R"form(
     <choice label="System" bind="menu:addSource" options="menu:addableSources"/>
     <button label="Add, showing all its games" action="menu.addSource"/>
   </section>
-  <note value="Choosing which games of a source it shows will come with the Games screens."/>
+  <note value="To show only some of a system's games, take games out in Games: each game's Playlists and collections screen."/>
 </form>
 )form";
 

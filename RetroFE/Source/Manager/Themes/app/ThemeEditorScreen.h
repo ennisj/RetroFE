@@ -15,12 +15,16 @@
  */
 #pragma once
 
+#include "FileChooser.h"
 #include "../../ImGuiScreen.h"
 #include "../../../ThemeEditor/EditorScript.h"
 #include "../../../ThemeEditor/EditorSession.h"
 #include <SDL2/SDL.h>
+#include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -28,6 +32,7 @@ class CollectionInfo;
 class Configuration;
 class FontCache;
 class Page;
+namespace Library { class Indexer; }
 
 // The theme editor: an ImGui screen inside the manager, opened by the Edit
 // action on a theme made with the editor (form "theme-editor", param id =
@@ -63,6 +68,9 @@ public:
         std::function<CollectionInfo*(const std::string&)> loadCollection;
         std::function<std::string()> currentCollection;
         std::function<void()> requestReload;
+        // The shared library index (Services::library): the menu tree the
+        // template coverage is shown on. May be null.
+        Library::Indexer* library = nullptr;
     };
 
     ThemeEditorScreen(const Context& context, const std::string& folder);
@@ -81,7 +89,29 @@ public:
     void shutdown() override;
 
 private:
-    enum class Job { None, Save, SaveAndClose, Use, PickFile };
+    enum class Job { None, Save, SaveAndClose, Use, NativePick, Import };
+
+    // What a chosen file is for
+    enum class FileFor { WidgetVar, Font, Sound, SplashBackground };
+    struct FileRequest
+    {
+        FileFor what = FileFor::WidgetVar;
+        std::string key;        // the var's token, or the sound's kind
+        int page = -1;          // the widget's page and id (the selection may change)
+        std::string widgetId;
+        std::string filter;     // image, video, text, font, sound, "" = any
+        std::string title;
+        std::string note;       // what happens without a file
+    };
+    // A collection in the menu tree, as the Collections list shows it
+    struct TreeRow
+    {
+        std::string name;
+        int depth = 0;
+        bool menu = false;
+        bool children = false;
+        std::string otherLayout;   // collections.<c>.layout names another theme
+    };
 
     void rebuildPreview();
     void destroyPreview();
@@ -90,12 +120,32 @@ private:
     void runJob();
     bool save();
     void use();
-    void pickFile();
+    void pickNative();
+    bool importChosen(const std::string& path, const FileRequest& request);
+    void openBrowser(const FileRequest& request);
+    FileRequest varRequest(const std::string& token) const;
+    void askForFiles();
+    void refreshTree();
+    void refreshHandMade();
+    bool isHandMade(const std::string& collection) const;
+    void refreshFonts();
+    std::vector<std::string> descendants(const std::string& collection) const;
+    std::string pageNameFor(const std::string& collection, bool menu) const;
+    void openTemplateDialog(const std::string& collection, bool create, const std::string& basedOn);
     void runScript();
     bool runCommand(const ThemeEditor::EditorCommand& command, std::string& note);
 
     void drawToolbar();
     void drawThemePanel();
+    void drawThemeProperties();
+    void drawSplash();
+    void drawPages();
+    void drawCollections();
+    void drawFileRow(const char* label, const std::string& value, const FileRequest& request,
+                     const std::function<void()>& clear);
+    void drawBrowser();
+    void drawTemplateDialog();
+    void drawDeleteTemplate();
     void drawCanvas();
     void drawProperties();
     void drawVar(const ThemeEditor::WidgetVar& var);
@@ -120,6 +170,7 @@ private:
     bool previewDirty_ = true;
     float sinceChange_ = 0.0f;
     unsigned seenRevision_ = 0;
+    int seenPage_ = 0;
     std::vector<std::string> genIssues_;      // the generator's errors and warnings
     std::vector<std::string> engineIssues_;   // what PageBuilder logged building it
     std::unique_ptr<CollectionInfo> master_;  // the preview collection as loaded
@@ -136,7 +187,37 @@ private:
 
     // Work queued from draw() for update()
     Job job_ = Job::None;
-    std::string jobToken_;
+    FileRequest jobRequest_;
+    std::string jobPath_;
+    bool jobAnnounced_ = false;   // a big copy's status line has been shown
+
+    // Files: the chooser (ImGui, inside the RetroFE folder) and what it's open for
+    Themes::FileChooser browser_;
+    FileRequest browserRequest_;
+    std::filesystem::path lastBrowseDir_;
+    std::vector<std::string> fonts_;   // the theme's fonts/*.ttf|otf
+    bool fontsListed_ = false;
+
+    // Collections and templates
+    std::vector<TreeRow> tree_;
+    unsigned treeGeneration_ = 0;
+    bool treeFromIndex_ = false;
+    std::string treeFilter_;
+    std::string chosenCollection_;          // picked in the Collections list
+    std::string openSection_;               // a section a script asked to unfold
+    std::set<std::string> handMade_;        // collections whose page in the theme was written by hand
+    std::string tplProblemKey_, tplProblem_;
+    bool showTemplate_ = false, templateOpen_ = false;
+    std::string tplCollection_;             // "" = choose one in the dialog
+    bool tplFixedCollection_ = false;
+    int tplChoice_ = 0;                     // 0 = a new template, 1 = Default, 2.. = templates()[n - 2]
+    std::string tplName_;
+    std::string tplBasedOn_;                // "" = Default, EditorSession::BLANK, or a template
+    bool tplCascade_ = false;
+    std::string tplFilter_;
+    bool showDeleteTpl_ = false, deleteTplOpen_ = false;
+    std::string delPrimary_;
+    std::string delReplacement_;
 
     std::string status_;
     bool statusIsError_ = false;
@@ -159,3 +240,16 @@ private:
     size_t scriptAt_ = 0;
     int scriptWait_ = 0;
 };
+
+namespace Themes
+{
+    // The screen for a theme editor form: the widget editor (editorForm) or
+    // the layout-native editor (layoutEditorForm, LayoutEditorScreen.h).
+    // params: id = the theme's folder, page = a page in it (layout editor)
+    std::unique_ptr<Manager::ImGuiScreen> makeEditorScreen(const std::string& form, const ThemeEditorScreen::Context& context,
+                                                           const std::map<std::string, std::string>& params);
+
+    // retrofe -editorScript <file>: its commands, the first time an editor
+    // (either kind) is opened in this session only; false after that
+    bool takeEditorScript(Configuration* config, std::vector<ThemeEditor::EditorCommand>& commands, std::string& path);
+}

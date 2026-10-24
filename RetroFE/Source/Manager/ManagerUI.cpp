@@ -137,8 +137,8 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.library = library_.get();
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
-        services.requestLaunch = [](const std::string& collection, const std::string& game) {
-            launches_.want({ collection, game });   // handleResult closes the manager for it
+        services.requestLaunch = [this](const std::string& collection, const std::string& game) {
+            launches_.want({ collection, game, gameTitle(collection, game) });   // handleResult closes the manager for it
         };
         services.launchProblem = [this] {
             bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
@@ -465,12 +465,19 @@ void ManagerUI::close()
     if (reloadWhenClosed_) {
         reloadWhenClosed_ = false;
         reloadRequested_ = true;
+        // A bare install that's now set up (e.g. its first system added in
+        // Systems) keeps its built-in defaults in a settings.conf, as after a
+        // Catalog install; without one, RetroFE would open Manage at every start
+        std::string error;
+        if (!model_.ensureSettingsFile(error)) {
+            LOG_ERROR("Manager", error);
+        }
     }
 }
 
 bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
 {
-    if (frame.form != Themes::editorForm) {
+    if (frame.form != Themes::editorForm && frame.form != Themes::layoutEditorForm) {
         return false;
     }
     ThemeEditorScreen::Context context;
@@ -483,8 +490,8 @@ bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
     context.loadCollection = loadCollection_;
     context.currentCollection = currentCollection_;
     context.requestReload = [this] { reloadWhenClosed_ = true; };
-    auto id = frame.params.find("id");
-    screen_ = std::make_unique<ThemeEditorScreen>(context, id != frame.params.end() ? id->second : "");
+    context.library = library_.get();
+    screen_ = Themes::makeEditorScreen(frame.form, context, frame.params);
     SDL_ShowCursor(SDL_ENABLE);
     return true;
 }
@@ -823,6 +830,13 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
             return;   // it says why
         }
     }
+    else if (result.ok && result.replace && !result.open.empty() && this->form(result.open)) {
+        // The screen the action ran on is done with (e.g. an add form): the
+        // result takes its place, so Back goes to the screen before it
+        const Navigator::Frame* frame = nav_.current();
+        nav_.replace(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result));
+        show();
+    }
     else if (result.ok && !result.open.empty()) {
         const Navigator::Frame* frame = nav_.current();
         if (!push(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result))) {
@@ -911,7 +925,18 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
     }
-    setStatus(problem.empty() ? "Back from " + request.game + "." : problem, !problem.empty());
+    setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem, !problem.empty());
+}
+
+std::string ManagerUI::gameTitle(const std::string& collection, const std::string& game) const
+{
+    // The library's title (metadata), as the Games screens show it
+    std::shared_ptr<const Library::Index> idx = library_ ? library_->index() : nullptr;
+    int g = idx ? idx->findGame(collection, game) : -1;
+    if (g >= 0 && !idx->games[static_cast<size_t>(g)].title.empty()) {
+        return idx->games[static_cast<size_t>(g)].title;
+    }
+    return game;
 }
 
 void ManagerUI::setLocked(bool locked)

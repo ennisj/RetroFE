@@ -47,6 +47,55 @@ namespace fs = std::filesystem;
 
 CollectionInfoBuilder::~CollectionInfoBuilder() = default;
 
+bool CollectionInfoBuilder::isMenuOrMergedFolder(const std::string& folder)
+{
+    std::error_code ec;
+    if (fs::is_regular_file(Utils::combinePath(folder, "menu.txt"), ec)
+        || fs::is_directory(Utils::combinePath(folder, "menu"), ec)
+        || fs::is_regular_file(Utils::combinePath(folder, "menu.xml"), ec)) {
+        return true;
+    }
+    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->is_regular_file(ec) && it->path().extension() == ".sub") {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CollectionInfoBuilder::listFolderExists(Configuration& conf, const std::string& name)
+{
+    std::string paths;
+    conf.getCollectionAbsolutePath(name, paths);
+    std::vector<std::string> folders;
+    Utils::listToVector(paths, folders, ';');
+    std::error_code ec;
+    return std::any_of(folders.begin(), folders.end(), [&ec](const std::string& folder) {
+        return !folder.empty() && fs::is_directory(folder, ec);
+    });
+}
+
+bool CollectionInfoBuilder::isSystem(Configuration& conf, const std::string& name)
+{
+    std::string prefix = "collections." + name + ".list.";
+    std::string extensions;
+    if (conf.getProperty(prefix + "extensions", extensions) && !Utils::trimEnds(extensions).empty()) {
+        return true;
+    }
+    if (conf.propertyExists(prefix + "path")) {
+        return true;
+    }
+    return listFolderExists(conf, name)
+        && !isMenuOrMergedFolder(Utils::combinePath(Configuration::absolutePath, "collections", name));
+}
+
+bool CollectionInfoBuilder::needsNoSettings(Configuration& conf, const std::string& name)
+{
+    return isMenuOrMergedFolder(Utils::combinePath(Configuration::absolutePath, "collections", name))
+        && !conf.propertyPrefixExists("collections." + name + ".list")
+        && !listFolderExists(conf, name);
+}
+
 bool CollectionInfoBuilder::createCollectionDirectory(const std::string& name, const std::string& collectionType, const std::string& osType)
 {
     std::string collectionPath = Utils::combinePath(Configuration::absolutePath, "collections", name);
@@ -218,17 +267,7 @@ CollectionInfo *CollectionInfoBuilder::buildCollection(const std::string& name, 
     (void)conf_.getProperty(metadataTypeKey, metadataType);
     (void)conf_.getProperty(metadataPathKey, metadataPath);
 
-    if (!conf_.getProperty(launcherKey, launcherName)) {
-        std::stringstream ss;
-        ss        << "\""
-                  << launcherKey
-                  << "\" points to a launcher that is not configured (launchers."
-                  << launcherName
-                  << "). Your collection will be viewable, however you will not be able to "
-                  << "launch any of the items in your collection.";
-
-        LOG_NOTICE("Collections", ss.str());
-    }
+    bool hasLauncher = conf_.getProperty(launcherKey, launcherName);
 
     auto *collection = new CollectionInfo(conf_, name, listItemsPath, extensions, metadataType, metadataPath);
 
@@ -237,6 +276,14 @@ CollectionInfo *CollectionInfoBuilder::buildCollection(const std::string& name, 
     collection->launcher = Library::firstLauncher(collection->launcher);
 
     ImportDirectory(collection, mergedCollectionName);
+
+    // Only a system needs a launcher: menus (Home, a menu.txt) and merged
+    // collections (whose games use their own systems') have none. A system
+    // with no games found (a wrong list.path) still gets the notice.
+    if (!hasLauncher && isSystem(conf_, name)) {
+        LOG_NOTICE("Collections", "\"" + launcherKey + "\" isn't set, so the games of " + name
+            + " can be viewed but not started.");
+    }
 
     return collection;
 }

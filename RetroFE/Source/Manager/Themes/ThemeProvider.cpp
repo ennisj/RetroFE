@@ -32,6 +32,7 @@ namespace fs = std::filesystem;
 namespace Themes
 {
     const char* const editorForm = "theme-editor";
+    const char* const layoutEditorForm = "theme-layout-editor";
 
     namespace
     {
@@ -311,6 +312,7 @@ namespace Themes
         if (key == "isEditor") return flag(editor);
         if (key == "isHandMade") return flag(t && !editor);
         if (key == "canEdit") return flag(editor && t->projectOk);
+        if (key == "canOpen") return flag(t && (editor || t->hasLayout || t->hasSplash || !t->collectionPages.empty()));
         if (key == "isActive") return flag(t && t->active);
         if (!t) return "";
 
@@ -346,9 +348,10 @@ namespace Themes
                        "/editor/project.xml) doesn't load: " + t->projectError;
             }
             if (!editor) {
-                return "The theme editor can only open themes made with it, and this one was made by hand "
-                       "(its layout.xml doesn't start with the editor's marker). The editor never changes "
-                       "hand-made themes. You can still use it, or start a new theme.";
+                return "This theme was made by hand. Edit opens its pages in the layout editor, which moves, "
+                       "resizes and changes the settings of a page's elements, adds new ones and edits their "
+                       "animations, rewriting only what changes. The first save keeps the original page in "
+                       "manage/backups, and Put back the original restores it.";
             }
             return "";
         }
@@ -417,8 +420,11 @@ namespace Themes
             }
             return t->mainProblem;
         }
+        if (action == "edit" && !editor) {
+            return get("canOpen", screen) == "yes" ? "" : "This folder has no page files to edit.";
+        }
         if (action == "edit" || action == "duplicate") {
-            if (!editor) return "Only themes made with the theme editor can be edited or duplicated.";
+            if (!editor) return "Only themes made with the theme editor can be duplicated.";
             if (!t->projectOk) return "This theme's project doesn't load: " + t->projectError;
             return "";
         }
@@ -446,8 +452,10 @@ namespace Themes
             result.message = "RetroFE switches to this theme when you close the manager.";
         }
         else if (action == "edit") {
+            // Widgets for an editor-made theme; the page's own elements for a hand-made one
+            const ThemeFacts* t = find(folder);
             result.ok = true;
-            result.open = editorForm;
+            result.open = t && t->kind == ThemeEditor::TF_EDITOR ? editorForm : layoutEditorForm;
             result.keepParams = true;
         }
         else if (action == "create") {

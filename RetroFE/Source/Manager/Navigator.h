@@ -50,6 +50,10 @@ public:
     // Opens a screen over the current one, remembering where the user was on it
     void push(const std::string& form, const Forms::Params& params, const Forms::Focus& leaving);
 
+    // Shows another screen in place of the current one (e.g. a new record's
+    // details in place of the form that added it), so Back skips the old one
+    void replace(const std::string& form, const Forms::Params& params);
+
     // Returns to the previous screen. False when there's none, i.e. the manager closes.
     bool back();
 

@@ -44,10 +44,10 @@ const char* const detailsForm = R"(
   <value label="In menus" bind="{p}:menus"/>
   <value label="{Items} folder" bind="{p}:gamesFolder"/>
   <value label="Extensions" bind="{p}:extensionsText"/>
-  <value label="Launcher" bind="{p}:launcherInEffect"/>
+  {playsValue}<value label="Launcher" bind="{p}:launcherInEffect" visibleWhen="{p}:usesLauncher"/>
   <results bind="{p}:games" open="games" param="collection"/>
   <link label="Settings" open="{p}-settings" status="{p}:settingsStatus"/>
-  <link label="Launcher" open="{p}-launcher" status="{p}:launcherStatus"/>
+  <link label="{launcherLink}" open="{p}-launcher" status="{p}:launcherStatus"/>
   <link label="Info" open="{p}-info" status="{p}:infoStatus"/>
   <link label="Media" open="{p}-media" status="{p}:mediaStatus"/>
   <link label="Playlists" open="{p}-playlists" status="{p}:playlistsStatus"/>
@@ -73,12 +73,12 @@ const char* const settingsForm = R"(
 )";
 
 const char* const launcherForm = R"(
-<form id="{p}-launcher" title="Launcher" bind="{p}:screenTitle">
+<form id="{p}-launcher" title="{launcherLink}" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <value label="In effect" bind="{p}:launcherInEffect"/>
+  {playChoice}<value label="In effect" bind="{p}:launcherInEffect" visibleWhen="{p}:usesLauncher"/>
   <note bind="{p}:launcherFileNote"/>
-  <choice label="Default launcher" bind="{p}:launcher" options="{p}:launchers"/>
-  <value label="Alternatives" bind="{p}:alternatives" help="RetroFE Plus lists these after the default; this RetroFE starts the default and keeps the list as it is."/>
+  <choice label="{defaultLauncherLabel}" bind="{p}:launcher" options="{p}:launchers" visibleWhen="{p}:usesLauncher"/>
+  <value label="Alternatives" bind="{p}:alternatives" visibleWhen="{p}:usesLauncher" help="RetroFE Plus lists these after the default; this RetroFE starts the default and keeps the list as it is."/>
   <note bind="{p}:overridesNote"/>
   <note bind="{p}:launcherProblem"/>
   <actions>
@@ -91,7 +91,7 @@ const char* const launcherForm = R"(
 const char* const infoForm = R"(
 <form id="{p}-info" title="Info" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <text label="Title" bind="{p}:infoTitle" hint="{nameHint}"/>
+  <text label="Title" bind="{p}:infoTitle" hint="e.g. {nameHint}"/>
   <text label="Manufacturer" bind="{p}:manufacturer"/>
   <text label="Year" bind="{p}:year"/>
   <text label="Genre" bind="{p}:genre"/>
@@ -201,7 +201,7 @@ const char* const addForm = R"(
   <choice label="List it in" bind="{p}:addMenu" options="{p}:addMenus"/>
   <folder label="{Items} folder" bind="{p}:addFolder" hint="Not chosen yet" status="{p}:addFolderCount"/>
   <text label="Extensions" bind="{p}:addExtensions" default="{exts}" hint="e.g. {exts}"/>
-  <choice label="{launcherLabel}" bind="{p}:addLauncher" options="{p}:addLaunchers"/>
+  {addPlayChoice}<choice label="{launcherLabel}" bind="{p}:addLauncher" options="{p}:addLaunchers" visibleWhen="{p}:addUsesLauncher"/>
   <file label="{programLabel}" bind="{p}:addProgram" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd" visibleWhen="{p}:addIsNewLauncher" help="{programHelp}"/>
   <text label="Arguments" bind="{p}:addArguments" default="&quot;%ITEM_FILEPATH%&quot;" visibleWhen="{p}:addIsNewLauncher" help="%ITEM_FILEPATH% is replaced with the {item}'s file"/>
   <button label="Add {noun}" action="{p}.create"/>
@@ -237,6 +237,8 @@ Words systemWords()
         { "{addIntro}", "Point RetroFE at a folder of games and the emulator that runs them. It shows the new system after it reloads, when you close Manage." },
         { "{launcherLabel}", "Launcher" }, { "{programLabel}", "Emulator" },
         { "{programHelp}", "The program that runs the games, e.g. an emulator's .exe." },
+        { "{launcherLink}", "Launcher" }, { "{defaultLauncherLabel}", "Default launcher" },
+        { "{playsValue}", "" }, { "{playChoice}", "" }, { "{addPlayChoice}", "" },
     };
 }
 
@@ -247,11 +249,15 @@ Words videoWords()
         { "{noun}", "video collection" }, { "{Noun}", "Video collection" },
         { "{item}", "video" }, { "{Item}", "Video" }, { "{items}", "videos" }, { "{Items}", "Videos" },
         { "{exts}", "mp4,mkv,avi" }, { "{nameHint}", "Music videos" },
-        { "{intro}", "A video collection is a folder of videos that a video player opens, marked with type = videos in its info.conf." },
+        { "{intro}", "A video collection is a folder of videos, marked with type = videos in its info.conf. RetroFE plays them itself, or hands them to a video player such as VLC." },
         { "{empty}", "No video collections yet. Add one with Add a video collection." },
-        { "{addIntro}", "Point RetroFE at a folder of videos and the player that plays them. It shows the new collection after it reloads, when you close Manage." },
+        { "{addIntro}", "Point RetroFE at a folder of videos. RetroFE plays them itself, or a video player you choose does. It shows the new collection after it reloads, when you close Manage." },
         { "{launcherLabel}", "Video player" }, { "{programLabel}", "Player program" },
         { "{programHelp}", "A video player such as VLC (vlc.exe) or mpv (mpv.exe). It becomes the launcher VideoPlayer." },
+        { "{launcherLink}", "Playback" }, { "{defaultLauncherLabel}", "Video player" },
+        { "{playsValue}", "<value label=\"Plays\" bind=\"video:playsText\"/>\n  " },
+        { "{playChoice}", "<choice label=\"Plays\" bind=\"video:play\" options=\"video:plays\" help=\"In RetroFE: full screen on its player page. With an external player: its launcher starts, e.g. VLC. Kept in its info.conf as play = here or play = launcher.\"/>\n  " },
+        { "{addPlayChoice}", "<choice label=\"Plays\" bind=\"video:addPlay\" options=\"video:plays\" help=\"In RetroFE needs no player program (one can be added later in Playback). With an external player, choose it below.\"/>\n  " },
     };
 }
 

@@ -47,6 +47,33 @@ namespace ThemeEditor
             return static_cast<float>(out) == f;
         }
 
+        // Opacity as the Opacity slider has it (0-100): "0.8" or "1" (0-1, as
+        // layouts write alpha), "80" (2-100 is a percent) or "80%". Plain
+        // decimals only: no sign, exponent or hex.
+        bool alphaPercent(const std::vector<std::string>& words, int& pct)
+        {
+            if (words.size() != 1) return false;
+            std::string text = words[0];
+            bool percent = !text.empty() && text.back() == '%';
+            if (percent) text.pop_back();
+            size_t digits = 0, dots = 0;
+            for (char ch : text) {
+                if (std::isdigit(static_cast<unsigned char>(ch))) ++digits;
+                else if (ch == '.') ++dots;
+                else return false;
+            }
+            if (digits == 0 || dots > 1) return false;
+            float value = std::strtof(text.c_str(), nullptr);
+            bool fraction = !percent && (dots == 1 || value == 1.0f);
+            if (fraction) {
+                if (value > 1) return false;
+                value *= 100;
+            }
+            if (value > 100) return false;
+            pct = static_cast<int>(value + 0.5f);
+            return true;
+        }
+
         int handleFromName(const std::string& name)
         {
             static const char* names[] = { "nw", "n", "ne", "w", "e", "sw", "s", "se" };
@@ -163,12 +190,191 @@ namespace ThemeEditor
         }
         if (n == "name") return result(s.setName(c.rest));
         if (n == "layer") { int i = 0; return result(integer(c.words, 0, i) && s.setLayer(i)); }
-        if (n == "alpha") { int i = 0; return result(integer(c.words, 0, i) && s.setAlpha(i)); }
+        if (n == "alpha") {
+            int pct = 0;
+            if (!alphaPercent(c.words, pct)) {
+                note = "alpha takes 0-1 (e.g. 0.8; 1 is opaque) or a percent (2-100, or 80%), not \"" + c.rest + "\"";
+                return CommandResult::Failed;
+            }
+            const WidgetInstance* w = s.selectedWidget();
+            if (!w) { note = "nothing selected"; return CommandResult::Failed; }
+            if (w->alphaPct == pct) { note = "already " + std::to_string(pct) + "%"; return CommandResult::Ok; }
+            bool ok = s.setAlpha(pct);
+            note = std::to_string(pct) + "%";
+            return result(ok);
+        }
         if (n == "colour" || n == "color") return result(s.setFontColor(c.rest));
         if (n == "var") return result(!c.words.empty() && s.setVar(c.words[0], c.tail(1)));
         if (n == "delete") return result(s.removeSelected());
         if (n == "undo") return result(s.undo());
         if (n == "redo") return result(s.redo());
+
+        // Templates. "default" names the Default page, "blank" an empty seed
+        auto primary = [](const std::string& word) { return word == "default" || word == "-" ? std::string() : word; };
+        if (n == "tplnew") {
+            if (c.words.size() < 3) return CommandResult::Failed;
+            const std::string basedOn = c.words[1] == "blank" ? std::string(EditorSession::BLANK) : primary(c.words[1]);
+            note = s.templateProblem(c.words[0], c.tail(2));
+            bool ok = s.newTemplate(c.words[0], c.tail(2), basedOn);
+            if (ok) note = "editing page " + std::to_string(s.pageIndex()) + ": " + s.pageLabel(s.pageIndex());
+            return result(ok);
+        }
+        if (n == "tplassign") {
+            if (c.words.size() < 2) return CommandResult::Failed;
+            note = s.removesTemplate(c.words[0]).empty() ? "" : "removes the template " + s.removesTemplate(c.words[0]);
+            return result(s.assignTemplate(c.words[0], primary(c.words[1])));
+        }
+        if (n == "tpldelete") {
+            if (c.words.empty()) return CommandResult::Failed;
+            return result(s.deleteTemplate(c.words[0], c.words.size() > 1 ? primary(c.words[1]) : std::string()));
+        }
+        if (n == "tplrename") return result(c.words.size() >= 2 && s.renameTemplate(c.words[0], c.tail(1)));
+
+        // Theme properties (paths already in the theme; the screen's import* commands copy files in)
+        if (n == "font") return result(s.setThemeFont(c.rest == "default" ? std::string() : c.rest));
+        if (n == "sound") {
+            if (c.words.empty()) return CommandResult::Failed;
+            const std::string path = c.tail(1);
+            return result(s.setSound(c.words[0], path == "none" ? std::string() : path));
+        }
+        if (n == "splashtext") return result(s.setSplashText(c.rest));
+        if (n == "splashbg") return result(s.setSplashBackground(c.rest == "none" ? std::string() : c.rest));
+        return CommandResult::NotSession;
+    }
+
+    CommandResult runLayoutCommand(LayoutSession& s, const EditorCommand& c, std::string& note)
+    {
+        note.clear();
+        auto result = [](bool ok) { return ok ? CommandResult::Ok : CommandResult::Failed; };
+        auto boxNote = [&s]() {
+            const LayoutElement* e = s.selectedElement();
+            if (!e) return std::string("nothing selected");
+            std::string text = s.label(s.selected()) + " [" + e->path + "]";
+            if (s.hasBox(s.selected())) {
+                DragRect r = s.box(s.selected());
+                text += " at " + std::to_string(r.x) + "," + std::to_string(r.y) + " " + std::to_string(r.w) + "x" + std::to_string(r.h);
+            }
+            return text;
+        };
+        const std::string& n = c.name;
+        const int cw = s.canvasW();
+        const int ch = s.canvasH();
+        const CanvasFit unit = canvasFit(static_cast<float>(cw), static_cast<float>(ch), cw, ch);
+
+        if (n == "select") {
+            int i = -1;
+            std::vector<int> listed = s.listed();
+            if (!integer(c.words, 0, i) || i < 0 || i >= static_cast<int>(listed.size())) return CommandResult::Failed;
+            s.select(listed[i]);
+            note = boxNote();
+            return CommandResult::Ok;
+        }
+        if (n == "selectpath") {
+            bool ok = s.selectPath(c.rest == "-" ? std::string() : c.rest);
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "click") {
+            float x = 0, y = 0;
+            if (!number(c.words, 0, x) || !number(c.words, 1, y)) return CommandResult::Failed;
+            s.pointerDown(unit, x, y, 0.5f);
+            s.pointerUp();
+            note = boxNote();
+            return CommandResult::Ok;
+        }
+        if (n == "move" || n == "resize") {
+            if (!s.editableBox(s.selected())) return CommandResult::Failed;
+            DragRect r = s.box(s.selected());
+            float sx = r.x + r.w * 0.5f, sy = r.y + r.h * 0.5f;
+            size_t first = 0;
+            if (n == "resize") {
+                int handle = c.words.empty() ? CH_NONE : handleFromName(c.words[0]);
+                if (handle == CH_NONE) return CommandResult::Failed;
+                const float x1 = static_cast<float>(r.x), y1 = static_cast<float>(r.y);
+                const float x2 = static_cast<float>(r.x + r.w), y2 = static_cast<float>(r.y + r.h);
+                const float hx[8] = { x1, (x1 + x2) * 0.5f, x2, x1, x2, x1, (x1 + x2) * 0.5f, x2 };
+                const float hy[8] = { y1, y1, y1, (y1 + y2) * 0.5f, (y1 + y2) * 0.5f, y2, y2, y2 };
+                sx = hx[handle];
+                sy = hy[handle];
+                first = 1;
+            }
+            float dx = 0, dy = 0;
+            if (!number(c.words, first, dx) || !number(c.words, first + 1, dy)) return CommandResult::Failed;
+            const unsigned before = s.revision();
+            s.pointerDown(unit, sx, sy, 0.5f);
+            s.pointerMove(unit, sx + dx, sy + dy);
+            s.pointerUp();
+            note = boxNote();
+            return result(s.revision() != before);
+        }
+        if (n == "nudge") {
+            int dx = 0, dy = 0;
+            if (!integer(c.words, 0, dx) || !integer(c.words, 1, dy)) return CommandResult::Failed;
+            s.endCoalesce();
+            bool ok = s.moveBy(dx, dy);
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "attr") {
+            if (c.words.empty()) return CommandResult::Failed;
+            s.endCoalesce();
+            return result(s.setAttribute(c.words[0], c.tail(1)));
+        }
+        if (n == "rmattr") return result(!c.words.empty() && s.removeAttribute(c.words[0]));
+        if (n == "get") {
+            const LayoutElement* e = s.selectedElement();
+            if (!e || c.words.empty()) return CommandResult::Failed;
+            note = c.words[0] + (e->has(c.words[0]) ? "=\"" + e->value(c.words[0]) + "\"" : " not set");
+            return CommandResult::Ok;
+        }
+        if (n == "layer") { int i = 0; s.endCoalesce(); return result(integer(c.words, 0, i) && s.setLayer(i)); }
+        if (n == "duplicate") { bool ok = s.duplicateSelected(); note = boxNote(); return result(ok); }
+        if (n == "delete") return result(s.deleteSelected());
+        if (n == "undo") return result(s.undo());
+        if (n == "redo") return result(s.redo());
+        if (n == "snap") { s.snap = c.rest != "off"; return CommandResult::Ok; }
+
+        // Adding elements and editing animations
+        if (n == "add") {
+            if (c.words.empty()) return CommandResult::Failed;
+            const std::string type = c.words.size() > 1 && c.words[1] != "-" ? c.words[1] : std::string();
+            bool ok = s.addElement(c.words[0], type, c.tail(2));
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "event") return result(!c.words.empty() && s.addEvent(c.words[0]));
+        if (n == "addset") return result(!c.words.empty() && s.addSet(s.findInSelected(c.words[0])));
+        if (n == "addanimate") return result(!c.words.empty() && s.addAnimate(s.findInSelected(c.words[0])));
+        if (n == "rmanim") return result(!c.words.empty() && s.removeAnimation(s.findInSelected(c.words[0])));
+        if (n == "animattr") {
+            if (c.words.size() < 2) return CommandResult::Failed;
+            s.endCoalesce();
+            return result(s.setAttributeOf(s.findInSelected(c.words[0]), c.words[1], c.tail(2)));
+        }
+        if (n == "rmanimattr") return result(c.words.size() >= 2 && s.removeAttributeOf(s.findInSelected(c.words[0]), c.words[1]));
+        if (n == "getanim") {
+            if (c.words.size() < 2) return CommandResult::Failed;
+            int el = s.findInSelected(c.words[0]);
+            if (el < 0) return CommandResult::Failed;
+            const LayoutElement& e = s.element(el);
+            note = c.words[1] + (e.has(c.words[1]) ? "=\"" + e.value(c.words[1]) + "\"" : " not set");
+            return CommandResult::Ok;
+        }
+        if (n == "copyanims") {
+            bool ok = s.copyAnimationsFrom(s.doc().find(c.rest));
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "events") {
+            for (const std::string& a : s.animations(s.selected())) note += (note.empty() ? "" : "; ") + a;
+            return result(s.selected() >= 0);
+        }
+        if (n == "endbox") {
+            DragRect r;
+            if (!s.enterEndBox(s.selected(), r)) { note = "no end box"; return CommandResult::Failed; }
+            note = "ends at " + std::to_string(r.x) + "," + std::to_string(r.y) + " " + std::to_string(r.w) + "x" + std::to_string(r.h);
+            return CommandResult::Ok;
+        }
         return CommandResult::NotSession;
     }
 }

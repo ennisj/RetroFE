@@ -56,17 +56,39 @@ public:
     // the layout's collections/_menu/layout pages, when there are some
     void setMenuCollection(bool isMenu) { menuCollection_ = isMenu; }
 
+    // The collection is a video collection (info.conf type = videos): without
+    // a page of its own it uses collections/_videos/layout, else the built-in
+    // video list when no layout is installed
+    void setVideoCollection(bool isVideos) { videoCollection_ = isVideos; }
+
     // The <form> and <keyboard> components created by buildPage
     const std::vector<FormWidget*>& formWidgets() const { return formWidgets_; }
     const std::vector<KeyboardWidget*>& keyboardWidgets() const { return keyboardWidgets_; }
 
+    // For the theme editor: the element each component was built from, as a
+    // path in the page (Graphics/LayoutNodePath.h), in the order they were
+    // built. A menu's slots come after it, with slot set to the slot's
+    // ViewInfo (owned by the menu). Off (null) unless asked for.
+    struct TraceEntry
+    {
+        Component* component = nullptr;
+        ViewInfo* slot = nullptr;
+        std::string path;
+    };
+    void setTrace(std::vector<TraceEntry>* trace) { trace_ = trace; }
+
 private:
+    std::vector<TraceEntry>* trace_{ nullptr };
+    void trace(Component* c, ViewInfo* slot, const rapidxml::xml_node<>* node) { if (trace_) addTrace(c, slot, node); }
+    void addTrace(Component* c, ViewInfo* slot, const rapidxml::xml_node<>* node);
+
     std::string fixedFile_;
     const char* fixedXml_{ nullptr };
     std::string fixedAssetPath_;
     std::vector<FormWidget*> formWidgets_;
     std::vector<KeyboardWidget*> keyboardWidgets_;
     bool menuCollection_{ false };
+    bool videoCollection_{ false };
 
     std::string layoutKey;
     std::string layoutPage;

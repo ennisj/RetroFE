@@ -44,6 +44,9 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
 - Index positions (`int` game or collection numbers) are valid **only for the
   snapshot they came from**. Screen parameters should hold names
   (`collection`, `game`) and look them up again with `findCollection`, `findGame`.
+- Games a system's exclude list hides are in `index->hiddenGames` (found with
+  `findHiddenGame`), with their metadata, never in `games`, `findGame`,
+  `itemsOf` or a search. Manage's "Only hidden games" lists them.
 - `Editor` calls run on the calling thread. They touch one or two small files.
   The exception is `replaceMedia` with a large video, which copies the file;
   call it from a worker if that matters.
@@ -53,7 +56,7 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
 | Per frame: fine | Once per screen or selection change |
 |-----------------|-------------------------------------|
 | `Search::games` / `Search::collections`, which are cached | `index->menuTree()`, which walks the tree |
-| `findCollection`, `findGame`, `findLauncher`, `findLayout` | `index->gameMask()`, which is one pass over all games (Search caches it per filter) |
+| `findCollection`, `findGame`, `findHiddenGame`, `findLauncher`, `findLayout` | `index->gameMask()`, which is one pass over all games (Search caches it per filter) |
 | `itemsOf`, `mergedCollectionsShowing`, `playlistsListing`, which are precomputed and return references | `index->usesOf()`, a filter over every use |
 | `resolveLauncher`, which is a few map lookups | `gameMedia` / `collectionMedia` / `menuEntryMedia` (see below) |
 | Reading any record field | `MetadataOverrides::shipped`, `Editor::metadataOverrides`, `ConfFile(...).load()`, all of which read files |

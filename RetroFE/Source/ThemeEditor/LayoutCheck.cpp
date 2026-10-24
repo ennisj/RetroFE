@@ -71,6 +71,10 @@ namespace ThemeEditor
             "linear", nullptr
         };
 
+        // The words PageBuilder::getAnimationEvents and get{Horizontal,Vertical}Alignment
+        // read in from= / to= (anything else that isn't a number is 0)
+        const Names TWEEN_KEYWORDS = { "left", "top", "center", "right", "bottom", "stretch" };
+
         struct ElementRule
         {
             const char* name;
@@ -223,9 +227,17 @@ namespace ThemeEditor
                 }
             }
 
+            // Present but empty: PageBuilder reads from="" as 0 (not "where it
+            // is"), to="" as 0 and menuIndex="" as menu 0
+            void checkNotEmpty(const Node* n, const char* name, const char* means)
+            {
+                if (attribute(n, name) && value(n, name).empty()) issue(n, std::string(name) + "=\"\" is empty (" + means + ")");
+            }
+
             void checkEvent(const Node* ev)
             {
                 checkAttributes(ev, false, EVENT);
+                checkNotEmpty(ev, "menuIndex", "it means menu 0; leave it out for every menu");
                 for (const Node* c = ev->first_node(); c; c = c->next_sibling()) {
                     if (c->type() != rapidxml::node_element) continue;
                     if (nameOf(c) != "set") { issue(c, "isn't read inside " + describe(ev)); continue; }
@@ -249,6 +261,18 @@ namespace ThemeEditor
                             double v = 0;
                             if (!integer(value(a, "to"), v) || v < 0 || v > LAST_LAYER) {
                                 issue(a, "animates to layer " + value(a, "to") + ", outside 0.." + std::to_string(LAST_LAYER));
+                            }
+                        }
+                        checkNotEmpty(a, "from", "it starts at 0; leave it out to start from where it is");
+                        if (attribute(a, "to") && type != "nop" && type != "restart") {
+                            const std::string to = value(a, "to");
+                            double v = 0;
+                            if (to.empty()) {
+                                issue(a, "to=\"\" is empty (it means 0)");
+                            }
+                            else if (!number(to, v) && !TWEEN_KEYWORDS.count(to) &&
+                                     !(to.back() == '%' && number(to.substr(0, to.size() - 1), v))) {
+                                issue(a, "animates to '" + to + "', which isn't a number, a percentage or left/center/right/top/bottom/stretch (it means 0)");
                             }
                         }
                         if (attribute(a, "algorithm") && !inList(lower(value(a, "algorithm")), ALGORITHMS)) {
@@ -297,7 +321,8 @@ namespace ThemeEditor
                     value(n, "location").empty()) {
                     issue(n, "type=\"file\" needs a location");
                 }
-                if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults>");
+                if (menu && !n->first_node("itemDefaults")) issue(n, "menu has no <itemDefaults> (RetroFE uses empty defaults: each item has only what it sets itself)");
+                if (menu && value(n, "type") == "custom" && !n->first_node("item")) issue(n, "custom menu has no <item> slots, so it shows nothing");
             }
         };
     }
@@ -318,22 +343,10 @@ namespace ThemeEditor
 
     std::string layoutBuildBlocker(const std::string& xml)
     {
-        std::vector<char> buffer(xml.begin(), xml.end());
-        buffer.push_back('\0');
-        rapidxml::xml_document<> doc;
-        try {
-            doc.parse<0>(buffer.data());
-        }
-        catch (const rapidxml::parse_error& e) {
-            return std::string("not valid XML: ") + e.what();
-        }
-        const Node* layout = doc.first_node("layout");
-        if (!layout) return "no <layout> root";
-        for (const Node* menu = layout->first_node("menu"); menu; menu = menu->next_sibling("menu")) {
-            // PageBuilder::buildMenu reads through it unchecked: building would crash RetroFE
-            if (!menu->first_node("itemDefaults")) return "a <menu> without <itemDefaults> would crash the page builder";
-        }
-        return "";
+        // A <menu> without <itemDefaults> used to crash PageBuilder; it now
+        // gets empty defaults (Graphics/MenuXml.h), so only XML it can't
+        // read at all is kept from it
+        return layoutParseError(xml);
     }
 
     std::vector<std::string> checkLayoutXml(const std::string& xml)

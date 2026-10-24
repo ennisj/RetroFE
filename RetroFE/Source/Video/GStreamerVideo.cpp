@@ -1074,7 +1074,7 @@ void GStreamerVideo::skipForward() {
 	current += 60 * GST_SECOND;
 	if (current > duration)
 		current = duration - 1;
-	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_AFTER),
 		current);
 }
 
@@ -1088,7 +1088,7 @@ void GStreamerVideo::skipBackward() {
 		current -= 60 * GST_SECOND;
 	else
 		current = 0;
-	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_BEFORE),
 		current);
 }
 
@@ -1104,7 +1104,7 @@ void GStreamerVideo::skipForwardp() {
 	current += duration / 20;
 	if (current > duration)
 		current = duration - 1;
-	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_AFTER),
 		current);
 }
 
@@ -1122,7 +1122,7 @@ void GStreamerVideo::skipBackwardp() {
 		current -= duration / 20;
 	else
 		current = 0;
-	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+	gst_element_seek_simple(playbin_, GST_FORMAT_TIME, GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_BEFORE),
 		current);
 }
 

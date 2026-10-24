@@ -151,7 +151,7 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   menu edits would be undone by its own frontend, which regenerates `menu.txt`;
   that install isn't this fork's target.
 
-### M10. The theme editor only edits themes made with it — Open
+### M10. Editing hand-made themes — Decided (was Open)
 - One Saucier's editor generates layouts from a widget-based project; it can't
   open hand-made layouts (it ships pre-converted examples made by a 2,183-line
   Python importer). Aeon Nox, the default, is hand-made.
@@ -159,9 +159,19 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
   themes; (2) also port the importer (2–3 rounds, lossy by design); (3) add a
   simpler "layout-native" mode that moves and resizes the elements of any
   existing layout file, keeping everything else.
-- Chosen for now: **(1)**, since you asked for One Saucier's editor; (3) looks
-  like the best value for editing Aeon Nox and other hand-made themes, and is
-  my recommendation for after the port. Your call.
+- Chosen: **(1) and (3)**, done in rounds 2–4. Editor-made themes open One
+  Saucier's widget editor; hand-made themes (Aeon Nox, anything else in
+  `layouts/`) open a **layout editor** that moves, resizes and edits the
+  attributes of existing elements in place, changing only the bytes of the
+  values you edit (comments, formatting and line endings stay), with the
+  original kept in `manage/backups/layouts/`. Adding new elements and
+  editing animations there are later steps. (2), the importer, isn't
+  planned. Status: **Decided**, unless you'd rather have (2).
+- Layout editor details: moves write the exact delta (positions that aren't
+  whole get up to 2 decimals), only the axes you drag are written (so
+  `x="center"` survives a vertical drag), restoring the original is refused
+  when the file changed elsewhere and can be undone, and pages written by
+  the widget editor aren't opened there.
 
 ### M11. The theme editor is drawn with ImGui — Decided
 - It's a canvas editor (drag handles, overlays, colour pickers, dropdowns),
@@ -223,6 +233,56 @@ Each section's agent chose these; the alternatives are in brackets.
   shows while a script runs. ImGui can't be driven by posted key messages.
 - **Pages the engine would crash on are reported, never built** — see R3 for
   the engine fix.
+
+### M14. Round 3 choices — Decided
+- **Multi-line fields are `multiline="yes"` on `<text>`** [a new element],
+  so they keep every text attribute; Enter adds a line, Ctrl+Enter keeps,
+  Escape cancels, and the on-screen keyboard's Done keeps.
+- **Start this game reloads first when changes are waiting** [refuse; launch
+  on the old settings], is refused while a Catalog install runs, launches
+  from the game's own system page, and reopens Manage on the game afterwards
+  [return to the page].
+- **Hidden games are found with a search toggle** [a list per system].
+- **A bare install gets settings.conf when Manage closes with changes**
+  [in each section; changing the start-up check], as the Catalog already did.
+- **Back after creating something goes to the list** (the new screen replaces
+  the add form) [back to the filled-in form].
+- **Program lookup on Windows:** RetroFE's folder first, then the system path
+  (as Windows' SearchPath does), shared by launching and Manage's checks.
+- **Theme templates show the page this engine actually uses**, not One
+  Saucier's inheritance down the menu tree [inheritance, which RetroFE never
+  shows]; a whole menu branch can be put on a template in one step.
+- **The theme editor's file chooser stays inside RetroFE's folder**, with the
+  system dialog as a second option; fonts go to `fonts/`, the rest to
+  `assets/`.
+- **A `<menu>` without `<itemDefaults>` gets empty defaults with a warning**
+  [skip the menu; null checks everywhere].
+
+### M16. Round 5 choices — Decided
+- **Videos play in RetroFE only with `play = here`** in info.conf [treating no
+  line as "here", which would change existing collections]. Manage writes it
+  for new video collections and offers "Plays: In RetroFE / With an external
+  player" on the Playback screen.
+- **The player is a page of its own** (`player.xml`, then `_videos`, then
+  built-in) drawn in place of the list [pushing it onto RetroFE's page stack].
+  Left/Right are previous/next, Up/Down seek by 5%.
+- **A video collection previews its own files** when it has no video artwork
+  (done in the engine, so hand-made collections get it too).
+- **`collections/_videos/layout/`** styles every video collection without
+  pages of its own, checked before `_menu`.
+- **Layout editor palette writes RetroFE's own XML** [the widget library's
+  fragments], placed after the selection and styled like its neighbours;
+  files go next to the page that uses them, so paths work whatever theme is
+  active.
+- **Log levels:** menus and merged collections without settings log INFO; a
+  system missing its settings or launcher still warns.
+
+### M15. Linux build packages were installed in WSL — Decided
+- To compile and test on Linux locally, the packages the Linux CI workflow
+  uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
+  sudo): SDL2 and its image/mixer/ttf libraries, GStreamer and plugins,
+  minizip, webp, libusb, libevdev. Nothing else was changed there. Remove them
+  with `apt-get remove` if you don't want them.
 
 ## Catalog
 

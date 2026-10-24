@@ -37,18 +37,42 @@ namespace
 namespace LayoutPages
 {
 
-std::string collectionFolder(const std::string& layoutFolder, const std::string& collection, bool isMenu)
+std::string collectionFolder(const std::string& layoutFolder, const std::string& collection, bool isMenu, bool isVideos)
 {
     std::error_code ec;
     std::string own = Utils::combinePath(layoutFolder, "collections", collection, "layout");
     if (!collection.empty() && fs::is_directory(own, ec)) {
         return own;
     }
+    std::string videos = Utils::combinePath(layoutFolder, "collections", "_videos", "layout");
+    if (isVideos && fs::is_directory(videos, ec)) {
+        return videos;
+    }
     std::string menu = Utils::combinePath(layoutFolder, "collections", "_menu", "layout");
     if (isMenu && fs::is_directory(menu, ec)) {
         return menu;
     }
     return layoutFolder;
+}
+
+std::string playerFile(const std::string& layoutFolder, const std::string& collection, const std::string& page)
+{
+    // "layout" -> "player", "layout 4x3" -> "player 4x3"; other page names use player.xml
+    std::string name = "player";
+    if (page.compare(0, 6, "layout") == 0) {
+        name += page.substr(6);
+    }
+    std::string own = Utils::combinePath(layoutFolder, "collections", collection, "layout");
+    std::string videos = Utils::combinePath(layoutFolder, "collections", "_videos", "layout");
+    if (collection.empty()) {
+        return firstFile({ Utils::combinePath(videos, name + ".xml"), Utils::combinePath(videos, "player.xml") });
+    }
+    return firstFile({
+        Utils::combinePath(own, name + ".xml"),
+        Utils::combinePath(own, "player.xml"),
+        Utils::combinePath(videos, name + ".xml"),
+        Utils::combinePath(videos, "player.xml"),
+    });
 }
 
 std::string formFile(const std::string& formsFolder, const std::string& screen, const std::string& page)

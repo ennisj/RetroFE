@@ -4,6 +4,67 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 5 — videos in RetroFE, layout editor additions, clean logs (2026-10-23)
+
+Unit tests: 4,430 → 4,966 checks.
+
+- **Video collections play in RetroFE.** Selecting a video opens a full-screen
+  player page (Select pauses, Left/Right previous/next, Up/Down seek, Back to
+  the list on the same video; the next one starts when one ends). A video
+  collection's list previews each video. New video collections play here by
+  default (`play = here` in info.conf); existing ones keep their external
+  player. Built-in and Aeon Nox pages (`collections/_videos/`, 4:3 too).
+- **Layout editor:** add new elements from a palette (images, videos, text,
+  game art and text, menus…), edit and copy animations, play an event on the
+  preview, and see where an element's start animation leaves it.
+- **Clean logs:** a normal start on OnesaUCE-shaped data no longer logs dozens
+  of false errors (menus without settings, missing hiscore tools, the DPI
+  hint, optional layout pages); real problems still warn.
+- **Fixes:** a video reselected with the same file keeps playing instead of
+  restarting (an upstream change had broken this); `<animate>` with an empty
+  `from`/`to` no longer reads past the end of the value; hidden games keep
+  their titles and metadata in Manage; "Back from" names the game's title.
+
+## Round 4 — editing hand-made themes (2026-10-23)
+
+- **Layout editor for hand-made themes.** Edit on Aeon Nox (or any theme not
+  made with the widget editor) opens its pages — main and 4:3 layouts,
+  splash, collection pages, `_menu`, form pages — previewed as RetroFE builds
+  them. Select, move, resize and nudge elements and menu items, edit any
+  attribute, duplicate or delete elements. Saving changes only the values you
+  edited; the original is kept and can be put back (decision M10).
+- Unit tests: 4,189 → 4,430 checks.
+
+## Round 3 — editing extras, theme templates, QA, Linux (2026-10-23)
+
+Unit tests: 3,879 → 4,189 checks; also built and run on Linux (WSL,
+g++ 13).
+
+- **Multi-line text fields** (`multiline="yes"`): a game's description is
+  edited as real lines (Enter for a new line, Ctrl+Enter to keep; the
+  on-screen keyboard gains New line and cursor keys).
+- **Start this game** from its Manage screen: Manage closes (reloading first
+  if changes are waiting), the game runs as from its page, and Manage
+  reopens on it afterwards. Refused while a Catalog install runs.
+- **Hide / show a game** (its system's exclude list), with an "Only hidden
+  games" search; **play count and time played** on the game screen.
+- **Theme editor:** collection templates (create, copy, rename, assign,
+  apply to a whole menu branch), a file chooser for images, videos and fonts,
+  the theme's font and sounds, splash text, and highlighted text wheels.
+- **Engine fixes:** a layout `<menu>` without `<itemDefaults>` no longer
+  crashes RetroFE; a vertical menu of zero-height items no longer hangs it; a
+  page made only of a menu now draws.
+- **QA on a copy of the OnesaUCE data** (146 collections, 6,467 games):
+  report in [QA-ROUND3.md](QA-ROUND3.md). Fixed: a bare install's first
+  system now writes settings.conf (Manage stopped reopening at every start);
+  Settings warns before discarding changes; Back after adding a system or
+  menu returns to the list; duplicated launchers keep "restarts RetroFE";
+  bare program names such as `cmd.exe` are found on the system path, and
+  `cmd /c` commands keep their quotes; a settings.conf written meanwhile by
+  another screen is never overwritten.
+- **Linux:** fixed a use-after-free in the Catalog's GitHub check and a log
+  message that printed 1/0; tests made platform-aware.
+
 ## Round 2 — the Manage screens (2026-10-23)
 
 Six agents in parallel, each followed by a Fable adversarial review and

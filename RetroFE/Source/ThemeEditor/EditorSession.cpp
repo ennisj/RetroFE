@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 
 namespace ThemeEditor
 {
@@ -507,6 +508,408 @@ namespace ThemeEditor
         reflowOrientation(project_, vertical);
         changed();
         return true;
+    }
+
+    // ---- theme properties --------------------------------------------------
+
+    bool EditorSession::setThemeFont(const std::string& rel)
+    {
+        const std::string value = rel == BUNDLED_FONT ? std::string() : rel;
+        if (!isOpen() || project_.font == value) return false;
+        beginChange("");
+        project_.font = value;
+        changed();
+        return true;
+    }
+
+    namespace
+    {
+        std::string* soundSlot(ThemeProject& p, const std::string& kind)
+        {
+            if (kind == "load") return &p.soundLoad;
+            if (kind == "unload") return &p.soundUnload;
+            if (kind == "highlight") return &p.soundHighlight;
+            if (kind == "select") return &p.soundSelect;
+            return nullptr;
+        }
+
+        std::string trimmed(const std::string& s)
+        {
+            size_t a = 0, b = s.size();
+            while (a < b && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
+            while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1]))) --b;
+            return s.substr(a, b - a);
+        }
+
+        bool isVideoFile(const std::string& rel)
+        {
+            const size_t dot = rel.find_last_of('.');
+            if (dot == std::string::npos) return false;
+            const std::string ext = lower(rel.substr(dot));
+            for (const char* v : { ".mp4", ".mkv", ".avi", ".webm", ".mov", ".m4v", ".mpg", ".mpeg", ".wmv", ".flv" }) {
+                if (ext == v) return true;
+            }
+            return false;
+        }
+
+        const char* const SPLASH_BACKGROUND = "splash_background";
+    }
+
+    bool EditorSession::setSound(const std::string& kind, const std::string& rel)
+    {
+        std::string* slot = soundSlot(project_, kind);
+        if (!isOpen() || !slot || *slot == rel) return false;
+        beginChange("");
+        *soundSlot(project_, kind) = rel;
+        changed();
+        return true;
+    }
+
+    std::string EditorSession::sound(const std::string& kind) const
+    {
+        std::string* slot = soundSlot(const_cast<ThemeProject&>(project_), kind);
+        return slot ? *slot : std::string();
+    }
+
+    // ---- the splash page ------------------------------------------------------
+
+    bool EditorSession::hasSplashPage() const
+    {
+        return project_.page(ThemeProject::splashPage()) != nullptr;
+    }
+
+    bool EditorSession::makeSplashPage()
+    {
+        if (!isOpen() || hasSplashPage()) return false;
+        ThemePage splash;
+        if (!defaultSplashPage(project_, *lib_, splash)) return false;
+        const std::vector<std::string> covered = coveredByCurrent();
+        beginChange("");
+        project_.pages.push_back(splash);
+        pagesChanged(covered, "");
+        changed();
+        return true;
+    }
+
+    WidgetInstance* EditorSession::splashWidget(const std::string& def)
+    {
+        ThemePage* splash = project_.page(ThemeProject::splashPage());
+        if (!splash) return nullptr;
+        for (auto& w : splash->widgets) {
+            if (def == SPLASH_BACKGROUND ? w.id == SPLASH_BACKGROUND : w.def == def) return &w;
+        }
+        return nullptr;
+    }
+
+    std::string EditorSession::splashText() const
+    {
+        const ThemePage* splash = project_.page(ThemeProject::splashPage());
+        if (!splash) return project_.name;
+        for (const auto& w : splash->widgets) {
+            if (w.def == "static_text") {
+                const WidgetDef* def = lib_ ? lib_->find(w.def) : nullptr;
+                const WidgetVar* var = def ? def->var("VALUE") : nullptr;
+                return w.varValue("VALUE", var ? var->def : std::string());
+            }
+        }
+        return "";
+    }
+
+    std::string EditorSession::splashBackground() const
+    {
+        const ThemePage* splash = project_.page(ThemeProject::splashPage());
+        if (!splash) return "";
+        for (const auto& w : splash->widgets) {
+            if (w.id == SPLASH_BACKGROUND) return w.varValue("SRC", "");
+        }
+        return "";
+    }
+
+    bool EditorSession::setSplashText(const std::string& text)
+    {
+        if (!isOpen() || (hasSplashPage() && splashWidget("static_text") && splashText() == text)) return false;
+        // Everything that can fail before the undo step is taken
+        ThemePage fresh;
+        if (!defaultSplashPage(project_, *lib_, fresh)) return false;
+        const std::vector<std::string> covered = coveredByCurrent();
+        beginChange(coalesce_.empty() ? "" : coalesce_);
+        if (!hasSplashPage()) {
+            project_.pages.push_back(fresh);
+            pagesChanged(covered, "");
+        }
+        WidgetInstance* w = splashWidget("static_text");
+        if (!w) {
+            ThemePage* splash = project_.page(ThemeProject::splashPage());
+            WidgetInstance name = fresh.widgets[0];
+            if (splash->findWidget(name.id)) nextIdentity(*splash, name.def, "Static Text", name.id, name.name);
+            splash->widgets.push_back(name);
+            w = &splash->widgets.back();
+        }
+        w->setVar("VALUE", text);
+        clampSelection();
+        changed();
+        return true;
+    }
+
+    bool EditorSession::setSplashBackground(const std::string& rel)
+    {
+        if (!isOpen() || splashBackground() == rel) return false;
+        if (!rel.empty() && !lib_->find(isVideoFile(rel) ? "static_video" : "static_image")) return false;
+        const std::vector<std::string> covered = coveredByCurrent();
+        beginChange("");
+        if (!hasSplashPage()) {
+            ThemePage splash;
+            if (defaultSplashPage(project_, *lib_, splash)) project_.pages.push_back(splash);
+            else {
+                splash = ThemePage();
+                splash.collection = ThemeProject::splashPage();
+                project_.pages.push_back(splash);
+            }
+            pagesChanged(covered, "");
+        }
+        ThemePage* splash = project_.page(ThemeProject::splashPage());
+        for (size_t i = 0; i < splash->widgets.size(); ++i) {
+            if (splash->widgets[i].id == SPLASH_BACKGROUND) {
+                splash->widgets.erase(splash->widgets.begin() + static_cast<long>(i));
+                break;
+            }
+        }
+        if (!rel.empty()) {
+            WidgetInstance bg;
+            bg.def = isVideoFile(rel) ? "static_video" : "static_image";
+            bg.id = SPLASH_BACKGROUND;
+            bg.name = "Background";
+            bg.x = 0;
+            bg.y = 0;
+            bg.w = project_.canvasW();
+            bg.h = project_.canvasH();
+            bg.layer = 0;
+            bg.setVar("SRC", rel);
+            bg.setVar("STRETCH", "true");
+            splash->widgets.insert(splash->widgets.begin(), bg);
+        }
+        // The selection index may now point elsewhere on the splash page
+        if (ThemeProject::isSplashPage(page().collection)) selected_ = -1;
+        changed();
+        return true;
+    }
+
+    // ---- templates ---------------------------------------------------------------
+
+    const char* const EditorSession::BLANK = "\x01";
+
+    std::vector<std::string> EditorSession::coveredByCurrent() const
+    {
+        std::vector<std::string> out;
+        const ThemePage& p = page();
+        out.push_back(p.collection);
+        for (const auto& m : p.members) out.push_back(m);
+        return out;
+    }
+
+    void EditorSession::pagesChanged(const std::vector<std::string>& covered, const std::string& goTo)
+    {
+        // The splash page goes last, after the templates
+        auto& pages = project_.pages;
+        for (size_t i = 1; i + 1 < pages.size(); ++i) {
+            if (ThemeProject::isSplashPage(pages[i].collection)) {
+                ThemePage splash = pages[i];
+                pages.erase(pages.begin() + static_cast<long>(i));
+                pages.push_back(splash);
+                break;
+            }
+        }
+        int found = -1;
+        for (int i = 0; i < pageCount() && found < 0; ++i) {
+            if (!goTo.empty()) {
+                if (pages[i].collection == goTo) found = i;
+                continue;
+            }
+            for (const auto& c : covered) {
+                if (pages[i].covers(c)) { found = i; break; }
+            }
+        }
+        const int before = page_;
+        page_ = found < 0 ? 0 : found;
+        if (page_ != before || found < 0) selected_ = -1;
+        drag_ = Drag();
+        clampSelection();
+    }
+
+    std::vector<std::string> EditorSession::templates() const
+    {
+        std::vector<std::string> out;
+        for (const auto& p : project_.pages) {
+            if (!p.collection.empty() && !ThemeProject::isSplashPage(p.collection)) out.push_back(p.collection);
+        }
+        return out;
+    }
+
+    bool EditorSession::handMadePage(const std::string& collection) const
+    {
+        return isOpen() && handMadeCollectionPage(layoutsRoot_, folder_, collection);
+    }
+
+    std::string EditorSession::templateProblem(const std::string& collection, const std::string& name) const
+    {
+        if (collection.empty()) return "Choose a collection for the template.";
+        if (ThemeProject::isSplashPage(collection) || !folderNameSafe(collection)) {
+            return "\"" + collection + "\" can't be a folder name, so it can't have a page of its own.";
+        }
+        if (handMadePage(collection)) {
+            return "collections/" + collection + "/layout/layout.xml in this theme was written by hand; RetroFE uses it "
+                   "for " + collection + ", and the editor won't overwrite it.";
+        }
+        if (const std::string clash = caseClash(collection); !clash.empty()) {
+            return "\"" + collection + "\" and \"" + clash + "\" differ only in case: on Windows they're the same "
+                   "folder, so they can't have pages of their own.";
+        }
+        const std::string clean = trimmed(name);
+        if (clean.empty()) return "Give the template a name.";
+        if (const ThemePage* same = templateNamed(clean, "")) return "There's already a template called " + same->displayName() + ".";
+        return "";
+    }
+
+    std::string EditorSession::caseClash(const std::string& collection) const
+    {
+        const std::string key = lower(collection);
+        for (const auto& p : project_.pages) {
+            if (p.collection.empty() || ThemeProject::isSplashPage(p.collection)) continue;
+            std::vector<std::string> names = p.members;
+            names.push_back(p.collection);
+            for (const std::string& c : names) {
+                if (c != collection && lower(c) == key) return c;
+            }
+        }
+        return "";
+    }
+
+    const ThemePage* EditorSession::templateNamed(const std::string& name, const std::string& except) const
+    {
+        for (const auto& p : project_.pages) {
+            if (p.collection.empty() || ThemeProject::isSplashPage(p.collection) || p.collection == except) continue;
+            if (lower(p.displayName()) == lower(trimmed(name))) return &p;
+        }
+        return nullptr;
+    }
+
+    bool EditorSession::newTemplate(const std::string& collection, const std::string& name, const std::string& basedOn,
+                                    const std::vector<std::string>& alsoFor)
+    {
+        if (!isOpen() || !templateProblem(collection, name).empty()) return false;
+        if (basedOn != BLANK && !basedOn.empty()) {
+            const ThemePage* seed = project_.page(basedOn);
+            if (!seed || ThemeProject::isSplashPage(basedOn)) return false;
+        }
+        beginChange("");
+        if (!createNamed(project_, collection, trimmed(name), basedOn == BLANK ? std::string("\x01") : basedOn)) return false;
+        for (const std::string& c : alsoFor) {
+            if (c == collection || c.empty() || ThemeProject::isSplashPage(c) || !folderNameSafe(c) || handMadePage(c) ||
+                !caseClash(c).empty()) {
+                continue;
+            }
+            reassign(project_, c, collection);
+        }
+        pagesChanged({}, collection);
+        selected_ = -1;
+        changed();
+        return true;
+    }
+
+    bool EditorSession::assignTemplate(const std::string& collection, const std::string& primary)
+    {
+        int skipped = 0;
+        return assignTemplate(std::vector<std::string>{ collection }, primary, &skipped) && skipped == 0;
+    }
+
+    bool EditorSession::assignTemplate(const std::vector<std::string>& collections, const std::string& primary, int* skipped)
+    {
+        if (skipped) *skipped = 0;
+        if (!isOpen()) return false;
+        if (!primary.empty()) {
+            const ThemePage* target = project_.page(primary);
+            if (!target || ThemeProject::isSplashPage(primary)) return false;
+        }
+        std::vector<std::string> moving;
+        for (const std::string& c : collections) {
+            if (c.empty() || ThemeProject::isSplashPage(c)) continue;
+            if (!primary.empty() && (!folderNameSafe(c) || handMadePage(c) || !caseClash(c).empty())) {
+                if (skipped) ++*skipped;
+                continue;
+            }
+            const ThemePage* current = project_.coveredBy(c);
+            if ((current ? current->collection : std::string()) == primary) continue;
+            if (std::find(moving.begin(), moving.end(), c) == moving.end()) moving.push_back(c);
+        }
+        if (moving.empty()) return false;
+        const std::vector<std::string> covered = coveredByCurrent();
+        beginChange("");
+        for (const std::string& c : moving) {
+            // An earlier move can have deleted the target (it was the target's own collection)
+            if (!primary.empty() && !project_.page(primary)) break;
+            reassign(project_, c, primary);
+        }
+        pagesChanged(covered, "");
+        changed();
+        return true;
+    }
+
+    std::string EditorSession::removesTemplate(const std::string& collection) const
+    {
+        for (const auto& p : project_.pages) {
+            if (p.collection.empty() || ThemeProject::isSplashPage(p.collection)) continue;
+            if (p.collection == collection && p.members.empty()) return p.displayName();
+        }
+        return "";
+    }
+
+    bool EditorSession::deleteTemplate(const std::string& primary, const std::string& replacement)
+    {
+        if (!isOpen() || primary.empty() || ThemeProject::isSplashPage(primary) || !project_.page(primary)) return false;
+        if (!replacement.empty() && (replacement == primary || !project_.page(replacement) || ThemeProject::isSplashPage(replacement))) {
+            return false;
+        }
+        const std::vector<std::string> covered = coveredByCurrent();
+        beginChange("");
+        deleteTemplateTo(project_, primary, replacement);
+        pagesChanged(covered, "");
+        changed();
+        return true;
+    }
+
+    bool EditorSession::renameTemplate(const std::string& primary, const std::string& name)
+    {
+        const std::string clean = trimmed(name);
+        ThemePage* p = project_.page(primary);
+        if (!isOpen() || clean.empty() || !p || primary.empty() || ThemeProject::isSplashPage(primary)) return false;
+        if (p->displayName() == clean) return false;
+        if (templateNamed(clean, primary)) return false;   // names stay unique, ignoring case
+        beginChange(coalesce_.empty() ? "" : coalesce_);
+        project_.page(primary)->tplName = clean;
+        changed();
+        return true;
+    }
+
+    // ---- files -----------------------------------------------------------------
+
+    bool EditorSession::themeHasFile(const std::string& rel) const
+    {
+        if (!isOpen() || rel.empty()) return false;
+        std::error_code ec;
+        return std::filesystem::is_regular_file(std::filesystem::path(layoutsRoot_) / folder_ / rel, ec);
+    }
+
+    std::vector<std::string> EditorSession::missingFiles() const
+    {
+        std::vector<std::string> out;
+        const WidgetInstance* w = selectedWidget();
+        const WidgetDef* def = selectedDef();
+        if (!w || !def) return out;
+        for (const auto& v : def->vars) {
+            if (v.type != "file") continue;
+            if (!themeHasFile(w->varValue(v.token, v.def))) out.push_back(v.token);
+        }
+        return out;
     }
 
     bool EditorSession::undo()

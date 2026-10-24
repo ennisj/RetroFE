@@ -27,6 +27,7 @@
 #include "../Source/Library/Backups.h"
 #include "../Source/Library/ConfFile.h"
 #include "../Source/Library/Edits.h"
+#include "../Source/Library/Files.h"
 #include "../Source/Library/Index.h"
 #include "../Source/Library/Indexer.h"
 #include "../Source/Library/LineList.h"
@@ -133,6 +134,29 @@ static void runLibraryTests()
 
     // --- File primitives ------------------------------------------------------------
 
+    run("library: cmd.exe /c commands keep their quotes, and bare program names are found", [&] {
+        checkEqual(cmdArguments("/c \"%RETROFE_PATH%/scripts/theme_switch.bat\" \"%ITEM_FILEPATH%\""),
+                   "/c \"\"%RETROFE_PATH%/scripts/theme_switch.bat\" \"%ITEM_FILEPATH%\"\"",
+                   "more than two quotes after /c: wrapped in one more pair");
+        checkEqual(cmdArguments("/K \"a.bat\" \"b\"  "), "/K \"\"a.bat\" \"b\"\"", "/k too, any case, trailing spaces dropped");
+        checkEqual(cmdArguments("/c \"\"a.bat\" \"b\"\""), "/c \"\"a.bat\" \"b\"\"", "already wrapped: unchanged");
+        checkEqual(cmdArguments("/c \"a b.bat\""), "/c \"a b.bat\"", "one quoted path: unchanged");
+        checkEqual(cmdArguments("/c dir"), "/c dir", "no quotes: unchanged");
+        checkEqual(cmdArguments("/s /c \"a\" \"b\""), "/s /c \"a\" \"b\"", "/s first: left to the author");
+        checkEqual(cmdArguments("\"a\" \"b\""), "\"a\" \"b\"", "not a /c command: unchanged");
+        checkEqual(cmdArguments(""), "", "empty");
+
+        checkEqual(findProgram(""), "", "no name");
+        checkEqual(findProgram("folder/x.exe"), "", "a path isn't looked up");
+        checkEqual(findProgram("no-such-program-qa-7f3e"), "", "an unknown name isn't found");
+#ifdef WIN32
+        std::string cmd = findProgram("cmd.exe");
+        check(!cmd.empty() && iequals(fs::path(cmd).filename().string(), "cmd.exe"), "cmd.exe is found: " + cmd);
+        check(iequals(findProgram("cmd"), cmd), ".exe is added to a name without an extension");
+#else
+        check(!findProgram("sh").empty(), "sh is found on PATH");
+#endif
+    });
     run("library: conf edits keep comments, spacing and CRLF", [&] {
         std::string root = makeRoot("lib-conf");
         std::string path = root + "/info.conf";
@@ -522,6 +546,79 @@ static void runLibraryTests()
         check(editor.clearMedia(logo).ok && !fs::exists(root + "/collections/Arcade/medium_artwork/logo/a.png"), "own file cleared");
         check(editor.restoreOriginal(root + "/collections/Arcade/medium_artwork/logo/a.jpg").ok
               && readFile(root + "/collections/Arcade/medium_artwork/logo/a.jpg") == "old", "the original comes back");
+    });
+
+    run("library: hidden games are read with their metadata, apart from the games", [&] {
+        // Arcade's exclude.txt names b
+        std::string root = makeInstall("lib-hidden");
+        writeFile(root + "/meta/hyperlist/Arcade.xml",
+                  "<?xml version=\"1.0\"?>\n<menu>\n<game name=\"b\"><description>Bravo</description><year>1982</year></game>\n</menu>\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        {
+            DB db(root + "/meta.db");
+            check(db.initialize(), "open meta.db");
+            MetadataDatabase meta(db, config);
+            check(meta.initialize(), "import");
+        }
+        auto index = scan(root);
+        check(index->findGame("Arcade", "b") == -1, "not one of the games");
+        std::vector<std::string> all = names(*index, index->itemsOf(index->findCollection("All")));
+        check(std::find(all.begin(), all.end(), "Arcade:b") == all.end() && !all.empty(), "nor on a merged page");
+        int h = index->findHiddenGame("Arcade", "b");
+        check(h >= 0 && index->hiddenGames.size() == 1, "one hidden game");
+        if (h >= 0) {
+            const GameRecord& b = index->hiddenGames[static_cast<size_t>(h)];
+            checkEqual(b.title, "Bravo", "its title from meta.db");
+            checkEqual(b.meta.year, "1982", "and the rest of its metadata");
+            check(b.hasMetadata && fs::path(b.file).filename() == "b.zip", "with its file");
+            check(b.searchText.find("bravo") != std::string::npos, "searchable by title");
+        }
+        check(index->findHiddenGame("Arcade", "a") == -1, "a listed game isn't hidden");
+    });
+
+    run("library: RetroFE expects no settings of menus and merged collections", [&] {
+        // Main.cpp logs a missing settings.conf as an error only for other folders
+        std::string root = makeInstall("lib-nosettings");
+        writeFile(root + "/collections/Legacy/menu.xml", "<menu/>");
+        writeFile(root + "/collections/Empty/readme.txt", "x");
+        for (const char* name : { "Main", "Consoles", "All", "Legacy" }) {
+            check(CollectionInfoBuilder::isMenuOrMergedFolder(root + "/collections/" + name), std::string(name) + " needs none");
+        }
+        for (const char* name : { "Arcade", "Empty", "Nope" }) {
+            check(!CollectionInfoBuilder::isMenuOrMergedFolder(root + "/collections/" + name), std::string(name) + " should have some");
+        }
+
+        // A menu that has games of its own too still needs its settings
+        writeFile(root + "/collections/MenuGames/menu.txt", "Arcade\n");
+        writeFile(root + "/collections/MenuGames/roms/x.zip", "x");
+        writeFile(root + "/collections/MenuKeys/menu.txt", "Arcade\n");
+        writeFile(root + "/collections/MenuKeys/info.conf", "list.extensions = zip\n");
+        // A system whose list.path is wrong: no games, but still a system
+        writeFile(root + "/collections/Broken/settings.conf", "list.path = nowhere\n");
+        Configuration::absolutePath = root;
+        Configuration config;
+        for (const char* name : { "Arcade", "MenuKeys", "Broken" }) {
+            for (const char* file : { "/settings.conf", "/info.conf" }) {
+                std::string path = root + "/collections/" + name + file;
+                if (fs::exists(path)) {
+                    config.import(name, std::string("collections.") + name, path, false);
+                }
+            }
+        }
+        for (const char* name : { "Main", "Consoles", "All", "Legacy" }) {
+            check(CollectionInfoBuilder::needsNoSettings(config, name), std::string(name) + ": a missing settings.conf is expected");
+        }
+        for (const char* name : { "MenuGames", "MenuKeys", "Arcade", "Empty" }) {
+            check(!CollectionInfoBuilder::needsNoSettings(config, name), std::string(name) + ": a missing settings.conf is a problem");
+        }
+        // Who gets the "launcher isn't set" notice: systems, found games or not
+        for (const char* name : { "Arcade", "Broken", "MenuKeys" }) {
+            check(CollectionInfoBuilder::isSystem(config, name), std::string(name) + " is a system");
+        }
+        for (const char* name : { "Main", "Consoles", "All", "Home", "Empty" }) {
+            check(!CollectionInfoBuilder::isSystem(config, name), std::string(name) + " is no system");
+        }
     });
 
     // --- Metadata overrides ---------------------------------------------------------

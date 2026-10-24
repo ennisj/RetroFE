@@ -89,6 +89,72 @@ static const char* const homeLayout = R"(
 </layout>
 )";
 
+// A video collection (info.conf type = videos): its list, and the selected
+// video playing beside it. Its own files are its video media
+// (VideoCollections::useItemsAsVideoMedia).
+static const char* const videosLayout = R"(
+<layout width="1280" height="720" loadFontSize="48" fontColor="dedede">
+  <reloadableText type="collectionName" x="40" y="50" xOrigin="left" yOrigin="center" fontSize="34" maxWidth="760" layer="1"/>
+  <reloadableText type="collectionIndexSize" menuScrollReload="true" x="1240" y="50" xOrigin="right" yOrigin="center" fontSize="22" alpha="0.5" layer="1"/>
+
+  <menu menuIndex="0" type="custom" orientation="vertical" textFallback="true" scrollTime=".15" layer="2">
+    <itemDefaults x="40" xOrigin="left" yOrigin="center" fontSize="24" maxWidth="440" alpha="0.35" layer="2"/>
+    <item y="170"/>
+    <item y="225"/>
+    <item y="280"/>
+    <item selected="true" y="345" fontSize="32" alpha="1"/>
+    <item y="410"/>
+    <item y="465"/>
+    <item y="520"/>
+  </menu>
+
+  <container x="530" y="110" width="710" height="400" backgroundColor="000000" backgroundAlpha="0.6" layer="1"/>
+  <reloadableVideo type="video" x="885" y="310" xOrigin="center" yOrigin="center" width="710" maxHeight="400" layer="2"/>
+  <reloadableText type="title" x="885" y="555" xOrigin="center" yOrigin="center" fontSize="30" maxWidth="710" layer="2"/>
+
+  <text value="Enter: play    Esc: back    Q: quit" x="center" y="675" xOrigin="center" yOrigin="center" fontSize="20" alpha="0.4" layer="1"/>
+</layout>
+)";
+
+// Where a video collection's videos play (RetroFE's VideoPlayback). The menu
+// is the list it moves through, not shown; jukebox="true" lets Select pause
+// the video and tells RetroFE when it has ended.
+static const char* const playerLayout = R"(
+<layout width="1280" height="720" loadFontSize="48" fontColor="ffffff">
+  <container x="0" y="0" width="1280" height="720" backgroundColor="000000" backgroundAlpha="1" layer="0"/>
+  <reloadableVideo type="video" jukebox="true" x="center" y="center" xOrigin="center" yOrigin="center" width="1280" maxHeight="720" layer="1"/>
+
+  <menu menuIndex="0" type="custom" orientation="horizontal" textFallback="true" layer="2">
+    <item selected="true" x="0" y="0" alpha="0" fontSize="10"/>
+  </menu>
+
+  <container x="0" y="0" width="1280" height="80" backgroundColor="000000" backgroundAlpha="0.55" layer="3">
+    <onEnter>          <set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onEnter>
+    <onHighlightEnter> <set duration=".01"><animate type="alpha" to="1"/></set><set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onHighlightEnter>
+  </container>
+  <reloadableText type="title" x="30" y="40" xOrigin="left" yOrigin="center" fontSize="30" maxWidth="900" layer="4">
+    <onEnter>          <set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onEnter>
+    <onHighlightEnter> <set duration=".01"><animate type="alpha" to="1"/></set><set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onHighlightEnter>
+  </reloadableText>
+  <reloadableText type="collectionIndexSize" x="1250" y="40" xOrigin="right" yOrigin="center" fontSize="22" alpha="0.7" layer="4">
+    <onEnter>          <set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="0.7" to="0"/></set></onEnter>
+    <onHighlightEnter> <set duration=".01"><animate type="alpha" to="0.7"/></set><set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="0.7" to="0"/></set></onHighlightEnter>
+  </reloadableText>
+
+  <container x="0" y="660" width="1280" height="60" backgroundColor="000000" backgroundAlpha="0.55" layer="3">
+    <onEnter>          <set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onEnter>
+    <onHighlightEnter> <set duration=".01"><animate type="alpha" to="1"/></set><set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="1" to="0"/></set></onHighlightEnter>
+  </container>
+  <reloadableText type="isPaused" x="center" y="center" xOrigin="center" yOrigin="center" fontSize="56" layer="4"/>
+  <reloadableText type="current" x="30" y="690" xOrigin="left" yOrigin="center" fontSize="20" alpha="0.6" layer="4"/>
+  <reloadableText type="duration" x="1250" y="690" xOrigin="right" yOrigin="center" fontSize="20" alpha="0.6" layer="4"/>
+  <text value="Enter: pause    Left/Right: previous/next    Up/Down: seek    Esc: back to the list" x="center" y="690" xOrigin="center" yOrigin="center" fontSize="18" layer="4">
+    <onEnter>          <set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="0.5" to="0"/></set></onEnter>
+    <onHighlightEnter> <set duration=".01"><animate type="alpha" to="0.5"/></set><set duration="3"><animate type="nop"/></set><set duration="1"><animate type="alpha" from="0.5" to="0"/></set></onHighlightEnter>
+  </text>
+</layout>
+)";
+
 // Settings, Manage and Catalog when the layout doesn't style them
 // (layouts/<layout>/forms/layout.xml or forms/<id>/layout.xml)
 static const char* const formLayout = R"(
@@ -127,6 +193,12 @@ const char* layoutXml(const std::string& page, const std::string& collection)
     }
     if (page == "layout") {
         return collection == Home::collectionName ? homeLayout : mainLayout;
+    }
+    if (page == "videos") {
+        return videosLayout;
+    }
+    if (page == "player") {
+        return playerLayout;
     }
     return nullptr;
 }

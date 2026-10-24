@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "SystemProvider.h"
+#include "../../Collection/VideoCollections.h"
 #include "../../Library/Backups.h"
 #include "../../Library/ConfFile.h"
 #include "../../Library/Edits.h"
@@ -281,8 +282,26 @@ bool madeHere(const CollectionRecord& record)
 
 bool isVideoCollection(const CollectionRecord& record)
 {
-    auto type = record.info.find("type");
-    return type != record.info.end() && iequals(Utils::trimEnds(type->second), "videos");
+    auto type = record.info.find(VideoCollections::typeKey);
+    return type != record.info.end() && VideoCollections::isVideoType(type->second);
+}
+
+bool playsHere(const CollectionRecord& record)
+{
+    auto type = record.info.find(VideoCollections::typeKey);
+    auto play = record.info.find(VideoCollections::playKey);
+    return type != record.info.end() && play != record.info.end() && VideoCollections::playsHere(type->second, play->second);
+}
+
+std::vector<std::string> unplayableExtensions(const CollectionRecord& record)
+{
+    std::vector<std::string> result;
+    for (const std::string& extension : record.extensions) {
+        if (!extension.empty() && !VideoCollections::isPlayableExtension(extension)) {
+            result.push_back(extension);
+        }
+    }
+    return result;
 }
 
 SystemCheck checkSystem(const Index& index, int collection, bool videos)
@@ -341,9 +360,21 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
             + " found, but none is listed.");
     }
 
-    // How they start
+    // How they start: RetroFE plays them itself, so only their file types matter
     const Library::LauncherResolution& launcher = r.launcher;
-    if (launcher.via == Library::LauncherVia::None) {
+    bool here = videos && playsHere(r);
+    std::vector<std::string> unplayable = here ? unplayableExtensions(r) : std::vector<std::string>();
+    if (here) {
+        if (!unplayable.empty()) {
+            std::vector<std::string> dotted;
+            for (const std::string& extension : unplayable) {
+                dotted.push_back("." + extension);
+            }
+            add("RetroFE plays " + join(VideoCollections::playableExtensions(), ", ") + " files itself; "
+                + join(dotted, ", ") + " files don't play here. Play them with an external player (Playback), or convert them.");
+        }
+    }
+    else if (launcher.via == Library::LauncherVia::None) {
         add("No launcher is set, so its " + items + " can't start.");
     }
     else if (launcher.launcher < 0) {
@@ -368,9 +399,10 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
             broken++;
         }
     }
-    if (broken > 0) {
-        add(count(broken, item + " has a launcher", items + " have launchers") + " of its own that isn't installed (collections/"
-            + r.name + "/launchers).");
+    if (broken > 0 && !here) {
+        add(count(broken, item + " has a launcher", items + " have launchers")
+            + (broken == 1 ? " of its own that isn't installed" : " of their own that aren't installed")
+            + " (collections/" + r.name + "/launchers).");
     }
 
     // Titles and years (videos seldom have hyperlist metadata, so it's only checked for games)
@@ -618,6 +650,10 @@ std::map<std::string, std::string> SystemProvider::readLauncher(const Collection
     Library::ConfLayers layers(record.folder, Library::ConfLayers::collectionFileNames());
     layers.load();
     launcherSource_ = layers.source("launcher");
+    if (videos_) {
+        return { { "launcher", record.launcher.configured },
+                 { "play", playsHere(record) ? VideoCollections::playHere : VideoCollections::playLauncher } };
+    }
     return { { "launcher", record.launcher.configured } };
 }
 
@@ -677,7 +713,7 @@ std::string SystemProvider::screenTitle(const Screen& screen) const
     const CollectionRecord* r = idx ? record(*idx, screen) : nullptr;
     std::string name = r ? r->name : screen.param("id");
     if (isForm(screen, "-settings")) return name + ": settings";
-    if (isForm(screen, "-launcher")) return name + ": launcher";
+    if (isForm(screen, "-launcher")) return name + (videos_ ? ": playback" : ": launcher");
     if (isForm(screen, "-info")) return name + ": info";
     if (isForm(screen, "-media")) return name + ": media";
     if (isForm(screen, "-medium")) return name + ": " + screen.param("slot");
@@ -819,8 +855,18 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
     if (key == "extensionsText") return r->extensions.empty() ? "None" : join(r->extensions, ", ");
     if (key == "gameCount") return count(r->gameCount, item_, items_);
     if (key == "launcherInEffect") return launcherText(*idx, *r);
+    if (key == "playsText") {
+        if (!playsHere(*r)) {
+            return "With an external player (its launcher)";
+        }
+        std::vector<std::string> unplayable = unplayableExtensions(*r);
+        return unplayable.empty() ? "In RetroFE" : "In RetroFE, except its ." + join(unplayable, ", .") + " files";
+    }
     if (key == "settingsStatus") return r->extensions.empty() ? "No extensions" : join(r->extensions, ", ");
     if (key == "launcherStatus") {
+        if (videos_ && playsHere(*r)) {
+            return "In RetroFE";
+        }
         return r->launcher.via == Library::LauncherVia::None ? "None"
              : r->launcher.via == Library::LauncherVia::CollectionFile ? "Its own file" : r->launcher.name;
     }
@@ -849,7 +895,10 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
         }
         return n < check_.findings.size() ? "- " + check_.findings[n] : "";
     }
-    // Launcher screen
+    // Launcher screen (a video collection RetroFE plays has no launcher notes)
+    if ((key == "launcherFileNote" || key == "overridesNote" || key == "launcherProblem") && videos_ && playsHere(*r)) {
+        return "";
+    }
     if (key == "launcherFileNote") {
         if (r->launcher.via == Library::LauncherVia::CollectionFile) {
             std::string file = r->launcher.launcher >= 0 ? idx->launchers[static_cast<size_t>(r->launcher.launcher)].file : "";
@@ -864,7 +913,8 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
         for (const auto& [game, name] : r->launcherOverrides) {
             own += name ? 1 : 0;
         }
-        return own == 0 ? "" : count(own, item_ + " has a launcher", items_ + " have launchers") + " of its own; change those in Games.";
+        return own == 0 ? "" : count(own, item_ + " has a launcher of its own; change it", items_ + " have launchers of their own; change those")
+                                   + " in Games.";
     }
     if (key == "launcherProblem") return r->launcher.problem;
     return "";
@@ -1202,7 +1252,8 @@ Forms::Rows SystemProvider::listRows(size_t limit)
             Forms::Row row;
             row.id = r.name;
             row.label = r.title != r.name ? r.name + " (" + r.title + ")" : r.name;
-            std::string launcher = r.launcher.via == Library::LauncherVia::None ? "no launcher"
+            std::string launcher = videos_ && playsHere(r) ? "plays in RetroFE"
+                                 : r.launcher.via == Library::LauncherVia::None ? "no launcher"
                                  : r.launcher.via == Library::LauncherVia::CollectionFile ? "own launcher" : r.launcher.name;
             row.detail = count(r.gameCount, item_, items_) + "  -  " + launcher;
             listRows_.push_back(std::move(row));
@@ -1229,10 +1280,27 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         syncBuffers(screen);
         return key == "settingsDirty" ? yesNo(settings_.edits.isDirty()) : settings_.edits.get(key);
     }
-    if (key == "launcher" || key == "launcherDirty") {
+    if (key == "launcher" || key == "launcherDirty" || key == "play") {
         syncBuffers(screen);
         return key == "launcherDirty" ? yesNo(launcher_.edits.isDirty()) : launcher_.edits.get(key);
     }
+    if (key == "usesLauncher") {
+        // Systems always do; a video collection unless it plays in RetroFE (as
+        // chosen on the Playback screen, before it's saved)
+        if (!videos_) return "yes";
+        if (isForm(screen, "-launcher")) {
+            syncBuffers(screen);
+            return yesNo(!iequals(launcher_.edits.get("play"), VideoCollections::playHere));
+        }
+        IndexPtr idx = index();
+        const CollectionRecord* r = idx ? record(*idx, screen) : nullptr;
+        return yesNo(!r || !playsHere(*r));
+    }
+    if (key == "addPlay") {
+        auto found = add_.find(key);
+        return found != add_.end() ? found->second : std::string(VideoCollections::playHere);
+    }
+    if (key == "addUsesLauncher") return yesNo(addUsesLauncher());
     if (infoKeys.count(key) || key == "infoDirty") {
         syncBuffers(screen);
         return key == "infoDirty" ? yesNo(info_.edits.isDirty()) : info_.edits.get(key);
@@ -1343,7 +1411,7 @@ void SystemProvider::set(const std::string& key, const std::string& value, const
         settings_.edits.set(key, value);
         return;
     }
-    if (key == "launcher") {
+    if (key == "launcher" || (key == "play" && videos_)) {
         syncBuffers(screen);
         launcher_.edits.set(key, value);
         return;
@@ -1419,6 +1487,11 @@ Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Scr
 std::vector<std::pair<std::string, std::string>> SystemProvider::options(const std::string& key, const Screen& screen)
 {
     std::vector<std::pair<std::string, std::string>> result;
+    if (key == "plays") {
+        result.emplace_back(VideoCollections::playHere, "In RetroFE");
+        result.emplace_back(VideoCollections::playLauncher, "With an external player");
+        return result;
+    }
     IndexPtr idx = index();
     if (!idx) {
         return result;
@@ -1510,7 +1583,22 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
     if (action == "saveLauncher" || action == "resetLauncher") {
         syncBuffers(screen);
         if (!launcher_.edits.isDirty()) return "No changes to save.";
-        return action == "resetLauncher" ? "" : Library::Editor::checkSetting(*idx, r->name, "launcher", launcher_.edits.get("launcher"));
+        if (action == "resetLauncher") return "";
+        std::map<std::string, std::string> changes = launcher_.edits.changes();
+        std::string launcher = Utils::trimEnds(launcher_.edits.get("launcher"));
+        bool launcherChanged = changes.count("launcher") > 0;
+        if (videos_ && iequals(launcher_.edits.get("play"), VideoCollections::playHere)) {
+            // RetroFE plays them: a player is optional, kept for later
+            return launcherChanged && !launcher.empty() ? Library::Editor::checkSetting(*idx, r->name, "launcher", launcher) : "";
+        }
+        if (videos_ && !launcherChanged) {
+            // Switching to the external player: the one it names must be there
+            if (r->launcher.launcher >= 0) return "";
+            return launcher.empty() ? "Choose the video player that plays them first."
+                                    : "The video player " + launcher + " isn't installed. Choose another one first.";
+        }
+        if (videos_ && launcher.empty()) return "Choose the video player that plays them.";
+        return Library::Editor::checkSetting(*idx, r->name, "launcher", launcher);
     }
     if (action == "saveInfo" || action == "resetInfo") {
         syncBuffers(screen);
@@ -1627,17 +1715,47 @@ Forms::Model::Result SystemProvider::saveLauncher(const Screen& screen)
     Forms::Model::Result result;
     IndexPtr idx = index();
     std::string name = record(*idx, screen)->name;
-    std::string launcher = launcher_.edits.get("launcher");
-    Library::EditResult edit = services_.editor->setCollectionSetting(*idx, name, "launcher", launcher);
-    result.message = edit.message;
-    if (!edit.ok) {
+    std::string launcher = Utils::trimEnds(launcher_.edits.get("launcher"));
+    std::map<std::string, std::string> changes = launcher_.edits.changes();
+    Library::EditResult edit{ true, "", {} };
+    if (changes.count("launcher")) {
+        edit = services_.editor->setCollectionSetting(*idx, name, "launcher", launcher);
+        result.message = edit.message;
+        if (!edit.ok) {
+            return result;
+        }
+    }
+    std::string note = edit.message.find("Note:") != std::string::npos ? edit.message.substr(edit.message.find(" Note:")) : "";
+    if (!videos_) {
+        launcher_.edits.commit();
+        changed("launcher of " + name);
+        result.ok = true;
+        result.message = name + "'s " + items_ + " now start with " + launcher + ", unless one has its own launcher." + note;
         return result;
     }
+
+    // A video collection: where it plays goes in its info.conf
+    bool here = iequals(launcher_.edits.get("play"), VideoCollections::playHere);
+    if (changes.count("play")) {
+        Library::EditResult play = services_.editor->setCollectionSetting(*idx, name, VideoCollections::playKey,
+                                                                          here ? VideoCollections::playHere : VideoCollections::playLauncher);
+        if (!play.ok) {
+            if (changes.count("launcher")) changed("launcher of " + name);
+            result.message = play.message;
+            return result;
+        }
+    }
     launcher_.edits.commit();
-    changed("launcher of " + name);
+    changed("playback of " + name);
     result.ok = true;
-    result.message = name + "'s " + items_ + " now start with " + launcher + ", unless one has its own launcher."
-                   + (edit.message.find("Note:") != std::string::npos ? edit.message.substr(edit.message.find(" Note:")) : "");
+    if (here) {
+        result.message = "RetroFE plays " + name + "'s videos itself after it reloads, when you close Manage."
+                       + std::string(launcher.empty() ? "" : " " + launcher + " is kept for when you choose the external player again.");
+    }
+    else {
+        std::string player = launcher.empty() ? record(*idx, screen)->launcher.name : launcher;
+        result.message = name + "'s videos play with " + player + " after RetroFE reloads, when you close Manage." + note;
+    }
     return result;
 }
 
@@ -1807,8 +1925,20 @@ bool SystemProvider::canListIn(const CollectionRecord& menu)
         && menu.menuSource != Library::MenuSource::CollectionLaunchers;
 }
 
+bool SystemProvider::addUsesLauncher() const
+{
+    if (!videos_) {
+        return true;
+    }
+    auto found = add_.find("addPlay");
+    return found != add_.end() && !iequals(Utils::trimEnds(found->second), VideoCollections::playHere);
+}
+
 bool SystemProvider::addIsNewLauncher() const
 {
+    if (!addUsesLauncher()) {
+        return false;
+    }
     auto found = add_.find("addLauncher");
     if (found != add_.end()) {
         return found->second.empty();
@@ -1914,7 +2044,21 @@ std::string SystemProvider::addProblem()
             return "\"" + part + "\" isn't a file extension.";
         }
     }
-    if (addIsNewLauncher()) {
+    if (!addUsesLauncher()) {
+        // RetroFE plays them: only the files it can open
+        std::vector<std::string> unplayable;
+        for (const std::string& part : parts) {
+            if (!VideoCollections::isPlayableExtension(part)) {
+                unplayable.push_back(part);
+            }
+        }
+        if (!unplayable.empty()) {
+            return "RetroFE plays " + join(VideoCollections::playableExtensions(), ", ") + " files itself, not "
+                 + join(unplayable, ", ") + ". Leave " + (unplayable.size() == 1 ? "it" : "them")
+                 + " out, or choose With an external player.";
+        }
+    }
+    else if (addIsNewLauncher()) {
         std::string program = Utils::trimEnds(add_["addProgram"]);
         if (program.empty() || !fs::is_regular_file(program, ec)) {
             return videos_ ? "Choose the video player program, e.g. vlc.exe or mpv.exe."
@@ -1961,7 +2105,11 @@ Forms::Model::Result SystemProvider::create()
     std::string launcherConf = std::string(createdHeader) + nl + "executable = " + program + nl + "arguments = " + arguments + nl;
     std::string newLauncher;   // a new global launcher file, to take back if adding fails
     std::string ownLauncher;   // or the collection's own launcher file
-    if (!addIsNewLauncher()) {
+    bool here = !addUsesLauncher();
+    if (here) {
+        launcherNote = "RetroFE plays its videos itself; Playback can add an external player.";
+    }
+    else if (!addIsNewLauncher()) {
         std::string launcher = get("addLauncher", Screen{});
         settings += "launcher = " + launcher + nl;
         launcherNote = "It starts its " + items_ + " with " + launcher + ".";
@@ -1987,7 +2135,8 @@ Forms::Model::Result SystemProvider::create()
     if (!(newLauncher.empty() || (wroteLauncher = writeNew(backups, newLauncher, launcherConf, error)))
         || !(ownLauncher.empty() || writeNew(backups, ownLauncher, launcherConf, error))
         || !writeNew(backups, Utils::combinePath(collection, "settings.conf"), settings, error)
-        || (videos_ && !writeNew(backups, Utils::combinePath(collection, "info.conf"), "type = videos" + nl, error))
+        || (videos_ && !writeNew(backups, Utils::combinePath(collection, "info.conf"),
+                                 std::string("type = videos") + nl + "play = " + (here ? VideoCollections::playHere : VideoCollections::playLauncher) + nl, error))
         || !Library::MenuFiles::add(root(), menu, name, -1, &backups, error)) {
         // Nothing half made is left behind: the new folder (and a new player
         // launcher) go to the backups, so RetroFE never sees a system no menu lists
@@ -2010,6 +2159,7 @@ Forms::Model::Result SystemProvider::create()
     countedKey_ = "\x01";
     result.ok = true;
     result.open = base_;
+    result.replace = true;   // Back from the new system goes to the list, not the filled-in add form
     result.params = { { "id", name } };
     result.message = "Added " + name + " to " + menu + ". " + launcherNote
                    + " RetroFE shows it after it reloads, when you close Manage.";

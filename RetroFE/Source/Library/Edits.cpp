@@ -19,6 +19,7 @@
 #include "LineList.h"
 #include "MetadataOverrides.h"
 #include "Properties.h"
+#include "../Collection/VideoCollections.h"
 #include "../Utility/Log.h"
 #include "../Utility/Utils.h"
 #include <sqlite3.h>
@@ -356,8 +357,10 @@ const std::vector<std::string>& Editor::editableSettings()
 
 const std::vector<std::string>& Editor::editableInfo()
 {
-    // type: "videos" marks a video collection (this fork's Manage, DECISIONS M7); RetroFE ignores it
-    static const std::vector<std::string> keys = { "title", "manufacturer", "developer", "year", "genre", "type" };
+    // type: "videos" marks a video collection (this fork's Manage, DECISIONS M7);
+    // play: "here" plays its videos in RetroFE, "launcher" with its launcher
+    // (Collection/VideoCollections.h)
+    static const std::vector<std::string> keys = { "title", "manufacturer", "developer", "year", "genre", "type", "play" };
     return keys;
 }
 
@@ -433,6 +436,11 @@ std::string Editor::checkSetting(const Index& index, const std::string& collecti
     else if (key == "type") {
         if (!v.empty() && !iequals(v, "videos")) {
             return "The type is \"videos\" for a video collection, or empty.";
+        }
+    }
+    else if (key == "play") {
+        if (!v.empty() && !VideoCollections::isPlayValue(v)) {
+            return "Play is \"here\" (in RetroFE) or \"launcher\" (with its launcher).";
         }
     }
     else if (key == "metadata.type") {
@@ -1929,6 +1937,9 @@ EditResult Editor::addLauncher(const Index& index, const NewLauncher& launcher)
     }
     if (!directory.empty()) {
         content += "currentDirectory = " + directory + newline;
+    }
+    if (launcher.reboot) {
+        content += "reboot = yes" + newline;
     }
     std::string error;
     if (!backups_.beforeChange(file, error) || !writeFileAtomic(file, content, error)) {

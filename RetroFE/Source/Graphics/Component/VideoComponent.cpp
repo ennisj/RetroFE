@@ -124,20 +124,24 @@ bool VideoComponent::update(float dt) {
 			hasBeenOnScreen_ = true;
 		}
 
+		// Paused while hidden and resumed when shown, unless pause() paused it
 		if (baseViewInfo.PauseOnScroll) {
 			if (!isCurrentlyVisible && !isPaused && !currentPage_->isMenuFastScrolling()) {
-				pause();
+				videoInst_->pause();
 				LOG_DEBUG("VideoComponent", "Paused " + Utils::getFileName(videoFile_));
 			}
-			else if (isCurrentlyVisible && isPaused) {
-				pause();
+			else if (isCurrentlyVisible && isPaused && !heldPaused_) {
+				videoInst_->pause();
 				LOG_DEBUG("VideoComponent", "Resumed " + Utils::getFileName(videoFile_));
 			}
 		}
 
 		if (baseViewInfo.Restart && hasBeenOnScreen_) {
-			if (isPaused) {
-				pause();  // Resume if paused
+			// A restart plays it from the top: resume it, whatever paused it
+			// (being hidden, or pause()), as it always did
+			heldPaused_ = false;
+			if (videoInst_->isPaused()) {
+				videoInst_->pause();
 			}
 
 			GstClockTime currentTime = videoInst_->getCurrent();
@@ -206,9 +210,9 @@ void VideoComponent::draw() {
 	}
 }
 
-std::string_view VideoComponent::filePath() const  // Add const since this doesn't modify state
+std::string_view VideoComponent::filePath()
 {
-	return videoFile_;  // This is fine as is since string_view is safe with empty strings
+	return videoFile_;
 }
 
 void VideoComponent::skipForward()
@@ -243,12 +247,18 @@ void VideoComponent::skipBackwardp()
 	videoInst_->skipBackwardp();
 }
 
+// Pause or resume on request (Page::pause, e.g. a jukebox or the video player
+// page): it stays paused while shown until asked again
 void VideoComponent::pause()
 {
 	if (!videoInst_ || !instanceReady_) {
 		return;
 	}
-	videoInst_->pause();
+	bool resume = heldPaused_;
+	heldPaused_ = !heldPaused_;
+	if (videoInst_->isPaused() == resume) {
+		videoInst_->pause();
+	}
 }
 
 void VideoComponent::restart()
@@ -280,7 +290,7 @@ bool VideoComponent::isPaused()
 	if (!videoInst_ || !instanceReady_) {
 		return false;
 	}
-	return videoInst_->isPaused();
+	return heldPaused_;   // paused on request (pause()), not while starting or hidden
 }
 
 bool VideoComponent::isPlaying()

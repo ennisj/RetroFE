@@ -16,6 +16,8 @@
 
 #include "PageBuilder.h"
 #include "LayoutPages.h"
+#include "MenuXml.h"
+#include "LayoutNodePath.h"
 #include "Page.h"
 #include "ViewInfo.h"
 #include "Component/Container.h"
@@ -94,8 +96,8 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		layoutPath = Utils::combinePath(Configuration::absolutePath, "menu");
 	}
 	else if (!collectionName.empty()) {
-		// The collection's own pages, else _menu's for a menu of collections, else the layout's
-		layoutPath = LayoutPages::collectionFolder(layoutPathDefault, collectionName, menuCollection_);
+		// The collection's own pages, else _videos' or _menu's, else the layout's
+		layoutPath = LayoutPages::collectionFolder(layoutPathDefault, collectionName, menuCollection_, videoCollection_);
 	}
 	else {
 		// Default case, likely for splash page or general layouts
@@ -146,7 +148,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 		const char* builtinXml = nullptr;
 		if (useBuiltinLayout) {
 			if (layoutIndex == 0) {
-				builtinXml = Builtin::layoutXml(currentLayoutName == "splash" ? "splash" : "layout", collectionName);
+				builtinXml = Builtin::layoutXml(currentLayoutName == "splash" ? "splash" : videoCollection_ ? "videos" : "layout", collectionName);
 			}
 			if (!builtinXml) {
 				continue;
@@ -179,6 +181,18 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 			}
 		}
 
+		// "layout - N.xml" (layoutIndex N + 1) is by convention monitor N's page. It's
+		// optional unless monitor N is in use: monitor 0 has the main page, and most
+		// setups have one screen, so a missing one is only worth a warning then.
+		// (The page's own monitor= attribute decides where it draws.)
+		auto missing = [layoutIndex](const std::string& message) {
+			const int monitor = static_cast<int>(layoutIndex) - 1;
+			if (layoutIndex == 0 || (monitor >= 1 && monitor < SDL::getScreenCount()))
+				LOG_WARNING("Layout", message);
+			else
+				LOG_INFO("Layout", message);
+		};
+
 		// Check if the layout file exists
 		if (builtinXml || fs::exists(layoutFile)) {
 			LOG_INFO("Layout", "Attempting to initialize layout: " + layoutFile);
@@ -196,7 +210,7 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 						LOG_INFO("Layout", "Attempting to initialize default layout: " + layoutFile);
 					}
 					else {
-						LOG_WARNING("Layout", "Layout not found: " + layoutFile);
+						missing("Layout not found: " + layoutFile);
 						continue; // Skip to next layout
 					}
 				}
@@ -206,12 +220,12 @@ Page* PageBuilder::buildPage(const std::string& collectionName, bool defaultToCu
 					splashInitialized = true;
 				}
 				else {
-					LOG_WARNING("Layout", "Layout file does not exist: " + layoutFile);
+					missing("Layout file does not exist: " + layoutFile);
 					continue; // Skip to next layout
 				}
 			}
 			else {
-				LOG_WARNING("Layout", "Layout file does not exist: " + layoutFile);
+				missing("Layout file does not exist: " + layoutFile);
 				continue; // Skip to next layout
 			}
 		}
@@ -537,6 +551,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 		buildViewInfo(componentXml, c->baseViewInfo);
 		loadTweens(c, componentXml);
 		page->addComponent(c);
+		trace(c, nullptr, componentXml);
 	}
 	for (xml_node<>* componentXml = layout->first_node("image"); componentXml; componentXml = componentXml->next_sibling("image")) {
 		xml_attribute<> const* src = componentXml->first_attribute("src");
@@ -608,6 +623,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 				buildViewInfo(componentXml, c->baseViewInfo);
 				loadTweens(c, componentXml);
 				page->addComponent(c);
+				trace(c, nullptr, componentXml);
 			}
 			else
 			{
@@ -698,6 +714,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 				buildViewInfo(componentXml, c->baseViewInfo);
 				loadTweens(c, componentXml);
 				page->addComponent(c);
+				trace(c, nullptr, componentXml);
 			}
 
 		}
@@ -735,6 +752,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 			buildViewInfo(componentXml, c->baseViewInfo);
 			loadTweens(c, componentXml);
 			page->addComponent(c);
+			trace(c, nullptr, componentXml);
 		}
 	}
 
@@ -754,6 +772,7 @@ bool PageBuilder::buildComponents(xml_node<>* layout, Page* page, const std::str
 		buildViewInfo(componentXml, c->baseViewInfo);
 		loadTweens(c, componentXml);
 		page->addComponent(c);
+		trace(c, nullptr, componentXml);
 		page->setStatusTextComponent(c);
 	}
 
@@ -941,6 +960,7 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 
 			loadTweens(c, componentXml);
 			page->addComponent(c);
+			trace(c, nullptr, componentXml);
 		}
 	}
 }
@@ -1087,6 +1107,7 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		buildViewInfo(componentXml, keyboard->baseViewInfo);
 		loadTweens(keyboard, componentXml);
 		page->addComponent(keyboard);
+		trace(keyboard, nullptr, componentXml);
 		keyboardWidgets_.push_back(keyboard);
 	}
 
@@ -1145,8 +1166,14 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		buildViewInfo(componentXml, form->baseViewInfo);
 		loadTweens(form, componentXml);
 		page->addComponent(form);
+		trace(form, nullptr, componentXml);
 		formWidgets_.push_back(form);
 	}
+}
+
+void PageBuilder::addTrace(Component* c, ViewInfo* slot, const xml_node<>* node)
+{
+	trace_->push_back(TraceEntry{ c, slot, LayoutNodePath::of(node) });
 }
 
 void PageBuilder::loadTweens(Component* c, xml_node<>* componentXml)
@@ -1267,7 +1294,9 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 	std::string imageType = "null";
 	std::string videoType = "null";
 	std::map<int, xml_node<>*> overrideItems;
-	xml_node<>* itemDefaults = menuXml->first_node("itemDefaults");
+	// A menu without <itemDefaults> gets an empty one: everything below reads it
+	bool noItemDefaults = false;
+	xml_node<>* itemDefaults = MenuXml::itemDefaults(menuXml, &noItemDefaults);
 	xml_attribute<> const* modeXml = menuXml->first_attribute("mode");
 	xml_attribute<> const* imageTypeXml = menuXml->first_attribute("imageType");
 	xml_attribute<> const* videoTypeXml = menuXml->first_attribute("videoType");
@@ -1290,9 +1319,8 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 		menuType = menuTypeXml->value();
 	}
 
-	// ensure <menu> has an <itemDefaults> tag
-	if (!itemDefaults) {
-		LOG_WARNING("Layout", "Menu tag is missing <itemDefaults> tag.");
+	if (noItemDefaults) {
+		LOG_WARNING("Layout", "Menu tag is missing <itemDefaults> tag; using empty defaults.");
 	}
 
 	bool playlistType = false;
@@ -1338,6 +1366,7 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 	}
 
 	menu = new ScrollingList(config_, page, layoutMode, commonMode, playlistType, selectedImage, font, layoutKey, imageType, videoType, useTextureCache);
+	trace(menu, nullptr, menuXml);
 	menu->baseViewInfo.Monitor = cMonitor;
 	menu->baseViewInfo.Layout = page.getCurrentLayout();
 
@@ -1438,6 +1467,7 @@ void PageBuilder::buildCustomMenu(ScrollingList* menu, const rapidxml::xml_node<
 		viewInfo->Additive = menu->baseViewInfo.Additive;
 
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, componentXml);
 		tweenPoints->push_back(createTweenInstance(componentXml));
 
 		if (componentXml->first_attribute("selected")) {
@@ -1445,6 +1475,12 @@ void PageBuilder::buildCustomMenu(ScrollingList* menu, const rapidxml::xml_node<
 		}
 
 		i++;
+	}
+
+	// Allowed (ScrollingList copes with no points: nothing is drawn, scrolling
+	// and selecting still work), but it's never what the layout meant
+	if (points->empty()) {
+		LOG_WARNING("Layout", "A custom menu has no <item> slots, so it shows nothing.");
 	}
 
 	menu->setPoints(points, tweenPoints);
@@ -1477,6 +1513,11 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 	}
 
 	bool end = false;
+	// The highest slot an <item index=> overrides; past it every slot takes the defaults
+	int lastOverride = -1;
+	for (const auto& entry : overrideItems) {
+		if (entry.first > lastOverride) lastOverride = entry.first;
+	}
 
 	// menu start
 
@@ -1488,6 +1529,7 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		auto* viewInfo = createMenuItemInfo(component, itemDefaults, menu->baseViewInfo);
 		viewInfo->Y = menu->baseViewInfo.Y + height;
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, component);
 		tweenPoints->push_back(createTweenInstance(component));
 		height += viewInfo->Height;
 
@@ -1512,7 +1554,13 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		int itemSpacing = itemSpacingXml ? Utils::convertInt(itemSpacingXml->value()) : 0;
 		float nextHeight = height + viewInfo->Height + itemSpacing;
 
-		if (nextHeight >= menu->baseViewInfo.Height) {
+		// Also ends a menu whose default items have no height (it would never fill)
+		const bool onlyDefaultsFromHere = index > lastOverride;
+		if (MenuXml::verticalMenuFull(height, nextHeight, menu->baseViewInfo.Height, onlyDefaultsFromHere, points->size() + 1)) {
+			if (nextHeight < menu->baseViewInfo.Height) {
+				LOG_WARNING("Layout", "The vertical menu's items don't fill it (<itemDefaults> has no height?); it stops at " +
+					std::to_string(points->size() + 1) + " items.");
+			}
 			end = true;
 		}
 
@@ -1528,6 +1576,7 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 
 		viewInfo->Y = menu->baseViewInfo.Y + height;
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, component);
 		tweenPoints->push_back(createTweenInstance(component));
 		index++;
 		height = nextHeight;
@@ -1539,6 +1588,7 @@ void PageBuilder::buildVerticalMenu(ScrollingList* menu, const rapidxml::xml_nod
 		auto* viewInfo = createMenuItemInfo(component, itemDefaults, menu->baseViewInfo);
 		viewInfo->Y = menu->baseViewInfo.Y + height;
 		points->push_back(viewInfo);
+		trace(menu, viewInfo, component);
 		tweenPoints->push_back(createTweenInstance(component));
 	}
 
@@ -1789,7 +1839,7 @@ void PageBuilder::getAnimationEvents(const xml_node<>* node, TweenSet& tweens)
 					else if (fromStr == "bottom") {
 						fromValue = static_cast<float>(layoutHeight_);
 					}
-					else if (fromStr.back() == '%') {
+					else if (!fromStr.empty() && fromStr.back() == '%') {
 						float percent = Utils::convertFloat(fromStr.substr(0, fromStr.size() - 1));
 						if (animateType == "width") {
 							fromValue = layoutWidth_ * (percent / 100.0f);
@@ -1827,7 +1877,7 @@ void PageBuilder::getAnimationEvents(const xml_node<>* node, TweenSet& tweens)
 					else if (toStr == "bottom") {
 						toValue = static_cast<float>(layoutHeight_);
 					}
-					else if (toStr.back() == '%') {
+					else if (!toStr.empty() && toStr.back() == '%') {
 						float percent = Utils::convertFloat(toStr.substr(0, toStr.size() - 1));
 						if (animateType == "width") {
 							toValue = static_cast<float>(layoutWidth_) * (percent / 100.0f);

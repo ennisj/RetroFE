@@ -261,6 +261,34 @@ namespace ThemeEditor
         return true;
     }
 
+    const ThemePage& pageShownFor(const ThemeProject& p, const std::string& collection, bool isMenu, PageVia* via)
+    {
+        if (via) *via = PageVia::Default;
+        if (collection.empty() || ThemeProject::isSplashPage(collection)) return p.pages[0];
+        for (const auto& page : p.pages) {
+            if (page.collection.empty() || ThemeProject::isSplashPage(page.collection)) continue;
+            if (page.collection == collection) {
+                if (via) *via = PageVia::Own;
+                return page;
+            }
+            for (const auto& m : page.members) {
+                if (m == collection) {
+                    if (via) *via = PageVia::Member;
+                    return page;
+                }
+            }
+        }
+        if (isMenu) {
+            if (const ThemePage* menus = p.coveredBy(MENUS_TEMPLATE)) {
+                if (!menus->collection.empty()) {
+                    if (via) *via = PageVia::Menus;
+                    return *menus;
+                }
+            }
+        }
+        return p.pages[0];
+    }
+
     ThemePage* createTemplate(ThemeProject& p, const std::string& collection)
     {
         return createTemplate(p, collection, &p.pages[0]);

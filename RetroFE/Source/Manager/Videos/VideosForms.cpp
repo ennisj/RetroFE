@@ -17,10 +17,11 @@
 #include "../Systems/SystemForms.h"
 
 // The Videos screens, opened from Manage. A video collection is a system
-// whose files are videos and whose launcher is a video player, marked with
-// "type = videos" in its info.conf (DECISIONS M7), so these are the Systems
-// screens worded for videos: "videos", "video" and "video-...", served by a
-// second SystemProvider with prefix "video".
+// whose files are videos, marked with "type = videos" in its info.conf
+// (DECISIONS M7); "play = here" plays them in RetroFE, else its launcher (a
+// video player) does (Collection/VideoCollections.h). These are the Systems
+// screens worded for videos, with the Plays choice: "videos", "video" and
+// "video-...", served by a second SystemProvider with prefix "video".
 Forms::BuiltinTable Forms::videosForms()
 {
     return Manager::systemForms(true);
