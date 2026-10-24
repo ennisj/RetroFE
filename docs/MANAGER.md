@@ -336,9 +336,9 @@ empty; Edit it to place a wheel, titles, art and video.
 
 Hand-made themes, Aeon Nox included, can be used and edited but not
 duplicated or deleted here. Their details say how Edit works for them: the
-layout editor moves, resizes and changes the attributes of a page's existing
-elements (and can copy or delete one), rewriting only the values changed;
-adding new elements isn't possible yet. The first save of a page keeps its
+layout editor moves, resizes and changes the attributes of a page's
+elements, copies, deletes and adds them, and edits their animations,
+rewriting only what changes. The first save of a page keeps its
 original in `manage/backups/layouts/<theme>/`, and *Put back the original*
 restores it.
 

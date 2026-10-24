@@ -349,9 +349,9 @@ namespace Themes
             }
             if (!editor) {
                 return "This theme was made by hand. Edit opens its pages in the layout editor, which moves, "
-                       "resizes and changes the settings of the elements a page already has (and can copy or "
-                       "delete one); adding new elements isn't possible there yet. The first save keeps the "
-                       "original page in manage/backups, and Put back the original restores it.";
+                       "resizes and changes the settings of a page's elements, adds new ones and edits their "
+                       "animations, rewriting only what changes. The first save keeps the original page in "
+                       "manage/backups, and Put back the original restores it.";
             }
             return "";
         }

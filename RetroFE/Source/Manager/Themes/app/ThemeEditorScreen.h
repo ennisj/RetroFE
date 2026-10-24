@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "FileChooser.h"
 #include "../../ImGuiScreen.h"
 #include "../../../ThemeEditor/EditorScript.h"
 #include "../../../ThemeEditor/EditorSession.h"
@@ -101,16 +102,6 @@ private:
         std::string filter;     // image, video, text, font, sound, "" = any
         std::string title;
         std::string note;       // what happens without a file
-    };
-    // The file browser (ImGui, inside the RetroFE folder)
-    struct Browser
-    {
-        bool show = false, open = false;
-        FileRequest request;
-        std::filesystem::path dir;
-        bool listed = false;
-        std::vector<std::pair<std::string, bool>> entries;   // name, is a folder
-        std::string selected;
     };
     // A collection in the menu tree, as the Collections list shows it
     struct TreeRow
@@ -200,8 +191,9 @@ private:
     std::string jobPath_;
     bool jobAnnounced_ = false;   // a big copy's status line has been shown
 
-    // Files
-    Browser browser_;
+    // Files: the chooser (ImGui, inside the RetroFE folder) and what it's open for
+    Themes::FileChooser browser_;
+    FileRequest browserRequest_;
     std::filesystem::path lastBrowseDir_;
     std::vector<std::string> fonts_;   // the theme's fonts/*.ttf|otf
     bool fontsListed_ = false;

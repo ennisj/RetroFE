@@ -483,22 +483,61 @@ namespace ThemeEditor
             error = "save the theme '" + folder + "' before adding files to it";
             return false;
         }
+        return importIntoTheme(layoutsRoot, folder, sourcePath, subfolder, "", relOut, error);
+    }
+
+    namespace
+    {
+        // A folder inside the theme, as pages write it: "images", "collections/NES/layout"
+        // ("" for the theme folder itself when `empty` is allowed)
+        bool themeRelativeDir(const std::string& dir, bool empty)
+        {
+            if (dir.empty()) return empty;
+            const fs::path p(dir);
+            if (p.is_absolute() || p.has_root_name() || p.has_root_directory()) return false;
+            for (const fs::path& part : p) {
+                if (!themeFolderValid(part.string())) return false;
+            }
+            return true;
+        }
+    }
+
+    bool importIntoTheme(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
+                         const std::string& subfolder, const std::string& relativeTo, std::string& relOut, std::string& error)
+    {
+        relOut.clear();
+        if (!themeRelativeDir(subfolder, false)) { error = "invalid folder '" + subfolder + "'"; return false; }
+        if (!themeRelativeDir(relativeTo, true)) { error = "invalid folder '" + relativeTo + "'"; return false; }
+        if (!themeFolderValid(folder)) { error = "invalid theme folder '" + folder + "'"; return false; }
         std::error_code ec;
+        if (!fs::is_directory(fs::path(layoutsRoot) / folder, ec)) { error = "there's no theme '" + folder + "'"; return false; }
         const fs::path src(sourcePath);
         if (!fs::is_regular_file(src, ec)) { error = "not a readable file: " + sourcePath; return false; }
+        // What a page in `relativeTo` writes for a file at this path in the theme
+        auto forPage = [&relativeTo](const fs::path& inTheme) {
+            return relativeTo.empty() ? inTheme.generic_string() : inTheme.lexically_relative(fs::path(relativeTo)).generic_string();
+        };
+        std::error_code cec;
+        const fs::path theme = fs::weakly_canonical(fs::path(layoutsRoot) / folder, cec);
         {
             // Already part of the theme: pages refer to it where it is
-            std::error_code cec;
-            const fs::path theme = fs::weakly_canonical(fs::path(layoutsRoot) / folder, cec);
             const fs::path file = fs::weakly_canonical(src, cec);
             const fs::path rel = cec ? fs::path() : file.lexically_relative(theme);
             if (!rel.empty() && rel.begin()->string() != ".." && rel.begin()->string() != "." && !rel.is_absolute()) {
-                relOut = rel.generic_string();
+                relOut = forPage(rel);
                 return true;
             }
         }
-        const fs::path dir = fs::path(layoutsRoot) / folder / subfolder;
+        const fs::path dir = fs::path(layoutsRoot) / folder / fs::path(subfolder);
         fs::create_directories(dir, ec);
+        {
+            // A folder that leads out of the theme (a link) isn't written to
+            const fs::path where = fs::weakly_canonical(dir, cec).lexically_relative(theme);
+            if (cec || where.empty() || where.begin()->string() == "..") {
+                error = "'" + subfolder + "' isn't inside the theme's folder";
+                return false;
+            }
+        }
         const std::string base = safeFileName(src.filename().string());
         const size_t dot = base.find_last_of('.');
         const std::string stem = (dot == std::string::npos || dot == 0) ? base : base.substr(0, dot);
@@ -522,7 +561,7 @@ namespace ThemeEditor
             if (sameContent(src, dst)) break;   // the same file: reuse it
             name = stem + "-" + std::to_string(n) + ext;
         }
-        relOut = subfolder + "/" + name;
+        relOut = forPage(fs::path(subfolder) / name);
         return true;
     }
 
