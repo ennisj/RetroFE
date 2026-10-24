@@ -9,6 +9,16 @@ section.
 Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 **Deferred** (agreed to leave for later).
 
+## Needs your input
+
+| Item | Question |
+|------|----------|
+| [L4](#l4-fonts-and-artwork-with-unclear-licences--partly-resolved-partly-open) | Aeon Nox's panel images and `intro.mp4` have unclear licences: redraw/replace them before publishing release packages? |
+| [L7](#l7-the-packaged-settingsconf-still-says-arcades--open) | Should the upstream-style package's `settings.conf` switch from Arcades to Aeon Nox? |
+| [C1](#c1-this-fork-from-github--decided-publishing-is-open) | Publish the first GitHub release (push a version tag)? |
+| [M17](#m17-round-6-choices--decided), [M18](#m18-round-7-choices--decided) | Worth one check on a cabinet with a real RetroArch: the RetroArch settings' "Default (…)" values, and where saves are found when "in content folder" and sorting are combined. Both come from reading RetroArch's source. |
+| [M19](#m19-round-8-choices--decided) | Built-in Select/Back on an arcade USB encoder (a joystick with no SDL controller mapping) only checked by unit tests: worth trying on a cabinet. |
+
 ---
 
 ## Layout and look
