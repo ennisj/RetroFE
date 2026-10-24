@@ -872,13 +872,18 @@ void runThemeEditorTests()
         check(checkLayoutXml("<layout width=\"1\"").size() == 1, "malformed XML");
         check(checkLayoutXml("<page/>").size() == 1, "no <layout> root");
         check(checkLayoutXml("<layout/>").size() == 1, "no width/height");
-        check(issuesFor("<scrollingText src=\"a.txt\"/>").size() == 1, "<scrollingText> isn't built");
+        // Fork compat (docs/ONESAUCE-COMPAT.md): scrollingText, transform= and layout_preferred are read
+        check(issuesFor("<scrollingText src=\"a.txt\"/>").empty(), "<scrollingText> is built");
+        check(issuesFor("<scrollingText src=\"a.txt\" pauseTime=\"1\"/>").size() == 1 && issuesFor("<scrollingText/>").size() == 1,
+              "but not its pauseTime, and it needs a src");
         check(issuesFor("<reloadablePanningImage type=\"logo\"/>").size() == 1, "<reloadablePanningImage> isn't built");
         check(issuesFor("<reloadableVideo imageType=\"logo\" hwdec=\"yes\" minShowTime=\"5\" numLoops=\"0\"/>").size() == 3,
               "hwdec, minShowTime and numLoops on reloadableVideo are ignored");
-        check(issuesFor("<image src=\"a.png\" transform=\"(0, 0), (1, 1); (0, 0), (1, 0), (0, 1), (1, 1); 50\"/>").size() == 1,
-              "transform= is ignored");
-        check(issuesFor("<reloadableImage type=\"logo\" mode=\"layout_preferred\"/>").size() == 1, "layout_preferred isn't a mode");
+        check(issuesFor("<image src=\"a.png\" transform=\"(0, 0), (1, 1); (0, 0), (1, 0), (0, 1), (1, 1); 50\"/>").empty(),
+              "transform= is read");
+        check(issuesFor("<reloadableImage type=\"logo\" mode=\"layout_preferred\" textFormat=\"uppercase\"/>").empty(),
+              "layout_preferred is a mode, and textFormat is read on media");
+        check(issuesFor("<menu mode=\"layout_preferred\"><itemDefaults/></menu>").size() == 1, "but not on menus");
         check(issuesFor("<menu mode=\"system\"><itemDefaults/></menu>").size() == 1, "menus don't read system mode");
         check(issuesFor("<menu/>").size() == 1, "a menu without itemDefaults");
         check(issuesFor("<menu type=\"custom\"><itemDefaults/></menu>").size() == 1, "a custom menu without items shows nothing");

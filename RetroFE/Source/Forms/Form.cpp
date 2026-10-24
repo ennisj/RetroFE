@@ -287,7 +287,7 @@ std::unique_ptr<Form> load(const std::string& id, const std::string& layoutName)
     std::string error;
 
     if (!layoutName.empty()) {
-        std::string path = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName, "forms", id + ".xml");
+        std::string path = Utils::combinePath(Configuration::layoutsPath(), layoutName, "forms", id + ".xml");
         if (std::filesystem::exists(path)) {
             std::ifstream file(path, std::ios::binary);
             std::string xml((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

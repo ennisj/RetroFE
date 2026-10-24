@@ -90,7 +90,7 @@ bool VideoPlayback::open(Page& listPage, const std::string& layoutName, const st
     }
 
     // The layout's player page, else the built-in one (also when the layout's has no <menu>)
-    std::string folder = Utils::combinePath(Configuration::absolutePath, "layouts", layoutName);
+    std::string folder = Utils::combinePath(Configuration::layoutsPath(), layoutName);
     std::string file = layoutName.empty() ? "" : LayoutPages::playerFile(folder, source->name, layoutPage);
     Page* page = nullptr;
     CollectionInfo* list = nullptr;

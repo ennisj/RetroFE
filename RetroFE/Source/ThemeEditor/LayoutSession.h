@@ -123,10 +123,12 @@ namespace ThemeEditor
         // collections/<c>/layout/*.xml and forms/**/*.xml
         static std::vector<std::string> themePages(const std::string& themeDir);
 
-        // Opens layouts/<folder>/<page> under the RetroFE folder `root`.
+        // Opens <layouts>/<folder>/<page>: layouts is the layouts folder, or ""
+        // for layouts/ under the RetroFE folder `root` (where backups go).
         // False, with a reason, for a page outside the theme folder, one that
         // doesn't parse, or one the widget editor wrote.
-        bool open(const std::string& root, const std::string& folder, const std::string& page, std::string& error);
+        bool open(const std::string& root, const std::string& folder, const std::string& page, std::string& error,
+                  const std::string& layouts = "");
         bool isOpen() const { return open_; }
 
         const std::string& root() const { return root_; }
@@ -392,7 +394,8 @@ namespace ThemeEditor
         std::vector<int> topSelected() const;
 
         bool open_ = false;
-        std::string root_, folder_, page_;
+        std::string root_, folder_, page_, layouts_;
+        std::string layoutsDir() const;
         LayoutDoc doc_;
         std::string saved_;      // the text as it is on disk (read or last saved)
         std::map<std::string, ElementGeom> geom_;

@@ -68,7 +68,9 @@ public:
         SDL_Renderer* renderer = nullptr;
         FontCache* fontCache = nullptr;
         float scale = 1.0f;
-        std::string root;   // the RetroFE folder (layouts/ is under it)
+        std::string root;   // the RetroFE folder
+        std::string layouts;   // the layouts folder, "" for <root>/layouts (baseLayoutPath)
+        std::string layoutsDir() const { return layouts.empty() ? root + "/layouts" : layouts; }
         // Builds a collection the way RetroFE does (the caller owns it), and
         // the name of the one RetroFE shows now
         std::function<CollectionInfo*(const std::string&)> loadCollection;

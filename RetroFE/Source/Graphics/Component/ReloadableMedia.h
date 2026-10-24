@@ -37,6 +37,11 @@ public:
     void allocateGraphicsMemory() override;
     Component* findComponent(const std::string& collection, const std::string& type, const std::string& basename, std::string_view filepath, bool systemMode, bool isVideo);
     void enableTextFallback_(bool value);
+    // Fork compat (OneSauce themes): mode="layout_preferred" looks in the layout's
+    // folder first at each step, then where it would without a mode
+    void setLayoutPreferred(bool value) { layoutPreferred_ = value; }
+    // textFormat="uppercase"/"lowercase" for the text fallback
+    void setTextFormat(const std::string& format) { textFormat_ = format; }
     bool isJukeboxPlaying() override;
     void skipForward() override;
     void skipBackward() override;
@@ -60,6 +65,9 @@ private:
     bool isVideo_;
     FontManager* FfntInst_;
     bool textFallback_{ false };
+    bool layoutPreferred_{ false };
+    std::string textFormat_;
+    std::string layoutFolder(const std::string& collection, const std::string& type, bool systemMode) const;
     std::string type_;
     int displayOffset_;
     std::string imageType_;

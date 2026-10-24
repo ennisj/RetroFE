@@ -39,6 +39,7 @@ namespace Library
         // Leave empty to read them from the root's settings, as RetroFE does
         std::string baseItemPath;
         std::string baseMediaPath;
+        std::string layoutsPath;       // the layouts folder (Configuration::layoutsPath); "" = baseLayoutPath, else <root>/layouts
         std::string firstCollection;
         bool games = true;             // list every system's games (the slow part)
         bool metadata = true;          // read titles etc. from meta.db
@@ -213,7 +214,7 @@ namespace Library
     {
         std::string name;
         std::string folder;
-        bool hasLayout = false;    // layout.xml
+        bool hasLayout = false;    // layout.xml, or the page a layout.lua builds (fork compat)
         bool hasSplash = false;    // splash.xml
         int width = 0;             // from layout.xml's <layout width= height=>
         int height = 0;

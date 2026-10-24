@@ -389,6 +389,12 @@ std::string Installer::refusal(const InstalledFile& file) const
     if (root.empty() || !isInside(destination, root)) {
         return "Refusing to write outside " + file.target + ": " + file.path;
     }
+    // The layouts folder can be outside the RetroFE folder (baseLayoutPath). One
+    // that holds the RetroFE folder itself would let a theme write anywhere in it.
+    if (file.target == "layouts" && !targets_.root.empty() &&
+        (isInside(fs::path(targets_.root), root) || fs::path(targets_.root).lexically_normal() == root.lexically_normal())) {
+        return "Refusing to install layouts: the layouts folder (" + root.string() + ") holds RetroFE's own folder";
+    }
     if (isExecutableName(file.path)) {
         return "Packages may not install programs or scripts: " + file.path;
     }
