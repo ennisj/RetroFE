@@ -150,14 +150,30 @@ const char* const menuMediumForm = R"form(
   <note bind="menu:mediumFallback"/>
   <note bind="menu:mediumWhere"/>
   <value label="New files go to" bind="menu:mediumFolder"/>
+  <note bind="menu:mediumFolderNote"/>
+  <results label="In the folder" bind="menu:folderFiles" open="menu-medium-file" param="file" empty="No files of this kind." visibleWhen="menu:hasMediaFolder"/>
   <section label="Replace">
     <file label="Picture" bind="menu:newFile" hint="Not chosen yet" filter="Pictures" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="menu:isImageSlot"/>
     <file label="Video" bind="menu:newFile" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.avi;*.mkv;*.mp3;*.wav;*.flac" visibleWhen="menu:isVideoSlot"/>
     <file label="Text" bind="menu:newFile" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="menu:isTextSlot"/>
     <button label="Use this file" action="menu.replaceMedium"/>
+    <button label="Add it to the folder" action="menu.addToFolder" visibleWhen="menu:hasMediaFolder"/>
   </section>
   <button label="Clear" action="menu.clearMedium" visibleWhen="menu:canClear" confirm="Clear it? The file is kept in manage/backups."/>
+  <button label="Clear the folder" action="menu.clearFolder" visibleWhen="menu:hasMediaFolder" confirm="Clear the whole folder? Its files are kept in manage/backups."/>
   <button label="Put back the original" action="menu.restoreMedium" visibleWhen="menu:canRestore"/>
+</form>
+)form";
+
+const char* const menuMediumFileForm = R"form(
+<form id="menu-medium-file" title="Artwork" bind="menu:mediumTitle">
+  <note bind="menu:status"/>
+  <image bind="menu:folderFileImage" rows="5"/>
+  <value label="File" bind="menu:folderFileName"/>
+  <value label="In the folder" bind="menu:folderFileFolder"/>
+  <note bind="menu:folderFileNote"/>
+  <button label="Keep only this file" action="menu.keepFolderFile" confirm="Make this the only file? It's copied beside the folder, which wins; the folder's files are kept in manage/backups."/>
+  <button label="Take it out of the folder" action="menu.removeFolderFile" confirm="Take this file out of the folder? It's kept in manage/backups."/>
 </form>
 )form";
 
@@ -200,6 +216,7 @@ Forms::BuiltinTable Forms::menusForms()
         { "menu-info", menuInfoForm },
         { "menu-media", menuMediaForm },
         { "menu-medium", menuMediumForm },
+        { "menu-medium-file", menuMediumFileForm },
         { "menu-actions", menuActionsForm },
         { "menu-new", menuNewForm },
     };

@@ -119,14 +119,32 @@ const char* const mediumForm = R"(
   <value label="Shows" bind="{p}:mediumFile"/>
   <value label="From" bind="{p}:mediumWhere"/>
   <value label="New files go in" bind="{p}:mediumFolder"/>
+  <note bind="{p}:mediumFolderNote"/>
+  <results label="In the folder" bind="{p}:folderFiles" open="{p}-medium-file" param="file" empty="No files of this kind." visibleWhen="{p}:hasMediaFolder"/>
   <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Images" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="{p}:isImageSlot"/>
   <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.mkv;*.avi;*.mp3;*.wav;*.flac" visibleWhen="{p}:isVideoSlot"/>
   <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="{p}:isTextSlot"/>
   <!-- The buttons stay put (greyed out with a reason), so focus never lands on the file field above by itself -->
   <actions>
     <button label="Use this file" action="{p}.replaceMedia"/>
+    <button label="Add it to the folder" action="{p}.addToFolder" visibleWhen="{p}:hasMediaFolder"/>
     <button label="Clear" action="{p}.clearMedia" confirm="Clear this art? The file is kept in manage/backups."/>
+    <button label="Clear the folder" action="{p}.clearFolder" visibleWhen="{p}:hasMediaFolder" confirm="Clear the whole folder? Its files are kept in manage/backups."/>
     <button label="Put back the original" action="{p}.restoreMedia"/>
+  </actions>
+</form>
+)";
+
+const char* const mediumFileForm = R"(
+<form id="{p}-medium-file" title="Media" bind="{p}:screenTitle">
+  <note bind="{p}:status"/>
+  <image bind="{p}:folderFileImage" rows="6"/>
+  <value label="File" bind="{p}:folderFileName"/>
+  <value label="In the folder" bind="{p}:folderFileFolder"/>
+  <note bind="{p}:folderFileNote"/>
+  <actions>
+    <button label="Keep only this file" action="{p}.keepFolderFile" confirm="Make this the only file? It's copied beside the folder, which wins; the folder's files are kept in manage/backups."/>
+    <button label="Take it out of the folder" action="{p}.removeFolderFile" confirm="Take this file out of the folder? It's kept in manage/backups."/>
   </actions>
 </form>
 )";
@@ -216,6 +234,7 @@ const char* const templates[][2] = {
     { "-info", infoForm },
     { "-media", mediaForm },
     { "-medium", mediumForm },
+    { "-medium-file", mediumFileForm },
     { "-playlists", playlistsForm },
     { "-playlist", playlistForm },
     { "-playlist-entry", entryForm },

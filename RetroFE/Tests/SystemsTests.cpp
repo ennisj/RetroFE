@@ -363,6 +363,72 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:canRestoreMedia"), "no", "nothing more to put back");
     });
 
+    run("systems: art kept as a folder of files (OneSauce) is shown, added to, taken from and made one file", [] {
+        Fixture f("sys-media-folder");
+        const std::string art = f.root + "/collections/Arcade/system_artwork";
+        for (const char* name : { "ARCADES 1.mp4", "ARCADES 2.mp4", "ARCADES 10.mp4" }) {
+            writeFile(art + "/video/" + name, name);
+        }
+        writeFile(art + "/fanart/one.png", "png");
+        writeFile(art + "/neon/glow.png", "png");    // a folder named like no usual slot is offered too
+        f.rescan();
+        f.open("system", { { "id", "Arcade" } });
+        f.open("system-media", { { "id", "Arcade" } });
+        Forms::Rows rows = f.model.rows("system:media", 50);
+        auto row = [&](const std::string& id) {
+            for (const Forms::Row& r : rows.items) {
+                if (r.id == id) return r;
+            }
+            return Forms::Row();
+        };
+        checkEqual(row("video").detail, std::string("a folder of 3 files (one shown at random)"), "the video row");
+        check(row("neon").id == "neon", "a media folder of another name is a slot too");
+        check(contains(f.model.get("system:mediaStatus"), "3 of"), "folders count as art it has: " + f.model.get("system:mediaStatus"));
+
+        f.open("system-medium", { { "id", "Arcade" }, { "slot", "video" } });
+        checkEqual(f.model.get("system:hasMediaFolder"), "yes", "it has a folder");
+        checkEqual(f.model.get("system:hasOwnMedia"), "yes", "a folder counts as its own");
+        check(contains(f.model.get("system:mediumFile"), "a folder of 3 files"), "shows: " + f.model.get("system:mediumFile"));
+        check(contains(f.model.get("system:mediumFolderNote"), "at random"), "the note: " + f.model.get("system:mediumFolderNote"));
+        check(f.ids("system:folderFiles") == std::vector<std::string>({ "ARCADES 1.mp4", "ARCADES 2.mp4", "ARCADES 10.mp4" }),
+              "its files, in natural order");
+        check(contains(f.model.actionProblem("system.clearMedia"), "folder"), "Clear (one file) says it's a folder");
+        check(!f.model.actionProblem("system.addToFolder").empty(), "add needs a file first");
+        writeFile(f.root + "/incoming/ARCADES 3.mp4", "three");
+        f.model.set("system:mediaFile", f.root + "/incoming/ARCADES 3.mp4");
+        Forms::Model::Result added = f.model.runAction("system.addToFolder");
+        check(added.ok && !added.back && readFile(art + "/video/ARCADES 3.mp4") == "three", "added: " + added.message);
+        f.settle();
+        check(f.ids("system:folderFiles").size() == 4, "four files now");
+
+        // One file's screen: take it out
+        f.open("system-medium-file", { { "id", "Arcade" }, { "slot", "video" }, { "file", "ARCADES 2.mp4" } });
+        check(contains(f.model.get("system:folderFileNote"), "at random"), "its note: " + f.model.get("system:folderFileNote"));
+        Forms::Model::Result removed = f.model.runAction("system.removeFolderFile");
+        check(removed.ok && removed.back && !fs::exists(art + "/video/ARCADES 2.mp4"), "taken out: " + removed.message);
+        check(fs::exists(f.root + "/manage/backups/collections/Arcade/system_artwork/video/ARCADES 2.mp4"), "kept in the backups");
+        f.settle();
+        f.open("system-medium-file", { { "id", "Arcade" }, { "slot", "video" }, { "file", "ARCADES 2.mp4" } });
+        check(!f.model.actionProblem("system.removeFolderFile").empty(), "it's gone");
+
+        // Put back undoes both
+        f.open("system-medium", { { "id", "Arcade" }, { "slot", "video" } });
+        checkEqual(f.model.get("system:canRestoreMedia"), "yes", "there's something to put back");
+        check(f.model.runAction("system.restoreMedia").ok, "put back");
+        check(fs::exists(art + "/video/ARCADES 2.mp4") && !fs::exists(art + "/video/ARCADES 3.mp4"), "the folder as it was");
+        f.settle();
+
+        // Keep only one: video.mp4 beside the folder, the folder emptied
+        f.open("system-medium-file", { { "id", "Arcade" }, { "slot", "video" }, { "file", "ARCADES 10.mp4" } });
+        Forms::Model::Result kept = f.model.runAction("system.keepFolderFile");
+        check(kept.ok && kept.back && readFile(art + "/video.mp4") == "ARCADES 10.mp4" && !fs::exists(art + "/video"),
+              "one file now: " + kept.message);
+        f.settle();
+        f.open("system-medium", { { "id", "Arcade" }, { "slot", "video" } });
+        checkEqual(f.model.get("system:hasMediaFolder"), "no", "no folder any more");
+        check(contains(f.model.get("system:mediumFile"), "video.mp4"), "shows the file");
+    });
+
     run("systems: playlists and their entries", [] {
         Fixture f("sys-playlists");
         f.open("system-playlists", { { "id", "Arcade" } });

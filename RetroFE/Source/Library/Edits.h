@@ -172,6 +172,25 @@ namespace Library
         // (clearMedia removes the file).
         EditResult writeMediaText(const MediaSlot& slot, const std::string& text);
 
+        // Media folders (fork compat, MediaSlot::folder): only the slot's own
+        // folder <directory>/<basename>/ is changed, and only the files of the
+        // slot's kind directly in it; never the folder's other files. replaceMedia
+        // and clearMedia never touch a folder (a file put beside it wins).
+        // Copies file into the folder under its own name; refused when the slot
+        // has no folder or the folder already has a file of that name.
+        EditResult addMediaFolderFile(const MediaSlot& slot, const std::string& file);
+        // Moves one of the folder's files (by name) to the backups
+        EditResult removeMediaFolderFile(const MediaSlot& slot, const std::string& name);
+        // The folder becomes one file: the named file is copied beside it as
+        // <basename>.<ext> (replacing a file there, as replaceMedia), then every
+        // file of the folder goes to the backups and the emptied folder is removed
+        EditResult mediaFolderToFile(const MediaSlot& slot, const std::string& name);
+        // Every file of the folder goes to the backups; the emptied folder is removed
+        EditResult clearMediaFolder(const MediaSlot& slot);
+        // The folder's files Manage changed and that differ now: what "Put back
+        // the original" restores for the folder (also once the folder is gone)
+        std::vector<std::string> mediaFolderOriginals(const MediaSlot& slot) const;
+
         // --- Launchers ---------------------------------------------------------------
         // A new launcher is written whole, as launchers.<os>/<name>.conf (os =
         // the index's). Existing launcher files are never changed: a name

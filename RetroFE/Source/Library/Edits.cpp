@@ -1759,6 +1759,10 @@ EditResult Editor::replaceMedia(const MediaSlot& slot, const std::string& file)
     result.ok = true;
     result.files.push_back(target);
     result.message = "The " + slot.type + " is now " + fs::path(file).filename().string() + ".";
+    if (!slot.folderFiles.empty()) {
+        result.message += " It wins over the folder of " + std::to_string(slot.folderFiles.size())
+            + (slot.folderFiles.size() == 1 ? " file" : " files") + " beside it, which stays as it was.";
+    }
     return result;
 }
 
@@ -1768,6 +1772,10 @@ EditResult Editor::clearMedia(const MediaSlot& slot)
         return EditResult::fail(slot.file.empty()
             ? "There's no " + slot.type + " to clear."
             : "This shows another folder's file (" + slot.fallback + "); there's no " + slot.type + " of its own to clear.");
+    }
+    if (slot.fromFolder()) {
+        // Never a whole folder by accident: that's clearMediaFolder
+        return EditResult::fail("The " + slot.type + " is a folder of files, not one file: take files out of it, or clear the folder.");
     }
     EditResult result;
     std::string error;
@@ -1779,7 +1787,244 @@ EditResult Editor::clearMedia(const MediaSlot& slot)
     }
     result.ok = true;
     result.message = "Cleared the " + slot.type + ".";
+    if (!slot.folderFiles.empty()) {
+        result.message += " Its folder's " + std::to_string(slot.folderFiles.size())
+            + (slot.folderFiles.size() == 1 ? " file shows now." : " files show now, one at random.");
+    }
     return result;
+}
+
+// --- Media folders ------------------------------------------------------------------
+
+namespace
+{
+    std::string countFiles(size_t n)
+    {
+        return std::to_string(n) + (n == 1 ? " file" : " files");
+    }
+
+    // The slot's own media folder when it exists, else "" and why not
+    std::string ownMediaFolder(const MediaSlot& slot, std::string& problem)
+    {
+        if (!mediaFoldersApply(slot.kind) || slot.directory.empty() || slot.basename.empty()) {
+            problem = "This slot can't be a folder of files.";
+            return "";
+        }
+        std::string folder = Utils::combinePath(slot.directory, slot.basename);
+        std::error_code ec;
+        if (!fs::is_directory(folder, ec)) {
+            problem = "There's no folder " + folder + ".";
+            return "";
+        }
+        return folder;
+    }
+
+    // The folder's file of the slot's kind named name (exactly), or ""
+    std::string mediaFolderFile(const MediaSlot& slot, const std::string& name)
+    {
+        for (const std::string& file : mediaFolderFiles(slot.directory, slot.basename, slot.kind)) {
+            std::string fileName;
+            if (narrowName(fs::path(file).filename(), fileName) && fileName == name) {
+                return file;
+            }
+        }
+        return "";
+    }
+
+    // Removes folder when nothing is left in it; true when it went
+    bool removeEmptyFolder(const std::string& folder)
+    {
+        std::error_code ec;
+        return fs::is_directory(folder, ec) && fs::is_empty(folder, ec) && !ec && fs::remove(folder, ec) && !ec;
+    }
+
+    // Moves every file of the slot's kind in its folder to the backups
+    bool clearFolderFiles(Backups& backups, const MediaSlot& slot, EditResult& result, size_t& moved, std::string& error)
+    {
+        moved = 0;
+        for (const std::string& file : mediaFolderFiles(slot.directory, slot.basename, slot.kind)) {
+            if (!backups.removeKeepingOriginal(file, error)) {
+                return false;
+            }
+            result.files.push_back(file);
+            moved++;
+        }
+        return true;
+    }
+}
+
+EditResult Editor::addMediaFolderFile(const MediaSlot& slot, const std::string& file)
+{
+    std::string problem;
+    std::string folder = ownMediaFolder(slot, problem);
+    if (folder.empty()) {
+        return EditResult::fail(problem);
+    }
+    std::error_code ec;
+    if (!fs::is_regular_file(file, ec)) {
+        return EditResult::fail("Can't read " + file + ".");
+    }
+    std::string name;
+    if (!narrowName(fs::path(file).filename(), name) || name.empty() || name[0] == '.') {
+        return EditResult::fail("Pick a file whose name doesn't start with a dot.");
+    }
+    std::string extension = toLower(fs::path(name).extension().string());
+    if (!extension.empty()) {
+        extension.erase(0, 1);
+    }
+    const std::vector<std::string>& accepted = acceptedExtensions(slot.kind);
+    if (std::find(accepted.begin(), accepted.end(), extension) == accepted.end()) {
+        std::string list;
+        for (const std::string& a : accepted) {
+            list += (list.empty() ? "" : ", ") + a;
+        }
+        return EditResult::fail("Pick a " + list + " file.");
+    }
+    std::string target = Utils::combinePath(folder, name);
+    if (fs::exists(target, ec)) {
+        return EditResult::fail(fs::equivalent(file, target, ec) ? "That file is already in the folder."
+                                                                 : "The folder already has a file named " + name + ".");
+    }
+    std::string error;
+    // A file that wasn't there before is recorded as new, so a reset removes it
+    if (!backups_.beforeChange(target, error) || !copyFileAtomic(file, target, error)) {
+        return EditResult::fail(error);
+    }
+    size_t count = mediaFolderFiles(slot.directory, slot.basename, slot.kind).size();
+    std::string message = "Added " + name + " to the folder, which now has " + countFiles(count) + ".";
+    if (slot.fileBesideFolder()) {
+        message += " The file beside the folder still wins over it.";
+    }
+    return EditResult{ true, message, { target } };
+}
+
+EditResult Editor::removeMediaFolderFile(const MediaSlot& slot, const std::string& name)
+{
+    std::string problem;
+    std::string folder = ownMediaFolder(slot, problem);
+    if (folder.empty()) {
+        return EditResult::fail(problem);
+    }
+    std::string file = mediaFolderFile(slot, name);
+    if (file.empty()) {
+        return EditResult::fail("The folder has no file named " + name + ".");
+    }
+    std::string error;
+    if (!backups_.removeKeepingOriginal(file, error)) {
+        return EditResult::fail(error);
+    }
+    size_t left = mediaFolderFiles(slot.directory, slot.basename, slot.kind).size();
+    std::string message = "Took " + name + " out of the folder (it's kept in manage/backups). ";
+    if (left > 0) {
+        message += "It has " + countFiles(left) + " left.";
+    }
+    else {
+        message += removeEmptyFolder(folder) ? "It was the last one, so the empty folder was removed too."
+                                             : "It was the last one, so RetroFE no longer uses the folder.";
+    }
+    return EditResult{ true, message, { file } };
+}
+
+EditResult Editor::mediaFolderToFile(const MediaSlot& slot, const std::string& name)
+{
+    std::string problem;
+    std::string folder = ownMediaFolder(slot, problem);
+    if (folder.empty()) {
+        return EditResult::fail(problem);
+    }
+    std::string file = mediaFolderFile(slot, name);
+    if (file.empty()) {
+        return EditResult::fail("The folder has no file named " + name + ".");
+    }
+    // 1. The one file, beside the folder (it wins from now on)
+    EditResult result = replaceMedia(slot, file);
+    if (!result.ok) {
+        return result;
+    }
+    std::string single = result.files.back();
+    // 2. Every file of the folder to the backups (the chosen one is in place already)
+    size_t moved = 0;
+    std::string error;
+    if (!clearFolderFiles(backups_, slot, result, moved, error)) {
+        result.ok = false;
+        result.message = "The " + slot.type + " is now " + fs::path(single).filename().string()
+            + ", but the folder couldn't be emptied: " + error + " The file wins over the folder anyway.";
+        return result;
+    }
+    bool removed = removeEmptyFolder(folder);
+    result.message = "The " + slot.type + " is now one file, " + fs::path(single).filename().string() + " (a copy of " + name
+        + "). The folder's " + countFiles(moved) + (moved == 1 ? " is" : " are") + " kept in manage/backups"
+        + (removed ? " and the empty folder was removed." : "; the folder keeps its other files.");
+    return result;
+}
+
+EditResult Editor::clearMediaFolder(const MediaSlot& slot)
+{
+    std::string problem;
+    std::string folder = ownMediaFolder(slot, problem);
+    if (folder.empty()) {
+        return EditResult::fail(problem);
+    }
+    EditResult result;
+    size_t moved = 0;
+    std::string error;
+    if (!clearFolderFiles(backups_, slot, result, moved, error)) {
+        return EditResult{ false, error, result.files };
+    }
+    bool removed = removeEmptyFolder(folder);
+    result.ok = true;
+    result.message = moved == 0 ? "The folder had no files of this kind." : "Cleared the folder: its " + countFiles(moved)
+        + (moved == 1 ? " is" : " are") + " kept in manage/backups.";
+    result.message += removed ? " The empty folder was removed." : moved == 0 ? "" : " Its other files stay.";
+    if (slot.fileBesideFolder()) {
+        result.message += " The file beside it still shows.";
+    }
+    return result;
+}
+
+std::vector<std::string> Editor::mediaFolderOriginals(const MediaSlot& slot) const
+{
+    std::vector<std::string> live;
+    if (!mediaFoldersApply(slot.kind) || slot.directory.empty() || slot.basename.empty()) {
+        return live;
+    }
+    const std::string folder = Utils::combinePath(slot.directory, slot.basename);
+    const fs::path kept = fs::path(backups_.backupPath(Utils::combinePath(folder, "x"))).parent_path();
+    const std::vector<std::string>& accepted = acceptedExtensions(slot.kind);
+    std::error_code ec;
+    std::vector<std::string> names;
+    for (const auto& entry : fs::directory_iterator(kept, ec)) {
+        std::string name;
+        if (entry.is_regular_file(ec) && narrowName(entry.path().filename(), name) && !name.empty() && name[0] != '.') {
+            names.push_back(name);
+        }
+    }
+    auto has = [&](const std::string& name) { return std::find(names.begin(), names.end(), name) != names.end(); };
+    for (const std::string& name : names) {
+        const bool absent = name.size() > 7 && name.compare(name.size() - 7, 7, ".absent") == 0;
+        const std::string original = absent ? name.substr(0, name.size() - 7) : name;
+        const size_t dot = original.find_last_of('.');
+        if (dot == std::string::npos || std::find(accepted.begin(), accepted.end(), toLower(original.substr(dot + 1))) == accepted.end()) {
+            continue;
+        }
+        // "<name> (2).<ext>" beside "<name>.<ext>" is a kept copy (Backups), not an original
+        const std::string stem = original.substr(0, dot);
+        const size_t open = stem.rfind(" (");
+        if (!absent && open != std::string::npos && stem.back() == ')') {
+            const std::string base = stem.substr(0, open) + original.substr(dot);
+            const std::string number = stem.substr(open + 2, stem.size() - open - 3);
+            if (!number.empty() && std::all_of(number.begin(), number.end(), [](char c) { return c >= '0' && c <= '9'; })
+                && (has(base) || has(base + ".absent"))) {
+                continue;
+            }
+        }
+        const std::string path = Utils::combinePath(folder, original);
+        const bool differs = absent ? fs::exists(path, ec) : !fs::exists(path, ec) || !backups_.isOriginal(path);
+        if (differs) {
+            live.push_back(path);
+        }
+    }
+    return live;
 }
 
 // --- Launchers ----------------------------------------------------------------------

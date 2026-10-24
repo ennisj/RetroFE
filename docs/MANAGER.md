@@ -183,7 +183,8 @@ with a screen for each thing you can change:
 - **Media**: every kind of art, video and text, saying whether the game has its
   own file, shows a fallback (from its title, its parent or the collection's
   default) or has nothing. Replace one from a file, clear the game's own file
-  (a fallback can't be cleared), or put back what it had before.
+  (a fallback can't be cleared), or put back what it had before. A slot can
+  also be a [folder of files](#media-folders).
 - **Playlists and collections**: favourite on or off, add to or take out of a
   playlist, and show it in a merged collection or take it out (`<system>.sub`).
 - **Description**: the story text (`medium_artwork/story/<game>.txt`) in a
@@ -224,6 +225,35 @@ The game's screen also has:
 Every change keeps the original in `manage/backups/` first, and RetroFE shows
 it after it reloads, when you leave Manage.
 
+#### Media folders
+
+OneSauce keeps some art as a folder of interchangeable files where one file
+would be: `system_artwork/video/` holding `ARCADES 1.mp4` to `ARCADES 9.mp4`
+instead of a `video.mp4`. RetroFE shows one of them at random (removePlaylist,
+B on OneSauce's controls, moves to the next; see
+[ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md)). Every media screen (a game's Media,
+a system's or video collection's Media, a menu's artwork) shows such a slot
+as **a folder of N files (one shown at random)**, says where the folder is,
+and lists its files. From there:
+
+- **Add it to the folder** copies the file chosen in the file field into the
+  folder under its own name (a name that's taken is refused).
+- Choosing a file opens it, with **Take it out of the folder** and **Keep only
+  this file**, which copies it beside the folder as the slot's one file
+  (`video.mp4`) and empties the folder.
+- **Clear the folder** takes all its files out. A folder left empty is
+  removed; other files in it (a README) stay.
+- **Put back the original** puts the folder's files back as they were before
+  Manage changed them, and removes a file Manage put beside it.
+
+Files taken out are kept in `manage/backups`. A file beside a folder wins
+(as in RetroFE): the screen says so and marks the folder's files "not shown".
+**Use this file** puts the new file beside the folder, where it wins, and
+leaves the folder as it is; **Clear** removes only a single file, never a
+folder (clearing a file that wins over a folder shows the folder again).
+Folders count as art the slot has. Folders aren't used for text (a story),
+or in a game's own ROM folder. Menus (the scrolling list) use folders too.
+
 **Systems** and **Videos** are described [below](#systems-and-videos).
 On a bare install Manage opens by itself and says where to start.
 
@@ -257,7 +287,8 @@ systems a merged collection shows, which theme page draws it) and links to:
   marquee, device, LED marquee, video, story and any others there): preview,
   replace from a file, clear, or put back the original. When the menu that
   lists it has its own art for the entry, that's what Browse shows, and the
-  screen says so.
+  screen says so. Art kept as a [folder of files](#media-folders) is listed
+  and changed file by file.
 - **Actions**: a new menu or merged collection inside this one, and Delete.
   Only menus and merged collections that hold nothing but menus, sources,
   settings and artwork can be deleted, never the menu Browse opens. Their
@@ -309,6 +340,8 @@ the launcher in effect (and which file sets it), with a link to each part:
   device, fanart, video, story and any other file there), each with a
   preview. Replace one from a file, clear it (only its own file, never art
   shown from elsewhere), or put back what it had before Manage changed it.
+  A [folder of files](#media-folders) in `system_artwork` (OneSauce's
+  `video/`) is a slot too, with its files listed.
 - **Playlists**: create, rename and delete playlists, and add or take out
   games. `all`, `favorites` and `lastplayed` (any case) are RetroFE's own and
   are shown but not changed. RetroFE shows only playlists with games in them

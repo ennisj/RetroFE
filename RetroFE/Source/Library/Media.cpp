@@ -15,6 +15,7 @@
  */
 #include "Media.h"
 #include "Files.h"
+#include "../Graphics/LayoutCompat.h"
 #include "../Utility/Utils.h"
 #include <cctype>
 #include <filesystem>
@@ -66,7 +67,9 @@ namespace
         {
         }
 
-        void probe(const std::string& directory, const std::string& basename, const std::string& why)
+        // folders: a media folder <directory>/<basename>/ may stand for the
+        // file (not at a game's own ROM folder, as ReloadableMedia)
+        void probe(const std::string& directory, const std::string& basename, const std::string& why, bool folders = true)
         {
             if (directory.empty()) {
                 return;
@@ -76,16 +79,31 @@ namespace
                     return;
                 }
             }
-            MediaProbe probe{ directory, basename, why, "" };
+            MediaProbe probe{ directory, basename, why, "", 0 };
             findMediaFile(directory, basename, slot_.kind, probe.file);
-            if (slot_.probes.empty()) {
+            const bool first = slot_.probes.empty();
+            if (first) {
                 slot_.directory = directory;
                 slot_.basename = basename;
             }
+            // Where there's no file; and beside the slot's own file, to say both are there
+            if (folders && mediaFoldersApply(slot_.kind) && !basename.empty() && (probe.file.empty() || first)) {
+                std::vector<std::string> files = mediaFolderFiles(directory, basename, slot_.kind);
+                std::error_code ec;
+                if (first && fs::is_directory(Utils::combinePath(directory, basename), ec)) {
+                    slot_.folder = Utils::combinePath(directory, basename);
+                    slot_.folderFiles = files;
+                }
+                if (probe.file.empty() && !files.empty()) {
+                    probe.file = files.front();
+                    probe.folderFiles = files.size();
+                }
+            }
             if (!probe.file.empty() && slot_.file.empty()) {
                 slot_.file = probe.file;
-                slot_.own = slot_.probes.empty();
+                slot_.own = first;
                 slot_.fallback = slot_.own ? "" : why;
+                slot_.shownFolderFiles = probe.folderFiles;
             }
             slot_.probes.push_back(std::move(probe));
         }
@@ -121,6 +139,66 @@ bool findMediaFile(const std::string& directory, const std::string& basename, Me
         }
     }
     return false;
+}
+
+bool mediaFoldersApply(MediaKind kind)
+{
+    // ReloadableMedia (images, videos); scrolling text reads <name>.txt only
+    return kind == MediaKind::Image || kind == MediaKind::Video;
+}
+
+std::vector<std::string> mediaFolderFiles(const std::string& directory, const std::string& basename, MediaKind kind)
+{
+    if (!mediaFoldersApply(kind) || directory.empty() || basename.empty()) {
+        return {};
+    }
+    // The lists ReloadableMedia passes for folders: ImageBuilder's (with webp), VideoBuilder's
+    return LayoutCompat::mediaFolderFiles(Utils::combinePath(directory, basename),
+                                          kind == MediaKind::Image ? imageExtensions() : videoExtensions());
+}
+
+namespace
+{
+    std::string files(size_t n)
+    {
+        return std::to_string(n) + (n == 1 ? " file" : " files");
+    }
+
+    std::string nameOf(const std::string& path)
+    {
+        std::string name;
+        return narrowName(fs::path(path).filename(), name) ? name : path;
+    }
+}
+
+std::string mediaFolderNote(const MediaSlot& slot)
+{
+    if (slot.folder.empty()) {
+        return "";
+    }
+    if (slot.folderFiles.empty()) {
+        return "Its folder " + slot.folder + " holds no " + (slot.kind == MediaKind::Video ? "video" : "picture")
+            + " files, so RetroFE doesn't use it.";
+    }
+    std::string folder = "a folder of " + files(slot.folderFiles.size()) + " (" + slot.folder + ")";
+    if (slot.fileBesideFolder()) {
+        return "There's both a file, " + nameOf(slot.file) + ", and " + folder
+            + ". The file wins, so RetroFE never shows the folder's files: clear the file to show them, or clear the folder.";
+    }
+    return "This is " + folder + ", not one file: RetroFE shows one of them at random each time it comes up "
+        + "(removePlaylist, B on OneSauce's controls, moves to the next). A file named " + slot.basename
+        + " beside the folder would win over it.";
+}
+
+std::string mediaShownText(const MediaSlot& slot)
+{
+    if (slot.file.empty()) {
+        return "";
+    }
+    if (slot.fromFolder()) {
+        return "a folder of " + files(slot.shownFolderFiles) + (slot.shownFolderFiles == 1 ? "" : " (one shown at random)");
+    }
+    return nameOf(slot.file);
 }
 
 MediaKind defaultKind(const std::string& type)
@@ -195,11 +273,11 @@ MediaSlot gameMedia(const Index& index, int game, const std::string& type, Media
         builder.probe(pageFolder, basename, (page == own ? "game's collection" : "page collection") + why);
         builder.probe(ownFolder, basename, "game's collection" + why);
         if (kind != MediaKind::Text) {
-            builder.probe(record.directory, type, "game's folder");
+            builder.probe(record.directory, type, "game's folder", false);
         }
     }
     if (kind == MediaKind::Text) {
-        builder.probe(record.directory, type, "game's folder");
+        builder.probe(record.directory, type, "game's folder", false);
     }
     return slot;
 }

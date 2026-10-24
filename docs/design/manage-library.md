@@ -266,6 +266,29 @@ Matching:
   wav and flac. Text is `.txt`.
 - On Windows, any letter case matches. Elsewhere, RetroFE's listed spellings are tried.
 
+**Media folders** (fork compat, OneSauce; RetroFE's side is
+`LayoutCompat::lookupMediaStep`, see ONESAUCE-COMPAT.md). At each step where
+`<basename>.<ext>` is missing, a folder `<directory>/<basename>/` holding files
+of the slot's kind (image or video extensions, any case, any names) stands for
+it, and RetroFE shows one of its files at random. A file beside the folder
+wins. Not for text slots, and not at a game's own ROM folder (step 3 above).
+The slot then says:
+- `folder` and `folderFiles`: the slot's **own** folder (its first place), when
+  one exists, even when a file beside it wins or it holds nothing usable; its
+  files in natural order (`LayoutCompat::naturalLess`), full paths;
+- `shownFolderFiles` (`fromFolder()`): `file` is the first of a folder's files,
+  standing for RetroFE's random pick; the folder is the slot's own (`own`) or
+  a fallback's (a `default/`, the child's `system_artwork/video/`);
+- `fileBesideFolder()`: the slot's own file wins over its own folder.
+
+`mediaFolderFiles(directory, basename, kind)` lists a folder the way RetroFE
+does; `mediaShownText` and `mediaFolderNote` are the screens' sentences ("a
+folder of 9 files (one shown at random)", the file-wins warning). The folder
+check is one `is_directory` per probe that found no file (and one for the
+slot's own place), so a slot costs little more than before; a folder is
+listed only when it exists. `findMediaFile` is unchanged: it still finds only
+`<basename>.<ext>` files (Games' list thumbnails use it).
+
 ## Writing: `Library::Editor`
 
 Create one `Editor(root)` and pass it the snapshot the screen shows, which it
@@ -290,7 +313,9 @@ After a successful write, call `indexer.changed("what")`.
 | `addToPlaylist(index, collection, playlist, gameCollection, game)` / `removeFromPlaylist` | `collections/<c>/playlists/<name>.txt` | A game of another collection is written as `_<C>:<name>`. The game must be on that page. `all` and `lastplayed` are refused. An entry covered by `*` can't be removed. |
 | `createPlaylist(index, collection, name)` / `renamePlaylist(..., name, newName)` / `deletePlaylist` | `collections/<c>/playlists/<name>.txt` | `isReservedPlaylist` (= `isReservedPlaylistName`, also `PlaylistInfo::reserved`): `all`, `favorites` and `lastplayed`, any case, are refused. All the playlist calls find the file on disk, so they work before the index catches up. Names follow the file-name rules and must be new (ignoring case); a rename may change only the case. The folder is read afresh, not the index. A renamed or deleted file is kept in the backups. |
 | `addToSub(index, merged, source, game)` / `removeFromSub` | `collections/<merged>/<source>.sub` | An empty .sub already shows everything, so adding is a no-op and removing one game is refused. Removing the last entry deletes the file. |
-| `replaceMedia(slot, file)` / `clearMedia(slot)` | The slot's own folder, as `<basename>.<ext>`, with the extension lower-cased | The file kind must fit the slot. The slot's other files of that kind are moved aside. Clearing is refused when the slot only shows a fallback. Nothing is ever written into a fallback's folder. |
+| `replaceMedia(slot, file)` / `clearMedia(slot)` | The slot's own folder, as `<basename>.<ext>`, with the extension lower-cased | The file kind must fit the slot. The slot's other files of that kind are moved aside. Clearing is refused when the slot only shows a fallback. Nothing is ever written into a fallback's folder. Neither ever touches a media folder: replacing puts the file beside the slot's folder (where it wins; the message says the folder stays), and clearing is refused when the slot is a folder (`fromFolder()`); clearing a file that wins over a folder says the folder shows now. |
+| `addMediaFolderFile(slot, file)` / `removeMediaFolderFile(slot, name)` / `mediaFolderToFile(slot, name)` / `clearMediaFolder(slot)` | The slot's own media folder `<directory>/<basename>/`, only files of the slot's kind directly in it | Refused when the slot has no folder (or is text). Add copies the file in under its own name (refused when that name is there; the new file gets an `.absent` marker). Remove takes a name from the folder's listing (nothing else: no paths) to the backups. To-file copies that file beside the folder as `<basename>.<ext>` (as `replaceMedia`), then moves every file of the folder to the backups. Clear moves them all. An emptied folder is removed; other files in it (a README) stay, and so does the folder then. |
+| `mediaFolderOriginals(slot)` | (reads) | The folder's files Manage changed that differ now (an added one still there, a removed one gone), from `manage/backups/.../<basename>/`, also once the folder is gone; Backups' numbered copies are skipped. Restoring each, plus the single file's own originals, puts a folder back as it was. |
 | `addLauncher(index, NewLauncher{name, executable, arguments, currentDirectory})` | A new `launchers.<os>/<name>.conf` (os = the index's), written whole | `checkLauncherName`: a plain-ASCII file name, no `= , ; %`, at most 64 characters, not a Windows device name (the part before the first dot: `con.txt`, `aux.v2`). `checkNewLauncherName` also refuses, ignoring case, any launcher's id in any scope (RetroFE looks up local, then collection, then global launchers, so the new one would never run) and `<collection>.<x>` names, and a file of that name on disk. Values are one line without `#`. An existing launcher file is never changed. |
 | `removeLauncher(index, scope, id)` | Removes that launcher's file (global, collection or local) into the backups | Only when no system uses it as its default or an alternative and no game picks it. Refused for a collection's `launcher.<os>.conf` when a `launcher.conf` sits beside it, which would take over under the same name. |
 | `editLauncher(index, scope, id, LauncherChange{executable, arguments, currentDirectory, reboot})` | That launcher's file, in place (`ConfFile`) | Only the fields set (each `optional`). Every other line, unknown key (`LEDBlinkyEmulator`), comment and line ending stays; a new key is appended in the file's style. Empty arguments or working folder, or reboot = false, removes the line. Working folder and reboot are refused for collection and local launchers (RetroFE reads them only as `launchers.<name>.*`). Values are one line without `#`; the screen checks the program exists and the `%VARIABLES%` are RetroFE's (`Emulators::checkLauncherValues`). |
@@ -339,8 +364,11 @@ The editing primitives can be used directly for anything not covered above:
 ## How changes take effect
 
 RetroFE reads configuration, collections, metadata and media folder listings
-once and caches them. Its media file cache is never cleared, and
-`%BASE_*_PATH%` is frozen at start-up. So:
+once and caches them. Its media file caches (`Utils::findMatchingFile`'s
+folder listings and the media-folder listings, `LayoutCompat::findMediaFolderFile`)
+are cleared when it reloads (`main`'s loop, once the old `RetroFE` is gone),
+so files added or removed in Manage show after the reload; before, a new
+file name only showed after a restart. `%BASE_*_PATH%` is frozen at start-up. So:
 
 - After a write, screens call `indexer.changed()`. Manage then shows the new
   state, and `indexer.changesPending()` is true.

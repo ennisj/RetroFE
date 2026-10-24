@@ -525,6 +525,14 @@ const std::vector<MenuProvider::MediaInfo>& MenuProvider::media(const Screen& sc
     if (fs::is_directory(folder, ec)) {
         for (const auto& item : fs::directory_iterator(folder, ec)) {
             std::string name;
+            if (item.is_directory(ec) && narrowName(item.path().filename(), name) && !name.empty() && name[0] != '.') {
+                // A media folder (fork compat) holding art of the kind its name suggests
+                if (std::none_of(types.begin(), types.end(), [&](const std::string& t) { return iequals(t, name); })
+                    && !mediaFolderFiles(folder, name, defaultKind(name)).empty()) {
+                    types.push_back(name);
+                }
+                continue;
+            }
             if (!item.is_regular_file(ec) || !narrowName(item.path().filename(), name) || name.find('.') == std::string::npos
                 || name[0] == '.') {
                 continue;
@@ -550,6 +558,7 @@ const std::vector<MenuProvider::MediaInfo>& MenuProvider::media(const Screen& sc
                 info.canRestore |= services_.editor->backups().hasOriginal(
                     Utils::combinePath(info.slot.directory, info.slot.basename + "." + extension));
             }
+            info.canRestore |= !services_.editor->mediaFolderOriginals(info.slot).empty();
         }
         if (!r.parents.empty()) {
             int p = r.parents.front();
@@ -607,7 +616,7 @@ void MenuProvider::enter(const Screen& screen)
         newFile_.clear();
     }
     // Artwork may have changed on disk while another screen was open
-    if (screen.form == "menu" || screen.form == "menu-media" || screen.form == "menu-medium") {
+    if (screen.form == "menu" || screen.form == "menu-media" || screen.form == "menu-medium" || screen.form == "menu-medium-file") {
         mediaKey_.clear();
     }
 }
@@ -917,12 +926,28 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     // menu-medium
     if (key == "mediumTitle" || key == "mediumImage" || key == "mediumFile" || key == "mediumFolder" || key == "mediumWhere"
         || key == "mediumText" || key == "isImageSlot" || key == "isVideoSlot" || key == "isTextSlot" || key == "canClear"
-        || key == "canRestore" || key == "mediumFallback") {
+        || key == "canRestore" || key == "mediumFallback" || key == "mediumFolderNote" || key == "hasMediaFolder"
+        || key.rfind("folderFile", 0) == 0) {
         const MediaInfo* m = medium(screen);
         if (!m) {
-            return key.rfind("is", 0) == 0 || key.rfind("can", 0) == 0 ? "no" : "";
+            return key.rfind("is", 0) == 0 || key.rfind("can", 0) == 0 || key.rfind("has", 0) == 0 ? "no" : "";
         }
         const MediaSlot& slot = m->slot;
+        if (key.rfind("folderFile", 0) == 0) {
+            // One file of the slot's media folder (param file)
+            std::string name = screen.param("file");
+            std::string file = slot.folder.empty() ? "" : Utils::combinePath(slot.folder, name);
+            bool there = std::find(slot.folderFiles.begin(), slot.folderFiles.end(), file) != slot.folderFiles.end();
+            if (key == "folderFileName") return name;
+            if (key == "folderFileFolder") return slot.folder;
+            if (key == "folderFileImage") return there && slot.kind == MediaKind::Image ? file : "";
+            if (key == "folderFileNote") {
+                if (!there) return "This file isn't in the folder any more.";
+                if (slot.fileBesideFolder()) return "A file beside the folder (" + fileName(slot.file) + ") wins, so RetroFE doesn't show this one.";
+                return "One of the folder's " + std::to_string(slot.folderFiles.size()) + " files: RetroFE shows one of them at random.";
+            }
+            return "";
+        }
         if (key == "mediumTitle") {
             return slotLabel(slot.type) + " of " + r->name;
         }
@@ -930,7 +955,18 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
             return slot.kind == MediaKind::Image ? slot.file : "";
         }
         if (key == "mediumFile") {
-            return slot.file.empty() ? "None" : slot.file;
+            if (slot.file.empty()) return "None";
+            if (!slot.fromFolder()) return slot.file;
+            // (the folder's path is in the note below, or the fallback's here)
+            std::string shown = mediaShownText(slot);
+            shown[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(shown[0])));
+            return slot.own ? shown : shown + ", in " + fs::path(slot.file).parent_path().string();
+        }
+        if (key == "mediumFolderNote") {
+            return mediaFolderNote(slot);
+        }
+        if (key == "hasMediaFolder") {
+            return yesNo(!slot.folder.empty());
         }
         if (key == "mediumFolder") {
             return slot.directory.empty() ? "" : Utils::combinePath(slot.directory, slot.basename + ".*");
@@ -954,7 +990,7 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
             return yesNo(slot.kind == MediaKind::Text);
         }
         if (key == "canClear") {
-            return yesNo(slot.own);
+            return yesNo(slot.own && !slot.fromFolder());
         }
         return yesNo(m->canRestore);
     }
@@ -1101,7 +1137,7 @@ Forms::Rows MenuProvider::rows(const std::string& key, size_t limit, const Scree
             Forms::Row row;
             row.id = info.slot.type;
             row.label = slotLabel(info.slot.type);
-            row.detail = info.slot.own ? fileName(info.slot.file)
+            row.detail = info.slot.own ? mediaShownText(info.slot)
                        : info.slot.file.empty() ? "none" : "from " + info.slot.fallback;
             if (!info.shownInstead.empty()) {
                 row.detail += " (the menu's own is shown)";
@@ -1110,6 +1146,19 @@ Forms::Rows MenuProvider::rows(const std::string& key, size_t limit, const Scree
                 row.image = info.slot.file;
             }
             row.params["id"] = r.name;
+            take(row);
+        }
+    }
+    else if (key == "folderFiles") {
+        // The files of the slot's own media folder, each opening its screen
+        const MediaInfo* m = medium(screen);
+        for (size_t i = 0; m && i < m->slot.folderFiles.size(); i++) {
+            Forms::Row row;
+            row.id = fileName(m->slot.folderFiles[i]);
+            row.label = row.id;
+            row.detail = m->slot.fileBesideFolder() ? "not shown" : "";
+            row.image = m->slot.kind == MediaKind::Image ? m->slot.folderFiles[i] : "";
+            row.params = { { "id", r.name }, { "type", m->slot.type } };
             take(row);
         }
     }
@@ -1181,7 +1230,7 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
     static const std::vector<std::string> known = {
         "addEntry", "moveUp", "moveDown", "removeEntry", "respell", "openEntry", "addSource", "removeSource",
         "save", "reset", "replaceMedium", "clearMedium", "restoreMedium", "create", "delete", "openSystem", "openVia",
-        "respellSource", "retry",
+        "respellSource", "retry", "addToFolder", "clearFolder", "removeFolderFile", "keepFolderFile",
     };
     if (std::find(known.begin(), known.end(), action) == known.end()) {
         return Provider::actionProblem(action, screen);
@@ -1296,9 +1345,30 @@ std::string MenuProvider::actionProblem(const std::string& action, const Screen&
             return newMediumFile(screen).empty() ? "Choose a file first." : "";
         }
         if (action == "clearMedium") {
+            if (m->slot.own && m->slot.fromFolder()) {
+                return "It's a folder of files, not one file: take files out of it, or clear the folder.";
+            }
             return m->slot.own ? "" : m->slot.file.empty() ? "There's nothing to clear." : "It shows " + m->slot.fallback + "'s file; there's none of its own to clear.";
         }
         return m->canRestore ? "" : "Nothing here was changed from Manage.";
+    }
+    if (action == "addToFolder" || action == "clearFolder" || action == "removeFolderFile" || action == "keepFolderFile") {
+        const MediaInfo* m = medium(screen);
+        if (!m) {
+            return "There's no such artwork slot.";
+        }
+        if (m->slot.folder.empty()) {
+            return "It has no folder of files.";
+        }
+        if (action == "addToFolder") {
+            return newMediumFile(screen).empty() ? "Choose a file first." : "";
+        }
+        if (action == "clearFolder") {
+            return "";
+        }
+        std::string file = Utils::combinePath(m->slot.folder, screen.param("file"));
+        return std::find(m->slot.folderFiles.begin(), m->slot.folderFiles.end(), file) == m->slot.folderFiles.end()
+            ? "This file isn't in the folder any more." : "";
     }
     if (action == "delete") {
         return deleteProblem(r->name);
@@ -1503,7 +1573,27 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
             }
             all.files.push_back(file);
         }
+        // and its media folder's files (fork compat)
+        for (const std::string& file : all.ok ? editor.mediaFolderOriginals(slot) : std::vector<std::string>()) {
+            EditResult edit = editor.restoreOriginal(file);
+            if (!edit.ok) {
+                all = edit;
+                break;
+            }
+            all.files.push_back(file);
+        }
         return finish(all, "menu artwork");
+    }
+    if (action == "addToFolder" || action == "clearFolder" || action == "removeFolderFile" || action == "keepFolderFile") {
+        MediaSlot slot = medium(screen)->slot;
+        EditResult edit = action == "addToFolder" ? editor.addMediaFolderFile(slot, newMediumFile(screen))
+                        : action == "clearFolder" ? editor.clearMediaFolder(slot)
+                        : action == "removeFolderFile" ? editor.removeMediaFolderFile(slot, screen.param("file"))
+                        : editor.mediaFolderToFile(slot, screen.param("file"));
+        result = finish(edit, "menu artwork");
+        // From one of the folder's files, back to the slot's screen
+        result.back = result.ok && (action == "removeFolderFile" || action == "keepFolderFile");
+        return result;
     }
     if (action == "delete") {
         std::string folder = record(screen)->name;

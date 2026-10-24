@@ -59,8 +59,10 @@ namespace Library
         // Keeps a numbered copy of path unless it's identical to its kept original
         bool keepIfChanged(const std::string& path, std::string& error);
 
-    private:
+        // True when an original is kept and path is byte for byte the same
         bool isOriginal(const std::string& path) const;
+
+    private:
         std::string numberedCopyPath(const std::string& path) const;
 
         std::string root_;

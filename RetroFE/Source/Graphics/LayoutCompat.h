@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -92,6 +93,18 @@ namespace LayoutCompat
     // once per extension list (pass the caller's static list).
     bool findMediaFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
                              const std::string& current, bool another, unsigned random, std::string& file);
+
+    // Forgets those caches (and nothing else), so folders and files added or
+    // removed since show up: RetroFE's reload calls it with Utils::clearFileCache
+    void clearMediaFolderCache();
+
+    // Menu (scrolling list) art from a media folder, asked where the builders
+    // found no <prefix>.<ext> file: findMediaFolderFile's random file, kept in
+    // picks (the list's own, by prefix) so an item keeps its picture while
+    // the list scrolls and builds it again, and items sharing a folder (a
+    // "default/") show the same file, as with one file. Only hits are kept.
+    bool menuFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
+                        std::map<std::string, std::string>& picks, unsigned random, std::string& file);
 
     // RetroFE's lookup of <prefix>.<ext> (Utils::findMatchingFile, unchanged
     // when such a file exists), else findMediaFolderFile.

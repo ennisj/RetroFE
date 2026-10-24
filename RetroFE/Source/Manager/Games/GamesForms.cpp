@@ -135,6 +135,9 @@ const char* const mediaSlotForm = R"(
   <value label="Status" bind="game:slot:status"/>
   <value label="Shows" bind="game:slot:file"/>
   <value label="Its own file" bind="game:slot:place"/>
+  <note bind="game:slot:folderNote"/>
+  <results label="In the folder" bind="game:slot:folderFiles" open="game-media-folder-file" param="file"
+           empty="No files of this kind." visibleWhen="game:slot:hasFolder"/>
   <note bind="game:slot:text"/>
   <file label="Replace from a file" bind="game:slot:newFile" hint="Not chosen yet" visibleWhen="game:slot:isImage"
         filter="Images" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp"/>
@@ -144,9 +147,28 @@ const char* const mediaSlotForm = R"(
         filter="Text" pattern="*.txt"/>
   <actions>
     <button label="Use this file" action="game.replaceMedia"/>
+    <button label="Add it to the folder" action="game.addToFolder" visibleWhen="game:slot:hasFolder"/>
     <button label="Clear" action="game.clearMedia" confirm="Clear it? The file is kept in manage/backups."/>
+    <button label="Clear the folder" action="game.clearFolder" visibleWhen="game:slot:hasFolder"
+            confirm="Clear the whole folder? Its files are kept in manage/backups."/>
     <button label="Put back the original" action="game.restoreMedia" visibleWhen="game:slot:hasOriginal"
-            confirm="Put back the file it had before Manage changed it?"/>
+            confirm="Put back the files it had before Manage changed it?"/>
+  </actions>
+</form>
+)";
+
+// One file of a slot's media folder (params type, file)
+const char* const mediaFolderFileForm = R"(
+<form id="game-media-folder-file" title="Media" bind="game:screenTitle">
+  <image bind="game:folderFile:image" rows="7"/>
+  <value label="File" bind="game:folderFile:name"/>
+  <value label="In the folder" bind="game:folderFile:folder"/>
+  <note bind="game:folderFile:note"/>
+  <actions>
+    <button label="Keep only this file" action="game.keepFolderFile"
+            confirm="Make this the only file? It's copied beside the folder, which wins; the folder's files are kept in manage/backups."/>
+    <button label="Take it out of the folder" action="game.removeFolderFile"
+            confirm="Take this file out of the folder? It's kept in manage/backups."/>
   </actions>
 </form>
 )";
@@ -255,6 +277,7 @@ Forms::BuiltinTable Forms::gamesForms()
         { "game-launcher", launcherForm },
         { "game-media", mediaForm },
         { "game-media-slot", mediaSlotForm },
+        { "game-media-folder-file", mediaFolderFileForm },
         { "game-playlists", playlistsForm },
         { "game-description", descriptionForm },
         { "game-saves", savesForm },

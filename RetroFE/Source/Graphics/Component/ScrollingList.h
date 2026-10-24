@@ -16,6 +16,8 @@
 #pragma once
 
 
+#include <map>
+#include <string>
 #include <vector>
 #include "Component.h"
 #include "../Animate/Tween.h"
@@ -132,6 +134,11 @@ public:
 
     bool allocateTexture(size_t index, const Item* i);
     void buildPaths(std::string& imagePath, std::string& videoPath, const std::string& base, const std::string& subPath, const std::string& mediaType, const std::string& videoType);
+    // The builders' <path>/<name>.<ext>, else (fork compat) a file of the
+    // media folder <path>/<name>/, the same one each time for this list
+    Component* createVideoOrFolder(const std::string& path, const std::string& name);
+    Component* createImageOrFolder(const std::string& path, const std::string& name);
+    std::map<std::string, std::string> folderPicks_;   // LayoutCompat::menuFolderFile
     void deallocateTexture(size_t index);
     void setItems(std::vector<Item*>* items);
     void selectItemByName(std::string_view name);

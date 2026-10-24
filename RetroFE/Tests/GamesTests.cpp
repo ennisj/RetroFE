@@ -402,6 +402,58 @@ static void runGamesTests()
         checkEqual(f.model.get("game:slot:status"), "Missing", "slot looked up again");
     });
 
+    run("games: a media slot kept as a folder of files (OneSauce)", [] {
+        std::string root = makeInstall("games-media-folder");
+        const std::string videos = root + "/collections/Arcade/medium_artwork/video/a";
+        writeFile(videos + "/a_1.mp4", "one");
+        writeFile(videos + "/a_2.mp4", "two");
+        writeFile(root + "/collections/Arcade/medium_artwork/logo/a/other.png", "png");   // beside a.png, which wins
+        Fixture f(root);
+        f.open("game-media", gameParams("Arcade", "a"));
+        Forms::Rows rows = f.model.rows("game:media", 100);
+        auto video = std::find_if(rows.items.begin(), rows.items.end(), [](const Forms::Row& r) { return r.id == "video"; });
+        check(video != rows.items.end() && video->detail == "Own folder (2)", "the video row: "
+              + (video != rows.items.end() ? video->detail : std::string()));
+
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" } });
+        checkEqual(f.model.get("game:slot:status"), "Its own folder: a folder of 2 files (one shown at random)", "status");
+        checkEqual(f.model.get("game:slot:hasFolder"), "yes", "it has a folder");
+        checkEqual(f.model.get("game:slot:canClear"), "no", "not one file to clear");
+        check(f.model.actionProblem("game.clearMedia").find("folder") != std::string::npos, "Clear says it's a folder");
+        Forms::Rows files = f.model.rows("game:slot:folderFiles", 100);
+        check(rowIds(files) == std::vector<std::string>({ "a_1.mp4", "a_2.mp4" }), "its files");
+        if (!files.items.empty()) {
+            Forms::Field results;
+            results.param = "file";
+            Forms::Params opened = Forms::rowParams(results, files.items[0]);
+            check(opened["file"] == "a_1.mp4" && opened["type"] == "video" && opened["id"] == "a" && opened["collection"] == "Arcade",
+                  "a file opens with the game and slot");
+        }
+
+        // Take one out, from its own screen
+        f.open("game-media-folder-file", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" }, { "file", "a_2.mp4" } });
+        check(f.model.get("game:folderFile:note").find("at random") != std::string::npos, "its note");
+        Forms::Model::Result removed = f.model.runAction("game.removeFolderFile");
+        check(removed.ok && removed.back && !fs::exists(videos + "/a_2.mp4"), "taken out: " + removed.message);
+        f.settle();
+
+        // The slot screen: put it back
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" } });
+        checkEqual(f.model.get("game:slot:hasOriginal"), "yes", "the removed file can be put back");
+        check(f.model.runAction("game.restoreMedia").ok && fs::exists(videos + "/a_2.mp4"), "put back");
+        f.settle();
+
+        // A file beside the folder wins, and the screen says so
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "a" }, { "type", "logo" } });
+        checkEqual(f.model.get("game:slot:status"), "Its own file (it wins over the folder beside it)", "logo status");
+        check(f.model.get("game:slot:folderNote").find("The file wins") != std::string::npos, "the note: " + f.model.get("game:slot:folderNote"));
+        Forms::Rows logos = f.model.rows("game:slot:folderFiles", 100);
+        check(logos.items.size() == 1 && logos.items[0].detail == "not shown", "the folder's file isn't shown");
+        Forms::Model::Result cleared = f.model.runAction("game.clearFolder");
+        check(cleared.ok && !fs::exists(root + "/collections/Arcade/medium_artwork/logo/a")
+              && fs::exists(root + "/collections/Arcade/medium_artwork/logo/a.png"), "folder cleared, file kept: " + cleared.message);
+    });
+
     run("games: favourites, playlists and merged collections", [] {
         std::string root = makeInstall("games-playlists");
         Fixture f(root);

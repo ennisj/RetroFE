@@ -147,6 +147,11 @@ bool Utils::isFileInCache(const std::filesystem::path& baseDir, const std::strin
 
 
 
+void Utils::clearFileCache() {
+    fileCache.clear();
+    nonExistingDirectories.clear();
+}
+
 bool Utils::isFileCachePopulated(const std::filesystem::path& baseDir) {
     return fileCache.find(baseDir) != fileCache.end();
 }
