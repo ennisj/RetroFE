@@ -248,6 +248,18 @@ static Test::Suite editorSelection("editor selection", [] {
         held.press();
         held.cancel();
         check(!held.release(false), "cancelled (a dialog opened)");
+        // One add per press: a held direction's repeats are swallowed, but still count as used
+        held.press();
+        check(held.combine(false) && !held.combine(true) && !held.combine(true), "the press acts, its repeats don't");
+        check(!held.release(false), "and letting go doesn't act either");
+        held.press();
+        check(!held.combine(true), "a repeat alone doesn't act");
+        check(!held.release(false), "but Select doesn't act after it either");
+        // A second press while armed keeps what was done
+        held.press();
+        held.combine(false);
+        held.press();
+        check(!held.release(false), "used survives a second press");
     });
 
     Test::run("widget editor: several widgets at once", [] {
@@ -414,6 +426,44 @@ static Test::Suite editorSelection("editor selection", [] {
         check(s.duplicateSelected() && s.doc().find("menu[1]/itemDefaults[0]") > 0 && s.doc().find("menu[0]/itemDefaults[1]") < 0,
               "the menu is copied once, its defaults inside it");
         s.undo();
+        feed(s);
+
+        // Delete: a parent and its child selected, an unselected sibling between, another selected one before
+        s.setSelection({ s.doc().find("image[1]"), s.doc().find("menu[0]/itemDefaults[0]"), s.doc().find("menu[0]") });
+        check(s.deleteSelected(), "deleted");
+        check(s.doc().find("image[1]") < 0 && s.doc().find("menu[0]") < 0 && s.doc().find("image[0]") > 0 && s.doc().find("text[0]") > 0,
+              "the image and the menu (with its defaults) are gone; the text between stays");
+        check(attr(s, "text[0]", "value") == "c" && s.text().find("<!-- three boxes -->") != std::string::npos, "the rest as it was");
+        check(s.undo() && s.text() == PAGE, "one undo gives the bytes back");
+        feed(s);
+
+        // The selection changed: the next nudge is a step of its own, not merged into the group's
+        s.setSelection({ s.doc().find("image[0]"), s.doc().find("text[0]") });
+        check(s.moveBy(5, 0), "a group nudge");
+        s.toggleSelected(s.doc().find("image[0]"));   // the same primary, a smaller set
+        check(s.moveBy(5, 0), "a nudge of what's left");
+        check(s.undo() && attr(s, "text[0]", "x") == "905" && attr(s, "image[0]", "x") == "105", "undo takes only the second back");
+        check(s.undo() && s.text() == PAGE, "then the first");
+    });
+
+    Test::run("layout editor: duplicating several on one line", [] {
+        const std::string root = makeRoot("selection_inline");
+        const std::string page = "<layout width=\"1920\" height=\"1080\"><image src=\"a.png\"/><image src=\"b.png\"/></layout>";
+        writeFile(root + "/layouts/Hand/layout.xml", page);
+        LayoutSession s;
+        std::string error;
+        check(s.open(root, "Hand", "layout.xml", error), "open: " + error);
+        s.setSelection({ s.doc().find("image[0]"), s.doc().find("image[1]") });
+        check(s.duplicateSelected(), "duplicated");
+        checkEqual(s.text(), "<layout width=\"1920\" height=\"1080\"><image src=\"a.png\"/> <image src=\"a.png\"/><image src=\"b.png\"/> <image src=\"b.png\"/></layout>",
+                   "each copy right after its original, inline");
+        std::vector<std::string> paths;
+        for (int i : s.selection()) paths.push_back(s.element(i).path);
+        check(paths == std::vector<std::string>({ "image[1]", "image[3]" }) && attr(s, "image[1]", "src") == "a.png" && attr(s, "image[3]", "src") == "b.png",
+              "the copies are selected");
+        check(s.deleteSelected() && s.doc().find("image[1]") > 0 && s.doc().find("image[2]") < 0 && attr(s, "image[1]", "src") == "b.png",
+              "deleting the copies leaves the two originals");
+        check(s.undo() && s.undo() && s.text() == page, "and undo gives the bytes back");
     });
 
     Test::run("layout editor: the mouse with several, and linked steps", [] {

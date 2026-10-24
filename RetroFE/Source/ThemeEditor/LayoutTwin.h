@@ -21,12 +21,16 @@
 // together: an edit on one page is copied to the same element on the other,
 // as text, changing only those bytes there too.
 //
-//   - Which element is "the same": the one at the same path with the same
-//     tag and the same identifying attributes (type, imageType, src, id,
-//     location, index, selected, a text's value), else the only element of
-//     that tag and those attributes on the other page (or the same one of
-//     several, counted in order). An event's steps and changes follow their
-//     element. No match, no copy.
+//   - Which element is "the same": it's looked for under its parent's match
+//     (the page, the same menu). A menu's items by their offset from the
+//     selected="true" item (a 9-item wheel and a 7-item one pair up around
+//     the middle; the outer ones have no counterpart), or by index= for a
+//     vertical menu's. Anything else: the one in the same place among as
+//     many siblings of its tag, with the same identifying attributes (type,
+//     imageType, src, id, location, index, selected, a text's value); else
+//     the only one with those (or the same one of as many); else the one in
+//     the same place among as many that differs only by src / value. An
+//     event's steps and changes follow their element. No match, no copy.
 //   - What is copied: attribute changes only. A position or size (x, y,
 //     xOffset, yOffset, width, height, maxWidth, maxHeight) set to a number
 //     moves there by the same amount, scaled to that page's size and
@@ -44,6 +48,7 @@
 // Pure: no filesystem. LayoutSession holds each page.
 
 #include "LayoutText.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -77,10 +82,27 @@ namespace ThemeEditor
         int applied = 0;                    // attributes changed there
         std::vector<std::string> skipped;   // what wasn't copied, and why
     };
+    // Where a scaled position or size started on both pages, so a run of
+    // separate edits (ten 1-unit nudges, each its own step) is scaled as one
+    // move and not rounded step by step: the other page gets its value then
+    // plus the whole move since, scaled. `expect` is what the other page's
+    // value is taken to be (as the copy before this step left it; written is
+    // what the latest copy wrote); when it isn't that (it was changed there),
+    // the origin starts again from the values as they are.
+    struct TwinOrigin
+    {
+        std::string here, there;     // the values on both pages when it started
+        std::string expect, written;
+    };
+    // By element path (on this page) and attribute name
+    using TwinOrigins = std::map<std::string, TwinOrigin>;
+
     // Copies `changes`, made on a page whose text was `before` (its design
-    // size thisW x thisH), to `twin` (twinW x twinH)
+    // size thisW x thisH), to `twin` (twinW x twinH). With `origins`, scaled
+    // values are worked out from where they started and the origins kept up
+    // to date.
     MirrorResult mirrorChanges(const LayoutDoc& before, const std::vector<AttrChange>& changes, const LayoutDoc& twin,
-                               int thisW, int thisH, int twinW, int twinH);
+                               int thisW, int thisH, int twinW, int twinH, TwinOrigins* origins = nullptr);
 
     // The page's design width or height: its <layout>'s, when that's a number, else `fallback`
     int designSize(const LayoutDoc& doc, bool width, int fallback);
@@ -94,7 +116,9 @@ namespace ThemeEditor
         unsigned step = 0;      // its undo step then (LayoutSession::undoId)
         std::string stepBase;   // its text before that step's copy began
         unsigned links = 0;     // link numbers handed out
-        // Nothing to copy from here on (after an undo, a switch, opening a page)
+        TwinOrigins origins;    // where scaled values started (mirrorChanges)
+        // Nothing to copy from here on (after an undo, a switch, opening a
+        // page); the origins go too
         void reset(const LayoutSession& here);
     };
     enum class TwinCopy { Nothing, Copied, Structure };
@@ -105,4 +129,9 @@ namespace ThemeEditor
     // in-between values (a field typed empty, each nudge's rounding) don't
     // add up. Structure: elements came or went, nothing was copied.
     TwinCopy syncTwinPages(LayoutSession& here, LayoutSession& there, TwinSync& state, MirrorResult& result);
+    // A linked step that fell off the bottom of one page's history (UNDO_LIMIT)
+    // takes the other page's history up to its half with it, so Undo never
+    // reaches a step on one page whose other half is gone. syncTwinPages does
+    // this too.
+    void pairEvictions(LayoutSession& a, LayoutSession& b);
 }

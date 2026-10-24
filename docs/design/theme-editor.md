@@ -1220,8 +1220,54 @@ review's fix (a step copied as a whole), a Debug build (ImGui's asserts on)
 ran the same layout script through without an assert, then held Select added
 an element and a controller Move of the two was copied to the 4:3 page.
 
+### After the adversarial review (cfcd9c1f)
+
+- **Matching (high, found on shipped data).** A same-path element with the
+  same tag and identity was trusted even when the counts differed; a plain
+  `<item>`'s identity is just "item", and Aeon Nox's Home, `_menu` and
+  Catalog wheels have 9 items on the 16:9 page (the 5th selected) and 7 on
+  the 4:3 one (the 4th), so `item[5]` matched the 4:3 `item[5]`, a slot
+  further out. Now an element is looked for under its parent's match:
+  menu items by their offset from the `selected="true"` item (none past the
+  other wheel's ends; `index=` for a vertical menu's; by place only when
+  there's no selected item and the counts agree); anything else by its
+  place only when the parent has as many alike siblings there, else the
+  only (or n-th of as many) with the same identity, else (a weaker tier)
+  the same place differing only by `src` / `value`, so an element whose art
+  differs on the 4:3 page, or whose `src` edit wasn't copied, isn't lost.
+  The shipped-pages test covers `layout.xml` and the Home, `_menu` and
+  Catalog pairs: every element matches its own, items by offset, none in a
+  wrong slot.
+- **Rounding across steps (medium).** Each separate nudge was scaled and
+  rounded on its own (+1 per 1-unit nudge on a smaller page). `TwinSync`
+  now keeps, per element and attribute, where a scaled value started on
+  both pages (`TwinOrigin`); the other page gets its start plus the whole
+  move since, scaled, while its value is still what the last copy wrote
+  (else it starts again from the values as they are). Undo, switching and
+  opening pages clear the origins.
+- **Undo in step (medium).** Each page dropped its oldest step past
+  `UNDO_LIMIT` on its own, so a linked step could survive on one page only;
+  now a linked step leaving one history takes the other's history up to its
+  half (`pairEvictions`). When Undo here finds the other page's linked step
+  isn't next (that page was changed on its own since), it undoes here only
+  and says so in the status line.
+- **Low:** a new set selected in the layout editor ends the coalescing run
+  (a nudge after dropping one from a group was merged into the group's
+  step); held Select + a direction adds one per press (the direction's
+  90 ms repeats are swallowed), and a second Select press while armed keeps
+  what was done.
+- Tests added: the wheels and shipped pairs, the weaker tier, ten separate
+  nudges (+8 on 1920 -> 1600), a change made by hand on the other page,
+  history eviction in pairs, the selection ending a run, held-Select
+  repeats, deleting a parent, its child and another element with a sibling
+  between, duplicating two elements that share a line with no space
+  between.
+
 ### Left for later
 
+- Deleting an element that shares its line leaves the space a duplicate
+  put before it (`withoutElement` removes only the element's own text), so
+  delete after duplicate isn't byte-identical inline; Undo is.
 - Editing an attribute of every selected element at once in the panel
   (layer, alpha, font).
 - Aligning to the primary, and alignment guides while dragging.

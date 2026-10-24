@@ -162,6 +162,104 @@ static Test::Suite layoutTwin("layout twin pages", [] {
               "every element of Aeon Nox's page matches its 4:3 twin (" + std::to_string(matched) + " of " + std::to_string(wide.elements.size()) + ")");
     });
 
+    Test::run("twin pages: a wheel's items pair up around the selected one", [] {
+        // 9 items on the wide page (the 5th selected), 7 on the narrow one (the 4th)
+        auto wheel = [](int n, int selected) {
+            std::string s = "<layout width=\"1920\" height=\"1080\">\n  <menu type=\"custom\">\n    <itemDefaults x=\"center\"/>\n";
+            for (int i = 0; i < n; ++i) {
+                s += "    <item xOffset=\"" + std::to_string((i - selected) * 100) + "\"" + (i == selected ? " selected=\"true\"" : "") +
+                     "><onEnter><set duration=\".1\"><animate type=\"alpha\" to=\"1\"/></set></onEnter></item>\n";
+            }
+            return s + "  </menu>\n</layout>\n";
+        };
+        const LayoutDoc a = parse(wheel(9, 4)), b = parse(wheel(7, 3));
+        auto m = [&](const std::string& path) {
+            const int j = matchElement(a, a.find(path), b);
+            return j < 0 ? std::string("none") : b.elements[j].path;
+        };
+        checkEqual(m("menu[0]/item[4]"), "menu[0]/item[3]", "the selected one");
+        checkEqual(m("menu[0]/item[5]"), "menu[0]/item[4]", "the one after it");
+        checkEqual(m("menu[0]/item[2]"), "menu[0]/item[1]", "two before it");
+        checkEqual(m("menu[0]/item[0]"), "none", "the outermost has no counterpart");
+        checkEqual(m("menu[0]/item[8]"), "none", "on either side");
+        checkEqual(m("menu[0]/item[6]/onEnter[0]/set[0]/animate[0]"), "menu[0]/item[5]/onEnter[0]/set[0]/animate[0]", "its animations follow it");
+        checkEqual(m("menu[0]/itemDefaults[0]"), "menu[0]/itemDefaults[0]", "the defaults");
+        // A vertical menu's items go by their index=
+        const LayoutDoc v1 = parse("<layout><menu><itemDefaults/><item index=\"0\"/><item index=\"2\"/></menu></layout>");
+        const LayoutDoc v2 = parse("<layout><menu><itemDefaults/><item index=\"2\"/></menu></layout>");
+        check(matchElement(v1, v1.find("menu[0]/item[1]"), v2) == v2.find("menu[0]/item[0]") && matchElement(v1, v1.find("menu[0]/item[0]"), v2) == -1,
+              "by index");
+        // Without a selected item, only when there are as many
+        const LayoutDoc n1 = parse("<layout><menu><item x=\"1\"/><item x=\"2\"/></menu></layout>");
+        const LayoutDoc n2 = parse("<layout><menu><item x=\"5\"/><item x=\"6\"/><item x=\"7\"/></menu></layout>");
+        check(matchElement(n1, n1.find("menu[0]/item[1]"), n2) == -1 && matchElement(n1, n1.find("menu[0]/item[1]"), n1) == n1.find("menu[0]/item[1]"),
+              "no selected item and different counts: no match");
+        // More generally a place isn't trusted when the counts differ
+        const LayoutDoc c1 = parse("<layout><container/><container/></layout>");
+        const LayoutDoc c2 = parse("<layout><container/><container/><container/></layout>");
+        check(matchElement(c1, c1.find("container[1]"), c2) == -1, "two alike against three: can't tell");
+        // Another file in the same place (a skipped src edit, or the page's own art) is still the same element
+        const std::string otherArt = set(NARROW, "image[1]", "src", "images/wall-43.png");
+        const LayoutDoc w = parse(WIDE), o = parse(otherArt);
+        check(matchElement(w, w.find("image[1]"), o) == o.find("image[1]"), "same place, same tag, as many: only the file differs");
+        MirrorResult r = mirror(WIDE, set(WIDE, "image[1]", "layer", "8"), otherArt);
+        checkEqual(value(r.text, "image[1]", "layer"), "8", "and its edits are still copied");
+
+        // The pages shipped with RetroFE: every page and its 4:3 page (the Home wheel has 9 items and 7)
+        const fs::path nox = fs::path(RETROFE_SOURCE_DIR) / ".." / ".." / "Package" / "Environment" / "Common" / "layouts" / "Aeon Nox";
+        std::error_code ec;
+        if (!fs::is_directory(nox, ec)) {
+            std::cout << "  (skipped: no shipped Aeon Nox at " << nox.string() << ")" << std::endl;
+            return;
+        }
+        int pairs = 0;
+        for (const std::string folder : { "", "collections/Home/layout/", "collections/_menu/layout/", "collections/Catalog/layout/" }) {
+            const fs::path wide = nox / (folder + "layout.xml"), narrow = nox / (folder + "layout 4x3.xml");
+            if (!fs::is_regular_file(wide, ec) || !fs::is_regular_file(narrow, ec)) continue;
+            pairs++;
+            const LayoutDoc pa = parse(readFile(wide.string())), pb = parse(readFile(narrow.string()));
+            int wrong = 0, unmatched = 0;
+            std::string first;
+            for (size_t i = 1; i < pa.elements.size(); ++i) {
+                const LayoutElement& e = pa.elements[i];
+                const int j = matchElement(pa, static_cast<int>(i), pb);
+                const bool item = e.name == "item" && pa.elements[e.parent].name == "menu";
+                if (item) {
+                    if (j < 0) continue;   // past the other wheel's ends
+                    auto offset = [](const LayoutDoc& d, int el) {
+                        int k = 0, sel = -1, me = -1;
+                        for (int c : d.elements[d.elements[el].parent].children) {
+                            if (d.elements[c].name != "item") continue;
+                            if (d.elements[c].value("selected") == "true") sel = k;
+                            if (c == el) me = k;
+                            k++;
+                        }
+                        return me - sel;
+                    };
+                    if (offset(pa, static_cast<int>(i)) != offset(pb, j)) { wrong++; if (first.empty()) first = e.path; }
+                    continue;
+                }
+                // Inside an item: its own element's match decides
+                bool underItem = false;
+                for (int p = e.parent; p > 0; p = pa.elements[p].parent) underItem = underItem || pa.elements[p].name == "item";
+                if (underItem) continue;
+                if (j < 0) { unmatched++; if (first.empty()) first = e.path + " (none)"; }
+                else if (pb.elements[j].path != e.path) { wrong++; if (first.empty()) first = e.path + " -> " + pb.elements[j].path; }
+            }
+            check(wrong == 0 && unmatched == 0, folder + "layout.xml: every element matches its own on the 4:3 page, wheel items "
+                  "by their place from the selected one (" + std::to_string(wrong) + " wrong, " + std::to_string(unmatched) +
+                  " unmatched; first " + first + ")");
+            if (folder == "collections/Home/layout/") {
+                const int menu = pa.find("menu[0]");
+                const int i5 = matchElement(pa, pa.find("menu[0]/item[5]"), pb), i2 = matchElement(pa, pa.find("menu[0]/item[2]"), pb);
+                check(menu > 0 && i5 == pb.find("menu[0]/item[4]") && i2 == pb.find("menu[0]/item[1]") &&
+                      matchElement(pa, pa.find("menu[0]/item[0]"), pb) == -1,
+                      "Home: item[5] is item[4] there, item[2] is item[1], item[0] has none");
+            }
+        }
+        check(pairs == 4, "four shipped pairs checked (" + std::to_string(pairs) + ")");
+    });
+
     Test::run("twin pages: what an edit changed", [] {
         std::vector<AttrChange> changes;
         const std::string edited = set(set(WIDE, "image[1]", "y", "560"), "reloadableText[0]", "alpha", "0.5");
@@ -343,5 +441,74 @@ static Test::Suite layoutTwin("layout twin pages", [] {
         here.setAttribute("layer", "11");
         check(syncTwinPages(here, there, state, r) == TwinCopy::Copied && value(there.text(), "reloadableText[1]", "fontSize") == "44" &&
               value(there.text(), "reloadableText[1]", "layer") == "11", "both changes reach the twin");
+    });
+
+    Test::run("twin pages: separate steps are scaled from where they started", [] {
+        const std::string root = makeRoot("twin_origins");
+        writeFile(root + "/layouts/Wide/layout.xml", WIDE);
+        writeFile(root + "/layouts/Wide/layout 4x3.xml", NARROW);
+        LayoutSession here, there;
+        std::string error;
+        check(here.open(root, "Wide", "layout.xml", error) && there.open(root, "Wide", "layout 4x3.xml", error), "open: " + error);
+        TwinSync state;
+        state.reset(here);
+        MirrorResult r;
+        here.selectPath("reloadableText[0]");
+        // Ten 1-unit nudges, each a step of its own (a pause between them)
+        for (int i = 1; i <= 10; ++i) {
+            here.endCoalesce();
+            here.setAttribute("x", std::to_string(145 + i));
+            syncTwinPages(here, there, state, r);
+        }
+        // +10 across 1920 is +8.33 across 1600: 98, not 100 (each rounded to +1)
+        checkEqual(value(there.text(), "reloadableText[0]", "x"), "98", "the ten steps move the twin 8");
+        int steps = 0;
+        while (there.canUndo() && there.undo()) steps++;
+        // 91, 92, 93, 93, 94 ... 98, 98: a step there for each nudge that moved it there
+        check(steps == 8, "a step there for each of the 8 that moved it (" + std::to_string(steps) + ")");
+        check(there.text() == NARROW, "and they take it back exactly");
+        // After a change made on the other page itself, it starts again from there
+        while (here.canUndo()) here.undo();
+        state.reset(here);
+        here.setAttribute("x", "150");
+        syncTwinPages(here, there, state, r);   // 90 -> 94
+        there.selectPath("reloadableText[0]");
+        there.setAttribute("x", "300");          // by hand there
+        here.endCoalesce();
+        here.setAttribute("x", "156");
+        syncTwinPages(here, there, state, r);
+        checkEqual(value(there.text(), "reloadableText[0]", "x"), "305", "from its own 300: +6 scaled is +5");
+    });
+
+    Test::run("twin pages: histories drop linked steps together", [] {
+        const std::string root = makeRoot("twin_evict");
+        writeFile(root + "/layouts/Wide/layout.xml", WIDE);
+        writeFile(root + "/layouts/Wide/layout 4x3.xml", NARROW);
+        LayoutSession here, there;
+        std::string error;
+        check(here.open(root, "Wide", "layout.xml", error) && there.open(root, "Wide", "layout 4x3.xml", error), "open: " + error);
+        TwinSync state;
+        state.reset(here);
+        MirrorResult r;
+        here.selectPath("reloadableText[0]");
+        for (size_t i = 0; i < LayoutSession::UNDO_LIMIT; ++i) {
+            here.endCoalesce();
+            here.setAttribute("fontSize", std::to_string(41 + i));
+            syncTwinPages(here, there, state, r);
+        }
+        const unsigned firstLink = 1;
+        check(here.hasUndoLink(firstLink) && there.hasUndoLink(firstLink), "the first step is linked on both");
+        // Three edits on the other page alone push its oldest linked steps out
+        there.select(there.doc().find("reloadableText[1]"));
+        for (int i = 0; i < 3; ++i) {
+            there.endCoalesce();
+            there.setAttribute("layer", std::to_string(11 + i));
+        }
+        check(!there.hasUndoLink(firstLink) && here.hasUndoLink(firstLink), "dropped there, still here");
+        pairEvictions(here, there);
+        check(!here.hasUndoLink(3) && here.hasUndoLink(4), "here drops its history through the third linked step too");
+        int steps = 0;
+        while (here.canUndo() && here.undo()) steps++;
+        check(steps == static_cast<int>(LayoutSession::UNDO_LIMIT) - 3, "97 steps left here (" + std::to_string(steps) + ")");
     });
 });

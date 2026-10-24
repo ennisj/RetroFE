@@ -944,8 +944,7 @@ void ThemeEditorScreen::canvasControl(int press, bool released)
         return;
     }
     if (heldSelect_.armed && heldSelectPress(press) != EHA_NONE) {
-        heldSelect_.combine();
-        heldControl(press);
+        if (heldSelect_.combine(repeats_ > 0)) heldControl(press);   // one per press
         return;
     }
     const ThemeProject& p = session_.project();

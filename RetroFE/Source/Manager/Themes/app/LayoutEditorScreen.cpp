@@ -951,8 +951,7 @@ void LayoutEditorScreen::canvasControl(int press, bool released)
         return;
     }
     if (heldSelect_.armed && heldSelectPress(press) != EHA_NONE) {
-        heldSelect_.combine();
-        heldControl(press);
+        if (heldSelect_.combine(repeats_ > 0)) heldControl(press);   // one per press
         return;
     }
     const int sel = session_.selected();
@@ -1386,6 +1385,7 @@ void LayoutEditorScreen::closeTwin()
 
 void LayoutEditorScreen::syncTwin()
 {
+    if (twin_.isOpen()) pairEvictions(session_, twin_);   // linked steps leave both histories together
     if (!session_.isOpen() || session_.text() == twinSync_.synced) return;
     if (!alsoTwin_ || !twin_.isOpen()) {
         twinSync_.reset(session_);
@@ -1417,7 +1417,14 @@ void LayoutEditorScreen::undoBoth()
     syncTwin();
     const unsigned link = session_.undoLink();
     if (!session_.undo()) return;
-    if (link != 0 && twin_.isOpen() && twin_.undoLink() == link) twin_.undo();
+    if (link != 0 && twin_.isOpen()) {
+        if (twin_.undoLink() == link) twin_.undo();
+        else if (twin_.hasUndoLink(link)) {
+            // Its copy isn't next in the other page's history (that page was changed on its own since): say so
+            setStatus("Undone on " + session_.page() + " only: " + twin_.page() + " was changed on its own since, so its copy "
+                      "of this change stays. Show " + twin_.page() + " to undo it there.", true);
+        }
+    }
     twinSync_.reset(session_);
 }
 
@@ -1426,7 +1433,13 @@ void LayoutEditorScreen::redoBoth()
     syncTwin();
     const unsigned link = session_.redoLink();
     if (!session_.redo()) return;
-    if (link != 0 && twin_.isOpen() && twin_.redoLink() == link) twin_.redo();
+    if (link != 0 && twin_.isOpen()) {
+        if (twin_.redoLink() == link) twin_.redo();
+        else if (twin_.hasRedoLink(link)) {
+            setStatus("Redone on " + session_.page() + " only: " + twin_.page() + " was changed on its own since, so it "
+                      "doesn't get this change again. Show " + twin_.page() + " to make it there.", true);
+        }
+    }
     twinSync_.reset(session_);
 }
 

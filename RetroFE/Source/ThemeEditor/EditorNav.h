@@ -528,14 +528,19 @@ namespace ThemeEditor
         bool armed = false;   // Select went down in Pick: it acts when let go
         bool used = false;    // another control was pressed meanwhile
 
-        void press() { armed = true; used = false; }
-        // Another control while Select is held: true when it's the held
-        // combination (the caller does heldSelectPress's action)
-        bool combine()
+        void press()
+        {
+            if (!armed) used = false;   // a second press while armed (it can't repeat) keeps what was done
+            armed = true;
+        }
+        // Another control while Select is held: true when the caller does
+        // heldSelectPress's action. One per press: a held direction's
+        // repeats are swallowed (they'd add a run of elements every 90 ms).
+        bool combine(bool repeat = false)
         {
             if (!armed) return false;
             used = true;
-            return true;
+            return !repeat;
         }
         // Every frame with Select's held state: true once, when it's let go
         // with nothing pressed meanwhile (Select's own action happens now)

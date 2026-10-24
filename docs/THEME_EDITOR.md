@@ -134,7 +134,7 @@ what the controls do there.
     picked instead.
   - **Several at once: hold Select** and press a direction: the nearest one
     that way joins the selection (and becomes the one the next press goes
-    on from). Letter up / down while holding Select add the previous / next
+    on from), one per press (holding the direction doesn't add a run). Letter up / down while holding Select add the previous / next
     in list order, Back drops the last one added. Let go of Select and press
     it again to move them all.
   - **Move** (cyan outline): the directions move the selection by the snap
@@ -308,9 +308,14 @@ toolbar offers:
 
 - **Also apply to layout 4x3.xml**: every change on this page is made to the
   same element on the other page too, as text, changing only those bytes
-  there. *The same element* is the one at the same place in the file with
-  the same tag and the same `type`, `src`, `id` and the like (else the only
-  one like it on that page). What's copied:
+  there. *The same element* is looked for under the same parent (the page,
+  the same menu): the one in the same place among as many of its tag, with
+  the same `type`, `src`, `id` and the like; else the only one like it; else
+  the one in the same place that differs only by its file or text (`src`,
+  `value`). A wheel's items pair up by their place from its selected item,
+  so a 9-item wheel and a 7-item one match around the middle and the outer
+  two have no counterpart; a vertical menu's by their `index`. What's
+  copied:
   - a position or size set to a number (`x`, `y`, `width`, `height`,
     `xOffset`, `yOffset`, `maxWidth`, `maxHeight`): the same move there,
     scaled to that page and rounded to whole units (moving 96 to the right
@@ -322,8 +327,12 @@ toolbar offers:
     switch says so;
   - not the page's own size, and not adding, deleting or duplicating
     elements, events or steps (the line says so).
-  Undo and Redo take both pages' step back together; Save saves both (each
-  keeps its original in `manage/backups`, as any page does).
+  A run of separate moves is scaled as one (ten 1-unit nudges move the
+  1600-wide page 8, not 10), until the other page's value is changed there.
+  Undo and Redo take both pages' step back together; when the other page
+  was changed on its own since, Undo works on this page only and says so.
+  Save saves both (each keeps its original in `manage/backups`, as any page
+  does).
 - **Show layout 4x3.xml** (or choosing it in the Pages list): the other page
   is shown with the same elements selected; neither page's unsaved changes
   are lost, and Show layout.xml goes back. Leaving, or opening another page,

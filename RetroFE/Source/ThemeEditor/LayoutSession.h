@@ -299,11 +299,20 @@ namespace ThemeEditor
         unsigned redoLink() const { return redo_.empty() ? 0 : redo_.back().link; }
         // Tags the step undo() would take back
         void linkUndo(unsigned link) { if (!undo_.empty()) undo_.back().link = link; }
+        // Is a step with this link anywhere in the history (to undo / to redo)?
+        bool hasUndoLink(unsigned link) const;
+        bool hasRedoLink(unsigned link) const;
         // That step's identity (the same while edits merge into it; 0 = none)
         // and the text before it, so a copy can be worked out from where the
         // whole step began rather than edit by edit
         unsigned undoId() const { return undo_.empty() ? 0 : undo_.back().id; }
         const std::string& undoText() const { return undo_.empty() ? doc_.text : undo_.back().text; }
+        // The links of linked steps dropped off the bottom of the history
+        // (UNDO_LIMIT) since last asked: the other page drops its half too
+        std::vector<unsigned> takeEvictedLinks();
+        // Drops the history up to and including the step with this link
+        // (nothing when there's none), so both pages' histories end alike
+        void forgetThrough(unsigned link);
         // Replaces the text as an edit tagged `link`: merged into the last
         // step when that has the same tag (typing), else a new one. The
         // selection is kept (by path).
@@ -365,6 +374,8 @@ namespace ThemeEditor
         // what to select ("\x01": nothing)
         bool change(const std::string& text, const std::string& key, const std::string& selectAfter = "");
         bool change(const std::string& text, const std::string& key, const std::vector<std::string>& selectAfter);
+        // Adds an undo step, dropping the oldest past UNDO_LIMIT
+        void pushUndo(const Snapshot& s);
         bool load(const std::string& text, std::string& error);
         // Where a drag of the selected element left its box: write the attributes
         bool commitBox(const DragRect& from, const DragRect& to, bool resize);
@@ -395,5 +406,6 @@ namespace ThemeEditor
         unsigned revision_ = 0;
         unsigned structure_ = 0;
         unsigned nextStep_ = 0;
+        std::vector<unsigned> evicted_;
     };
 }

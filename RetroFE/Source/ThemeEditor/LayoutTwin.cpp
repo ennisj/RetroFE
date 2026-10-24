@@ -46,26 +46,16 @@ namespace ThemeEditor
             return owner;
         }
 
-        // What tells an element apart from its siblings of the same tag
-        std::string identity(const LayoutElement& e)
+        // What tells an element apart from its siblings of the same tag. The
+        // weak identity leaves out what a page's art and text differ by
+        // (src, value): two pages can show different files in the same place.
+        std::string identity(const LayoutElement& e, bool weak = false)
         {
             static const char* const keys[] = { "type", "imageType", "src", "id", "location", "index", "selected", "value" };
             std::string out = e.name;
             for (const char* k : keys) {
+                if (weak && (std::string(k) == "src" || std::string(k) == "value")) continue;
                 if (const LayoutAttr* a = e.attr(k)) out += std::string("\x1f") + k + "=" + a->value;
-            }
-            return out;
-        }
-
-        // A path without its indices: "menu/item"
-        std::string shape(const std::string& path)
-        {
-            std::string out;
-            bool skip = false;
-            for (char c : path) {
-                if (c == '[') skip = true;
-                else if (c == ']') skip = false;
-                else if (!skip) out += c;
             }
             return out;
         }
@@ -75,15 +65,31 @@ namespace ThemeEditor
             return pageElementOf(doc, i) != i;
         }
 
-        // The page elements of a document with this shape and identity, in document order
-        std::vector<int> alike(const LayoutDoc& doc, const std::string& shapeOf, const std::string& id)
+        // A parent's children with this tag, in document order
+        std::vector<int> childrenNamed(const LayoutDoc& doc, int parent, const std::string& name)
         {
             std::vector<int> out;
-            for (int k = 1; k < static_cast<int>(doc.elements.size()); ++k) {
-                if (inAnimation(doc, k)) continue;
-                if (shape(doc.elements[k].path) == shapeOf && identity(doc.elements[k]) == id) out.push_back(k);
+            for (int c : doc.elements[parent].children) {
+                if (doc.elements[c].name == name) out.push_back(c);
             }
             return out;
+        }
+
+        int indexIn(const std::vector<int>& list, int value)
+        {
+            for (size_t k = 0; k < list.size(); ++k) {
+                if (list[k] == value) return static_cast<int>(k);
+            }
+            return -1;
+        }
+
+        // The selected="true" one of a menu's items, else -1
+        int selectedItem(const LayoutDoc& doc, const std::vector<int>& items)
+        {
+            for (size_t k = 0; k < items.size(); ++k) {
+                if (doc.elements[items[k]].value("selected") == "true") return static_cast<int>(k);
+            }
+            return -1;
         }
 
         bool plainNumber(const std::string& text, double& out)
@@ -174,18 +180,49 @@ namespace ThemeEditor
             return j >= 0 && to.elements[j].name == from.elements[element].name ? j : -1;
         }
         const LayoutElement& e = from.elements[element];
-        const std::string id = identity(e);
-        const int same = to.find(e.path);
-        if (same > 0 && identity(to.elements[same]) == id) return same;
-        // Elsewhere on the page: the only one like it, or the same one of several
-        const std::vector<int> here = alike(from, shape(e.path), id);
-        const std::vector<int> there = alike(to, shape(e.path), id);
-        if (there.size() == 1 && here.size() == 1) return there[0];
-        if (!there.empty() && there.size() == here.size()) {
-            for (size_t k = 0; k < here.size(); ++k) {
-                if (here[k] == element) return there[k];
+        // Its parent first (the page, a menu): what's under it is looked for under its match
+        const int parentThere = matchElement(from, e.parent, to);
+        if (parentThere < 0) return -1;
+        const std::vector<int> here = childrenNamed(from, e.parent, e.name);
+        const std::vector<int> there = childrenNamed(to, parentThere, e.name);
+        const int k = indexIn(here, element);
+        if (k < 0 || there.empty()) return -1;
+
+        // A menu's items: by their index= when they have one (a vertical menu's
+        // slots), else by their place from the selected item, so a 9-item wheel
+        // and a 7-item one pair up around the middle; one with no counterpart
+        // there has no match
+        if (e.name == "item" && from.elements[e.parent].name == "menu") {
+            if (e.has("index")) {
+                for (int t : there) {
+                    if (to.elements[t].value("index") == e.value("index")) return t;
+                }
+                return -1;
             }
+            const int selHere = selectedItem(from, here);
+            const int selThere = selectedItem(to, there);
+            if (selHere >= 0 && selThere >= 0) {
+                const int at = selThere + (k - selHere);
+                return at >= 0 && at < static_cast<int>(there.size()) ? there[at] : -1;
+            }
+            return here.size() == there.size() ? there[k] : -1;
         }
+
+        // The same place among as many alike siblings, and what it is agrees
+        const std::string id = identity(e);
+        const bool sameCount = here.size() == there.size();
+        if (sameCount && identity(to.elements[there[k]]) == id) return there[k];
+        // Elsewhere under the parent: the only one like it, or the same one of as many
+        std::vector<int> hereAlike, thereAlike;
+        for (int h : here) {
+            if (identity(from.elements[h]) == id) hereAlike.push_back(h);
+        }
+        for (int t : there) {
+            if (identity(to.elements[t]) == id) thereAlike.push_back(t);
+        }
+        if (!thereAlike.empty() && thereAlike.size() == hereAlike.size()) return thereAlike[indexIn(hereAlike, element)];
+        // The same place, showing another file or text (the pages' art differs, or an edit of src wasn't copied)
+        if (sameCount && identity(to.elements[there[k]], true) == identity(e, true)) return there[k];
         return -1;
     }
 
@@ -231,8 +268,9 @@ namespace ThemeEditor
     }
 
     MirrorResult mirrorChanges(const LayoutDoc& before, const std::vector<AttrChange>& changes, const LayoutDoc& twin,
-                               int thisW, int thisH, int twinW, int twinH)
+                               int thisW, int thisH, int twinW, int twinH, TwinOrigins* origins)
     {
+        static const std::string UNSET = "\x01";
         MirrorResult r;
         r.text = twin.text;
         LayoutDoc work = twin;
@@ -265,20 +303,38 @@ namespace ThemeEditor
                 const int aw = thisW > 0 ? thisW : 1, ah = thisH > 0 ? thisH : 1;
                 const int bw = twinW > 0 ? twinW : aw, bh = twinH > 0 ? twinH : ah;
                 const double scale = horizontal ? static_cast<double>(bw) / aw : static_cast<double>(bh) / ah;
+                // Where it started on both pages: an origin still true on the other page, else as they are
+                const std::string key = c.path + "\x1f" + c.name;
+                const std::string twinNow = twinHas ? twinValue : UNSET;
+                TwinOrigin* origin = nullptr;
+                if (origins) {
+                    auto it = origins->find(key);
+                    if (it != origins->end() && it->second.expect == twinNow) origin = &it->second;
+                }
+                const std::string hereStart = origin ? origin->here : (c.had ? c.before : UNSET);
+                const std::string twinStart = origin ? origin->there : twinNow;
                 double was = 0, there = 0;
                 bool known = false;
-                if (c.had && twinHas) {
-                    known = resolve(c.before, horizontal, aw, ah, was) && resolve(twinValue, horizontal, bw, bh, there);
+                if (hereStart != UNSET && twinStart != UNSET) {
+                    known = resolve(hereStart, horizontal, aw, ah, was) && resolve(twinStart, horizontal, bw, bh, there);
                 }
-                else if (!c.had && !twinHas) {
+                else if (hereStart == UNSET && twinStart == UNSET) {
                     known = true;   // set on neither: the new value, in proportion to that page
                 }
                 if (known) {
                     // Values that were the same stay the same when the pages are the same size that way
                     // A proportion isn't exact anyway: whole units, as hand-made pages write them
-                    if (c.had && twinValue == c.before && scale == 1.0) next = c.after;
+                    if (hereStart != UNSET && twinStart == hereStart && scale == 1.0) next = c.after;
                     else next = numberText(std::round(there + (number - was) * scale));
                     apply = true;
+                    if (origins) {
+                        if (!origin) {
+                            TwinOrigin& fresh = (*origins)[key];
+                            fresh = TwinOrigin{ hereStart, twinStart, twinNow, next };
+                            origin = &fresh;
+                        }
+                        origin->written = next;
+                    }
                 }
             }
             if (!apply) {
@@ -323,12 +379,23 @@ namespace ThemeEditor
         synced = here.text();
         step = here.undoId();
         stepBase = synced;
+        origins.clear();
+    }
+
+    void pairEvictions(LayoutSession& a, LayoutSession& b)
+    {
+        for (int round = 0; round < 2; ++round) {   // dropping on one can't drop more there, but be sure
+            for (unsigned link : a.takeEvictedLinks()) b.forgetThrough(link);
+            for (unsigned link : b.takeEvictedLinks()) a.forgetThrough(link);
+        }
     }
 
     TwinCopy syncTwinPages(LayoutSession& here, LayoutSession& there, TwinSync& s, MirrorResult& result)
     {
         result = MirrorResult();
-        if (!here.isOpen() || !there.isOpen() || here.text() == s.synced) return TwinCopy::Nothing;
+        if (!here.isOpen() || !there.isOpen()) return TwinCopy::Nothing;
+        pairEvictions(here, there);
+        if (here.text() == s.synced) return TwinCopy::Nothing;
         const unsigned top = here.undoId();
         // Every step that's copied carries a link, given the first time it's seen
         unsigned link = here.undoLink();
@@ -337,7 +404,11 @@ namespace ThemeEditor
             here.linkUndo(link);
         }
         const bool sameStep = top != 0 && top == s.step;
-        if (!sameStep) s.stepBase = s.synced;
+        if (!sameStep) {
+            s.stepBase = s.synced;
+            // A new step starts from what the last one wrote there
+            for (auto& o : s.origins) o.second.expect = o.second.written;
+        }
         // The other page as it was before this step's copy (its own linked step), else as it is
         const std::string twinBase = there.undoLink() == link ? there.undoText() : there.text();
         LayoutDoc before, twin;
@@ -352,8 +423,9 @@ namespace ThemeEditor
             return TwinCopy::Structure;
         }
         result = mirrorChanges(before, changes, twin, designSize(before, true, here.canvasW()), designSize(before, false, here.canvasH()),
-                               there.canvasW(), there.canvasH());
+                               there.canvasW(), there.canvasH(), &s.origins);
         if (result.text != there.text()) there.applyLinked(result.text, link);
+        pairEvictions(here, there);
         // Still this step: the next copy is worked out from the same start
         const std::string base = s.stepBase;
         s.synced = here.text();

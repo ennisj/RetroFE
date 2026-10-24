@@ -495,13 +495,20 @@ namespace ThemeEditor
 
     void LayoutSession::assignSelection(const std::vector<int>& elements)
     {
-        selection_.clear();
+        std::vector<int> next;
         for (int i : elements) {
             if (i < 0 || i >= elementCount()) continue;
-            selection_ = selectionWith(selection_, i);
+            next = selectionWith(next, i);
         }
         // The page itself is only ever selected alone
-        if (selection_.size() > 1) selection_ = selectionWithout(selection_, 0);
+        if (next.size() > 1) next = selectionWithout(next, 0);
+        // Another set selected: the next edit is a step of its own (a nudge
+        // mustn't merge into the last group's), as EditorSession does
+        std::vector<int> a = next, b = selection_;
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        if (a != b) lastKey_.clear();
+        selection_ = next;
         selected_ = selection_.empty() ? -1 : selection_.back();
     }
 
@@ -813,14 +820,56 @@ namespace ThemeEditor
         std::string full = key.empty() ? "" : key + "@" + beforeSelected;
         bool merge = !full.empty() && full == lastKey_ && !undo_.empty() && redo_.empty();
         if (!merge) {
-            undo_.push_back(Snapshot{ before, beforeSelection, 0, ++nextStep_ });
-            if (undo_.size() > UNDO_LIMIT) undo_.erase(undo_.begin());
+            pushUndo(Snapshot{ before, beforeSelection, 0, ++nextStep_ });
         }
         redo_.clear();
         lastKey_ = full;
         selectPaths(selectAfter);
         revision_++;
         return true;
+    }
+
+    void LayoutSession::pushUndo(const Snapshot& s)
+    {
+        undo_.push_back(s);
+        while (undo_.size() > UNDO_LIMIT) {
+            if (undo_.front().link != 0) evicted_.push_back(undo_.front().link);
+            undo_.erase(undo_.begin());
+        }
+    }
+
+    bool LayoutSession::hasUndoLink(unsigned link) const
+    {
+        for (const Snapshot& s : undo_) {
+            if (link != 0 && s.link == link) return true;
+        }
+        return false;
+    }
+
+    bool LayoutSession::hasRedoLink(unsigned link) const
+    {
+        for (const Snapshot& s : redo_) {
+            if (link != 0 && s.link == link) return true;
+        }
+        return false;
+    }
+
+    std::vector<unsigned> LayoutSession::takeEvictedLinks()
+    {
+        std::vector<unsigned> out;
+        out.swap(evicted_);
+        return out;
+    }
+
+    void LayoutSession::forgetThrough(unsigned link)
+    {
+        if (link == 0) return;
+        for (size_t k = 0; k < undo_.size(); ++k) {
+            if (undo_[k].link == link) {
+                undo_.erase(undo_.begin(), undo_.begin() + static_cast<long>(k) + 1);
+                return;
+            }
+        }
     }
 
     bool LayoutSession::applyLinked(const std::string& text, unsigned link)
@@ -832,8 +881,7 @@ namespace ThemeEditor
         if (!load(text, error)) return false;
         const bool merge = link != 0 && !undo_.empty() && undo_.back().link == link && redo_.empty();
         if (!merge) {
-            undo_.push_back(Snapshot{ before, beforeSelection, link, ++nextStep_ });
-            if (undo_.size() > UNDO_LIMIT) undo_.erase(undo_.begin());
+            pushUndo(Snapshot{ before, beforeSelection, link, ++nextStep_ });
         }
         redo_.clear();
         lastKey_.clear();
@@ -1442,10 +1490,7 @@ namespace ThemeEditor
             return false;
         }
         // Undoable: Undo brings back what was being edited (unsaved, until saved again)
-        if (before.text != text) {
-            undo_.push_back(before);
-            if (undo_.size() > UNDO_LIMIT) undo_.erase(undo_.begin());
-        }
+        if (before.text != text) pushUndo(before);
         saved_ = text;
         redo_.clear();
         lastKey_.clear();
