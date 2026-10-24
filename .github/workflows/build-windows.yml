@@ -14,13 +14,13 @@ jobs:
           submodules: recursive
 
       - name: Install GStreamer
-        run: |
-          choco install -y gstreamer --version 1.24.11
-          choco install -y gstreamer-devel --version 1.24.11
+        shell: pwsh
+        run: .github/scripts/install-gstreamer-windows.ps1
 
       - name: Configure environment
+        shell: pwsh
         run: |
-          cmake -A x64 -B .\RetroFE\Build -D GSTREAMER_ROOT=D:\gstreamer\1.0\msvc_x86_64 -S .\RetroFE\Source
+          cmake -A x64 -B .\RetroFE\Build -D "GSTREAMER_ROOT=$env:GSTREAMER_ROOT" -S .\RetroFE\Source
   
       - name: Build RetroFE
         run: |
