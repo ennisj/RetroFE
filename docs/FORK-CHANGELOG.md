@@ -4,6 +4,33 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 6 — controller editing, RetroArch settings, second QA (2026-10-24)
+
+Unit tests: 4,966 → 5,473 checks.
+
+- **The theme editors work with a controller.** Both the widget editor and
+  the layout editor can be used with only RetroFE's mapped controls: move
+  between panels and the canvas, pick the nearest element in a direction,
+  move and resize (holding a direction goes faster), step numbers and
+  choices, type on an on-screen keyboard drawn in the editor, and use every
+  dialog (Add widget/element, file chooser, Unsaved changes). Mouse and
+  keyboard still work.
+- **RetroArch settings in Manage.** A game whose launcher runs RetroArch gets
+  a RetroArch link: eight common settings (aspect ratio, smoothing, shader,
+  overlay, integer scaling, run-ahead, volume, auto save/load state), core
+  options and controls, each "Default (…)" or a fixed choice, written to the
+  game's own RetroArch files with only what differs; "Use the system's
+  settings" removes them. A system gets the same screens for the whole core,
+  with which systems they reach. Every file is backed up before the first
+  change.
+- **Second QA pass** on a copy of the OnesaUCE data: report in
+  [QA-ROUND6.md](QA-ROUND6.md). Fixed: launchers with a bare program name
+  (`cmd.exe`) never started and still recorded 40 s of play; short lists
+  (fewer items than the menu's selected slot) opened on the wrong item; a
+  failed launch counted as a play; Aeon Nox's video pages failed the theme
+  check; false warnings on an empty root and for quick programs; "Played:
+  Never" next to a time played now says why plays aren't counted.
+
 ## Round 5 — videos in RetroFE, layout editor additions, clean logs (2026-10-23)
 
 Unit tests: 4,430 → 4,966 checks.

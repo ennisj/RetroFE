@@ -277,6 +277,63 @@ Each section's agent chose these; the alternatives are in brackets.
 - **Log levels:** menus and merged collections without settings log INFO; a
   system missing its settings or launcher still warns.
 
+### M17. Round 6 choices — Decided
+Theme editor with a controller:
+- **Panels and dialogs use ImGui's own gamepad navigation**, fed RetroFE's
+  mapped controls [One Saucier's per-row decisions, which would mean
+  rewriting both editors' panels; ImGui keyboard navigation, which would make
+  the real arrow keys move focus and nudge the canvas at once]. The SDL
+  backend's own gamepad reading is off while an editor is open, so a mapped
+  pad can't act twice.
+- **Canvas modes: Select cycles Pick → Move → Resize**; Back returns to Pick;
+  a run of nudges is one undo step. One Saucier's Edit mode was left out (the
+  properties panel has the keyboard).
+- **Bigger steps come from holding a direction** (grid, ×4, ×10) [a held
+  modifier, which most cabinets have no spare control for]; Shift with a
+  mapped arrow still gives ×10 on a keyboard.
+- **The editors draw their own on-screen keyboard** with the same keys as the
+  layout one [the layout's keyboard page, which would show the edited
+  theme's style under the editor window]. Colours are typed as hex.
+- **Mapped letter keys stay controls** (with the shipped controls.conf B is
+  Back, M/N pick previous/next) — documented rather than filtered, since on a
+  cabinet those are the keys the encoder sends.
+
+RetroArch settings:
+- **One provider and one set of screens for games and systems**, logic in
+  `Library/RetroArch` [a provider per section].
+- **Save/Reset like the other Manage screens** [One Saucier's
+  write-on-change].
+- **A game's file keeps only values that differ from what it overrides**;
+  files left equal to what they shadow are deleted (backed up). A core-wide
+  `.opt`/`.rmp` is deleted only when empty, since RetroArch writes full files.
+- **Unknown cores fall back to the core's `.info` name, marked unconfirmed**
+  until a folder RetroArch made confirms it [One Saucier's rule of offering
+  nothing outside its hand-checked table]. Table rows that couldn't be
+  confirmed (gw, fuse, blastem, bsnes, duckstation, kronos) were moved to the
+  fallback, since a wrong row is shown as certain.
+- **No RetroFE reload after a RetroArch write**: RetroArch reads these files
+  each time it starts a game.
+- **The RetroArch link is hidden for launchers outside RetroArch** and shown
+  with a reason ("RetroArch not found", "Core not known") otherwise.
+- Not checked against a real RetroArch install yet: the "Default (…)" values
+  and "first line wins" come from reading RetroArch's source. Worth one check
+  on a cabinet.
+
+QA follow-ups:
+- **Play counts stay upstream's rule** (counted only when
+  `lastPlayedSkipCollection` is set) [counting always, which would start
+  writing last-played files on existing installs]. Manage says "Not counted
+  (…)" with the reason instead of "Never". A launch that fails to start no
+  longer counts.
+- **Launch working folder:** a launcher without `currentDirectory` runs in its
+  program's folder, or for a bare name in the folder it was found in on the
+  path — except Windows' own `cmd.exe`/`powershell.exe` (and system programs
+  on Linux/macOS), which run in RetroFE's root so relative arguments keep
+  working.
+- **A negative `selectedOffset` counts back** (-1 is the previous item), a
+  deliberate change from upstream, where -1 showed the next one. No shipped
+  layout uses it.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
