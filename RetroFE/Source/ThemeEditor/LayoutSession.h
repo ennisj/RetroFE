@@ -52,6 +52,7 @@
 // opened here: the widget editor owns it.
 
 #include "EditorCanvas.h"
+#include "EditorSelection.h"
 #include "LayoutText.h"
 #include <map>
 #include <string>
@@ -208,10 +209,31 @@ namespace ThemeEditor
         bool marqueeActive() const { return drag_.active && drag_.marquee; }
         DragRect marqueeBox() const;
         bool snap = true;
+        // Alignment guides while dragging (EditorSelection.h): the box lines
+        // up with the other boxes' edges and centres and the page's centre
+        // within guideReachPx screen pixels. Off unless the screen turns it on
+        // (the mouse, Alt not held), so scripts and tests move exactly.
+        bool guides = false;
+        float guideReachPx = 6.0f;
+        // The lines to draw for the drag in progress (theme units)
+        const std::vector<GuideLine>& guideLines() const { return guideLines_; }
 
         // Edits on the selected element; false when nothing changed
         bool setAttribute(const std::string& name, const std::string& value);
         bool removeAttribute(const std::string& name);
+        // The same attribute on every selected element, one undo step (one
+        // text change; typing coalesces as setAttribute does)
+        bool setAttributeAll(const std::string& name, const std::string& value);
+        bool removeAttributeAll(const std::string& name);
+        // What the selected elements have for each attribute: `always` (the
+        // panel's common ones) whether set or not, then every other attribute
+        // all of them set, in the primary's order
+        struct SharedAttr
+        {
+            std::string name;
+            SharedValue value;
+        };
+        std::vector<SharedAttr> sharedAttributes(const std::vector<std::string>& always) const;
         // Why a name can't be an attribute's ("" when it can)
         static std::string attributeNameProblem(const std::string& name);
         bool setLayer(int layer);            // clamped to 0..MAX_LAYER
@@ -404,6 +426,7 @@ namespace ThemeEditor
         std::vector<int> selection_;   // every selected element, selected_ last
         int engineW_ = 0, engineH_ = 0;
         Drag drag_;
+        std::vector<GuideLine> guideLines_;
         std::vector<Snapshot> undo_, redo_;
         std::string coalesce_, lastKey_;
         unsigned revision_ = 0;

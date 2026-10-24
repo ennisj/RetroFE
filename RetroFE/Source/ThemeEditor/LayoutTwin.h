@@ -48,6 +48,7 @@
 // Pure: no filesystem. LayoutSession holds each page.
 
 #include "LayoutText.h"
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -134,4 +135,57 @@ namespace ThemeEditor
     // reaches a step on one page whose other half is gone. syncTwinPages does
     // this too.
     void pairEvictions(LayoutSession& a, LayoutSession& b);
+
+    struct ElementGeom;
+
+    // The box of `element` (geometry `g` here, on a page hereW x hereH) on the
+    // other page, as its element `match` there: the position and origin from
+    // that page's own attributes, as PageBuilder reads them (a menu item's
+    // <itemDefaults> included); the size from its size here, changed by
+    // whatever size attributes (width, height, min/max, fontSize) differ
+    // there, as ViewInfo scales (aspect kept). A size that was a guess here
+    // is guessed there the same way; one that can't be told (art clamped by
+    // a maximum here and set differently there) is scaled with the page and
+    // marked approximate. False for the page, no match, or a box drawn
+    // around a menu's slots.
+    bool twinGeometry(const LayoutDoc& here, int element, const ElementGeom& g, int hereW, int hereH,
+                      const LayoutDoc& there, int match, int thereW, int thereH, ElementGeom& out);
+
+    // A group operation made on both pages, each on its own elements, rather
+    // than copied as per-element changes: align and distribute work from
+    // each page's own boxes (copying the moves would line them up on one page
+    // only), and adding, duplicating and deleting elements, events and steps
+    // happens at the matching place there.
+    struct TwinOp
+    {
+        // The elements here the operation acts on (beyond the selection that
+        // `selection` gives), each of which must have a match there
+        std::vector<int> touches;
+        // Act on the movable selection (align, distribute) rather than the whole selection
+        bool movable = false;
+        // Act on the primary only (adding an element after it, its animations)
+        bool primaryOnly = false;
+        // The elements need their boxes there (twinGeometry)
+        bool boxes = false;
+        // Run there even when nothing changed here (lining up what's already lined up here, not there)
+        bool evenIfUnchanged = false;
+        // The operation, on either page; `map` turns an element of this page
+        // into the same element on the page it runs on (itself here). There,
+        // the selection is the matching elements, the primary's match last.
+        std::function<bool(LayoutSession& page, const std::function<int(int)>& map)> run;
+    };
+    struct TwinOpResult
+    {
+        bool here = false;                  // it changed this page
+        bool there = false;                 // and the other one
+        bool linked = false;                // the two are one undo step
+        std::vector<std::string> missing;   // what has no match there (nothing was done there), labels
+    };
+    // Copies anything pending first (syncTwinPages), runs the operation here,
+    // then, when everything it acts on has a match there, on the other page
+    // as a step linked to here's (Undo takes both). Afterwards nothing is
+    // left for syncTwinPages to copy from it. When something has no match,
+    // only this page changes and `missing` says what; the caller decides
+    // whether to let syncTwinPages copy it the old way.
+    TwinOpResult runOnBoth(LayoutSession& here, LayoutSession& there, TwinSync& state, const TwinOp& op);
 }

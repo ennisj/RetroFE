@@ -18,13 +18,15 @@
 // Selecting several widgets or elements at once, for both theme editors:
 // the selection as a list (the last one is the primary, the one the
 // properties panel shows and the controller picks from), the marquee,
-// moving a group, and aligning and distributing boxes. Pure, header-only;
+// moving a group, aligning and distributing boxes, alignment guides while
+// dragging, and one setting's value across several. Pure, header-only;
 // the sessions (EditorSession, LayoutSession) turn the boxes this gives
 // back into edits, one undo step per operation.
 
 #include "EditorCanvas.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -222,5 +224,196 @@ namespace ThemeEditor
             running += size(i) + gap;
         }
         return out;
+    }
+
+    // ---- alignment guides ------------------------------------------------------------
+    //
+    // While a box is dragged with the mouse, its edges and centre line up with
+    // the other boxes' edges and centres and with the page's centre when they
+    // come within reach, and a line shows each match. Worked out in half
+    // units (a centre of an odd-sized box sits on one), so "lined up" is exact.
+
+    // A line to draw: vertical at x = at from y = from to y = to, or horizontal at y = at
+    struct GuideLine
+    {
+        bool vertical = true;
+        int at = 0;
+        int from = 0, to = 0;
+    };
+
+    // Which of a box's edges take part: a move all three on each axis, a
+    // resize only the edges its handle moves
+    enum GuideEdges { GE_LOW = 1, GE_MID = 2, GE_HIGH = 4, GE_ALL = 7 };
+
+    namespace guide_detail
+    {
+        // Doubled positions of a box's edges along one axis: low, middle, high
+        inline void edges2(const DragRect& r, bool x, int out[3])
+        {
+            const int p = x ? r.x : r.y, s = x ? r.w : r.h;
+            out[0] = p * 2;
+            out[1] = p * 2 + s;
+            out[2] = (p + s) * 2;
+        }
+        // Doubled targets along one axis: every other box's edges and middle, and the page's middle
+        inline std::vector<int> targets2(const std::vector<DragRect>& others, bool x, int canvasW, int canvasH)
+        {
+            std::vector<int> t;
+            for (const DragRect& o : others) {
+                int e[3];
+                edges2(o, x, e);
+                t.insert(t.end(), e, e + 3);
+            }
+            t.push_back(x ? canvasW : canvasH);
+            return t;
+        }
+    }
+
+    // The shift (whole units) that lines `r` up on the nearest target along
+    // one axis, within `reach` theme units; false when nothing is in reach.
+    // `edges`: which of its edges take part (GuideEdges).
+    static inline bool guideShift(const DragRect& r, bool x, int edges, const std::vector<DragRect>& others, int canvasW,
+                                  int canvasH, int reach, int& shift)
+    {
+        int mine[3];
+        guide_detail::edges2(r, x, mine);
+        const std::vector<int> targets = guide_detail::targets2(others, x, canvasW, canvasH);
+        int best = -1;
+        int bestDiff = 0;
+        for (int k = 0; k < 3; ++k) {
+            if (!(edges & (1 << k))) continue;
+            for (int t : targets) {
+                const int diff = t - mine[k];
+                const int dist = diff < 0 ? -diff : diff;
+                if (dist > reach * 2) continue;
+                if (best < 0 || dist < best) { best = dist; bestDiff = diff; }
+            }
+        }
+        if (best < 0) return false;
+        // A half-unit difference (a centre onto an edge) rounds towards the target's lower side
+        shift = bestDiff >= 0 ? bestDiff / 2 : -((-bestDiff + 1) / 2);
+        return true;
+    }
+
+    // The lines for every edge or centre of `r` that is lined up (to within
+    // half a unit) with another box's or the page's centre; each spans the
+    // boxes it joins (the page's centre: the whole page)
+    static inline std::vector<GuideLine> guideLines(const DragRect& r, const std::vector<DragRect>& others, int canvasW, int canvasH,
+                                                    int edgesX = GE_ALL, int edgesY = GE_ALL)
+    {
+        std::vector<GuideLine> out;
+        auto add = [&out](bool vertical, int at, int from, int to) {
+            for (GuideLine& g : out) {
+                if (g.vertical == vertical && g.at == at) {
+                    g.from = std::min(g.from, from);
+                    g.to = std::max(g.to, to);
+                    return;
+                }
+            }
+            GuideLine g;
+            g.vertical = vertical;
+            g.at = at;
+            g.from = from;
+            g.to = to;
+            out.push_back(g);
+        };
+        for (int axis = 0; axis < 2; ++axis) {
+            const bool x = axis == 0;
+            const int edges = x ? edgesX : edgesY;
+            int mine[3];
+            guide_detail::edges2(r, x, mine);
+            const int lo = x ? r.y : r.x, hi = x ? r.y + r.h : r.x + r.w;
+            for (int k = 0; k < 3; ++k) {
+                if (!(edges & (1 << k))) continue;
+                for (const DragRect& o : others) {
+                    int theirs[3];
+                    guide_detail::edges2(o, x, theirs);
+                    for (int t : theirs) {
+                        if (std::abs(t - mine[k]) > 1) continue;
+                        const int olo = x ? o.y : o.x, ohi = x ? o.y + o.h : o.x + o.w;
+                        add(x, t / 2, std::min(lo, olo), std::max(hi, ohi));
+                    }
+                }
+                const int page = x ? canvasW : canvasH;
+                if (std::abs(page - mine[k]) <= 1) add(x, page / 2, 0, x ? canvasH : canvasW);
+            }
+        }
+        return out;
+    }
+
+    // A drag's box with the guides applied. `snapped` is where the grid put
+    // it and `raw` where the pointer did (no grid); an axis whose edge comes
+    // within reach of a target lines up on it (from the raw box, so the grid
+    // doesn't pull it off), any other keeps the grid's value. handle: CH_BODY
+    // moves (every edge and the centre take part), a resize handle moves only
+    // its edges (the size changes with them). moveX / moveY: the axes the
+    // pointer really moved along (an axis it didn't stays put). `lines` gets
+    // what to draw for the result.
+    static inline DragRect applyGuides(const DragRect& snapped, const DragRect& raw, int handle, const std::vector<DragRect>& others,
+                                       int canvasW, int canvasH, int reach, bool moveX, bool moveY, std::vector<GuideLine>& lines)
+    {
+        DragRect out = snapped;
+        int edgesX = GE_ALL, edgesY = GE_ALL;
+        if (handle != CH_BODY) {
+            const bool left = handle == CH_NW || handle == CH_W || handle == CH_SW;
+            const bool right = handle == CH_NE || handle == CH_E || handle == CH_SE;
+            const bool up = handle == CH_NW || handle == CH_N || handle == CH_NE;
+            const bool down = handle == CH_SW || handle == CH_S || handle == CH_SE;
+            edgesX = (left ? GE_LOW : 0) | (right ? GE_HIGH : 0);
+            edgesY = (up ? GE_LOW : 0) | (down ? GE_HIGH : 0);
+        }
+        for (int axis = 0; axis < 2; ++axis) {
+            const bool x = axis == 0;
+            const int edges = x ? edgesX : edgesY;
+            if (!edges || !(x ? moveX : moveY)) continue;
+            int shift = 0;
+            if (!guideShift(raw, x, edges, others, canvasW, canvasH, reach, shift)) continue;
+            int& pos = x ? out.x : out.y;
+            int& size = x ? out.w : out.h;
+            const int rawPos = x ? raw.x : raw.y, rawSize = x ? raw.w : raw.h;
+            if (handle == CH_BODY) {
+                pos = rawPos + shift;
+            }
+            else if (edges & GE_LOW) {
+                // The low edge moves, the high one stays where the grid left it
+                const int high = pos + size;
+                const int next = rawPos + shift;
+                if (high - next >= 1) { pos = next; size = high - next; }
+            }
+            else {
+                const int next = rawPos + rawSize + shift;
+                if (next - pos >= 1) size = next - pos;
+            }
+        }
+        lines = guideLines(out, others, canvasW, canvasH, moveX ? edgesX : 0, moveY ? edgesY : 0);
+        return out;
+    }
+
+    // ---- one setting of several at once ----------------------------------------------
+
+    // What several selected things have for one setting: whether every one
+    // has it set, whether any does, and the value when they all agree (set
+    // to the same, or none set); mixed when they differ ("(several values)")
+    struct SharedValue
+    {
+        bool mixed = false;
+        bool any = false;
+        bool all = false;
+        std::string value;
+    };
+
+    // From each one's (set, value)
+    static inline SharedValue sharedValue(const std::vector<std::pair<bool, std::string>>& each)
+    {
+        SharedValue v;
+        if (each.empty()) return v;
+        v.all = true;
+        for (const auto& e : each) {
+            v.any = v.any || e.first;
+            v.all = v.all && e.first;
+            if (e.first != each.front().first || e.second != each.front().second) v.mixed = true;
+        }
+        if (!v.mixed) v.value = each.front().second;
+        return v;
     }
 }

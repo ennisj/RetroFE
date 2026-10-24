@@ -341,13 +341,36 @@ namespace ThemeEditor
             drag_.endTx = canvasToThemeX(fit, sx);
             drag_.endTy = canvasToThemeY(fit, sy);
         }
-        else if (drag_.handle == CH_BODY) {
-            drag_.rect = canvasMove(drag_.start, dx, dy, grid, project_.canvasW(), project_.canvasH());
-        }
         else {
-            const WidgetDef* def = selectedDef();
-            drag_.rect = canvasResize(drag_.start, drag_.handle, dx, dy, def ? def->minW : 8, def ? def->minH : 8,
-                                      grid, project_.canvasW(), project_.canvasH());
+            DragRect raw;
+            if (drag_.handle == CH_BODY) {
+                drag_.rect = canvasMove(drag_.start, dx, dy, grid, project_.canvasW(), project_.canvasH());
+                raw = canvasMove(drag_.start, dx, dy, 1, project_.canvasW(), project_.canvasH());
+            }
+            else {
+                const WidgetDef* def = selectedDef();
+                drag_.rect = canvasResize(drag_.start, drag_.handle, dx, dy, def ? def->minW : 8, def ? def->minH : 8,
+                                          grid, project_.canvasW(), project_.canvasH());
+                raw = canvasResize(drag_.start, drag_.handle, dx, dy, def ? def->minW : 8, def ? def->minH : 8, 1,
+                                   project_.canvasW(), project_.canvasH());
+            }
+            guideLines_.clear();
+            if (guides) {
+                // Every other widget on the page, not hidden in the editor
+                std::vector<DragRect> others;
+                const auto& widgets = page().widgets;
+                for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
+                    if (widgets[i].canvasHide || isSelected(i)) continue;
+                    DragRect r;
+                    canvasHitRect(widgets[i], r.x, r.y, r.w, r.h);
+                    others.push_back(r);
+                }
+                const int reach = std::max(1, roundDelta(guideReachPx / fit.scale));
+                const bool movedX = std::fabs(sx - drag_.startSx) >= CLICK_SLOP;
+                const bool movedY = std::fabs(sy - drag_.startSy) >= CLICK_SLOP;
+                drag_.rect = applyGuides(drag_.rect, raw, drag_.handle, others, project_.canvasW(), project_.canvasH(), reach,
+                                         movedX, movedY, guideLines_);
+            }
         }
     }
 
@@ -356,6 +379,7 @@ namespace ThemeEditor
         if (!drag_.active) return;
         Drag d = drag_;
         drag_ = Drag();
+        guideLines_.clear();
         if (d.marquee) {
             if (!d.moved) {
                 // A click: on empty canvas nothing is selected; with Ctrl / Shift the widget under it toggles
@@ -424,6 +448,7 @@ namespace ThemeEditor
     void EditorSession::cancelDrag()
     {
         drag_ = Drag();
+        guideLines_.clear();
     }
 
     // ---- edits -------------------------------------------------------------
@@ -633,6 +658,158 @@ namespace ThemeEditor
         return true;
     }
 
+    namespace
+    {
+        // A value as a variable takes it: bools spelled any usual way, numbers
+        // clamped, a dropdown's options only. False when it can't take it.
+        bool varTakes(const WidgetVar& var, const std::string& value, std::string& v)
+        {
+            v = value;
+            if (var.type == "bool") {
+                v = (value == "true" || value == "yes" || value == "1" || value == "on") ? "true" : "false";
+            }
+            else if (var.numeric && !v.empty()) {
+                char* end = nullptr;
+                double d = std::strtod(v.c_str(), &end);
+                if (end == v.c_str()) return false;
+                if (var.minV < var.maxV) d = std::max(var.minV, std::min(var.maxV, d));
+                char buffer[32];
+                std::snprintf(buffer, sizeof(buffer), "%g", d);
+                v = buffer;
+            }
+            else if (!var.options.empty()) {
+                // A dropdown takes one of its options ('-' is the empty value, however it's spelled)
+                if (v == "-") v.clear();
+                bool listed = false;
+                for (const std::string& option : var.options) {
+                    listed |= option == v || (v.empty() && option == "-");
+                }
+                if (!listed) return false;
+            }
+            return true;
+        }
+
+        bool usesFontColor(const WidgetDef* def)
+        {
+            return def && def->fragment.find("FONTCOLOR") != std::string::npos;
+        }
+    }
+
+    bool EditorSession::editEach(const std::string& key, const std::function<bool(WidgetInstance&, const WidgetDef*)>& edit)
+    {
+        if (selection_.empty() || !lib_) return false;
+        std::vector<WidgetInstance> next = project_.pages[page_].widgets;
+        bool any = false;
+        for (int i : selection_) {
+            if (i < 0 || i >= static_cast<int>(next.size())) continue;
+            if (edit(next[i], lib_->find(next[i].def))) any = true;
+        }
+        if (!any) return false;
+        beginChange(key);
+        project_.pages[page_].widgets = std::move(next);
+        changed();
+        return true;
+    }
+
+    bool EditorSession::setLayerAll(int layer)
+    {
+        layer = clampLayer(layer);
+        return editEach(coalesce_.empty() ? "" : coalesce_ + "/all", [layer](WidgetInstance& w, const WidgetDef*) {
+            if (w.layer == layer) return false;
+            w.layer = layer;
+            return true;
+        });
+    }
+
+    bool EditorSession::setAlphaAll(int pct)
+    {
+        pct = std::max(0, std::min(100, pct));
+        return editEach(coalesce_.empty() ? "" : coalesce_ + "/all", [pct](WidgetInstance& w, const WidgetDef*) {
+            if (w.alphaPct == pct) return false;
+            w.alphaPct = pct;
+            return true;
+        });
+    }
+
+    bool EditorSession::setFontColorAll(const std::string& hex)
+    {
+        const std::string value = hex.empty() ? "" : normalizeColour(hex);
+        if (!hex.empty() && value.empty()) return false;
+        return editEach(coalesce_.empty() ? "" : coalesce_ + "/all", [&value](WidgetInstance& w, const WidgetDef* def) {
+            if (!usesFontColor(def) || w.fontColor == value) return false;
+            w.fontColor = value;
+            return true;
+        });
+    }
+
+    bool EditorSession::setVarAll(const std::string& token, const std::string& value)
+    {
+        return editEach(coalesce_.empty() ? "" : coalesce_ + "/all/" + token, [&](WidgetInstance& w, const WidgetDef* def) {
+            const WidgetVar* var = def ? def->var(token) : nullptr;
+            std::string v;
+            if (!var || !varTakes(*var, value, v) || w.varValue(token, var->def) == v) return false;
+            w.setVar(token, v);
+            return true;
+        });
+    }
+
+    bool EditorSession::resetVarAll(const std::string& token)
+    {
+        return editEach("", [&token](WidgetInstance& w, const WidgetDef*) {
+            bool has = false;
+            for (const auto& kv : w.vars) has = has || kv.first == token;
+            if (has) w.clearVar(token);
+            return has;
+        });
+    }
+
+    std::vector<EditorSession::SharedSetting> EditorSession::sharedSettings() const
+    {
+        std::vector<SharedSetting> out;
+        const WidgetInstance* primary = selectedWidget();
+        if (!primary || !lib_) return out;
+        const auto& widgets = page().widgets;
+        std::vector<const WidgetInstance*> each;
+        bool allColour = true;
+        for (int i : selection_) {
+            if (i < 0 || i >= static_cast<int>(widgets.size())) continue;
+            each.push_back(&widgets[i]);
+            allColour = allColour && usesFontColor(lib_->find(widgets[i].def));
+        }
+        auto add = [&out, &each](const std::string& name, const WidgetVar* var, const std::function<std::pair<bool, std::string>(const WidgetInstance&)>& get) {
+            std::vector<std::pair<bool, std::string>> values;
+            for (const WidgetInstance* w : each) values.push_back(get(*w));
+            SharedSetting s;
+            s.name = name;
+            s.var = var;
+            s.value = sharedValue(values);
+            out.push_back(s);
+        };
+        add("layer", nullptr, [](const WidgetInstance& w) { return std::make_pair(true, std::to_string(w.layer)); });
+        add("alpha", nullptr, [](const WidgetInstance& w) { return std::make_pair(true, std::to_string(w.alphaPct)); });
+        if (allColour) {
+            add("fontColor", nullptr, [](const WidgetInstance& w) { return std::make_pair(!w.fontColor.empty(), w.fontColor); });
+        }
+        const WidgetDef* primaryDef = lib_->find(primary->def);
+        if (!primaryDef) return out;
+        for (const WidgetVar& var : primaryDef->vars) {
+            // Every one's kind of widget has it, edited the same way
+            bool everyone = true;
+            for (const WidgetInstance* w : each) {
+                const WidgetDef* d = lib_->find(w->def);
+                const WidgetVar* v = d ? d->var(var.token) : nullptr;
+                everyone = everyone && v && varKind(*v) == varKind(var) && v->options == var.options;
+            }
+            if (!everyone) continue;
+            add(var.token, &var, [this, &var](const WidgetInstance& w) {
+                const WidgetDef* d = lib_->find(w.def);
+                const WidgetVar* v = d ? d->var(var.token) : nullptr;
+                return std::make_pair(true, w.varValue(var.token, v ? v->def : var.def));
+            });
+        }
+        return out;
+    }
+
     bool EditorSession::setVar(const std::string& token, const std::string& value)
     {
         WidgetInstance* m = selectedMutable();
@@ -640,28 +817,8 @@ namespace ThemeEditor
         if (!m || !def) return false;
         const WidgetVar* var = def->var(token);
         if (!var) return false;
-        std::string v = value;
-        if (var->type == "bool") {
-            v = (value == "true" || value == "yes" || value == "1" || value == "on") ? "true" : "false";
-        }
-        else if (var->numeric && !v.empty()) {
-            char* end = nullptr;
-            double d = std::strtod(v.c_str(), &end);
-            if (end == v.c_str()) return false;
-            if (var->minV < var->maxV) d = std::max(var->minV, std::min(var->maxV, d));
-            char buffer[32];
-            std::snprintf(buffer, sizeof(buffer), "%g", d);
-            v = buffer;
-        }
-        else if (!var->options.empty()) {
-            // A dropdown takes one of its options ('-' is the empty value, however it's spelled)
-            if (v == "-") v.clear();
-            bool listed = false;
-            for (const std::string& option : var->options) {
-                listed |= option == v || (v.empty() && option == "-");
-            }
-            if (!listed) return false;
-        }
+        std::string v;
+        if (!varTakes(*var, value, v)) return false;
         if (m->varValue(token, var->def) == v) return false;
         beginChange(coalesce_.empty() ? "" : coalesce_ + "/" + token);
         selectedMutable()->setVar(token, v);

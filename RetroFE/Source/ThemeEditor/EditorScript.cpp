@@ -15,6 +15,7 @@
  */
 #include "EditorScript.h"
 #include "EditorSelection.h"
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <sstream>
@@ -265,6 +266,24 @@ namespace ThemeEditor
         }
         if (n == "duplicate") { bool ok = s.duplicateSelected(); note = selectionNote(); return result(ok); }
         if (n == "delete") return result(s.removeSelected());
+        // One setting on every selected widget
+        if (n == "layerall") { int i = 0; s.endCoalesce(); return result(integer(c.words, 0, i) && s.setLayerAll(i)); }
+        if (n == "alphaall") { int i = 0; s.endCoalesce(); return result(integer(c.words, 0, i) && s.setAlphaAll(i)); }
+        if (n == "colourall" || n == "colorall") { s.endCoalesce(); return result(s.setFontColorAll(c.rest == "none" ? std::string() : c.rest)); }
+        if (n == "varall") {
+            if (c.words.empty()) return CommandResult::Failed;
+            s.endCoalesce();
+            return result(s.setVarAll(c.words[0], c.tail(1)));
+        }
+        if (n == "resetvarall") { s.endCoalesce(); return result(!c.words.empty() && s.resetVarAll(c.words[0])); }
+        if (n == "shared") {
+            for (const EditorSession::SharedSetting& v : s.sharedSettings()) {
+                note += (note.empty() ? "" : "; ") + v.name + " " +
+                        (v.value.mixed ? std::string("(several values)") : v.value.any ? "\"" + v.value.value + "\"" : std::string("(not set)"));
+            }
+            return result(s.selectionCount() > 0);
+        }
+        if (n == "guides") { s.guides = c.rest != "off"; return CommandResult::Ok; }
         if (n == "undo") return result(s.undo());
         if (n == "redo") return result(s.redo());
 
@@ -379,6 +398,23 @@ namespace ThemeEditor
             s.endCoalesce();
             return result(s.setAttribute(c.words[0], c.tail(1)));
         }
+        // Every selected element at once
+        if (n == "attrall") {
+            if (c.words.empty()) return CommandResult::Failed;
+            s.endCoalesce();
+            return result(s.setAttributeAll(c.words[0], c.tail(1)));
+        }
+        if (n == "rmattrall") { s.endCoalesce(); return result(!c.words.empty() && s.removeAttributeAll(c.words[0])); }
+        if (n == "shared") {
+            // shared [NAME...]: what the selected elements have for those (else every one they all set)
+            for (const LayoutSession::SharedAttr& a : s.sharedAttributes(c.words)) {
+                if (!c.words.empty() && std::find(c.words.begin(), c.words.end(), a.name) == c.words.end()) continue;
+                note += (note.empty() ? "" : "; ") + a.name + " " +
+                        (a.value.mixed ? std::string("(several values)") : a.value.any ? "\"" + a.value.value + "\"" : std::string("(not set)"));
+            }
+            return result(!s.selection().empty());
+        }
+        if (n == "guides") { s.guides = c.rest != "off"; return CommandResult::Ok; }
         if (n == "rmattr") return result(!c.words.empty() && s.removeAttribute(c.words[0]));
         if (n == "get") {
             const LayoutElement* e = s.selectedElement();
