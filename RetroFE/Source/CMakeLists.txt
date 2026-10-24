@@ -65,6 +65,17 @@ if(WIN32)
 
 endif()
 
+# macOS builds either RetroFE.app against the frameworks in ThirdPartyMac (what
+# build-macos.yml packages; the default once SDL2.framework is there) or a plain
+# retrofe executable against Homebrew's libraries
+set(RETROFE_MAC_THIRD_PARTY_DIR "${RETROFE_DIR}/ThirdPartyMac")
+if(APPLE AND EXISTS "${RETROFE_MAC_THIRD_PARTY_DIR}/SDL2.framework")
+    set(RETROFE_MACOS_BUNDLE_DEFAULT ON)
+else()
+    set(RETROFE_MACOS_BUNDLE_DEFAULT OFF)
+endif()
+option(RETROFE_MACOS_BUNDLE "macOS: build RetroFE.app with the frameworks in ThirdPartyMac" ${RETROFE_MACOS_BUNDLE_DEFAULT})
+
 if(WIN32)
     find_package(Glib2 REQUIRED)
     find_package(GStreamer REQUIRED)
@@ -74,40 +85,98 @@ if(WIN32)
     find_package(SDL2_ttf REQUIRED)
     find_package(ZLIB REQUIRED)
 
-elseif(APPLE)
-    find_package(Glib2 REQUIRED)
-    find_package(GStreamer REQUIRED)
-    find_package(SDL2 REQUIRED)
-    find_package(SDL2_image REQUIRED)
-    find_package(SDL2_mixer REQUIRED)
-    find_package(SDL2_ttf REQUIRED)
+elseif(APPLE AND RETROFE_MACOS_BUNDLE)
+    # RetroFE.app, built against the frameworks in ThirdPartyMac: SDL2, SDL2_image (and its
+    # webp), SDL2_mixer and SDL2_ttf from their release DMGs, GStreamer.framework from its
+    # installer, and the universal libminizip and libusb there, all of which are copied
+    # into the bundle (.github/workflows/build-macos.yml sets them up). minizip's and
+    # libusb's headers come from Homebrew (brew install minizip libusb).
+    set(MAC_FRAMEWORKS_DIR "${RETROFE_MAC_THIRD_PARTY_DIR}")
+    foreach(item SDL2.framework SDL2_image.framework SDL2_mixer.framework SDL2_ttf.framework
+                 webp.framework GStreamer.framework libminizip.dylib libusb-1.0.0.dylib)
+        if(NOT EXISTS "${MAC_FRAMEWORKS_DIR}/${item}")
+            message(FATAL_ERROR "RETROFE_MACOS_BUNDLE needs ${MAC_FRAMEWORKS_DIR}/${item}")
+        endif()
+    endforeach()
     find_package(ZLIB REQUIRED)
-    find_library(COREFOUNDATION CoreFoundation)
-    find_library(IOKIT IOKit)
-    pkg_check_modules(GLIB2 REQUIRED glib-2.0 gobject-2.0 gthread-2.0)
-    pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-video-1.0 gstreamer-plugins-base-1.0)
+    find_path(MINIZIP_INCLUDE_DIR minizip/unzip.h HINTS /opt/homebrew/include /usr/local/include)
+    find_path(LIBUSB_INCLUDE_DIR libusb-1.0/libusb.h HINTS /opt/homebrew/include /usr/local/include)
+    if(NOT MINIZIP_INCLUDE_DIR OR NOT LIBUSB_INCLUDE_DIR)
+        message(FATAL_ERROR "RETROFE_MACOS_BUNDLE needs minizip's and libusb's headers: brew install minizip libusb")
+    endif()
 
-    # Manually specify paths if needed
-    set(LIBUSB_INCLUDE_DIR "/opt/homebrew/include" CACHE PATH "Path to libusb include directory")
-    set(LIBUSB_LIBRARY "/opt/homebrew/lib/libusb-1.0.dylib" CACHE FILEPATH "Path to libusb library")
-    
+    # <SDL2/SDL.h>, <SDL2_ttf/SDL_ttf.h>, <webp/decode.h> and so on resolve through -F; the
+    # frameworks' own headers and ImGui's SDL backends include "SDL.h" and need
+    # SDL2.framework/Headers, the rest of the code needs GStreamer's (gst/, glib.h)
+    add_compile_options("-F${MAC_FRAMEWORKS_DIR}")
+    set(SDL2_INCLUDE_DIRS "${MAC_FRAMEWORKS_DIR}/SDL2.framework/Headers")
+    set(GSTREAMER_INCLUDE_DIRS "${MAC_FRAMEWORKS_DIR}/GStreamer.framework/Headers")
+    set(RETROFE_PLATFORM_INCLUDE_DIRS ${MINIZIP_INCLUDE_DIR} ${LIBUSB_INCLUDE_DIR})
+    set(MINIZIP_LIBRARIES "${MAC_FRAMEWORKS_DIR}/libminizip.dylib")
+    # GStreamer's libraries directly: GStreamer.framework's own binary only re-exports
+    # them by @rpath/lib/..., which the linker can't follow. RetroFE finds them in the
+    # bundle through the @executable_path/../Frameworks/GStreamer.framework/Libraries rpath.
+    set(MAC_GSTREAMER_LIBRARIES)
+    foreach(library gstreamer-1.0 gstbase-1.0 gstvideo-1.0 gstaudio-1.0 gstapp-1.0 gstpbutils-1.0 gobject-2.0 glib-2.0)
+        string(MAKE_C_IDENTIFIER "MAC_GSTREAMER_${library}" variable)
+        find_library(${variable} ${library}
+            PATHS "${MAC_FRAMEWORKS_DIR}/GStreamer.framework/Versions/1.0/lib" NO_DEFAULT_PATH)
+        if(NOT ${variable})
+            message(FATAL_ERROR "RETROFE_MACOS_BUNDLE: no lib${library} in GStreamer.framework")
+        endif()
+        list(APPEND MAC_GSTREAMER_LIBRARIES "${${variable}}")
+    endforeach()
+    # What RetroFE.app carries in Contents/Frameworks
+    set(RETROFE_MACOS_EMBEDDED
+        SDL2.framework SDL2_image.framework SDL2_mixer.framework SDL2_ttf.framework
+        webp.framework GStreamer.framework libminizip.dylib libusb-1.0.0.dylib)
+    set(RETROFE_LIBRARIES
+        "${MAC_FRAMEWORKS_DIR}/SDL2.framework"
+        "${MAC_FRAMEWORKS_DIR}/SDL2_image.framework"
+        "${MAC_FRAMEWORKS_DIR}/SDL2_mixer.framework"
+        "${MAC_FRAMEWORKS_DIR}/SDL2_ttf.framework"
+        "${MAC_FRAMEWORKS_DIR}/webp.framework"
+        ${MAC_GSTREAMER_LIBRARIES}
+        "${MAC_FRAMEWORKS_DIR}/libminizip.dylib"
+        "${MAC_FRAMEWORKS_DIR}/libusb-1.0.0.dylib"
+        ${ZLIB_LIBRARIES}
+        "-framework CoreFoundation"
+        "-framework IOKit"
+    )
+
 else()
+    # Linux, and macOS with Homebrew's libraries (brew install pkg-config sdl2 sdl2_image
+    # sdl2_mixer sdl2_ttf gstreamer minizip webp libusb)
     include(FindPkgConfig)
-    
+
     # Find necessary libraries using pkg-config
     pkg_search_module(SDL2 REQUIRED sdl2)
     pkg_search_module(SDL2_IMAGE REQUIRED SDL2_image)
     pkg_search_module(SDL2_MIXER REQUIRED SDL2_mixer)
     pkg_search_module(SDL2_TTF REQUIRED SDL2_ttf)
-    pkg_search_module(ZLIB REQUIRED zlib)
+    if(APPLE)
+        # macOS's own zlib, which has no pkg-config file of its own
+        find_package(ZLIB REQUIRED)
+    else()
+        pkg_search_module(ZLIB REQUIRED zlib)
+    endif()
     pkg_search_module(MINIZIP REQUIRED minizip)
     pkg_search_module(WEBP REQUIRED libwebp)
     pkg_check_modules(WEBP_DEMUX REQUIRED libwebpdemux)
     pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0 gstreamer-video-1.0 gstreamer-audio-1.0 gstreamer-app-1.0)
     pkg_check_modules(Glib2 REQUIRED glib-2.0 gobject-2.0 gthread-2.0 gmodule-2.0)
     pkg_search_module(LIBUSB REQUIRED libusb-1.0)
-    pkg_check_modules(LIBEVDEV REQUIRED libevdev)
+    if(NOT APPLE)
+        pkg_check_modules(LIBEVDEV REQUIRED libevdev)
+    endif()
     find_package(Threads REQUIRED)
+    if(APPLE)
+        # <libusb-1.0/libusb.h>, <gstreamer-1.0/gst/gst.h> and <SDL2/SDL.h> are under
+        # Homebrew's include folder, beside the pkg-config that found the rest
+        get_filename_component(HOMEBREW_BIN_DIR "${PKG_CONFIG_EXECUTABLE}" DIRECTORY)
+        get_filename_component(HOMEBREW_PREFIX_DIR "${HOMEBREW_BIN_DIR}" DIRECTORY)
+        set(RETROFE_PLATFORM_INCLUDE_DIRS "${HOMEBREW_PREFIX_DIR}/include")
+    endif()
     
     # Include directories for all found libraries
     include_directories(
@@ -158,8 +227,12 @@ else()
         ${LIBUSB_LIBRARIES}
         ${LIBEVDEV_LIBRARIES}
     )
-    add_definitions(${LIBEVDEV_CFLAGS_OTHER})
+    if(APPLE)
+        list(APPEND RETROFE_LIBRARIES "-framework CoreFoundation" "-framework IOKit")
+    else()
+        add_definitions(${LIBEVDEV_CFLAGS_OTHER})
     endif()
+endif()
 
 set(RETROFE_INCLUDE_DIRS
     "${GLIB2_INCLUDE_DIRS}"
@@ -176,7 +249,7 @@ set(RETROFE_INCLUDE_DIRS
     "${IMGUI_ROOT}/backends"
     "${NLOHMANN_JSON_ROOT}"
     "${PACDRIVE_ROOT}"
-    "/opt/homebrew/lib/glib-2.0/include"
+    ${RETROFE_PLATFORM_INCLUDE_DIRS}
 )
 
 # Link PacDrive library if on Windows
@@ -550,6 +623,10 @@ if(RETROFE_BUILD_TESTS)
 	else()
 		# sqlite3 needs libdl and threads; the library index builds on a thread
 		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+		if(APPLE AND RETROFE_MACOS_BUNDLE)
+			# ThirdPartyMac's libminizip.dylib is @rpath/libminizip.dylib
+			set_target_properties(retrofe_tests PROPERTIES BUILD_RPATH "${MAC_FRAMEWORKS_DIR}")
+		endif()
 	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)
@@ -563,6 +640,8 @@ add_executable(retrofe  ${RETROFE_SOURCES} ${RETROFE_HEADERS})
 add_dependencies(retrofe GenerateVersioningHeader)
 target_link_libraries(retrofe retrofe_theme_editor)
 
+# macOS links what its branch above found, frameworks or Homebrew's
+if(NOT APPLE)
 find_library(WEBPDEMUX_LIBRARY
     NAMES webpdemux
     HINTS /opt/homebrew/lib /usr/lib /usr/local/lib
@@ -613,26 +692,52 @@ endif()
 if(HAVE_MINIZIP)
     target_link_libraries(retrofe ${MINIZIP_LIBRARY})
 endif()
+endif()
 
 target_link_libraries(retrofe ${RETROFE_LIBRARIES})
 
-if(APPLE)
-    target_link_libraries(retrofe
-        ${COREFOUNDATION}
-        ${IOKIT}
-        ${SDL2_LIBRARIES}
-        ${SDL2_IMAGE_LIBRARIES}
-        ${SDL2_MIXER_LIBRARIES}
-        ${SDL2_TTF_LIBRARIES}
-        ${LIBUSB_LIBRARY}
-        ${GLIB2_LIBRARIES}
-        ${GSTREAMER_LIBRARIES}
-        ${GSTREAMER_VIDEO_LIBRARIES}
+if(APPLE AND RETROFE_MACOS_BUNDLE)
+    # RetroFE.app, as the Xcode project used to make it: Configuration finds the
+    # RetroFE folder by the executable's path ending in /RetroFE.app/Contents/MacOS
+    file(READ "${RETROFE_DIR}/CMake/Versioning.cmake" RETROFE_VERSIONING_SCRIPT)
+    string(REGEX MATCH "RETROFE_VERSION_MAJOR \"([0-9]+)\"" _ "${RETROFE_VERSIONING_SCRIPT}")
+    set(RETROFE_BUNDLE_VERSION "${CMAKE_MATCH_1}")
+    string(REGEX MATCH "RETROFE_VERSION_MINOR \"([0-9]+)\"" _ "${RETROFE_VERSIONING_SCRIPT}")
+    set(RETROFE_BUNDLE_VERSION "${RETROFE_BUNDLE_VERSION}.${CMAKE_MATCH_1}")
+    if(DEFINED RETROFE_RELEASE_VERSION AND NOT "${RETROFE_RELEASE_VERSION}" STREQUAL "")
+        set(RETROFE_BUNDLE_VERSION "${RETROFE_RELEASE_VERSION}")
+    endif()
+    # build-macos.yml builds for macOS 11 and later (-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0)
+    if(CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(RETROFE_BUNDLE_MINIMUM_MACOS "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    else()
+        set(RETROFE_BUNDLE_MINIMUM_MACOS "11.0")
+    endif()
+
+    set(RETROFE_BUNDLE_ICON "${RETROFE_DIR}/../Package/Environment/Common/RetroFE.png")
+    target_sources(retrofe PRIVATE "${RETROFE_BUNDLE_ICON}")
+    set_source_files_properties("${RETROFE_BUNDLE_ICON}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    set_target_properties(retrofe PROPERTIES
+        MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "RetroFE"
+        MACOSX_BUNDLE_INFO_PLIST "${RETROFE_DIR}/CMake/MacOSXBundleInfo.plist.in"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.coinops.RetroFE"
+        MACOSX_BUNDLE_BUNDLE_NAME "RetroFE"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${RETROFE_BUNDLE_VERSION}"
+        MACOSX_BUNDLE_ICON_FILE "RetroFE.png"
+        # The frameworks are found in the bundle, never where it was built
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "@executable_path/../Frameworks;@executable_path/../Frameworks/GStreamer.framework/Libraries"
     )
-    
-    # Set up macOS-specific properties
-    set_target_properties(retrofe PROPERTIES OUTPUT_NAME "retrofe")
-    set_target_properties(retrofe PROPERTIES LINKER_LANGUAGE CXX)
+    # Copy the frameworks and libraries in (without their headers, or GStreamer's static
+    # libraries), then sign the bundle ad hoc, as Xcode did
+    add_custom_command(TARGET retrofe POST_BUILD
+        COMMAND /bin/sh "${RETROFE_DIR}/CMake/EmbedMacFrameworks.sh"
+            "$<TARGET_BUNDLE_DIR:retrofe>" "${MAC_FRAMEWORKS_DIR}" "${RETROFE_DIR}/Source/retrofe.entitlements"
+            ${RETROFE_MACOS_EMBEDDED}
+        COMMENT "Embedding the frameworks in RetroFE.app"
+        VERBATIM
+    )
 endif()
 
 if(MSVC)
@@ -646,8 +751,14 @@ if(MSVC)
 else()
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0 -Wall -ggdb")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -Wall -ggdb")
-	if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -march=x86-64-v2 -msse4.2 -mavx -Wall -Wextra -funroll-loops")
-    	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -march=x86-64-v2 -msse4.2 -mavx -Wall -Wextra -Wno-reorder -funroll-loops")
-	endif()
+    # The same warnings on every architecture
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-reorder")
+    # x86-64 tuning, only when building for x86-64 alone: not for a macOS build that
+    # targets arm64, or both (universal), from an Intel Mac
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" AND
+       (NOT CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"))
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -march=x86-64-v2 -msse4.2 -mavx -funroll-loops")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -march=x86-64-v2 -msse4.2 -mavx -funroll-loops")
+    endif()
 endif()

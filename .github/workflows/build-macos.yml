@@ -2,6 +2,13 @@ name: macOS App Bundles
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# RetroFE.app is built with CMake (RETROFE_MACOS_BUNDLE, RetroFE/Source/CMakeLists.txt)
+# against the frameworks set up in RetroFE/ThirdPartyMac below, as a universal (arm64
+# and x86_64) app for macOS 11 and later. CMake copies the frameworks into the bundle.
+
 jobs:
   build:
     runs-on: macos-14
@@ -21,7 +28,7 @@ jobs:
             ./SDL2_ttf-2.24.0.dmg
             ./gstreamer-1.0-1.22.12-universal.pkg
             ./gstreamer-1.0-devel-1.22.12-universal.pkg
-          key: macos-dependencies-${{ hashFiles('**/build-appbundle.yml') }}
+          key: macos-dependencies-${{ hashFiles('.github/workflows/build-macos.yml') }}
           restore-keys: |
             macos-dependencies-
 
@@ -77,7 +84,7 @@ jobs:
           hdiutil detach /Volumes/SDL2_ttf
 
       - name: Copy GStreamer framework
-        run: | 
+        run: |
           cp -R /Library/Frameworks/GStreamer.framework RetroFE/ThirdPartyMac/
 
       - name: Debug - get size
@@ -85,35 +92,106 @@ jobs:
           du -sh RetroFE/ThirdPartyMac/*
 
       - name: Install Homebrew dependencies
+        # minizip's and libusb's headers (the libraries are the universal ones in ThirdPartyMac)
         run: |
-          brew install minizip create-dmg
+          brew install minizip libusb create-dmg
 
-      - name: Build project with Xcode
-        run: | 
-          xcodebuild -project RetroFE/xcode/retrofe.xcodeproj
+      - name: Configure
+        run: |
+          cmake -S RetroFE/Source -B RetroFE/Build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRETROFE_MACOS_BUNDLE=ON \
+            "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build RetroFE.app
+        run: |
+          cmake --build RetroFE/Build --target retrofe --parallel "$(sysctl -n hw.ncpu)"
+
+      - name: Put RetroFE.app in its own folder for the disk image
+        run: |
+          rm -rf RetroFE/Build/Release
+          mkdir -p RetroFE/Build/Release
+          mv RetroFE/Build/RetroFE.app RetroFE/Build/Release/
+          lipo -info RetroFE/Build/Release/RetroFE.app/Contents/MacOS/RetroFE
+          otool -L RetroFE/Build/Release/RetroFE.app/Contents/MacOS/RetroFE
 
       - name: Debug - get size
         run: |
           du -sh RetroFE/Build/Release/RetroFE.app
 
       - name: Post build GStreamer.framework slimming
-        run: | 
+        run: |
           chmod +x Scripts/macOS/delete_gstreamer_unused_libs.sh
           Scripts/macOS/delete_gstreamer_unused_libs.sh RetroFE/Build/Release/RetroFE.app/Contents/Frameworks/GStreamer.framework/Versions/1.0/lib
           rm -rf RetroFE/Build/Release/RetroFE.app/Contents/Frameworks/GStreamer.framework/Versions/1.0/include
+          # Links left pointing at deleted libraries
+          find RetroFE/Build/Release/RetroFE.app/Contents/Frameworks/GStreamer.framework -type l ! -exec test -e {} \; -delete
+
+      - name: Sign the slimmed bundle again (ad hoc)
+        run: |
+          codesign --force --sign - RetroFE/Build/Release/RetroFE.app/Contents/Frameworks/GStreamer.framework
+          codesign --force --sign - --entitlements RetroFE/Source/retrofe.entitlements RetroFE/Build/Release/RetroFE.app
+          codesign --verify --deep --strict --verbose=2 RetroFE/Build/Release/RetroFE.app
+
+      - name: Check that RetroFE.app is self-contained and starts
+        # Its run paths must all be inside the bundle, and starting it (--version prints
+        # and exits before any window opens) must load every library from the bundle or
+        # the system, never from where it was built or GStreamer's install on this runner
+        env:
+          RETROFE_PATH: ${{ runner.temp }}/retrofe-root
+        run: |
+          mkdir -p "$RETROFE_PATH"
+          app="$(cd RetroFE/Build/Release/RetroFE.app && pwd -P)"
+          exe="$app/Contents/MacOS/RetroFE"
+
+          rpaths=$(otool -arch all -l "$exe" | awk '$1 == "cmd" { cmd = $2 } cmd == "LC_RPATH" && $1 == "path" { print $2 }' | sort -u)
+          echo "Run paths:"
+          printf '%s\n' "$rpaths"
+          if [ -z "$rpaths" ]; then
+            echo "::error::RetroFE has no run paths"; exit 1
+          fi
+          if printf '%s\n' "$rpaths" | grep -v -e '^@executable_path/\.\./Frameworks$' -e '^@executable_path/\.\./Frameworks/'; then
+            echo "::error::RetroFE has a run path outside its bundle (above)"; exit 1
+          fi
+
+          # check_loads NAME COMMAND...: runs COMMAND --version with dyld listing what it loads
+          check_loads() {
+            name="$1"; shift
+            log="$RUNNER_TEMP/dyld-$name.txt"
+            "$@" --version 2> "$log"
+            # "dyld[pid]: <UUID> /path" (or older dyld's "dyld: loaded: /path")
+            loaded=$(sed -nE 's/^dyld(\[[0-9]+\])?: (loaded: )?(<[^>]*> )?//p' "$log" | sort -u)
+            count=$(printf '%s\n' "$loaded" | grep -c . || true)
+            echo "$name: $count images loaded"
+            if [ "$count" -lt 10 ]; then
+              echo "::error::dyld didn't list what RetroFE ($name) loaded:"; cat "$log"; exit 1
+            fi
+            outside=$(printf '%s\n' "$loaded" | grep -v -e "^$app/" -e '^/usr/lib/' -e '^/System/' \
+              -e '^/Library/Apple/usr/libexec/oah/' -e '^/usr/libexec/rosetta/' || true)
+            if [ -n "$outside" ]; then
+              echo "::error::RetroFE ($name) loaded libraries from outside its bundle and the system:"
+              printf '%s\n' "$outside"; exit 1
+            fi
+          }
+
+          check_loads arm64 env DYLD_PRINT_LIBRARIES=1 "$exe"
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            check_loads x86_64 arch -x86_64 -e DYLD_PRINT_LIBRARIES=1 "$exe"
+          else
+            echo "No Rosetta on this runner: the x86_64 half isn't started"
+          fi
 
       - name: Debug - get size
         run: |
           du -sh RetroFE/Build/Release/RetroFE.app
 
       - name: Create RetroFE.dmg
-        run: | 
-          create-dmg "RetroFE.dmg" RetroFE/Build/Release/    
-      
+        run: |
+          create-dmg "RetroFE.dmg" RetroFE/Build/Release/
+
       - name: Upload RetroFE.dmg
         uses: actions/upload-artifact@v4
         with:
           name: RetroFE.dmg
           path: RetroFE.dmg
-
-          
