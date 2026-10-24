@@ -6,7 +6,9 @@ Themes screens and the editor screen, "UI round 1" below) and so is the
 next (templates, files, theme properties, "Editor round 3" below), and
 hand-made themes can be edited in place ("Layout-native mode" below,
 decision M10 option 3), and both editors work with RetroFE's mapped
-controls ("Controller editing" below). The core
+controls ("Controller editing" below), select several things at once and
+edit a page with its 4:3 twin ("Several at once, any handle, twin pages"
+below). The core
 lives in `RetroFE/Source/ThemeEditor/` (namespace `ThemeEditor`) and is
 tested by `RetroFE/Tests/ThemeEditorTests.cpp`; the screens are in
 `RetroFE/Source/Manager/Themes/`, tested by `RetroFE/Tests/ThemesTests.cpp`.
@@ -734,8 +736,8 @@ restored the file byte for byte.
 
 - ~~Adding elements~~, ~~editing animations~~, ~~showing where an
   animation ends~~ (next section).
-- Editing several pages at once (`layout.xml` and `layout 4x3.xml` usually
-  move together).
+- ~~Editing several pages at once (`layout.xml` and `layout 4x3.xml` usually
+  move together)~~ (the twin page, "Several at once, any handle, twin pages").
 - Snapping a centred box of odd width puts its edge, not its centre, on the grid.
 
 ## Layout-native mode: adding elements and animations
@@ -855,10 +857,10 @@ and RetroFE reloaded the theme when the manager closed.
 
 ### Left for later
 
-- Editing `layout.xml` and `layout 4x3.xml` together.
+- ~~Editing `layout.xml` and `layout 4x3.xml` together~~ (below).
 - Selecting an off-page element by its end box on the canvas (the list
   selects it).
-- End boxes for other events, and previewing an event's frames by a slider.
+- ~~End boxes for other events~~ (below), and previewing an event's frames by a slider.
 - Adding a sound (`<sound>`) and menu items from the palette.
 
 ## Controller editing
@@ -1045,10 +1047,187 @@ opened on *Save (Enter)*.
 
 ### Left for later
 
-- Resizing from other corners with the controller (Resize moves the
-  bottom-right one).
-- Moving several elements at once; guides.
-- Scrolling the element list to the element picked on the canvas.
+- ~~Resizing from other corners with the controller (Resize moves the
+  bottom-right one)~~ (below).
+- ~~Moving several elements at once~~ (below); guides.
+- ~~Scrolling the element list to the element picked on the canvas~~ (below).
+
+## Several at once, any handle, twin pages
+
+The follow-ups the earlier rounds left: selecting several widgets or
+elements (mouse, keyboard and controller) and moving, aligning, spacing,
+duplicating and deleting them together; resizing from any handle with the
+controller; the lists following the canvas; a hand-made page edited
+together with its 4:3 twin; end boxes for every event. User-facing:
+[THEME_EDITOR.md](../THEME_EDITOR.md#several-at-once).
+
+### What was built
+
+| Where | What |
+|---|---|
+| `ThemeEditor/EditorSelection.h` (new, header-only) | The selection as a list in picking order, the primary last (`selectionWith`, `selectionToggled`, `selectionRange` for Shift-click in a list, `selectionAfterErase`); `unionRect`, `marqueeRect`, `marqueePick` (wholly inside), `groupMoveDelta` (a group snapped and kept on the canvas as one box, via `canvasMove`); `alignRects` (six ways, on the box around them), `distributeRects` (equal gaps, outer two fixed, by centre order). Pure. |
+| `ThemeEditor/EditorNav.h` | `canvasNudgeResizeFrom` (any of the eight handles; from SE it equals `canvasNudgeResize`), `resizeHandleStep` / `resizeHandleLabel`; `canvasPress` with `multi` (Resize skipped for a group, Back collapses it, Letter up/down step the handle in Resize: `ECA_COLLAPSE`, `ECA_HANDLE_PREV/NEXT`); the held-Select controls (`heldSelectPress`, `HeldSelect`). |
+| `ThemeEditor/EditorSession` | `selection()` beside `selected()` (the primary); `setSelection`, `toggleSelected`, `addSelected`, `dropPrimary`, `selectAll`, `selectionBoxes`; the pointer protocol's `additive` (Ctrl/Shift), marquee and group drag; `moveBy` / `moveTo` / `shiftSelection` move every selected widget; `removeSelected`, `duplicateSelected` (copies 20 units down-right, new ids), `alignSelected`, `distributeSelected`; snapshots keep the selection. |
+| `ThemeEditor/LayoutSession` | The same selection API (the page itself is only ever selected alone; `movableSelection` leaves read-only boxes out); `commitBox` split into `boxWrites` + `commitBoxes` so several boxes are one text change; `shiftSelection`, group `moveBy`, `alignSelected`, `distributeSelected`; `duplicateSelected` / `deleteSelected` for several (an element inside another selected one goes with it); snapshots keep every selected path; linked undo steps (`undoLink`, `redoLink`, `linkUndo`, `applyLinked`); `eventEndBox(element, event)` and `movingEvents`. |
+| `ThemeEditor/LayoutTwin.{h,cpp}` (new) | `twinPage` (layout.xml <-> layout 4x3.xml in one folder), `matchElement` (same path + tag + identifying attributes, else the only/the n-th one alike; an event's steps follow their element), `attributeChanges` (attribute edits between two versions, or "the structure changed"), `mirrorChanges` (the copy rules below), `designSize`; `TwinSync` + `syncTwinPages` (two open sessions kept together, step by step, with linked undo). No SDL, no filesystem. |
+| `ThemeEditor/EditorScript` | Widget editor: `addselect`, `toggleselect`, `selectall`, `selection`, `clickadd`, `marquee`, `align`, `distribute`, `duplicate`. Layout editor: `addpath`, `togglepath`, the same group commands, `endbox [EVENT]`, `movingevents`. |
+| `Manager/Themes/app/ThemeEditorScreen`, `LayoutEditorScreen` | Ctrl/Shift on the canvas and in the lists, the marquee, group wireframes (each selected box, a dashed box around them, moving with a group drag), Ctrl+A / Ctrl+D, Escape collapses a group; *N selected* tools in the properties panel; the lists scroll to the primary when it was picked elsewhere; the controller's held Select, group Move, Resize's handle; widget editor *Duplicate*. Layout editor: the twin row (*Also apply to ...*, *Show ...*, what the last copy did), the second `LayoutSession`, `syncTwin` / `undoBoth` / `redoBoth` / `switchToTwin`, Save and the leave dialog over both pages, the twin's values in the panel; the end-box event choice; script commands `twin`, `switchtwin`, `twinnote`, `twinget`, `endevent`. |
+| `CMakeLists.txt` | The two new ThemeEditor sources in `retrofe_theme_editor` (its list is explicit). |
+
+No engine changes: the end boxes are worked out from the text, as before.
+
+### Decisions
+
+- **The selection is a list, the last picked is the primary.** The
+  properties panel shows the group's tools and then the primary's own
+  settings; the controller picks from the primary; Back/Escape keep only it.
+  Considered: a set with no primary (then the panel has nothing to show
+  below the tools, and "nearest that way" has no starting point), editing
+  shared properties of all of them at once (layer, alpha) in the panel
+  (useful, but each attribute needs a "mixed" state; left for later).
+- **Marquee: wholly inside, from empty canvas, or from anywhere with
+  Ctrl/Shift.** Hand-made pages almost always have a full-page background,
+  so "empty canvas" is rare there: with Ctrl or Shift held a press-and-drag
+  is always a marquee (a Ctrl/Shift *click* still toggles the element under
+  it, decided on release), and only boxes wholly inside are taken, so the
+  background isn't. Considered: touching boxes (a marquee would always take
+  the background), Alt-drag (Alt is the window menu on some desktops).
+- **Group drags move as one box.** The box around the group snaps its
+  corner to the grid and stays on the canvas, as one widget does; each
+  member moves by the same delta. In the layout editor an axis the pointer
+  didn't move along isn't written, so a straight-down group move keeps every
+  `x="center"`. Considered: snapping each member to the grid (their spacing
+  would change).
+- **No group resize.** With several selected there are no handles and
+  Resize is skipped in the controller's Select cycle; resizing several
+  boxes proportionally writes widths and heights nobody asked for (and in
+  the layout editor, onto text and art whose sizes come from elsewhere).
+- **Align and distribute on the box around them**, sizes untouched; a
+  centre on a half unit rounds down; distribute keeps the outer two by
+  centre order. Considered: aligning to the primary (the "key object" of
+  drawing programs; easy to add as a mode later). The layout editor writes
+  positions as a drag does (`boxWrites`), so a centred element aligned
+  sideways gets a numeric `x`.
+- **One undo step per operation**: group moves, nudge runs, align,
+  distribute, duplicate and delete are one snapshot (widget editor) or one
+  text change (layout editor: the writes go into a working copy first,
+  `commitBoxes`). Attribute edits don't move elements, so indices stay valid
+  in the copy; several duplicates are made in document order, tracking each
+  original by its byte offset (each copy goes right after its original,
+  before the next one), and several deletes go last to first.
+- **Duplicate in the widget editor offsets copies by 20 units** (up and
+  left when that's off the canvas): a copy on top of its original looks like
+  nothing happened. The layout editor keeps its exact copy in place (moving
+  it would write `x`/`y` numbers into the copy).
+- **Controller: hold Select to add.** Select in Pick acts when let go
+  (`HeldSelect`); a direction while it's held adds the nearest box that way
+  (or makes an already-selected one the primary), Letter up/down add the
+  previous/next in list order, Back drops the primary. Considered: a mapped
+  key of its own (cabinets rarely have one spare), a separate "group" mode
+  in the Select cycle (one more press for everything, and Select would mean
+  two things in Pick). Acting on release delays Move by the length of the
+  press, which nobody notices; a tap still does what it did. Back in Pick
+  with a group keeps the primary rather than leaving the editor.
+- **Resize from any handle: Letter up/down step the handle**, clockwise
+  from the bottom-right corner, reset to it each time Resize starts; the
+  active handle is drawn enlarged. Letter up/down did nothing in Resize, and
+  every mouse handle is reachable (edges move along their own axis only).
+  Considered: holding Select to cycle corners (Select already ends Resize),
+  choosing the handle by the first direction pressed (ambiguous between
+  growing and shrinking).
+- **The lists follow the selection**: when the primary changed and the
+  change didn't come from a click in that list, the list scrolls to it if
+  it isn't visible. The other way round already held: picking in the list
+  outlines it on the canvas (an element that isn't on the page as built has
+  no box; the panel says so).
+- **Twin pages: copy attribute edits, in proportion; switch with the same
+  elements.** Options considered: (a) a side-by-side preview of both pages
+  (two PageBuilder pages, textures and videos at once, and half the canvas
+  each); (b) mirror the edited values verbatim (wrong for positions: Aeon
+  Nox's 4:3 page is a different size, and its numbers are hand-tuned); (c)
+  mirror only values that were the same on both pages (safe, but a move
+  would almost never reach the other page); (d) chosen: positions and sizes
+  move by the same amount scaled to the other page (whole units; keywords and
+  percentages resolved per page, an attribute set on neither counts from
+  0), every other value is copied only where the pages agreed, and anything
+  left out is said; plus **Show** to switch to the twin with the same
+  elements selected, both pages' edits kept. Matching is by path, tag and
+  identifying attributes, falling back to the only (or n-th) element like
+  it, so an element added to one page doesn't make the rest match the wrong
+  ones; a test checks every element of Aeon Nox's two shipped pages matches.
+  Structural edits (add, duplicate, delete, events and steps) aren't copied:
+  matching an inserted element's place on the other page is guesswork.
+- **The twin is a second `LayoutSession`** with its own undo history,
+  backups and on-disk check; the screen copies what changed
+  (`syncTwinPages`: `attributeChanges` between two texts) before and after
+  each frame, controller press and script command, so every way of editing
+  is covered without hooking each one. The step here and its copy carry the
+  same link: Undo/Redo take both back (`undoBoth`). **A step is copied as a
+  whole**: while edits merge into one step (typing in a field, a run of
+  nudges or a controller Move), the copy is worked out again from where the
+  step began on both pages and replaces the twin's linked step, rather than
+  adding each keystroke's change; otherwise a field typed empty on the way
+  to a new value (skipped: empty isn't a number) left the twin at whatever
+  the last number was, and each 1-unit nudge rounded to 1 on a smaller page
+  (found in review). Two steps made between copies (rare) are copied as one,
+  linked to the later. Turning the copy on, switching pages and undoing
+  start afresh, so earlier edits aren't copied. Putting back one page's
+  original isn't copied. Save writes both; leaving asks about both.
+- **End boxes for every event**: a choice of event (or *every event*) beside
+  *Where animations end*; each box starts from the placed box, as the
+  `onEnter` one did. Considered: chaining events (where `onMenuExit` lands
+  after `onMenuEnter`) — which event follows which depends on what the user
+  does.
+
+### Checked
+
+`retrofe_tests`: `Tests/EditorSelectionTests.cpp` (selection lists,
+ranges, union, marquee inside-only, group snapping and canvas clamps, all
+six aligns with a half-unit centre, distribute with negative gaps and too
+few boxes, resizing from every handle against the old bottom-right resize,
+min sizes and canvas clamps, the handle cycle, the multi canvas decisions
+and `HeldSelect`; the widget session: Ctrl-click, primary hand-over, select
+all, nudge runs and group clamps as one step, align/distribute/duplicate
+(new ids, offsets, the edge case)/delete with undo restoring the selection,
+the mouse marquee, Ctrl-click toggling, group drags, click-to-collapse,
+scripts; the layout session: group nudges keeping `center` on a straight
+move and writing numbers sideways, align/distribute as one change back to
+the exact bytes, read-only boxes left alone, several duplicates and deletes
+back to the exact bytes, a menu and its item, the mouse, linked steps,
+`eventEndBox` for other events, `movingEvents`, scripts) and
+`Tests/LayoutTwinTests.cpp` (twin pages, matching including Aeon Nox's two
+shipped pages element for element, attribute changes, every copy rule, two
+real sessions edited, undone together and saved byte for byte, a field typed
+empty on the way to a value and a run of 30 nudges each copied as a whole,
+two steps between copies).
+
+GUI check (2026-10-24, private root `E:\Storage\Agents\editor7`, the
+repo's shipped layouts plus the tests' "Every Widget" theme; screenshots in
+`screenshots/`). Posted keys only: in the layout editor Pick, held Select +
+directions adding elements, group Move (three texts 20 down), Back
+collapsing to one, Resize with Letter down to the top-left corner and the
+box growing up and left, the element list scrolling to each pick, the
+unsaved-changes dialog answered; in the widget editor the same held-Select
+group and Move, the theme panel scrolling to the widget, Don't save.
+Scripted: three Aeon Nox texts selected, nudged with *Also apply* on (the
+4:3 page's `x` 90 became 98 for a +10 move), a colour copied, *Show layout
+4x3.xml* with the same three selected, a Ctrl-marquee from on top of the
+background, end boxes for every event (the clock's `onEnter` and
+`onMenuEnter`), Save of both pages; a word diff showed only the edited
+values changed on each page and `--theme-check` built both cleanly. Widget
+editor scripted: align top, space across, a marquee, duplicate. After the
+review's fix (a step copied as a whole), a Debug build (ImGui's asserts on)
+ran the same layout script through without an assert, then held Select added
+an element and a controller Move of the two was copied to the 4:3 page.
+
+### Left for later
+
+- Editing an attribute of every selected element at once in the panel
+  (layer, alpha, font).
+- Aligning to the primary, and alignment guides while dragging.
+- Copying structural edits (added or deleted elements) to the twin page.
+- Variants other than `layout 4x3.xml` (`layout - 1.xml`, other aspect
+  names) and collection pages edited with the main page.
 
 ## Other open items
 

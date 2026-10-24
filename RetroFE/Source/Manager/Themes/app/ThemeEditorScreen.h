@@ -163,9 +163,15 @@ private:
     void drawPopups();
     void syncPopup(const char* name, bool& show, bool& opened);
     void requestClose();
+    // Several selected: align, distribute, duplicate, delete
+    void drawSelectionTools();
+    void alignSelection(int op);
+    void distributeSelection(bool horizontal);
     // The controller
     bool dialogOpen() const;
-    void canvasControl(int press);
+    void canvasControl(int press, bool released = false);
+    // A press while Select is held in Pick (EdHeldAction)
+    void heldControl(int press);
     void setMode(ThemeEditor::EdCanvasMode mode);
     std::string controllerHints() const;
 
@@ -252,6 +258,12 @@ private:
     Themes::EditorPad pad_;
     ThemeEditor::EdCanvasMode mode_ = ThemeEditor::ECM_PICK;
     int repeats_ = 0;        // repeats of the held direction (Move and Resize speed up)
+    ThemeEditor::HeldSelect heldSelect_;   // Select held in Pick: adds to the selection
+    int resizeHandle_ = ThemeEditor::CH_SE;  // the handle Resize mode drags
+
+    // The widget list follows the selection made elsewhere (the canvas, the controller)
+    int listPrimary_ = -1;
+    bool listClicked_ = false;
 
     // -editorScript
     std::vector<ThemeEditor::EditorCommand> script_;

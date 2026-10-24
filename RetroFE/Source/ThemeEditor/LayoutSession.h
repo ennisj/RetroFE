@@ -38,6 +38,11 @@
 // The pointer protocol is EditorSession's (EditorCanvas.h): down on the
 // selected element's handle resizes, on its body moves (a click without
 // moving picks the next element underneath), elsewhere selects the top one.
+// Several elements can be selected, as in EditorSession: Ctrl/Shift-click,
+// a marquee from empty canvas, a drag on any of them moves them all; nudges,
+// align, distribute, duplicate and delete act on all of them, each one undo
+// step (one text change). Boxes that can't be edited (a vertical menu's
+// slots) can be selected but don't move.
 //
 // Saving writes the file atomically. Before the first save changes it, the
 // original is kept under <root>/manage/backups/layouts/<theme>/<page>
@@ -164,25 +169,42 @@ namespace ThemeEditor
         bool hidden(int element) const;
         void setHidden(int element, bool hidden);
 
-        // Selection; -1 = none
+        // Selection: the primary (-1 = none; 0 is the page itself) and every
+        // selected element, the primary last. select() makes it just one.
+        // The page itself is only ever selected alone.
         int selected() const { return selected_; }
         void select(int element);
         bool selectPath(const std::string& path);
         const LayoutElement* selectedElement() const;
+        const std::vector<int>& selection() const { return selection_; }
+        int selectionCount() const { return static_cast<int>(selection_.size()); }
+        bool isSelected(int element) const;
+        void setSelection(const std::vector<int>& elements);
+        void toggleSelected(int element);   // Ctrl-click
+        void addSelected(int element);      // joins as the primary
+        bool dropPrimary();
+        void selectAll();                   // every element with a box on the canvas, not hidden
+        // The selected elements whose boxes can be moved, in selection() order
+        std::vector<int> movableSelection() const;
 
         // The element at a theme-space point (highest layer, then the last
         // built); -1 for none. pickNext: click-through from `current`.
         int pick(float tx, float ty) const;
         int pickNext(float tx, float ty, int current) const;
 
-        // The canvas (see EditorSession)
-        void pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx);
+        // The canvas (see EditorSession). additive: Ctrl or Shift was held
+        void pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx, bool additive = false);
         void pointerMove(const CanvasFit& fit, float sx, float sy);
         void pointerUp();
         void cancelDrag();
         bool dragging() const { return drag_.active; }
         bool dragMoved() const { return drag_.active && drag_.moved; }
         DragRect dragRect() const { return drag_.rect; }
+        bool groupDrag() const { return drag_.active && drag_.group; }
+        int dragDx() const { return drag_.rect.x - drag_.start.x; }
+        int dragDy() const { return drag_.rect.y - drag_.start.y; }
+        bool marqueeActive() const { return drag_.active && drag_.marquee; }
+        DragRect marqueeBox() const;
         bool snap = true;
 
         // Edits on the selected element; false when nothing changed
@@ -191,11 +213,19 @@ namespace ThemeEditor
         // Why a name can't be an attribute's ("" when it can)
         static std::string attributeNameProblem(const std::string& name);
         bool setLayer(int layer);            // clamped to 0..MAX_LAYER
-        bool moveBy(int dx, int dy);         // a nudge, not snapped
+        bool moveBy(int dx, int dy);         // a nudge of every movable selected element, not snapped
         // The box moves to r (theme units), as a drag would leave it
         bool setBox(const DragRect& r, bool resize);
+        // Every movable selected element moves by dx, dy (as is); coalesces with the current key
+        bool shiftSelection(int dx, int dy);
+        // Every selected element (one inside another selected one goes with it)
         bool duplicateSelected();
         bool deleteSelected();
+        // Lines the movable selected elements up on the box around them
+        // (AlignOp, EditorSelection.h), or spaces three or more evenly; the
+        // positions are written as a drag writes them
+        bool alignSelected(int op);
+        bool distributeSelected(bool horizontal);
 
         // Adding an element from the palette (LayoutPalette.h), as text:
         // after the selected element (the page element it's part of: a
@@ -247,6 +277,11 @@ namespace ThemeEditor
         // box as placed: Aeon Nox's top bar sits above the page until its
         // onEnter brings y to 50. False when it has no box or doesn't move.
         bool enterEndBox(int element, DragRect& out) const;
+        // The same for another event (onMenuScroll, onHighlightEnter...): the
+        // box once its last step has played, starting from the box as placed
+        bool eventEndBox(int element, const std::string& event, DragRect& out) const;
+        // The element's events (by name, in file order, each once) whose end box isn't the placed box
+        std::vector<std::string> movingEvents(int element) const;
 
         // Typing in one field is one undo step (EditorSession's coalescing)
         void setCoalesceKey(const std::string& key) { coalesce_ = key; }
@@ -256,6 +291,23 @@ namespace ThemeEditor
         bool canRedo() const { return !redo_.empty(); }
         bool undo();
         bool redo();
+
+        // Two pages edited together (layout.xml and layout 4x3.xml): a step
+        // here and the step it caused on the other page carry the same link,
+        // so the screen undoes and redoes them together. 0 = not linked.
+        unsigned undoLink() const { return undo_.empty() ? 0 : undo_.back().link; }
+        unsigned redoLink() const { return redo_.empty() ? 0 : redo_.back().link; }
+        // Tags the step undo() would take back
+        void linkUndo(unsigned link) { if (!undo_.empty()) undo_.back().link = link; }
+        // That step's identity (the same while edits merge into it; 0 = none)
+        // and the text before it, so a copy can be worked out from where the
+        // whole step began rather than edit by edit
+        unsigned undoId() const { return undo_.empty() ? 0 : undo_.back().id; }
+        const std::string& undoText() const { return undo_.empty() ? doc_.text : undo_.back().text; }
+        // Replaces the text as an edit tagged `link`: merged into the last
+        // step when that has the same tag (typing), else a new one. The
+        // selection is kept (by path).
+        bool applyLinked(const std::string& text, unsigned link);
         bool dirty() const { return doc_.text != saved_; }
         unsigned revision() const { return revision_; }
         // Moves when elements were added or removed (paths shifted)
@@ -280,27 +332,53 @@ namespace ThemeEditor
         struct Snapshot
         {
             std::string text;
-            std::string selected;   // the selected element's path
+            std::vector<std::string> selection;   // the selected elements' paths, the primary last
+            unsigned link = 0;
+            unsigned id = 0;                      // the step's identity (kept through undo and redo)
         };
         struct Drag
         {
             bool active = false;
             bool moved = false;
             bool cycleOnClick = false;
+            bool group = false;      // several selected elements move together
+            bool marquee = false;    // a marquee from empty canvas
+            bool additive = false;   // Ctrl / Shift: the marquee adds
+            int clicked = -1;        // a group drag: the element it began on
             int handle = CH_NONE;
             float startSx = 0, startSy = 0;
             float startTx = 0, startTy = 0;
+            float endTx = 0, endTy = 0;
             DragRect start;
             DragRect rect;
         };
+        // A box moved (or resized) from `from` to `to`
+        struct BoxEdit
+        {
+            int element = -1;
+            DragRect from, to;
+            bool resize = false;
+        };
 
-        // Replaces the text (one undo step unless coalescing) and reparses
+        // Replaces the text (one undo step unless coalescing) and reparses.
+        // The selection is found again by its paths, unless selectAfter names
+        // what to select ("\x01": nothing)
         bool change(const std::string& text, const std::string& key, const std::string& selectAfter = "");
+        bool change(const std::string& text, const std::string& key, const std::vector<std::string>& selectAfter);
         bool load(const std::string& text, std::string& error);
         // Where a drag of the selected element left its box: write the attributes
         bool commitBox(const DragRect& from, const DragRect& to, bool resize);
+        // Several boxes at once: one text change
+        bool commitBoxes(const std::vector<BoxEdit>& edits, const std::string& key);
+        // The attributes that put an element's box at `to`, and its geometry after
+        bool boxWrites(const BoxEdit& edit, std::vector<std::pair<std::string, std::string>>& writes, ElementGeom& after) const;
         bool insideTheme(std::string& error) const;
         std::string selectedPath() const;
+        std::vector<std::string> selectionPaths() const;
+        void selectPaths(const std::vector<std::string>& paths);
+        void assignSelection(const std::vector<int>& elements);
+        // The selected elements that aren't inside another selected one, in document order
+        std::vector<int> topSelected() const;
 
         bool open_ = false;
         std::string root_, folder_, page_;
@@ -309,11 +387,13 @@ namespace ThemeEditor
         std::map<std::string, ElementGeom> geom_;
         std::map<std::string, bool> hidden_;
         int selected_ = -1;
+        std::vector<int> selection_;   // every selected element, selected_ last
         int engineW_ = 0, engineH_ = 0;
         Drag drag_;
         std::vector<Snapshot> undo_, redo_;
         std::string coalesce_, lastKey_;
         unsigned revision_ = 0;
         unsigned structure_ = 0;
+        unsigned nextStep_ = 0;
     };
 }

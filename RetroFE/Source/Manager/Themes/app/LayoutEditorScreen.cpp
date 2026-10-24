@@ -24,8 +24,10 @@
 #include "../../../Database/GlobalOpts.h"
 #include "../../../Graphics/Component/Component.h"
 #include "../../../Graphics/Page.h"
+#include "../../../ThemeEditor/EditorSelection.h"
 #include "../../../ThemeEditor/LayoutCheck.h"
 #include "../../../ThemeEditor/LayoutPalette.h"
+#include "../../../ThemeEditor/LayoutTwin.h"
 #include "../../../ThemeEditor/ThemeStore.h"
 #include "../../../SDL.h"
 #include "../../../Utility/Log.h"
@@ -164,6 +166,11 @@ bool LayoutEditorScreen::openPage(const std::string& page)
     builtText_.clear();
     status_.clear();
     statusIsError_ = false;
+    listPrimary_ = -1;
+    // Another page: its own twin, if it has one and the pages are edited together
+    closeTwin();
+    twinSync_.reset(session_);
+    if (alsoTwin_ && !twinName().empty()) openTwin();
     LOG_INFO("ThemeEditor", "Editing layouts/" + folder_ + "/" + session_.page() + " in place");
 
     // A collection's own page previews with that collection
@@ -203,12 +210,18 @@ void LayoutEditorScreen::shutdown()
 void LayoutEditorScreen::update(float dt)
 {
     if (retired_ || !session_.isOpen()) return;
+    syncTwin();   // what draw() changed last frame
     runScript();
     runJob();
+    syncTwin();
     if (!openNext_.empty()) {
         const std::string next = openNext_;
         openNext_.clear();
         switchPage(next);
+    }
+    if (switchTwin_) {
+        switchTwin_ = false;
+        switchToTwin();
     }
 
     if (nudging_) {
@@ -542,8 +555,10 @@ void LayoutEditorScreen::addFromPalette(const std::string& entry, const std::str
 
 bool LayoutEditorScreen::save()
 {
+    syncTwin();
     std::string error;
     const bool first = !hasOriginal_;
+    const bool twinFirst = twin_.isOpen() && twin_.dirty() && !twin_.hasOriginal();
     if (!session_.save(error)) {
         setStatus("Not saved: " + error, true);
         LOG_ERROR("ThemeEditor", "Saving layouts/" + folder_ + "/" + session_.page() + " failed: " + error);
@@ -553,8 +568,23 @@ bool LayoutEditorScreen::save()
     LOG_NOTICE("ThemeEditor", "Saved layouts/" + folder_ + "/" + session_.page() + " in place");
     std::string message = "Saved layouts/" + folder_ + "/" + session_.page() + ".";
     if (first && hasOriginal_) message += " The original is kept in " + session_.originalPath() + ".";
+    // The twin's edits (copied from this page, or made there before switching back)
+    if (twin_.isOpen() && twin_.dirty()) {
+        if (!twin_.save(error)) {
+            setStatus(message + " Not saved: " + twin_.page() + ": " + error, true);
+            LOG_ERROR("ThemeEditor", "Saving layouts/" + folder_ + "/" + twin_.page() + " failed: " + error);
+            return false;
+        }
+        LOG_NOTICE("ThemeEditor", "Saved layouts/" + folder_ + "/" + twin_.page() + " in place");
+        message += " Saved " + twin_.page() + " too" + (twinFirst && twin_.hasOriginal() ? " (its original is kept as well)." : ".");
+    }
     // Anything the layout check didn't say about the page as it was opened
     std::vector<std::string> issues = checkLayoutXml(session_.text());
+    if (twin_.isOpen()) {
+        for (const std::string& issue : checkLayoutXml(twin_.text())) {
+            if (std::find(twinIssues_.begin(), twinIssues_.end(), issue) == twinIssues_.end()) issues.push_back(twin_.page() + ": " + issue);
+        }
+    }
     std::vector<std::string> added;
     for (const std::string& issue : issues) {
         if (std::find(openIssues_.begin(), openIssues_.end(), issue) == openIssues_.end()) added.push_back(issue);
@@ -581,6 +611,7 @@ void LayoutEditorScreen::restoreOriginal()
     }
     hasOriginal_ = session_.hasOriginal();
     openIssues_ = checkLayoutXml(session_.text());
+    twinSync_.reset(session_);   // putting back one page's original isn't an edit to copy to its twin
     LOG_NOTICE("ThemeEditor", "Put back the original layouts/" + folder_ + "/" + session_.page());
     setStatus("Put back the original page. What was there is kept beside the original in manage/backups; "
               "Undo brings back what you were editing.", false);
@@ -592,7 +623,8 @@ void LayoutEditorScreen::restoreOriginal()
 
 void LayoutEditorScreen::requestLeave(const std::string& toPage)
 {
-    if (session_.isOpen() && session_.dirty() && !leaveWithoutSaving_) {
+    syncTwin();
+    if (session_.isOpen() && anyDirty() && !leaveWithoutSaving_) {
         pendingPage_ = toPage;
         showClose_ = true;
         return;
@@ -619,14 +651,55 @@ void LayoutEditorScreen::runScript()
 
 bool LayoutEditorScreen::runCommand(const EditorCommand& command, std::string& note)
 {
-    CommandResult result = runLayoutCommand(session_, command, note);
-    if (result != CommandResult::NotSession) return result == CommandResult::Ok;
     const std::string& n = command.name;
     const std::vector<std::string>& words = command.words;
+    // Undo and redo take the twin's linked step with them
+    if (n == "undo" || n == "redo") {
+        const bool can = n == "undo" ? session_.canUndo() : session_.canRedo();
+        if (n == "undo") undoBoth();
+        else redoBoth();
+        return can;
+    }
+    // The twin page
+    if (n == "twin") {
+        if (command.rest == "off") { alsoTwin_ = false; note = "edits stay on this page"; return true; }
+        alsoTwin_ = openTwin();
+        if (alsoTwin_) {
+            session_.endCoalesce();
+            twinSync_.reset(session_);
+        }
+        note = alsoTwin_ ? "edits are copied to " + twin_.page() : status_;
+        return alsoTwin_;
+    }
+    if (n == "switchtwin") {
+        if (!openTwin()) { note = status_; return false; }
+        switchToTwin();
+        note = "showing " + session_.page();
+        return true;
+    }
+    if (n == "twinnote") { note = twinNote_; return true; }
+    if (n == "twinget") {
+        // twinget NAME: the selected element's match on the twin, and its value there
+        const int el = session_.selected();
+        const int there = twin_.isOpen() && el >= 0 ? matchElement(session_.doc(), el, twin_.doc()) : -1;
+        if (there < 0 || words.empty()) { note = "no match on the twin"; return false; }
+        const LayoutElement& e = twin_.element(there);
+        note = twin_.page() + " " + (e.path.empty() ? "-" : e.path) + " " + words[0] +
+               (e.has(words[0]) ? "=\"" + e.value(words[0]) + "\"" : " not set");
+        return true;
+    }
+    if (n == "endevent") {
+        endEvent_ = command.rest == "all" ? "*" : command.rest;
+        showEnd_ = true;
+        return !endEvent_.empty();
+    }
+    CommandResult result = runLayoutCommand(session_, command, note);
+    if (result != CommandResult::NotSession) return result == CommandResult::Ok;
     if (n == "wait") { scriptWait_ = words.empty() ? 0 : std::atoi(words[0].c_str()); return true; }
     if (n == "log") { note = command.rest; return true; }
     if (n == "page") {
-        if (session_.dirty()) { note = "unsaved changes: save or undo first"; return false; }
+        syncTwin();
+        if (anyDirty()) { note = "unsaved changes: save or undo first"; return false; }
         switchPage(command.rest);
         bool ok = session_.page() == command.rest;
         note = session_.page();
@@ -744,6 +817,11 @@ bool LayoutEditorScreen::escape()
         pad_.setRegion(EF_CANVAS);
         return true;
     }
+    // Several selected: only the last one picked stays
+    if (session_.selectionCount() > 1) {
+        session_.select(session_.selected());
+        return true;
+    }
     return false;
 }
 
@@ -757,6 +835,13 @@ bool LayoutEditorScreen::wantsControls() const
 void LayoutEditorScreen::controlsHeld(const ControlsHeld& held)
 {
     pad_.held(held);
+    // Select let go in Pick with nothing pressed while it was held: it acts now (Move, or Add element)
+    if (heldSelect_.release(held[static_cast<size_t>(Control::Select)]) && !retired_ && session_.isOpen() &&
+        !dialogOpen() && pad_.region() == EF_CANVAS && mode_ == ECM_PICK && scriptAt_ >= script_.size() &&
+        !session_.dragging()) {
+        syncTwin();
+        canvasControl(EP_SELECT, true);
+    }
 }
 
 void LayoutEditorScreen::beforeFrame()
@@ -779,6 +864,8 @@ void LayoutEditorScreen::control(Control control, bool repeat)
     }
     // A script is driving: nobody else does
     if (scriptAt_ < script_.size()) return;
+    // What draw() changed is copied to the twin before this press changes more (each its own step)
+    syncTwin();
     repeats_ = repeat ? repeats_ + 1 : 0;
     if (pad_.takesControl(control)) return;
     const int press = static_cast<int>(control);
@@ -808,11 +895,71 @@ void LayoutEditorScreen::setMode(EdCanvasMode mode)
     if (mode != ECM_PICK) session_.setCoalesceKey("controller");
 }
 
-void LayoutEditorScreen::canvasControl(int press)
+void LayoutEditorScreen::heldControl(int press)
 {
     const int sel = session_.selected();
+    switch (heldSelectPress(press)) {
+    case EHA_ADD_DIR: {
+        int dx = 0, dy = 0;
+        pressDirection(press, dx, dy);
+        std::vector<DragRect> rects;
+        std::vector<int> index;
+        int cur = -1;
+        for (int el : session_.listed()) {
+            if (el <= 0 || !session_.hasBox(el) || session_.hidden(el)) continue;
+            if (el == sel) cur = static_cast<int>(rects.size());
+            rects.push_back(session_.box(el));
+            index.push_back(el);
+        }
+        const int next = pickStep(rects, cur, dx, dy, session_.canvasW(), session_.canvasH());
+        if (next < 0) setStatus("Nothing that way to add.", false);
+        else session_.addSelected(index[next]);
+        break;
+    }
+    case EHA_ADD_PREV:
+    case EHA_ADD_NEXT: {
+        // The elements in list order, the page itself left out (it's only ever selected alone)
+        std::vector<int> listed;
+        for (int el : session_.listed()) {
+            if (el > 0) listed.push_back(el);
+        }
+        int cur = -1;
+        for (size_t i = 0; i < listed.size(); ++i) {
+            if (listed[i] == sel) cur = static_cast<int>(i);
+        }
+        const int next = listStep(cur, static_cast<int>(listed.size()), press == EP_LETTER_UP ? -1 : 1);
+        if (next >= 0) session_.addSelected(listed[next]);
+        break;
+    }
+    case EHA_DROP:
+        session_.dropPrimary();
+        break;
+    case EHA_NONE:
+        break;
+    }
+    if (session_.selectionCount() > 1) {
+        setStatus(std::to_string(session_.selectionCount()) + " elements selected. Let go of Select, then Select moves them all; "
+                  "the properties panel lines them up.", false);
+    }
+}
+
+void LayoutEditorScreen::canvasControl(int press, bool released)
+{
+    // Select in Pick acts when it's let go: held, the directions add to the selection
+    if (mode_ == ECM_PICK && press == EP_SELECT && !released) {
+        heldSelect_.press();
+        return;
+    }
+    if (heldSelect_.armed && heldSelectPress(press) != EHA_NONE) {
+        heldSelect_.combine();
+        heldControl(press);
+        return;
+    }
+    const int sel = session_.selected();
     const bool has = sel > 0 && session_.selectedElement() != nullptr;
-    const EdCanvasDecision d = canvasPress(mode_, press, has, has && session_.editableBox(sel));
+    const bool multi = session_.selectionCount() > 1;
+    const bool movable = multi ? !session_.movableSelection().empty() : has && session_.editableBox(sel);
+    const EdCanvasDecision d = canvasPress(mode_, press, has, movable, multi);
     if (d.mode != mode_ && d.action != ECA_MODE) setMode(d.mode);   // the selection went away mid-move
     int dx = 0, dy = 0;
     pressDirection(press, dx, dy);
@@ -843,16 +990,34 @@ void LayoutEditorScreen::canvasControl(int press)
     }
     case ECA_MOVE:
     case ECA_RESIZE: {
-        const DragRect r = session_.box(sel);
         const int step = nudgeStep(session_.snap ? CANVAS_SNAP_GRID : 1, shift ? 12 : repeats_);
-        const DragRect n = d.action == ECA_MOVE ? canvasNudgeMove(r, dx, dy, step, session_.canvasW(), session_.canvasH())
-                                                : canvasNudgeResize(r, dx, dy, step, 1, 1, session_.canvasW(), session_.canvasH());
         session_.setCoalesceKey("controller");
-        session_.setBox(n, d.action == ECA_RESIZE);
+        if (d.action == ECA_MOVE) {
+            // The movable selection as one box (one element: its own), kept on the canvas
+            std::vector<DragRect> boxes;
+            for (int el : session_.movableSelection()) boxes.push_back(session_.box(el));
+            const DragRect u = unionRect(boxes);
+            const DragRect n = canvasNudgeMove(u, dx, dy, step, session_.canvasW(), session_.canvasH());
+            session_.shiftSelection(n.x - u.x, n.y - u.y);
+        }
+        else {
+            const DragRect r = session_.box(sel);
+            session_.setBox(canvasNudgeResizeFrom(r, resizeHandle_, dx, dy, step, 1, 1, session_.canvasW(), session_.canvasH()), true);
+        }
         break;
     }
     case ECA_MODE:
+        if (d.mode == ECM_RESIZE) resizeHandle_ = CH_SE;   // Resize starts from the bottom-right corner
         setMode(d.mode);
+        break;
+    case ECA_HANDLE_PREV:
+    case ECA_HANDLE_NEXT:
+        resizeHandle_ = resizeHandleStep(resizeHandle_, d.action == ECA_HANDLE_PREV ? -1 : 1);
+        setStatus(std::string("Resizing from the ") + resizeHandleLabel(resizeHandle_) + ".", false);
+        break;
+    case ECA_COLLAPSE:
+        session_.select(sel);
+        setStatus("Only " + session_.label(sel) + " is selected now.", false);
         break;
     case ECA_ADD:
         showPalette_ = true;
@@ -887,11 +1052,20 @@ std::string LayoutEditorScreen::controllerHints() const
     if (dialogOpen()) return "Arrows: move   Select: choose   Back: close the dialog";
     switch (pad_.region()) {
     case EF_CANVAS:
+        if (mode_ == ECM_MOVE && session_.selectionCount() > 1) {
+            return "MOVE: arrows move the " + std::to_string(session_.movableSelection().size()) +
+                   " elements that can move (hold to speed up)   Select or Back: done";
+        }
         if (mode_ == ECM_MOVE) return "MOVE: arrows move the element (hold to speed up)   Select: resize instead   Back: done";
-        if (mode_ == ECM_RESIZE) return "RESIZE: arrows size the element from its bottom-right corner   Select or Back: done";
+        if (mode_ == ECM_RESIZE) {
+            return std::string("RESIZE: arrows move its ") + resizeHandleLabel(resizeHandle_) +
+                   "   Letter up/down: another corner or edge   Select or Back: done";
+        }
+        if (heldSelect_.armed) return "Holding Select: arrows add the element that way, Letter up/down the previous / next, Back drops the last one";
         return std::string("PICK: arrows choose an element (past the last one: the panel that way)   ") +
                (session_.selected() > 0 ? "Select: move it" : "Select: add an element") +
-               "   Letter up/down: previous / next   Page up/down: regions   Back: leave the editor";
+               "   Hold Select + arrows: select several   Letter up/down: previous / next   Page up/down: regions   " +
+               (session_.selectionCount() > 1 ? "Back: keep only the last one" : "Back: leave the editor");
     case EF_TOOLBAR:
         return "Toolbar: arrows move   Select: press   Down: the canvas   Back: the canvas";
     default:
@@ -902,7 +1076,8 @@ std::string LayoutEditorScreen::controllerHints() const
 
 bool LayoutEditorScreen::askToLeave()
 {
-    if (session_.isOpen() && session_.dirty() && !leaveWithoutSaving_) {
+    syncTwin();
+    if (session_.isOpen() && anyDirty() && !leaveWithoutSaving_) {
         pendingPage_.clear();
         showClose_ = true;
         return true;
@@ -912,7 +1087,7 @@ bool LayoutEditorScreen::askToLeave()
 
 std::string LayoutEditorScreen::leaving()
 {
-    if (session_.isOpen() && session_.dirty() && !leaveWithoutSaving_) {
+    if (session_.isOpen() && anyDirty() && !leaveWithoutSaving_) {
         return "This page has unsaved changes. Save them, or leave again to discard them.";
     }
     return "";
@@ -961,6 +1136,8 @@ void LayoutEditorScreen::draw()
                  ImGuiWindowFlags_NoBringToFrontOnFocus);
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
+    // What the controller changed since update() is copied to the twin before this frame changes more
+    syncTwin();
 
     if (!session_.isOpen()) {
         ImGui::TextWrapped("The layout editor can't open layouts/%s.", folder_.c_str());
@@ -1036,6 +1213,10 @@ void LayoutEditorScreen::drawToolbar()
 {
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Layout editor: %s / %s%s", folder_.c_str(), session_.page().c_str(), session_.dirty() ? " *" : "");
+    if (twin_.isOpen()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(with %s%s)", twin_.page().c_str(), twin_.dirty() ? " *" : "");
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("(%d x %d, made by hand: edited in place)", session_.canvasW(), session_.canvasH());
 
@@ -1044,14 +1225,14 @@ void LayoutEditorScreen::drawToolbar()
     for (const char* label : labels) width += ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - width));
     ImGui::BeginDisabled(!session_.canUndo());
-    if (ImGui::Button("Undo")) session_.undo();
+    if (ImGui::Button("Undo")) undoBoth();
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(!session_.canRedo());
-    if (ImGui::Button("Redo")) session_.redo();
+    if (ImGui::Button("Redo")) redoBoth();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::BeginDisabled(!session_.dirty());
+    ImGui::BeginDisabled(!anyDirty());
     if (ImGui::Button("Save")) job_ = Job::Save;
     ImGui::EndDisabled();
     ImGui::SameLine();
@@ -1073,8 +1254,30 @@ void LayoutEditorScreen::drawToolbar()
     ImGui::SameLine();
     ImGui::Checkbox("Where animations end", &showEnd_);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("A dashed box where an element's onEnter leaves it, when that isn't where it's placed "
-                          "(Aeon Nox's top bar slides in from above the page)");
+        ImGui::SetTooltip("A dashed box where an element's event leaves it, when that isn't where it's placed "
+                          "(Aeon Nox's top bar slides in from above the page when onEnter plays)");
+    }
+    ImGui::SameLine();
+    {
+        // Which event's end: onEnter, any other, or every one that moves something
+        std::vector<std::string> choices = { "*" };
+        for (const std::string& e : LayoutSession::eventNames()) choices.push_back(e);
+        auto label = [](const std::string& e) { return e == "*" ? std::string("every event") : "after " + e; };
+        ImGui::SetNextItemWidth(170.0f * ctx_.scale);
+        const bool open = ImGui::BeginCombo("##endEvent", label(endEvent_).c_str());
+        if (const int step = open ? 0 : pad_.choice("Where animations end: which event")) {
+            auto at = std::find(choices.begin(), choices.end(), endEvent_);
+            const int next = choiceStep(at == choices.end() ? -1 : static_cast<int>(at - choices.begin()), static_cast<int>(choices.size()), step);
+            if (next >= 0) { endEvent_ = choices[next]; showEnd_ = true; }
+        }
+        if (open) {
+            for (const std::string& e : choices) {
+                if (ImGui::Selectable(label(e).c_str(), e == endEvent_)) { endEvent_ = e; showEnd_ = true; }
+                if (e == endEvent_) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Which event's end the dashed boxes show (every event: the selected element's each have their own)");
     }
     ImGui::SameLine();
     if (ImGui::Button("Play the start")) { builtText_.clear(); previewDirty_ = true; }
@@ -1104,6 +1307,179 @@ void LayoutEditorScreen::drawToolbar()
         }
         ImGui::EndCombo();
     }
+
+    // The page's twin: edited together, and one press away
+    const std::string twin = twinName();
+    if (!twin.empty()) {
+        ImGui::AlignTextToFramePadding();
+        bool also = alsoTwin_;
+        if (ImGui::Checkbox(("Also apply to " + fs::u8path(twin).filename().u8string()).c_str(), &also)) {
+            alsoTwin_ = also && openTwin();
+            if (alsoTwin_) {
+                session_.endCoalesce();
+                twinSync_.reset(session_);   // what was done before isn't copied
+            }
+            if (alsoTwin_) setStatus("Edits here are copied to " + twin + ": the same elements, positions moved in proportion to that page.", false);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Each change here is made to the same element on %s too, only where it fits: positions and sizes move "
+                              "by the same amount scaled to that page, other values only where the pages had the same. "
+                              "Adding and deleting elements isn't copied. Save saves both; Undo undoes both.", twin.c_str());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(("Show " + fs::u8path(twin).filename().u8string()).c_str())) {
+            if (openTwin()) switchTwin_ = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Edit %s with the same elements selected; this page's changes are kept until you save", twin.c_str());
+        if (!twinNote_.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", twinNote_.c_str());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", twinNote_.c_str());
+        }
+    }
+}
+
+// ---- the twin page --------------------------------------------------------------------
+
+std::string LayoutEditorScreen::twinName() const
+{
+    return session_.isOpen() ? twinPage(session_.page(), pages_) : std::string();
+}
+
+bool LayoutEditorScreen::anyDirty() const
+{
+    return session_.dirty() || (twin_.isOpen() && twin_.dirty());
+}
+
+bool LayoutEditorScreen::openTwin()
+{
+    const std::string name = twinName();
+    if (name.empty()) {
+        setStatus(session_.page() + " has no 4:3 page to go with it.", true);
+        return false;
+    }
+    if (twin_.isOpen() && twin_.page() == name) return true;
+    LayoutSession next;
+    std::string error;
+    if (!next.open(ctx_.root, folder_, name, error)) {
+        setStatus("Can't open " + name + " with it: " + error, true);
+        return false;
+    }
+    next.snap = session_.snap;
+    next.setCanvasSize(SDL::getWindowWidth(0), SDL::getWindowHeight(0));
+    twin_ = std::move(next);
+    twinIssues_ = checkLayoutXml(twin_.text());
+    // Copying starts from here: what was typed before isn't copied, and the next edit is a step of its own
+    session_.endCoalesce();
+    twinSync_.reset(session_);
+    twinNote_.clear();
+    LOG_INFO("ThemeEditor", "Editing layouts/" + folder_ + "/" + name + " together with " + session_.page());
+    return true;
+}
+
+void LayoutEditorScreen::closeTwin()
+{
+    twin_ = LayoutSession();
+    twinIssues_.clear();
+    twinNote_.clear();
+}
+
+void LayoutEditorScreen::syncTwin()
+{
+    if (!session_.isOpen() || session_.text() == twinSync_.synced) return;
+    if (!alsoTwin_ || !twin_.isOpen()) {
+        twinSync_.reset(session_);
+        return;
+    }
+    // The step here and the one it makes there undo together (TwinSync works the copy out per step)
+    MirrorResult r;
+    switch (syncTwinPages(session_, twin_, twinSync_, r)) {
+    case TwinCopy::Structure:
+        twinNote_ = "Added or removed elements stay on " + session_.page() + ": add or remove them on " + twin_.page() + " too.";
+        return;
+    case TwinCopy::Nothing:
+        return;
+    case TwinCopy::Copied:
+        break;
+    }
+    if (!r.skipped.empty()) {
+        twinNote_ = "Not copied to " + twin_.page() + ": " + r.skipped.front() +
+                    (r.skipped.size() > 1 ? " (and " + std::to_string(r.skipped.size() - 1) + " more)" : "");
+        for (const std::string& s : r.skipped) LOG_INFO("ThemeEditor", "Not copied to " + twin_.page() + ": " + s);
+    }
+    else if (r.applied > 0) {
+        twinNote_ = "Copied to " + twin_.page() + ".";
+    }
+}
+
+void LayoutEditorScreen::undoBoth()
+{
+    syncTwin();
+    const unsigned link = session_.undoLink();
+    if (!session_.undo()) return;
+    if (link != 0 && twin_.isOpen() && twin_.undoLink() == link) twin_.undo();
+    twinSync_.reset(session_);
+}
+
+void LayoutEditorScreen::redoBoth()
+{
+    syncTwin();
+    const unsigned link = session_.redoLink();
+    if (!session_.redo()) return;
+    if (link != 0 && twin_.isOpen() && twin_.redoLink() == link) twin_.redo();
+    twinSync_.reset(session_);
+}
+
+void LayoutEditorScreen::switchToTwin()
+{
+    if (!openTwin()) return;
+    syncTwin();
+    // The same elements there
+    std::vector<int> there;
+    for (int el : session_.selection()) {
+        const int m = matchElement(session_.doc(), el, twin_.doc());
+        if (m >= 0) there.push_back(m);
+    }
+    session_.endCoalesce();
+    session_.cancelDrag();
+    setMode(ECM_PICK);
+    std::swap(session_, twin_);
+    std::swap(openIssues_, twinIssues_);
+    session_.setSelection(there);
+    session_.snap = twin_.snap;
+    hasOriginal_ = session_.hasOriginal();
+    session_.endCoalesce();
+    twinSync_.reset(session_);
+    destroyPreview();
+    extra_.clear();
+    builtText_.clear();
+    previewDirty_ = true;
+    seenRevision_ = session_.revision();
+    listPrimary_ = -1;
+    twinNote_.clear();
+    setStatus("Showing " + session_.page() + (there.empty() ? "." : ", the same elements selected.") +
+              (twin_.dirty() ? " " + twin_.page() + "'s changes are kept until you save." : ""), false);
+    LOG_INFO("ThemeEditor", "Switched to layouts/" + folder_ + "/" + session_.page());
+}
+
+void LayoutEditorScreen::drawTwinInfo(int element)
+{
+    if (!twin_.isOpen() || element < 0) return;
+    const int there = matchElement(session_.doc(), element, twin_.doc());
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    if (there < 0) {
+        ImGui::TextWrapped("Not on %s: %s", twin_.page().c_str(), alsoTwin_ ? "its edits stay here." : "it's only on this page.");
+    }
+    else {
+        const LayoutElement& e = twin_.element(there);
+        std::string values;
+        for (const char* name : { "x", "y", "width", "height" }) {
+            if (e.has(name)) values += std::string(values.empty() ? "" : ", ") + name + " " + e.value(name);
+        }
+        ImGui::TextWrapped("On %s: %s%s", twin_.page().c_str(), values.empty() ? "no position of its own" : values.c_str(),
+                           alsoTwin_ ? " (edits here are copied there)" : "");
+    }
+    ImGui::PopStyleColor();
 }
 
 void LayoutEditorScreen::drawLeft()
@@ -1111,8 +1487,15 @@ void LayoutEditorScreen::drawLeft()
     ImGui::SeparatorText("Pages");
     // NavFlattened: the controller moves into the lists like any other rows
     ImGui::BeginChild("##pageList", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8.5f), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
+    const std::string twin = twinName();
     for (const std::string& page : pages_) {
-        if (ImGui::Selectable(page.c_str(), page == session_.page()) && page != session_.page()) requestLeave(page);
+        // The ID stays the page's when its unsaved mark comes and goes (the controller's focus stays on it)
+        const std::string label = page + (page == twin && twin_.isOpen() && twin_.dirty() ? " *" : "") + "###page:" + page;
+        if (ImGui::Selectable(label.c_str(), page == session_.page()) && page != session_.page()) {
+            // The twin keeps both pages' changes; any other page asks about them first
+            if (page == twin) { if (openTwin()) switchTwin_ = true; }
+            else requestLeave(page);
+        }
     }
     ImGui::EndChild();
 
@@ -1121,16 +1504,31 @@ void LayoutEditorScreen::drawLeft()
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("A new image, video, text, game art, menu... after the selected element");
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
     ImGui::TextWrapped("This page's own elements, in file order, changed in place. New ones go after the selected "
-                       "element, or at the end.");
+                       "element, or at the end. Ctrl-click or Shift-click for several.");
     ImGui::PopStyleColor();
     ImGui::BeginChild("##elementList", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
-    for (int el : session_.listed()) {
+    // An element picked elsewhere (the canvas, the controller) is scrolled to here
+    bool scrollTo = session_.selected() != listPrimary_ && !listClicked_;
+    listClicked_ = false;
+    listPrimary_ = session_.selected();
+    const std::vector<int> listed = session_.listed();
+    for (int el : listed) {
         const LayoutElement& e = session_.element(el);
         ImGui::PushID(el);
         std::string label = std::string(static_cast<size_t>(std::max(0, e.depth - 1)) * 3, ' ') + session_.label(el);
         bool box = session_.hasBox(el) || el == 0;
         if (!box) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (ImGui::Selectable(label.c_str(), el == session_.selected())) session_.select(el);
+        if (ImGui::Selectable(label.c_str(), session_.isSelected(el))) {
+            const ImGuiIO& io = ImGui::GetIO();
+            if (io.KeyCtrl && el > 0) session_.toggleSelected(el);
+            else if (io.KeyShift && el > 0 && session_.selected() > 0) session_.setSelection(selectionRange(listed, session_.selected(), el));
+            else session_.select(el);
+            listClicked_ = true;
+        }
+        if (scrollTo && el == session_.selected()) {
+            if (!ImGui::IsItemVisible()) ImGui::SetScrollHereY(0.5f);
+            scrollTo = false;
+        }
         if (!box) ImGui::PopStyleColor();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", e.path.empty() ? "<layout>" : e.path.c_str());
         ImGui::PopID();
@@ -1166,17 +1564,18 @@ void LayoutEditorScreen::drawCanvas()
     ImGui::InvisibleButton("##canvasInput", size, ImGuiButtonFlags_MouseButtonLeft);
     ImGui::PopItemFlag();
     const bool hovered = ImGui::IsItemHovered() && !pad_.keyboardOpen();
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 mouse = io.MousePos;
     const float sx = mouse.x - origin.x, sy = mouse.y - origin.y;
     const float grab = 6.0f * ctx_.scale;
-    if (ImGui::IsItemActivated()) session_.pointerDown(fit_, sx, sy, grab);
+    // Ctrl or Shift: toggle the element clicked, or a marquee (from anywhere) that adds
+    if (ImGui::IsItemActivated()) session_.pointerDown(fit_, sx, sy, grab, io.KeyCtrl || io.KeyShift);
     if (session_.dragging()) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) session_.pointerMove(fit_, sx, sy);
         else session_.pointerUp();
     }
 
     // An arrow that's also a mapped direction acts as the controller's, not twice
-    ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsWindowFocused() && !io.WantTextInput && !pad_.directionHeld() && !pad_.keyboardOpen()) {
         int step = io.KeyShift ? 10 : 1;
         int dx = 0, dy = 0;
@@ -1192,9 +1591,11 @@ void LayoutEditorScreen::drawCanvas()
         if (ImGui::IsKeyPressed(ImGuiKey_Delete) && session_.selected() > 0) showDelete_ = true;
     }
     if (!io.WantTextInput && io.KeyCtrl && !pad_.keyboardOpen()) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) io.KeyShift ? session_.redo() : session_.undo();
-        if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) session_.redo();
-        if (ImGui::IsKeyPressed(ImGuiKey_S, false) && session_.dirty()) job_ = Job::Save;
+        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) io.KeyShift ? redoBoth() : undoBoth();
+        if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) redoBoth();
+        if (ImGui::IsKeyPressed(ImGuiKey_S, false) && anyDirty()) job_ = Job::Save;
+        if (ImGui::IsKeyPressed(ImGuiKey_A, false)) session_.selectAll();
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false)) session_.duplicateSelected();
     }
 
     auto toStage = [&](float tx, float ty) {
@@ -1210,7 +1611,7 @@ void LayoutEditorScreen::drawCanvas()
         }
     }
     for (int el : session_.listed()) {
-        if (el == session_.selected() || !session_.hasBox(el) || session_.hidden(el)) continue;
+        if (session_.isSelected(el) || !session_.hasBox(el) || session_.hidden(el)) continue;
         if (!showBoxes_ && el != hot) continue;
         DragRect r = session_.box(el);
         const bool isHot = el == hot;
@@ -1219,26 +1620,76 @@ void LayoutEditorScreen::drawCanvas()
                     colourFor(session_.element(el).name, isHot ? 230 : 110), 0.0f, 0, isHot ? 2.0f : 1.0f);
     }
     const int sel = session_.selected();
-    // Where onEnter leaves an element: the selected one, and every other one with All boxes
+    const bool multi = session_.selectionCount() > 1;
+    // Where an event leaves an element: the selected one (every event that moves it, when
+    // "every event" is chosen, each labelled), and every other one with All boxes
     if (showEnd_ && !session_.dragging()) {
         for (int el : session_.listed()) {
             if (session_.hidden(el) || (el != sel && !showBoxes_)) continue;
-            DragRect end;
-            if (!session_.enterEndBox(el, end)) continue;
             const bool selected = el == sel;
-            ImVec2 p1 = toStage(static_cast<float>(end.x), static_cast<float>(end.y));
-            ImVec2 p2 = toStage(static_cast<float>(end.x + end.w), static_cast<float>(end.y + end.h));
-            drawDashedRect(dl, p1, p2, colourFor(session_.element(el).name, selected ? 230 : 120), 6.0f * ctx_.scale);
-            if (selected) {
-                const char* text = "after onEnter";
-                ImVec2 ts = ImGui::CalcTextSize(text);
-                ImVec2 at(std::max(origin.x, p1.x), std::min(p2.y + 2.0f, origin.y + size.y - ts.y - 2.0f));
-                dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 150));
-                dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(230, 230, 230, 255), text);
+            std::vector<std::string> evs;
+            if (endEvent_ == "*") evs = session_.movingEvents(el);
+            else evs.push_back(endEvent_);
+            int stacked = 0;
+            for (const std::string& ev : evs) {
+                DragRect end;
+                if (!session_.eventEndBox(el, ev, end)) continue;
+                ImVec2 p1 = toStage(static_cast<float>(end.x), static_cast<float>(end.y));
+                ImVec2 p2 = toStage(static_cast<float>(end.x + end.w), static_cast<float>(end.y + end.h));
+                drawDashedRect(dl, p1, p2, colourFor(session_.element(el).name, selected ? 230 : 120), 6.0f * ctx_.scale);
+                if (selected) {
+                    const std::string text = "after " + ev;
+                    ImVec2 ts = ImGui::CalcTextSize(text.c_str());
+                    // Labels of boxes that land in the same place don't cover each other
+                    ImVec2 at(std::max(origin.x, p1.x), std::min(p2.y + 2.0f + stacked * (ts.y + 3.0f), origin.y + size.y - ts.y - 2.0f));
+                    dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 150));
+                    dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(230, 230, 230, 255), text.c_str());
+                    stacked++;
+                }
             }
         }
     }
-    if (sel > 0 && session_.hasBox(sel) && !session_.hidden(sel)) {
+    // Several selected: each one filled and outlined, moving with a group drag
+    const ImU32 modeColour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255) : 0;
+    if (multi) {
+        const int ox = session_.groupDrag() && session_.dragMoved() ? session_.dragDx() : 0;
+        const int oy = session_.groupDrag() && session_.dragMoved() ? session_.dragDy() : 0;
+        std::vector<DragRect> boxes;
+        for (int el : session_.selection()) {
+            if (!session_.hasBox(el) || session_.hidden(el)) continue;
+            const bool moves = session_.editableBox(el);
+            DragRect r = session_.box(el);
+            boxes.push_back(r);
+            if (moves) { r.x += ox; r.y += oy; }
+            const std::string& name = session_.element(el).name;
+            ImVec2 p1 = toStage(static_cast<float>(r.x), static_cast<float>(r.y));
+            ImVec2 p2 = toStage(static_cast<float>(r.x + r.w), static_cast<float>(r.y + r.h));
+            dl->AddRectFilled(p1, p2, colourFor(name, moves ? 40 : 20));
+            dl->AddRect(p1, p2, modeColour && moves ? modeColour : colourFor(name, moves ? 255 : 140), 0.0f, 0,
+                        (el == sel ? 3.0f : 2.0f) * (modeColour ? ctx_.scale : 1.0f));
+        }
+        if (!boxes.empty()) {
+            DragRect u = unionRect(boxes);
+            ImVec2 u1 = toStage(static_cast<float>(u.x + ox) - 3.0f / fit_.scale, static_cast<float>(u.y + oy) - 3.0f / fit_.scale);
+            ImVec2 u2 = toStage(static_cast<float>(u.x + u.w + ox) + 3.0f / fit_.scale, static_cast<float>(u.y + u.h + oy) + 3.0f / fit_.scale);
+            drawDashedRect(dl, u1, u2, IM_COL32(255, 255, 255, 200), 5.0f * ctx_.scale);
+            std::string label = std::to_string(session_.selectionCount()) + " elements";
+            const size_t fixed = session_.selectionCount() - session_.movableSelection().size();
+            if (fixed > 0) label += " (" + std::to_string(fixed) + " can't move)";
+            ImVec2 ts = ImGui::CalcTextSize(label.c_str());
+            ImVec2 at(std::max(origin.x, u1.x), std::max(origin.y, u1.y - ts.y - 3.0f));
+            dl->AddRectFilled(at, ImVec2(at.x + ts.x + 6.0f, at.y + ts.y + 2.0f), IM_COL32(0, 0, 0, 180));
+            dl->AddText(ImVec2(at.x + 3.0f, at.y + 1.0f), IM_COL32(255, 255, 255, 255), label.c_str());
+        }
+    }
+    if (session_.marqueeActive() && session_.dragMoved()) {
+        const DragRect m = session_.marqueeBox();
+        const ImVec2 m1 = toStage(static_cast<float>(m.x), static_cast<float>(m.y));
+        const ImVec2 m2 = toStage(static_cast<float>(m.x + m.w), static_cast<float>(m.y + m.h));
+        dl->AddRectFilled(m1, m2, IM_COL32(120, 180, 255, 40));
+        dl->AddRect(m1, m2, IM_COL32(120, 180, 255, 220), 0.0f, 0, 1.5f);
+    }
+    if (!multi && sel > 0 && session_.hasBox(sel) && !session_.hidden(sel)) {
         const std::string& name = session_.element(sel).name;
         const bool editable = session_.editableBox(sel);
         DragRect r = session_.dragMoved() ? session_.dragRect() : session_.box(sel);
@@ -1246,17 +1697,16 @@ void LayoutEditorScreen::drawCanvas()
         ImVec2 p2 = toStage(static_cast<float>(r.x + r.w), static_cast<float>(r.y + r.h));
         dl->AddRectFilled(p1, p2, colourFor(name, 40));
         // The controller's Move and Resize modes show in the outline
-        const ImU32 modeColour = mode_ == ECM_MOVE ? IM_COL32(80, 220, 255, 255) : mode_ == ECM_RESIZE ? IM_COL32(255, 96, 200, 255) : 0;
         dl->AddRect(p1, p2, modeColour ? modeColour : colourFor(name, 255), 0.0f, 0, modeColour ? 3.0f * ctx_.scale : 2.0f);
         if (editable) {
             for (int hnd = 0; hnd < 8; ++hnd) {
                 float hx, hy;
                 handlePoint(r, hnd, hx, hy);
                 ImVec2 c = toStage(hx, hy);
-                // Resize nudges move the bottom-right corner
-                float hs = (mode_ == ECM_RESIZE && hnd == CH_SE ? 7.0f : 4.0f) * ctx_.scale;
-                dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs),
-                                  mode_ == ECM_RESIZE && hnd == CH_SE ? modeColour : IM_COL32(255, 255, 255, 255));
+                // Resize nudges move the handle Letter up / down chose
+                const bool active = mode_ == ECM_RESIZE && hnd == resizeHandle_;
+                float hs = (active ? 7.0f : 4.0f) * ctx_.scale;
+                dl->AddRectFilled(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), active ? modeColour : IM_COL32(255, 255, 255, 255));
                 dl->AddRect(ImVec2(c.x - hs, c.y - hs), ImVec2(c.x + hs, c.y + hs), IM_COL32(0, 0, 0, 255));
             }
         }
@@ -1363,6 +1813,8 @@ void LayoutEditorScreen::drawAttribute(const LayoutElement& e, const std::string
 
 void LayoutEditorScreen::drawProperties()
 {
+    // Several selected: what can be done to all of them first, then the primary's own
+    if (session_.selectionCount() > 1) drawSelectionTools();
     const int sel = session_.selected();
     const LayoutElement* e = session_.selectedElement();
     if (!e) {
@@ -1373,12 +1825,17 @@ void LayoutEditorScreen::drawProperties()
         ImGui::TextWrapped("This is a theme made by hand, so the layout editor changes its page file in place: only the "
                            "values you change are rewritten, and comments, spacing and everything else stay as they are. "
                            "The first save keeps the original in manage/backups; Put back the original restores it.");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Several at once: Ctrl-click or Shift-click them (here or in the list), or drag a box around them "
+                           "from an empty part of the canvas (with Ctrl or Shift, from anywhere). With a controller, hold "
+                           "Select and press a direction.");
         ImGui::PopStyleColor();
         return;
     }
     ImGui::SeparatorText(session_.label(sel).c_str());
     ImGui::TextDisabled("<%s>  %s  (line %d)", e->name.c_str(), e->path.empty() ? "the page" : e->path.c_str(),
                         lineOf(session_.text(), e->begin));
+    drawTwinInfo(sel);
     const ElementGeom* g = session_.geometry(sel);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.45f, 1.0f));
     if (sel > 0 && !g) ImGui::TextWrapped("Not on the page as built (it draws nothing, or RetroFE skipped it): edit it here.");
@@ -1461,10 +1918,75 @@ void LayoutEditorScreen::drawProperties()
             if (ImGui::Checkbox("Hide in the editor", &hidden)) session_.setHidden(sel, hidden);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Only its box, here, to reach what's underneath; the page is unchanged");
         }
+        if (session_.selectionCount() > 1) return;   // the group's Duplicate and Delete are at the top
         if (ImGui::Button("Duplicate")) session_.duplicateSelected();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copies the element, animations and all, right after itself");
         ImGui::SameLine();
         if (ImGui::Button("Delete...")) showDelete_ = true;
+    }
+}
+
+void LayoutEditorScreen::alignSelection(int op)
+{
+    static const char* const what[] = { "left edges", "centres", "right edges", "tops", "middles", "bottoms" };
+    const size_t n = session_.movableSelection().size();
+    if (session_.alignSelected(op)) {
+        setStatus("Lined up the " + std::to_string(n) + " elements' " + what[op] + " (written as numbers, as a drag writes them). "
+                  "Undo takes it back.", false);
+    }
+    else setStatus(n < 2 ? "Lining up needs two elements that can move." : "They're lined up that way already.", n < 2);
+}
+
+void LayoutEditorScreen::distributeSelection(bool horizontal)
+{
+    const size_t n = session_.movableSelection().size();
+    if (session_.distributeSelected(horizontal)) {
+        setStatus("Spaced the " + std::to_string(n) + " elements evenly " + (horizontal ? "across" : "down") +
+                  ": the outer two stayed where they were.", false);
+    }
+    else setStatus(n < 3 ? "Spacing needs three elements that can move." : "They're evenly spaced that way already.", n < 3);
+}
+
+void LayoutEditorScreen::drawSelectionTools()
+{
+    const int n = session_.selectionCount();
+    const size_t movable = session_.movableSelection().size();
+    ImGui::SeparatorText((std::to_string(n) + " elements selected").c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("Dragging one moves them all; the arrows nudge them all. They line up on the box around them, and "
+                       "positions are written as numbers, as a drag writes them.");
+    if (movable < static_cast<size_t>(n)) {
+        ImGui::TextWrapped("%d of them can't move here (made from a menu's settings, or not on the page as built).",
+                           n - static_cast<int>(movable));
+    }
+    ImGui::PopStyleColor();
+    const float third = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+    const char* const labels[6] = { "Left", "Centre", "Right", "Top", "Middle", "Bottom" };
+    ImGui::BeginDisabled(movable < 2);
+    for (int op = 0; op < 6; ++op) {
+        if (op % 3) ImGui::SameLine();
+        if (ImGui::Button(labels[op], ImVec2(third, 0))) alignSelection(op);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Line their %s up", labels[op]);
+    }
+    ImGui::EndDisabled();
+    const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    ImGui::BeginDisabled(movable < 3);
+    if (ImGui::Button("Space across", ImVec2(half, 0))) distributeSelection(true);
+    ImGui::SameLine();
+    if (ImGui::Button("Space down", ImVec2(half, 0))) distributeSelection(false);
+    ImGui::EndDisabled();
+    if (ImGui::Button("Duplicate them")) {
+        if (session_.duplicateSelected()) setStatus("Copied them, each right after itself; the copies are selected.", false);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copies each one, animations and all, right after itself (Ctrl+D)");
+    ImGui::SameLine();
+    if (ImGui::Button("Delete them...")) showDelete_ = true;
+    if (session_.selectedElement()) {
+        if (ImGui::Button("Only this one")) session_.select(session_.selected());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keep only %s selected", session_.label(session_.selected()).c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("Below: %s, the last one picked.", session_.label(session_.selected()).c_str());
+        ImGui::PopStyleColor();
     }
 }
 
@@ -1818,7 +2340,8 @@ void LayoutEditorScreen::drawPopups()
     ImGui::SetNextWindowPos(centre, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal(UNSAVED, &showClose_, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!showClose_) ImGui::CloseCurrentPopup();
-        ImGui::Text("Save the changes to %s?", session_.page().c_str());
+        if (twin_.isOpen() && twin_.dirty() && session_.dirty()) ImGui::Text("Save the changes to %s and %s?", session_.page().c_str(), twin_.page().c_str());
+        else ImGui::Text("Save the changes to %s?", (twin_.isOpen() && twin_.dirty() ? twin_.page() : session_.page()).c_str());
         // Keyboard answers too, but not a key that's a mapped control: the controller presses the focused button
         const bool keys = !pad_.selectHeld() && !pad_.controllerActive();
         if (ImGui::Button("Save (Enter)") || (keys && ImGui::IsKeyPressed(ImGuiKey_Enter, false))) {
@@ -1874,7 +2397,8 @@ void LayoutEditorScreen::drawPopups()
     ImGui::SetNextWindowPos(centre, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal(DELETE_ELEMENT, &showDelete_, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!showDelete_) ImGui::CloseCurrentPopup();
-        ImGui::Text("Delete %s from the page?", session_.label(session_.selected()).c_str());
+        if (session_.selectionCount() > 1) ImGui::Text("Delete the %d selected elements from the page?", session_.selectionCount());
+        else ImGui::Text("Delete %s from the page?", session_.label(session_.selected()).c_str());
         ImGui::TextDisabled("Undo brings it back until you leave the editor.");
         if (ImGui::Button("Delete (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld() && !pad_.controllerActive())) {
             session_.deleteSelected();

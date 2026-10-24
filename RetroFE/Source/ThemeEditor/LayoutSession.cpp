@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "LayoutSession.h"
+#include "EditorSelection.h"
 #include "LayoutCheck.h"
 #include "LayoutPalette.h"
 #include "ThemeExport.h"
@@ -489,7 +490,102 @@ namespace ThemeEditor
 
     void LayoutSession::select(int i)
     {
-        selected_ = i >= 0 && i < elementCount() ? i : -1;
+        assignSelection(i >= 0 && i < elementCount() ? std::vector<int>{ i } : std::vector<int>());
+    }
+
+    void LayoutSession::assignSelection(const std::vector<int>& elements)
+    {
+        selection_.clear();
+        for (int i : elements) {
+            if (i < 0 || i >= elementCount()) continue;
+            selection_ = selectionWith(selection_, i);
+        }
+        // The page itself is only ever selected alone
+        if (selection_.size() > 1) selection_ = selectionWithout(selection_, 0);
+        selected_ = selection_.empty() ? -1 : selection_.back();
+    }
+
+    bool LayoutSession::isSelected(int i) const
+    {
+        return std::find(selection_.begin(), selection_.end(), i) != selection_.end();
+    }
+
+    void LayoutSession::setSelection(const std::vector<int>& elements)
+    {
+        assignSelection(elements);
+    }
+
+    void LayoutSession::toggleSelected(int i)
+    {
+        if (i < 0 || i >= elementCount()) return;
+        assignSelection(selectionToggled(selection_, i));
+    }
+
+    void LayoutSession::addSelected(int i)
+    {
+        if (i < 0 || i >= elementCount()) return;
+        assignSelection(selectionWith(selection_, i));
+    }
+
+    bool LayoutSession::dropPrimary()
+    {
+        if (selection_.empty()) return false;
+        assignSelection(selectionWithout(selection_, selected_));
+        return true;
+    }
+
+    void LayoutSession::selectAll()
+    {
+        std::vector<int> all;
+        for (int i : listed()) {
+            if (i > 0 && hasBox(i) && !hidden(i)) all.push_back(i);
+        }
+        if (selected_ > 0 && isSelected(selected_) && hasBox(selected_) && !hidden(selected_)) all = selectionWith(all, selected_);
+        assignSelection(all);
+    }
+
+    std::vector<int> LayoutSession::movableSelection() const
+    {
+        std::vector<int> out;
+        for (int i : selection_) {
+            if (editableBox(i)) out.push_back(i);
+        }
+        return out;
+    }
+
+    std::vector<int> LayoutSession::topSelected() const
+    {
+        std::vector<int> out;
+        for (int i : selection_) {
+            if (i <= 0) continue;
+            bool inside = false;
+            for (int e = doc_.elements[i].parent; e > 0 && !inside; e = doc_.elements[e].parent) inside = isSelected(e);
+            if (!inside) out.push_back(i);
+        }
+        std::sort(out.begin(), out.end());
+        return out;
+    }
+
+    std::vector<std::string> LayoutSession::selectionPaths() const
+    {
+        std::vector<std::string> out;
+        for (int i : selection_) out.push_back(doc_.elements[i].path);
+        return out;
+    }
+
+    void LayoutSession::selectPaths(const std::vector<std::string>& paths)
+    {
+        std::vector<int> found;
+        for (const std::string& p : paths) {
+            const int i = doc_.find(p);
+            if (i >= 0) found.push_back(i);
+        }
+        assignSelection(found);
+    }
+
+    DragRect LayoutSession::marqueeBox() const
+    {
+        return marqueeRect(drag_.startTx, drag_.startTy, drag_.endTx, drag_.endTy);
     }
 
     bool LayoutSession::selectPath(const std::string& path)
@@ -554,14 +650,56 @@ namespace ThemeEditor
 
     // ---- pointer -------------------------------------------------------------
 
-    void LayoutSession::pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx)
+    void LayoutSession::pointerDown(const CanvasFit& fit, float sx, float sy, float grabPx, bool additive)
     {
         drag_ = Drag();
         if (!fit.ok || !open_) return;
         const float tx = canvasToThemeX(fit, sx);
         const float ty = canvasToThemeY(fit, sy);
+        auto begin = [&]() {
+            drag_.active = true;
+            drag_.startSx = sx;
+            drag_.startSy = sy;
+            drag_.startTx = drag_.endTx = tx;
+            drag_.startTy = drag_.endTy = ty;
+        };
+        auto marquee = [&]() {
+            begin();
+            drag_.marquee = true;
+            drag_.additive = additive;
+        };
+        // Ctrl / Shift: a click toggles the element under it, a drag (from anywhere:
+        // hand-made pages usually have a full-page background) is a marquee that adds
+        if (additive) {
+            marquee();
+            drag_.clicked = pick(tx, ty);
+            return;
+        }
+        // Several selected: a press on any of them moves the ones that can move
+        if (selection_.size() > 1) {
+            int on = -1;
+            const ElementGeom* onGeom = nullptr;
+            for (int i : selection_) {
+                const ElementGeom* g = geometry(i);
+                if (!g || hidden(i)) continue;
+                const DragRect r = box(i);
+                if (tx < r.x || ty < r.y || tx > r.x + r.w || ty > r.y + r.h) continue;
+                if (!onGeom || g->layer > onGeom->layer || (g->layer == onGeom->layer && g->order >= onGeom->order)) { on = i; onGeom = g; }
+            }
+            if (on > 0) {
+                begin();
+                drag_.group = true;
+                drag_.handle = CH_BODY;
+                drag_.clicked = on;
+                std::vector<DragRect> boxes;
+                for (int i : movableSelection()) boxes.push_back(box(i));
+                drag_.start = unionRect(boxes);
+                drag_.rect = drag_.start;
+                return;
+            }
+        }
         int handle = CH_NONE;
-        if (selected_ > 0 && hasBox(selected_) && !hidden(selected_)) {
+        if (selection_.size() == 1 && selected_ > 0 && hasBox(selected_) && !hidden(selected_)) {
             handle = canvasHandleAt(fit, box(selected_), sx, sy, grabPx);
             // A box that can't be edited still takes clicks (click-through), never handles
             if (!editableBox(selected_) && handle != CH_NONE) handle = CH_BODY;
@@ -569,18 +707,17 @@ namespace ThemeEditor
         if (handle == CH_NONE) {
             int picked = pick(tx, ty);
             select(picked);
-            if (picked < 0) return;
+            if (picked < 0) {
+                marquee();
+                return;
+            }
             handle = CH_BODY;
         }
         else if (handle == CH_BODY) {
             drag_.cycleOnClick = true;
         }
-        drag_.active = true;
+        begin();
         drag_.handle = handle;
-        drag_.startSx = sx;
-        drag_.startSy = sy;
-        drag_.startTx = tx;
-        drag_.startTy = ty;
         drag_.start = box(selected_);
         drag_.rect = drag_.start;
     }
@@ -589,8 +726,14 @@ namespace ThemeEditor
     {
         if (!drag_.active || !fit.ok) return;
         if (!drag_.moved && std::fabs(sx - drag_.startSx) < CLICK_SLOP && std::fabs(sy - drag_.startSy) < CLICK_SLOP) return;
+        if (drag_.marquee) {
+            drag_.moved = true;
+            drag_.endTx = canvasToThemeX(fit, sx);
+            drag_.endTy = canvasToThemeY(fit, sy);
+            return;
+        }
         // Something that can't be edited is only clicked
-        if (!editableBox(selected_)) return;
+        if (drag_.group ? movableSelection().empty() : !editableBox(selected_)) return;
         drag_.moved = true;
         const float dx = (sx - drag_.startSx) / fit.scale;
         const float dy = (sy - drag_.startSy) / fit.scale;
@@ -612,6 +755,32 @@ namespace ThemeEditor
         if (!drag_.active) return;
         Drag d = drag_;
         drag_ = Drag();
+        if (d.marquee) {
+            if (!d.moved) {
+                if (d.additive && d.clicked > 0) toggleSelected(d.clicked);
+                return;
+            }
+            const DragRect area = marqueeRect(d.startTx, d.startTy, d.endTx, d.endTy);
+            std::vector<DragRect> rects;
+            std::vector<int> index;
+            for (int i : listed()) {
+                if (i <= 0 || !hasBox(i) || hidden(i)) continue;
+                rects.push_back(box(i));
+                index.push_back(i);
+            }
+            std::vector<int> picked = d.additive ? selection_ : std::vector<int>();
+            for (int k : marqueePick(rects, area)) {
+                if (!d.additive || !isSelected(index[k])) picked.push_back(index[k]);
+            }
+            assignSelection(picked);
+            return;
+        }
+        if (d.group) {
+            if (!d.moved) { select(d.clicked); return; }
+            endCoalesce();
+            shiftSelection(d.rect.x - d.start.x, d.rect.y - d.start.y);
+            return;
+        }
         if (!d.moved) {
             if (d.cycleOnClick) select(pickNext(d.startTx, d.startTy, selected_));
             return;
@@ -629,20 +798,46 @@ namespace ThemeEditor
 
     bool LayoutSession::change(const std::string& text, const std::string& key, const std::string& selectAfter)
     {
+        if (selectAfter.empty()) return change(text, key, selectionPaths());
+        return change(text, key, std::vector<std::string>{ selectAfter });
+    }
+
+    bool LayoutSession::change(const std::string& text, const std::string& key, const std::vector<std::string>& selectAfter)
+    {
         if (!open_ || text == doc_.text) return false;
         const std::string before = doc_.text;
         const std::string beforeSelected = selectedPath();
+        const std::vector<std::string> beforeSelection = selectionPaths();
         std::string error;
         if (!load(text, error)) return false;   // an edit never makes text that doesn't scan
         std::string full = key.empty() ? "" : key + "@" + beforeSelected;
         bool merge = !full.empty() && full == lastKey_ && !undo_.empty() && redo_.empty();
         if (!merge) {
-            undo_.push_back(Snapshot{ before, beforeSelected });
+            undo_.push_back(Snapshot{ before, beforeSelection, 0, ++nextStep_ });
             if (undo_.size() > UNDO_LIMIT) undo_.erase(undo_.begin());
         }
         redo_.clear();
         lastKey_ = full;
-        select(doc_.find(selectAfter.empty() ? beforeSelected : selectAfter));
+        selectPaths(selectAfter);
+        revision_++;
+        return true;
+    }
+
+    bool LayoutSession::applyLinked(const std::string& text, unsigned link)
+    {
+        if (!open_ || text == doc_.text) return false;
+        const std::string before = doc_.text;
+        const std::vector<std::string> beforeSelection = selectionPaths();
+        std::string error;
+        if (!load(text, error)) return false;
+        const bool merge = link != 0 && !undo_.empty() && undo_.back().link == link && redo_.empty();
+        if (!merge) {
+            undo_.push_back(Snapshot{ before, beforeSelection, link, ++nextStep_ });
+            if (undo_.size() > UNDO_LIMIT) undo_.erase(undo_.begin());
+        }
+        redo_.clear();
+        lastKey_.clear();
+        selectPaths(beforeSelection);
         revision_++;
         return true;
     }
@@ -679,12 +874,50 @@ namespace ThemeEditor
 
     bool LayoutSession::commitBox(const DragRect& from, const DragRect& to, bool resize)
     {
-        const ElementGeom* found = geometry(selected_);
+        BoxEdit edit;
+        edit.element = selected_;
+        edit.from = from;
+        edit.to = to;
+        edit.resize = resize;
+        // A run of controller nudges (move or resize) with a key is one undo
+        // step; a mouse drag ended the run first (pointerUp), so it's its own
+        return commitBoxes({ edit }, coalesce_);
+    }
+
+    bool LayoutSession::commitBoxes(const std::vector<BoxEdit>& edits, const std::string& key)
+    {
+        // One text change, one undo step. Attribute edits don't move elements,
+        // so every index stays valid in the working copy.
+        LayoutDoc work = doc_;
+        std::vector<std::pair<std::string, ElementGeom>> after;
+        for (const BoxEdit& edit : edits) {
+            std::vector<std::pair<std::string, std::string>> writes;
+            ElementGeom g;
+            if (!boxWrites(edit, writes, g)) continue;
+            for (const auto& w : writes) {
+                std::string next = withAttribute(work, edit.element, w.first, w.second);
+                std::string error;
+                if (!parseLayoutText(next, work, error)) return false;
+            }
+            after.emplace_back(doc_.elements[edit.element].path, g);
+        }
+        if (after.empty()) return false;
+        if (!change(work.text, key)) return false;
+        // The boxes stay where they were dropped until the page is rebuilt
+        for (const auto& a : after) geom_[a.first] = a.second;
+        return true;
+    }
+
+    bool LayoutSession::boxWrites(const BoxEdit& edit, std::vector<std::pair<std::string, std::string>>& writes, ElementGeom& after) const
+    {
+        const DragRect& from = edit.from;
+        const DragRect& to = edit.to;
+        const bool resize = edit.resize;
+        const ElementGeom* found = geometry(edit.element);
         if (!found || found->readOnly) return false;
         if (from.x == to.x && from.y == to.y && from.w == to.w && from.h == to.h) return false;
         ElementGeom g = *found;
-        const LayoutElement& el = doc_.elements[selected_];
-        std::vector<std::pair<std::string, std::string>> writes;
+        const LayoutElement& el = doc_.elements[edit.element];
 
         // Which attribute positions it on each axis: its own x, else its own xOffset, else a new x
         const bool byXOffset = !el.has("x") && el.has("xOffset");
@@ -727,34 +960,80 @@ namespace ThemeEditor
             if (to.y != from.y) place(false);
         }
         if (writes.empty()) return false;
-
-        // One text change, one undo step
-        LayoutDoc work = doc_;
-        for (const auto& w : writes) {
-            std::string next = withAttribute(work, selected_, w.first, w.second);
-            std::string error;
-            if (!parseLayoutText(next, work, error)) return false;
-        }
-        const std::string path = el.path;
-        // A run of controller nudges (move or resize) with a key is one undo
-        // step; a mouse drag ended the run first (pointerUp), so it's its own
-        if (!change(work.text, coalesce_)) return false;
-        // The box stays where it was dropped until the page is rebuilt
         g.approximate = false;
-        geom_[path] = g;
+        after = g;
         return true;
     }
 
     bool LayoutSession::moveBy(int dx, int dy)
     {
-        if (!editableBox(selected_) || (dx == 0 && dy == 0)) return false;
-        DragRect from = box(selected_);
-        DragRect to = canvasMove(from, static_cast<float>(dx), static_cast<float>(dy), 1, canvasW(), canvasH());
+        const std::vector<int> movable = movableSelection();
+        if (movable.empty() || (dx == 0 && dy == 0)) return false;
+        std::vector<DragRect> boxes;
+        for (int i : movable) boxes.push_back(box(i));
+        // The selection as one box stays on the canvas (or where it already was)
+        int mx = 0, my = 0;
+        groupMoveDelta(boxes, static_cast<float>(dx), static_cast<float>(dy), 1, canvasW(), canvasH(), mx, my);
+        if (mx == 0 && my == 0) return false;
         std::string saved = coalesce_;
         coalesce_ = "nudge";   // a run of nudges is one step, until endCoalesce()
-        bool ok = commitBox(from, to, false);
+        bool ok = shiftSelection(mx, my);
         coalesce_ = saved;
         return ok;
+    }
+
+    bool LayoutSession::shiftSelection(int dx, int dy)
+    {
+        if (dx == 0 && dy == 0) return false;
+        std::vector<BoxEdit> edits;
+        for (int i : movableSelection()) {
+            BoxEdit e;
+            e.element = i;
+            e.from = box(i);
+            e.to = e.from;
+            e.to.x += dx;
+            e.to.y += dy;
+            edits.push_back(e);
+        }
+        return !edits.empty() && commitBoxes(edits, coalesce_);
+    }
+
+    bool LayoutSession::alignSelected(int op)
+    {
+        const std::vector<int> movable = movableSelection();
+        if (movable.size() < 2) return false;
+        std::vector<DragRect> before;
+        for (int i : movable) before.push_back(box(i));
+        const std::vector<DragRect> after = alignRects(before, op);
+        std::vector<BoxEdit> edits;
+        for (size_t k = 0; k < movable.size(); ++k) {
+            BoxEdit e;
+            e.element = movable[k];
+            e.from = before[k];
+            e.to = after[k];
+            edits.push_back(e);
+        }
+        endCoalesce();
+        return commitBoxes(edits, "");
+    }
+
+    bool LayoutSession::distributeSelected(bool horizontal)
+    {
+        const std::vector<int> movable = movableSelection();
+        if (movable.size() < 3) return false;
+        std::vector<DragRect> before;
+        for (int i : movable) before.push_back(box(i));
+        const std::vector<DragRect> after = distributeRects(before, horizontal);
+        std::vector<BoxEdit> edits;
+        for (size_t k = 0; k < movable.size(); ++k) {
+            BoxEdit e;
+            e.element = movable[k];
+            e.from = before[k];
+            e.to = after[k];
+            edits.push_back(e);
+        }
+        endCoalesce();
+        return commitBoxes(edits, "");
     }
 
     bool LayoutSession::setBox(const DragRect& r, bool resize)
@@ -768,21 +1047,68 @@ namespace ThemeEditor
 
     bool LayoutSession::duplicateSelected()
     {
-        if (selected_ <= 0) return false;
-        const std::string copy = duplicatePath(doc_.elements[selected_].path);
-        return change(withDuplicate(doc_, selected_), "", copy);
+        const std::vector<int> top = topSelected();
+        if (top.empty()) return false;
+        if (top.size() == 1) {
+            const std::string copy = duplicatePath(doc_.elements[top[0]].path);
+            endCoalesce();
+            return change(withDuplicate(doc_, top[0]), "", copy);
+        }
+        // In document order: each copy goes right after its original, before
+        // the next original, so an original's offset moves by what was inserted
+        // so far and a copy's never moves again
+        LayoutDoc work = doc_;
+        size_t shift = 0;
+        std::vector<size_t> copies;
+        std::string error;
+        for (int e : top) {
+            const size_t at = doc_.elements[e].begin + shift;
+            int now = -1;
+            for (size_t k = 0; k < work.elements.size(); ++k) {
+                if (work.elements[k].begin == at) { now = static_cast<int>(k); break; }
+            }
+            if (now <= 0) return false;
+            const std::string copyPath = duplicatePath(work.elements[now].path);
+            LayoutDoc next;
+            if (!parseLayoutText(withDuplicate(work, now), next, error)) return false;
+            const int copy = next.find(copyPath);
+            if (copy <= 0) return false;
+            copies.push_back(next.elements[copy].begin);
+            shift += next.text.size() - work.text.size();
+            work = std::move(next);
+        }
+        std::vector<std::string> paths;
+        for (size_t begin : copies) {
+            for (const LayoutElement& el : work.elements) {
+                if (el.begin == begin) { paths.push_back(el.path); break; }
+            }
+        }
+        endCoalesce();
+        return change(work.text, "", paths);
     }
 
     bool LayoutSession::deleteSelected()
     {
-        if (selected_ <= 0) return false;
-        int parent = doc_.elements[selected_].parent;
-        const std::string parentPath = parent >= 0 ? doc_.elements[parent].path : "";
-        if (!change(withoutElement(doc_, selected_), "", "\x01")) return false;
-        // The parent is selected when it was a menu (an item went), else nothing
-        if (parent > 0) selectPath(parentPath);
-        else select(-1);
-        return true;
+        const std::vector<int> top = topSelected();
+        if (top.empty()) return false;
+        endCoalesce();
+        if (top.size() == 1) {
+            const int el = top[0];
+            int parent = doc_.elements[el].parent;
+            const std::string parentPath = parent >= 0 ? doc_.elements[parent].path : "";
+            if (!change(withoutElement(doc_, el), "", "\x01")) return false;
+            // The parent is selected when it was a menu (an item went), else nothing
+            if (parent > 0) selectPath(parentPath);
+            else select(-1);
+            return true;
+        }
+        // Last to first, so the earlier ones' indices stay
+        LayoutDoc work = doc_;
+        std::string error;
+        for (auto it = top.rbegin(); it != top.rend(); ++it) {
+            if (!parseLayoutText(withoutElement(work, *it), work, error)) return false;
+        }
+        return change(work.text, "", "\x01");
     }
 
     // ---- adding elements -------------------------------------------------------
@@ -965,11 +1291,28 @@ namespace ThemeEditor
 
     bool LayoutSession::enterEndBox(int element, DragRect& out) const
     {
+        return eventEndBox(element, "onEnter", out);
+    }
+
+    std::vector<std::string> LayoutSession::movingEvents(int element) const
+    {
+        std::vector<std::string> out;
+        for (int ev : events(element)) {
+            const std::string& name = doc_.elements[ev].name;
+            if (std::find(out.begin(), out.end(), name) != out.end()) continue;
+            DragRect r;
+            if (eventEndBox(element, name, r)) out.push_back(name);
+        }
+        return out;
+    }
+
+    bool LayoutSession::eventEndBox(int element, const std::string& event, DragRect& out) const
+    {
         const ElementGeom* found = geometry(element);
-        if (!found || found->around) return false;
-        // The onEnter the engine plays when the page starts: one without a menuIndex, else the first
+        if (!found || found->around || !isAnimationEvent(event)) return false;
+        // The event as the engine plays it on the page: one without a menuIndex, else the first
         int enter = -1;
-        for (int ev : childrenNamed(element, "onEnter")) {
+        for (int ev : childrenNamed(element, event)) {
             if (!doc_.elements[ev].has("menuIndex")) { enter = ev; break; }
             if (enter < 0) enter = ev;
         }
@@ -1010,10 +1353,10 @@ namespace ThemeEditor
         if (undo_.empty()) return false;
         Snapshot s = undo_.back();
         undo_.pop_back();
-        redo_.push_back(Snapshot{ doc_.text, selectedPath() });
+        redo_.push_back(Snapshot{ doc_.text, selectionPaths(), s.link, s.id });
         std::string error;
         load(s.text, error);
-        select(doc_.find(s.selected));
+        selectPaths(s.selection);
         drag_ = Drag();
         lastKey_.clear();
         revision_++;
@@ -1025,10 +1368,10 @@ namespace ThemeEditor
         if (redo_.empty()) return false;
         Snapshot s = redo_.back();
         redo_.pop_back();
-        undo_.push_back(Snapshot{ doc_.text, selectedPath() });
+        undo_.push_back(Snapshot{ doc_.text, selectionPaths(), s.link, s.id });
         std::string error;
         load(s.text, error);
-        select(doc_.find(s.selected));
+        selectPaths(s.selection);
         drag_ = Drag();
         lastKey_.clear();
         revision_++;
@@ -1091,7 +1434,7 @@ namespace ThemeEditor
                     "Close the editor and open it again before putting the original back.";
             return false;
         }
-        const Snapshot before{ doc_.text, selectedPath() };
+        const Snapshot before{ doc_.text, selectionPaths(), 0, ++nextStep_ };
         if (!backups.restore(file(), error)) return false;
         std::string text;
         if (!Library::readFile(file(), text) || !load(text, error)) {

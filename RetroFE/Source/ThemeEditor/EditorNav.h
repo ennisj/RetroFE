@@ -151,6 +151,74 @@ namespace ThemeEditor
         return o;
     }
 
+    // Resize nudges from any of the eight handles (the mouse's): the edges
+    // the handle stands on move by dx / dy steps (an edge handle ignores the
+    // other direction), the others stay put. A moving edge stops at the
+    // canvas (or where it already was, for a box that overhangs it); the
+    // minimum size outranks that. From CH_SE this is canvasNudgeResize.
+    static inline DragRect canvasNudgeResizeFrom(const DragRect& r, int handle, int dx, int dy, int step, int minW, int minH,
+                                                 int canvasW, int canvasH)
+    {
+        if (minW < 1) minW = 1;
+        if (minH < 1) minH = 1;
+        const bool left = handle == CH_NW || handle == CH_W || handle == CH_SW;
+        const bool right = handle == CH_NE || handle == CH_E || handle == CH_SE;
+        const bool up = handle == CH_NW || handle == CH_N || handle == CH_NE;
+        const bool down = handle == CH_SW || handle == CH_S || handle == CH_SE;
+        int x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
+        if (left) {
+            const int lo = r.x < 0 ? r.x : 0;
+            x1 = std::max(lo, x1 + dx * step);
+            x1 = std::min(x1, x2 - minW);
+        }
+        if (right) {
+            const int hi = r.x + r.w > canvasW ? r.x + r.w : canvasW;
+            x2 = std::min(hi, x2 + dx * step);
+            x2 = std::max(x2, x1 + minW);
+        }
+        if (up) {
+            const int lo = r.y < 0 ? r.y : 0;
+            y1 = std::max(lo, y1 + dy * step);
+            y1 = std::min(y1, y2 - minH);
+        }
+        if (down) {
+            const int hi = r.y + r.h > canvasH ? r.y + r.h : canvasH;
+            y2 = std::min(hi, y2 + dy * step);
+            y2 = std::max(y2, y1 + minH);
+        }
+        DragRect o;
+        o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
+        return o;
+    }
+
+    // Resize mode's handle, stepped by Letter up / down: clockwise from the
+    // bottom-right corner (SE, S, SW, W, NW, N, NE, E), wrapping
+    static inline int resizeHandleStep(int handle, int dir)
+    {
+        static const int order[8] = { CH_SE, CH_S, CH_SW, CH_W, CH_NW, CH_N, CH_NE, CH_E };
+        int at = 0;
+        for (int i = 0; i < 8; ++i) {
+            if (order[i] == handle) at = i;
+        }
+        return order[(at + (dir < 0 ? 7 : 1)) % 8];
+    }
+
+    // What the status line calls a handle
+    static inline const char* resizeHandleLabel(int handle)
+    {
+        switch (handle) {
+        case CH_NW: return "top-left corner";
+        case CH_N: return "top edge";
+        case CH_NE: return "top-right corner";
+        case CH_W: return "left edge";
+        case CH_E: return "right edge";
+        case CH_SW: return "bottom-left corner";
+        case CH_S: return "bottom edge";
+        case CH_SE: return "bottom-right corner";
+        default: return "box";
+        }
+    }
+
     // Properties panel rows: name, layer, alpha, then one per variable
     enum EdPanelRow { EPR_NAME = 0, EPR_LAYER = 1, EPR_ALPHA = 2, EPR_VAR0 = 3 };
     static inline int panelRowCount(int varCount) { return 3 + (varCount < 0 ? 0 : varCount); }
@@ -373,6 +441,8 @@ namespace ThemeEditor
         ECA_CANT_MOVE,      // the selection can't be moved here (say why)
         ECA_LEAVE_EDITOR,   // Back in Pick mode
         ECA_PREV, ECA_NEXT, // Letter up / down: the previous / next element in list order
+        ECA_COLLAPSE,       // Back in Pick with several selected: keep only the primary
+        ECA_HANDLE_PREV, ECA_HANDLE_NEXT,   // Letter up / down in Resize: the handle the directions drag
     };
     struct EdCanvasDecision
     {
@@ -381,8 +451,11 @@ namespace ThemeEditor
     };
 
     // Select goes Pick -> Move -> Resize -> Pick; Back goes back to Pick, or
-    // leaves the editor from Pick
-    static inline EdCanvasDecision canvasPress(EdCanvasMode mode, int press, bool hasSelection, bool movable)
+    // leaves the editor from Pick. With several selected (multi), Resize is
+    // skipped (Select in Move goes back to Pick: a group moves, one box
+    // resizes) and Back in Pick keeps only the primary instead of leaving.
+    // Letter up / down in Resize step the handle being dragged.
+    static inline EdCanvasDecision canvasPress(EdCanvasMode mode, int press, bool hasSelection, bool movable, bool multi)
     {
         EdCanvasDecision d;
         d.mode = mode;
@@ -402,24 +475,78 @@ namespace ThemeEditor
             }
             else {
                 d.action = ECA_MODE;
-                d.mode = mode == ECM_MOVE ? ECM_RESIZE : ECM_PICK;
+                d.mode = mode == ECM_MOVE && !multi ? ECM_RESIZE : ECM_PICK;
             }
             break;
         case EP_BACK:
-            if (mode == ECM_PICK) d.action = ECA_LEAVE_EDITOR;
+            if (mode == ECM_PICK) d.action = multi ? ECA_COLLAPSE : ECA_LEAVE_EDITOR;
             else { d.action = ECA_MODE; d.mode = ECM_PICK; }
             break;
         case EP_LETTER_UP:
             if (mode == ECM_PICK) d.action = ECA_PREV;
+            else if (mode == ECM_RESIZE) d.action = ECA_HANDLE_PREV;
             break;
         case EP_LETTER_DOWN:
             if (mode == ECM_PICK) d.action = ECA_NEXT;
+            else if (mode == ECM_RESIZE) d.action = ECA_HANDLE_NEXT;
             break;
         default:
             break;
         }
         return d;
     }
+
+    static inline EdCanvasDecision canvasPress(EdCanvasMode mode, int press, bool hasSelection, bool movable)
+    {
+        return canvasPress(mode, press, hasSelection, movable, false);
+    }
+
+    // Holding Select in Pick mode adds to the selection: Select acts when
+    // it's let go (Move, or Add with nothing selected), unless another
+    // control was pressed while it was held. Those presses:
+    enum EdHeldAction {
+        EHA_NONE = 0,
+        EHA_ADD_DIR,      // a direction: the nearest box that way joins, as the primary
+        EHA_ADD_PREV,     // Letter up / down: the previous / next in list order joins
+        EHA_ADD_NEXT,
+        EHA_DROP,         // Back: the primary leaves the selection
+    };
+    static inline EdHeldAction heldSelectPress(int press)
+    {
+        switch (press) {
+        case EP_UP: case EP_DOWN: case EP_LEFT: case EP_RIGHT: return EHA_ADD_DIR;
+        case EP_LETTER_UP: return EHA_ADD_PREV;
+        case EP_LETTER_DOWN: return EHA_ADD_NEXT;
+        case EP_BACK: return EHA_DROP;
+        default: return EHA_NONE;
+        }
+    }
+
+    // The Select press being held in Pick mode
+    struct HeldSelect
+    {
+        bool armed = false;   // Select went down in Pick: it acts when let go
+        bool used = false;    // another control was pressed meanwhile
+
+        void press() { armed = true; used = false; }
+        // Another control while Select is held: true when it's the held
+        // combination (the caller does heldSelectPress's action)
+        bool combine()
+        {
+            if (!armed) return false;
+            used = true;
+            return true;
+        }
+        // Every frame with Select's held state: true once, when it's let go
+        // with nothing pressed meanwhile (Select's own action happens now)
+        bool release(bool selectDown)
+        {
+            if (!armed || selectDown) return false;
+            armed = false;
+            return !used;
+        }
+        void cancel() { armed = false; used = false; }
+    };
 
     // Pick mode, one step: the nearest rect that way (rectNeighbor), the one
     // nearest the middle of the canvas when nothing is selected, or -1 when
