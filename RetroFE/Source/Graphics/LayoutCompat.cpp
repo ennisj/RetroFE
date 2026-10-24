@@ -20,6 +20,8 @@
 #include <cctype>
 #include <cerrno>
 #include <map>
+#include <set>
+#include <utility>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -487,22 +489,43 @@ size_t pickMediaFile(const std::vector<std::string>& files, const std::string& c
     return random % files.size();
 }
 
-bool findMedia(const std::string& prefix, const std::vector<std::string>& extensions,
-               const std::string& current, bool another, unsigned random, std::string& file)
+namespace
 {
-    if (Utils::findMatchingFile(prefix, extensions, file)) {
-        return true;
+#ifdef WIN32
+    std::string folderKey(const std::string& name) { return Utils::toLower(name); }   // Windows names ignore case
+#else
+    std::string folderKey(const std::string& name) { return name; }
+#endif
+}
+
+bool findMediaFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
+                         const std::string& current, bool another, unsigned random, std::string& file)
+{
+    // A miss is the usual case (a game with no folder of its own): each media
+    // folder's subfolder names are read once per run, so a miss costs a
+    // lookup, not a file system call, and adds nothing to the caches. A
+    // missing parent folder is read as having no subfolders.
+    static std::map<std::string, std::set<std::string>> subfolders;   // by parent folder
+    static std::map<std::pair<std::string, const std::vector<std::string>*>, std::vector<std::string>> listed;
+    const fs::path folder = fs::path(Utils::combinePath(Configuration::absolutePath, prefix));
+    const std::string parent = folder.parent_path().string();
+    auto parentIt = subfolders.find(parent);
+    if (parentIt == subfolders.end()) {
+        std::set<std::string> names;
+        std::error_code ec;
+        for (fs::directory_iterator it(parent, ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code entryEc;
+            if (it->is_directory(entryEc)) names.insert(folderKey(it->path().filename().string()));
+        }
+        parentIt = subfolders.emplace(parent, std::move(names)).first;
     }
-    // A missing file is the common case: each folder is listed once per run
-    static std::map<std::string, std::vector<std::string>> listed;
-    const std::string folder = Utils::combinePath(Configuration::absolutePath, prefix);
-    std::string key = folder;
-    for (const std::string& extension : extensions) {
-        key += "|" + extension;
+    if (!parentIt->second.count(folderKey(folder.filename().string()))) {
+        return false;
     }
-    auto it = listed.find(key);
+    // The extension lists are the callers' static ones: the same list is the same pointer
+    auto it = listed.find({ folder.string(), &extensions });
     if (it == listed.end()) {
-        it = listed.emplace(key, mediaFolderFiles(folder, extensions)).first;
+        it = listed.emplace(std::make_pair(folder.string(), &extensions), mediaFolderFiles(folder.string(), extensions)).first;
     }
     const std::vector<std::string>& files = it->second;
     if (files.empty()) {
@@ -510,6 +533,40 @@ bool findMedia(const std::string& prefix, const std::vector<std::string>& extens
     }
     file = files[pickMediaFile(files, current, another, random)];
     return true;
+}
+
+bool findMedia(const std::string& prefix, const std::vector<std::string>& extensions,
+               const std::string& current, bool another, unsigned random, std::string& file)
+{
+    return Utils::findMatchingFile(prefix, extensions, file) ||
+           findMediaFolderFile(prefix, extensions, current, another, random, file);
+}
+
+MediaLookup lookupMediaStep(const std::string& folder, const std::string& basename, bool romFolder,
+                            const std::vector<std::string>& fileExtensions, const std::vector<std::string>& folderExtensions,
+                            const std::string& current, bool another, unsigned random)
+{
+    MediaLookup found;
+    const std::string prefix = Utils::combinePath(folder, basename);
+    if (Utils::findMatchingFile(prefix, fileExtensions, found.file)) {
+        return found;
+    }
+    found.file.clear();
+    // Not in a game's own folder (list.romHierarchy): a PC game's video\ or
+    // music\ there is the game's, not art
+    if (romFolder) {
+        return found;
+    }
+    // A file only the wider list names (an image builder's .webp) still wins
+    std::string other;
+    if (&folderExtensions != &fileExtensions && Utils::findMatchingFile(prefix, folderExtensions, other)) {
+        return found;
+    }
+    found.fromFolder = findMediaFolderFile(prefix, folderExtensions, current, another, random, found.file);
+    if (!found.fromFolder) {
+        found.file.clear();
+    }
+    return found;
 }
 
 std::string themeFile(const std::string& pageFolder, const std::string& themeFolder, const std::string& src)

@@ -83,6 +83,9 @@ private:
     // watch notes it, whichever loop polls the event, and run() acts on it
     // when idle. Kiosk mode ignores it; an open Manage asks its screens first.
     static int SDLCALL windowCloseWatch( void *context, SDL_Event *event );
+    // Adds (or removes) the watch; SDL_Quit drops it, so it's added again
+    // whenever SDL is (unloadSDL)
+    void watchWindowClose( bool on );
     std::atomic<bool> windowCloseRequested_{ false };
 
     enum RETROFE_STATE

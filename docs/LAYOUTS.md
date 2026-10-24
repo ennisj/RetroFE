@@ -521,7 +521,8 @@ the next item uses the same folder (as one file would), and the
 removePlaylist control (OneSauce's B, "play different video (if
 available)") moves to the next file in name order (numbers counted as
 numbers). A file `<name>.<ext>` beside the folder wins, as before. Menu
-(scrolling list) art doesn't use folders. See
+(scrolling list) art doesn't use folders, nor does the step that looks in
+a game's own ROM folder (its `video` folder is the game's, not art). See
 [ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md).
 
 Example:

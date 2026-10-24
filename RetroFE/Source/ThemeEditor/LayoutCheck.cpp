@@ -161,21 +161,24 @@ namespace ThemeEditor
         // nobody saw, or unclear without changing what's drawn much. Only with
         // checkLayoutXml's ignored list (--theme-check): reported apart, not as
         // problems. Not here: what draws differently (reloadablePanningImage,
-        // view, the "quad" transform). { element ("*" any), name }
+        // view, the "quad" transform). { element, name }
         struct Known
         {
             const char* element;
             const char* name;
         };
+        // Each on the elements the OneSauce data has it on (K:'s base_assets/layouts)
         const Known ONESAUCE_ATTRIBUTES[] = {
             { "video", "hwdec" }, { "reloadableVideo", "hwdec" }, { "menu", "algorithm" }, { "menu", "miScrollTime" },
-            { "*", "keepOldWhileLoading" }, { "*", "scaleMode" }, { "*", "static" }, { "*", "delay" }, { "*", "reload" },
-            { "*", "reloadTransform" }, { "reloadableScrollingText", "endPosition" }, { "reloadableScrollingText", "uppercase" },
+            { "reloadableImage", "keepOldWhileLoading" }, { "reloadableImage", "scaleMode" }, { "image", "static" },
+            { "video", "delay" }, { "reloadableVideo", "reload" }, { "reloadableVideo", "reloadTransform" },
+            { "reloadableScrollingText", "endPosition" }, { "reloadableScrollingText", "uppercase" },
             { "scrollingText", "pauseTime" }, { "reloadableVideo", "numLoops" }, { "reloadableVideo", "minShowTime" },
             { "statusText", "value" }, { "animate", "angle" },
             // Case variants of known names (RetroFE, like upstream, is case-sensitive)
-            { "*", "Height" }, { "*", "Width" }, { "*", "maxwidth" }, { "layout", "loadfontSize" }, { "*", "textFallBack" },
-            { "item", "textFormat" }, { "itemDefaults", "textFormat" },
+            { "reloadableImage", "Height" }, { "image", "Height" }, { "reloadableImage", "Width" },
+            { "reloadableImage", "maxwidth" }, { "layout", "loadfontSize" }, { "reloadableImage", "textFallBack" },
+            { "item", "textFallBack" }, { "itemDefaults", "textFallBack" }, { "item", "textFormat" }, { "itemDefaults", "textFormat" },
         };
         // Child elements: animation events that look like typos or aren't read, and <stop> in an event
         const char* const ONESAUCE_CHILDREN[] = {
@@ -189,7 +192,7 @@ namespace ThemeEditor
         bool knownAttribute(const std::string& element, const std::string& name)
         {
             for (const Known& k : ONESAUCE_ATTRIBUTES) {
-                if (name == k.name && (std::string(k.element) == "*" || element == k.element)) return true;
+                if (name == k.name && element == k.element) return true;
             }
             return false;
         }

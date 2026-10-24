@@ -384,6 +384,11 @@ namespace
             check(ignored.size() == 12, "each once: " + std::to_string(ignored.size()));
             check(ThemeEditor::checkLayoutXml(xml).size() == problems.size() + ignored.size(),
                   "without the list (the theme editor), every one is still a problem");
+            // Scoped to the elements OneSauce has them on: elsewhere they're problems
+            ignored.clear();
+            check(ThemeEditor::checkLayoutXml("<layout width=\"1\" height=\"1\"><text value=\"a\" Height=\"5\"/>"
+                                              "<reloadableVideo imageType=\"logo\" static=\"1\"/></layout>", &ignored).size() == 2 &&
+                  ignored.empty(), "Height on text, static on reloadableVideo: still problems");
             // Media modes stay strict: mode="system" is only OneSauce's on a menu
             ignored.clear();
             check(ThemeEditor::checkLayoutXml("<layout width=\"1\" height=\"1\"><reloadableImage type=\"logo\" mode=\"weird\"/></layout>", &ignored).size() == 1 &&
@@ -402,6 +407,34 @@ namespace
             check(LayoutCompat::naturalLess("Racing-1.mp4", "Racing-2.mp4"), "dash-numbered");
             check(LayoutCompat::naturalLess("v02.mp4", "v3.mp4"), "leading zeros are numbers too");
             check(!LayoutCompat::naturalLess("same.mp4", "same.mp4"), "irreflexive");
+
+            // A strict weak ordering (std::sort needs one): leading zeros, case,
+            // digits against punctuation and letters, prefixes
+            const std::vector<std::string> names = {
+                "", "a", "A", "a1", "A1", "a01", "a001", "a1b", "a01b", "a1B", "a2", "a10", "a9", "a-1", "a.1", "a_1",
+                "a 1", "a:1", "a1-", "a1.", "1", "01", "10", "1a", "a1a1", "a1a01", "a01a1", "~", "Z9", "z10",
+            };
+            bool irreflexive = true, asymmetric = true, transitive = true, equivalence = true;
+            auto less = [](const std::string& x, const std::string& y) { return LayoutCompat::naturalLess(x, y); };
+            for (const auto& x : names) {
+                irreflexive = irreflexive && !less(x, x);
+                for (const auto& y : names) {
+                    asymmetric = asymmetric && !(less(x, y) && less(y, x));
+                    for (const auto& z : names) {
+                        if (less(x, y) && less(y, z) && !less(x, z)) {
+                            transitive = false;
+                        }
+                        // incomparability is transitive too
+                        auto same = [&](const std::string& p, const std::string& q) { return !less(p, q) && !less(q, p); };
+                        if (same(x, y) && same(y, z) && !same(x, z)) {
+                            equivalence = false;
+                        }
+                    }
+                }
+            }
+            check(irreflexive && asymmetric && transitive && equivalence, "strict weak ordering over the sample");
+            check(LayoutCompat::naturalLess("a01", "a1") != LayoutCompat::naturalLess("a1", "a01"), "a01 and a1 are ordered, one way");
+            check(LayoutCompat::naturalLess("a-1", "a1") && LayoutCompat::naturalLess("a1", "aa"), "punctuation, digits, letters");
 
             std::string root = makeRoot("compat-media-folder");
             std::string folder = at(root, "collections/1 ARCADES/system_artwork/video");
@@ -462,6 +495,43 @@ namespace
                                                      "default", video),
                        at(root, "layouts/Cafe80s/collections/1 ARCADES/medium_artwork/video"), "layout_preferred sees the folder");
             Configuration::absolutePath = saved;
+        });
+
+        run("compat: media folders only at the media steps, and a file still wins", [] {
+            std::string root = makeRoot("compat-media-steps");
+            static const std::vector<std::string> video = { "mp4", "avi" };
+            static const std::vector<std::string> images = { "png", "jpg" };          // ReloadableMedia's check
+            static const std::vector<std::string> builderImages = { "gif", "webp", "png", "jpg" };   // what the image builder takes
+            // A collection's media folder: a folder of videos for the game
+            writeFile(at(root, "media/PC/medium_artwork/video/Half-Life/intro 1.mp4"), "x");
+            writeFile(at(root, "media/PC/medium_artwork/video/Half-Life/intro 2.mp4"), "x");
+            // (every file first: folder listings are cached for the run, as RetroFE's are)
+            writeFile(at(root, "roms/Half-Life/video/cutscene.mp4"), "x");
+            writeFile(at(root, "media/PC/medium_artwork/video/Doom.mp4"), "x");
+            writeFile(at(root, "media/PC/medium_artwork/video/Doom/other.mp4"), "x");
+            writeFile(at(root, "media/PC/medium_artwork/logo/Doom.webp"), "x");
+            writeFile(at(root, "media/PC/medium_artwork/logo/Doom/a.png"), "x");
+            LayoutCompat::MediaLookup m = LayoutCompat::lookupMediaStep(at(root, "media/PC/medium_artwork/video"), "Half-Life", false,
+                                                                        video, video, "", false, 0);
+            check(m.fromFolder && fs::path(m.file).filename() == "intro 1.mp4", "a media step uses the folder: " + m.file);
+            // The game's own folder (list.romHierarchy): its video\ is the game's cutscenes, not art
+            m = LayoutCompat::lookupMediaStep(at(root, "roms/Half-Life"), "video", true, video, video, "", false, 0);
+            check(!m.fromFolder && m.file.empty(), "the ROM folder step doesn't: " + m.file);
+            m = LayoutCompat::lookupMediaStep(at(root, "roms/Half-Life"), "video", false, video, video, "", false, 0);
+            check(m.fromFolder, "(the same folder at a media step would)");
+            // A file the step's own list finds: as upstream
+            m = LayoutCompat::lookupMediaStep(at(root, "media/PC/medium_artwork/video"), "Doom", false, video, video, "", false, 0);
+            check(!m.fromFolder && fs::path(m.file).filename() == "Doom.mp4", "the file wins: " + m.file);
+            // A .webp only the image builder takes still wins over a folder
+            m = LayoutCompat::lookupMediaStep(at(root, "media/PC/medium_artwork/logo"), "Doom", false, images, builderImages, "", false, 0);
+            check(!m.fromFolder && m.file.empty(), "a webp file: left to the builder as upstream");
+            // Nothing at all, including under a folder that doesn't exist
+            m = LayoutCompat::lookupMediaStep(at(root, "media/PC/medium_artwork/logo"), "Quake", false, images, builderImages, "", false, 0);
+            check(!m.fromFolder && m.file.empty(), "nothing there");
+            m = LayoutCompat::lookupMediaStep(at(root, "media/Missing/medium_artwork/logo"), "Quake", false, images, builderImages, "", false, 0);
+            check(!m.fromFolder && m.file.empty(), "no such parent folder");
+            std::string file;
+            check(!LayoutCompat::findMediaFolderFile(at(root, "media/Missing/x/y"), video, "", false, 0, file), "folder lookup under a missing parent");
         });
     }
 
