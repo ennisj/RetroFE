@@ -147,7 +147,8 @@ private:
     Manager::EditBuffer edit_;
     std::string editFile_;
     bool editGlobal_ = false;
-    bool editHasOriginal_ = false;      // an original is kept and the file differs from it
+    bool editHasOriginal_ = false;      // a copy of the file is kept and the file differs from it
+    std::vector<std::string> editOtherPlatforms_;   // launchers.<other os> folders with a file of the same name
     std::string editCheckedExecutable_ = "\x01";
     Emulators::ExecutableCheck editExecutableCheck_;
 
@@ -156,4 +157,13 @@ private:
     std::string plannedKey_ = "\x01";
     const Library::Index* plannedIn_ = nullptr;
     Library::Editor::RenamePlan plan_;
+    const Library::Index* scannedIn_ = nullptr;
+    Library::Editor::RenameScan scan_;
+
+public:
+    // How many times the rename screen read the collections' settings (tests)
+    unsigned renameScans() const { return scans_; }
+
+private:
+    unsigned scans_ = 0;
 };

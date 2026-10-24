@@ -192,7 +192,8 @@ thing you can change:
   `savestate_directory`, saving beside the game, a folder per content folder
   and per core), and lists the game's files: exactly its name with a save or
   state ending (`.srm`, `.state`, `.state1`..., `.state.auto`, their `.png`
-  pictures, `.rtc`...), never another game's. **Back up now** copies them to
+  pictures, `.rtc`...), never another game's (on Windows, where `Sonic.srm`
+  and `sonic.srm` are one file, ignoring case). **Back up now** copies them to
   `manage/saves/<system>/<game>/<date-time>/`; **Delete these saves** backs
   them up first, then deletes them. Each backup opens on its own screen with
   its files: **Restore this backup** backs up what's there now, then puts the
@@ -381,8 +382,12 @@ A launcher's screen shows its program, arguments and working folder, with:
   only those lines of the launcher's file, keeping its comments and any other
   settings; the program must be there, and arguments may only use the
   variables RetroFE fills in (`%ITEM_FILEPATH%`, `%ITEM_NAME%`,
-  `%ITEM_DIRECTORY%`, `%RETROFE_PATH%`...). **Put back the original** returns
-  the file to what it was before Manage first changed it.
+  `%ITEM_DIRECTORY%`, `%RETROFE_PATH%`...; for the command prompt or a batch
+  file its own, such as `%APPDATA%`, too). **Put back the original** returns
+  the file to what it was before Manage first changed it; a launcher made in
+  Manage (added, or renamed) has no such copy, so it isn't offered. Only this
+  platform's `launchers.<os>` file changes, and the screen says when another
+  platform has one of the same name.
 - **RetroArch** (only when it runs RetroArch): the core-wide settings, core
   options and controls of its core, as on a system's screen; see
   [RetroArch settings](#retroarch-settings).

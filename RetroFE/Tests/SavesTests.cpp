@@ -307,4 +307,116 @@ static Test::Suite saves("saves", [] {
         check(contains(f.model->get("saves:why"), "another program"), "says why");
         check(!f.model->actionProblem("saves.backup").empty(), "and can't back up");
     });
+
+    run("saves: in the game's folder, sorted, empty and missing folders", [] {
+        std::string root = makeInstall("saves-rules");
+        std::string ra = root + "/emu/RetroArch";
+        std::string roms = root + "/collections/MegaDrive/roms";
+        // runloop_path_set_redirect: the game's folder replaces the folder first, then the sort folders are added to it
+        writeFile(ra + "/retroarch.cfg", "savefiles_in_content_dir = \"true\"\nsort_savefiles_enable = \"true\"\n"
+                  "sort_savefiles_by_content_enable = \"true\"\nsavestates_in_content_dir = \"true\"\n");
+        Saves::Folders both = foldersOf(root);
+        checkEqual(both.saves, norm(roms + "/roms/Genesis Plus GX"), "the game's folder, its name, the core");
+        checkEqual(both.states, norm(roms), "unsorted states stay in the game's folder");
+
+        // config_load_file ignores an empty value or a path that isn't a folder: the default stays
+        writeFile(ra + "/retroarch.cfg", "savefile_directory = \"\"\nsavestate_directory = \"" + root + "/missing\"\n");
+        Saves::Folders ignored = foldersOf(root);
+        checkEqual(ignored.saves, norm(ra + "/saves"), "an empty value: the default");
+        checkEqual(ignored.states, norm(ra + "/states"), "a path that isn't a folder: the default");
+        check(ignored.notes.size() == 2 && contains(ignored.notes[0], "is empty") && contains(ignored.notes[1], "isn't a folder"),
+              "both said");
+    });
+
+    run("saves: a launcher passing the name names the saves after it, even with a core Manage doesn't know", [] {
+        std::string root = makeInstall("saves-name");
+        writeFile(root + "/emu/RetroArch/cores/mystery_libretro.dll", "x");
+        Library::LauncherDef def;
+        def.id = "mystery";
+        def.executable = "%RETROFE_PATH%/emu/RetroArch/retroarch.exe";
+        def.arguments = "-L cores/mystery_libretro.dll %ITEM_NAME%";
+        RA::Setup setup = RA::detect(root, def, noEnvironment());
+        check(setup.state == RA::State::CoreUnknown && setup.passesName, "core not known, but it passes the name");
+        Library::GameRecord g = game(root, "sonic.md");
+        g.name = "Sonic Set";
+        Saves::Folders folders = Saves::forGame(setup, g, noEnvironment());
+        check(folders.known && folders.stem == "Sonic Set", "named after the name: " + folders.stem + " " + folders.why);
+    });
+
+    run("saves: names that ignore case where the file system does", [] {
+        Saves::Kind kind;
+        check(Saves::belongsTo("SONIC.srm", "Sonic", kind, true), "ignoring case");
+        check(!Saves::belongsTo("SONIC.srm", "Sonic", kind, false), "not otherwise");
+        check(!Saves::belongsTo("SONIC 2.srm", "Sonic", kind, true), "still not another game");
+        std::string root = makeInstall("saves-case");
+        writeFile(root + "/emu/RetroArch/saves/SONIC.srm", "x");
+        Saves::Folders folders = foldersOf(root);
+        checkEqual(folders.ignoreCase ? "yes" : "no", Saves::ignoresCase(root) ? "yes" : "no", "found out from the folder");
+#ifdef _WIN32
+        check(folders.ignoreCase, "Windows ignores case");
+#endif
+        check(Saves::list(folders).size() == (folders.ignoreCase ? 1u : 0u), "SONIC.srm is sonic's only where case is ignored");
+    });
+
+    run("saves: restore never writes over a file that isn't one of the game's", [] {
+        // A system whose games are .sav files, saving beside them: zelda.sav is the game itself
+        std::string root = makeInstall("saves-dest", "savefiles_in_content_dir = \"true\"\n");
+        std::string roms = root + "/collections/MegaDrive/roms/";
+        writeFile(roms + "zelda.sav", "the game");
+        Saves::Folders folders = foldersOf(root, "zelda.sav");
+        check(folders.known && Saves::list(folders).empty(), "the game's own file isn't a save");
+        std::string base = Saves::backupRoot(root, "MegaDrive", "zelda");
+        writeFile(base + "/20260101-000000/saves/zelda.sav", "a save");
+        Library::EditResult r = Saves::restore(root, "MegaDrive", "zelda", folders, "20260101-000000");
+        check(!r.ok && contains(r.message, "isn't one of"), r.message);
+        checkEqual(readFile(roms + "zelda.sav"), "the game", "the game is untouched");
+    });
+
+    run("saves: names that can't be a folder for backups", [] {
+        check(Saves::backupProblem("MegaDrive", "Sonic").empty(), "a plain name");
+        check(contains(Saves::backupProblem("MegaDrive", "con"), "Windows keeps"), "a device name");
+        check(contains(Saves::backupProblem("MegaDrive", "com1.part2"), "com1"), "whatever follows the dot");
+        check(contains(Saves::backupProblem("MegaDrive", "Game."), "dot or a space"), "a trailing dot");
+        check(contains(Saves::backupProblem("MegaDrive", "Game "), "dot or a space"), "a trailing space");
+        check(contains(Saves::backupProblem("Nul", "Game"), "system's name"), "the system's name too");
+        checkEqual(Saves::backupRoot("x", "MegaDrive", "aux"), "", "no folder for it");
+    });
+
+    run("saves: two backups in one second, and their order", [] {
+        std::string root = makeInstall("saves-second");
+        writeFile(root + "/emu/RetroArch/saves/sonic.srm", "v1");
+        Saves::Folders folders = foldersOf(root);
+        std::string first;
+        std::string second;
+        // The clock may tick between the two: try until both land in one second
+        for (int attempt = 0; attempt < 5; attempt++) {
+            std::error_code ec;
+            fs::remove_all(root + "/manage", ec);
+            Saves::backUp(root, "MegaDrive", "sonic", folders, "one", &first);
+            Saves::backUp(root, "MegaDrive", "sonic", folders, "two", &second);
+            if (first.size() >= 15 && second.compare(0, 15, first) == 0) break;
+        }
+        checkEqual(second, first + "-2", "the second gets -2");
+        std::vector<Saves::Backup> all = Saves::backups(root, "MegaDrive", "sonic");
+        check(all.size() == 2 && all[0].id == second && all[0].reason == "two", "the newer first");
+
+        std::string base = Saves::backupRoot(root, "MegaDrive", "sonic");
+        fs::remove_all(base);
+        for (const char* id : { "20260101-000000", "20260101-000000-2", "20260101-000000-10", "20251231-235959" }) {
+            writeFile(base + "/" + id + "/saves/sonic.srm", "x");
+        }
+        all = Saves::backups(root, "MegaDrive", "sonic");
+        check(all.size() == 4 && all[0].id == "20260101-000000-10" && all[1].id == "20260101-000000-2"
+              && all[2].id == "20260101-000000" && all[3].id == "20251231-235959", "by time, then by number");
+    });
+
+    run("saves: a game named the same in another case shares the files where case is ignored", [] {
+        std::string root = makeInstall("saves-share-case");
+        writeFile(root + "/collections/Genesis/settings.conf", "list.extensions = gen\nlauncher = genesis\n");
+        writeFile(root + "/collections/Genesis/roms/SONIC.gen", "rom");
+        Fixture f(root);
+        f.model->setScreen("game-saves", { { "collection", "MegaDrive" }, { "id", "sonic" } });
+        bool shared = contains(f.model->get("saves:notes"), "same name in Genesis");
+        check(shared == Saves::ignoresCase(root), "named only where SONIC.srm is sonic.srm: " + f.model->get("saves:notes"));
+    });
 });

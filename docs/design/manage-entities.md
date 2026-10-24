@@ -244,8 +244,8 @@ system.
 
 | Form | Shows |
 |------|-------|
-| `emulator-edit` (`id`, `scope`) | Who it reaches ("Changes apply to everything that uses this launcher": the users summary), program (file field), arguments (the add form's presets, starting as custom text with the file's value; RetroArch's needs a core file), working folder and restart (global launchers only: RetroFE reads them as `launchers.<name>.*`), the command it will run, the file. **Save** writes only the fields changed, through `Editor::editLauncher` (in place: unknown keys such as `LEDBlinkyEmulator`, comments and line endings kept; empty arguments or working folder, or restart off, remove the line). Validated like Add: the program must exist (when changed), RetroArch's preset needs a core, no `#` or line break, and only RetroFE's `%VARIABLES%` (`%ITEM_FILEPATH%`, `%ITEM_NAME%`, `%ITEM_FILENAME%`, `%ITEM_DIRECTORY%`, `%ITEM_COLLECTION_NAME%`, `%RETROFE_PATH%`, `%COLLECTION_PATH%`, `%RETROFE_EXEC_PATH%`, `%CMD%`; `%1`, `%%` and `%~dp0` aren't variables), which Add now checks too. **Reset**; **Put back the original** (confirmed) while the file differs from the copy kept before Manage first changed it. The buffer is read from the file, so a save shows at once; the list shows "Updating the list..." until the index catches up. Unsaved changes warn on leaving. |
-| `emulator-rename` (`id`, `scope`), from the **Rename** button (global launchers only) | The new name (text), why it can't be (taken in any scope or platform folder, the same name, only the case, a system whose `launcher` is set outside its folder), and **What changes**: one line per file. **Rename** (confirmed) runs `Editor::renameLauncher`. The button replaces the launcher's screen with this one, and a rename replaces this one with the launcher's screen under its new name, so no open screen keeps the old name (Back from an unfinished rename returns to the list). |
+| `emulator-edit` (`id`, `scope`) | Who it reaches ("Changes apply to everything that uses this launcher": the users summary), program (file field), arguments (the add form's presets, starting as custom text with the file's value; RetroArch's needs a core file), working folder and restart (global launchers only: RetroFE reads them as `launchers.<name>.*`), the command it will run, the file. **Save** writes only the fields changed, through `Editor::editLauncher` (in place: unknown keys such as `LEDBlinkyEmulator`, comments and line endings kept; empty arguments or working folder, or restart off, remove the line). Validated like Add: the program must exist (when changed), RetroArch's preset needs a core, no `#` or line break, and only RetroFE's `%VARIABLES%` (`%ITEM_FILEPATH%`, `%ITEM_NAME%`, `%ITEM_FILENAME%`, `%ITEM_DIRECTORY%`, `%ITEM_COLLECTION_NAME%`, `%RETROFE_PATH%`, `%COLLECTION_PATH%`, `%RETROFE_EXEC_PATH%`, `%CMD%`; `%1`, `%%` and `%~dp0` aren't variables; when the program is the command prompt or a batch file (`cmd`, `%CMD%`, `*.bat`, `*.cmd`), other `%NAME%`s in the arguments are its own variables, such as `%APPDATA%`, and allowed), which Add now checks too. **Reset**; **Put back the original** (confirmed) only while a copy of the file as it was is kept and differs: a launcher Manage created (Add, or the new name of a rename) has no copy, only an "absent" marker, and putting that back would delete a launcher systems use, so it isn't offered. Only this platform's file is edited; when `launchers.<other os>/` has one of the same name, the screen says it stays as it is. The buffer is read from the file, so a save shows at once; the list shows "Updating the list..." until the index catches up. Unsaved changes warn on leaving. |
+| `emulator-rename` (`id`, `scope`), from the **Rename** button (global launchers only) | The new name (text), why it can't be (taken in any scope or platform folder, the same name, only the case, a system whose effective `launcher` comes from a file outside its folder, by `Properties::sourceFile`: RetroFE reads the global settings, then the collection's settings.conf, settings1..15.conf and info.conf, the last one winning), and **What changes**: one line per file (every collection file naming it is changed, also one a later file overrides, so it keeps working if that one goes). The collections are read once per launcher and snapshot (`Editor::scanLauncherRename`); each name typed is checked against that. **Rename** (confirmed) runs `Editor::renameLauncher`. The button replaces the launcher's screen with this one, and a rename replaces this one with the launcher's screen under its new name, so no open screen keeps the old name (Back from an unfinished rename returns to the list). |
 | `emulator-retroarch`, `emulator-core-options`, `emulator-core-option`, `emulator-controls` (`id`, `scope`) | The system screens' core-wide RetroArch screens for the core this launcher runs (`RetroArchProvider`, a third set of the same templates), with "reaches N systems". The link on `emulator` shows only when the launcher runs RetroArch, with its core as the status. |
 
 Deferred: payload checks beyond "the program exists"; renaming collection
@@ -377,28 +377,40 @@ on `game` with "N files, M backups" or "Not known for this emulator".
 `runloop_path_set_redirect` and `config_load` do:
 
 1. `savefile_directory` / `savestate_directory`: `:` is RetroArch's folder,
-   `~` home, relative paths from the working folder; `default`, empty or a
-   path that isn't a folder (RetroArch warns and ignores it) is the platform
-   default, `<RetroArch's folder>/saves` and `/states` on Windows,
-   `<config folder>/saves` / `states` elsewhere.
+   `~` home, relative paths from the working folder. `config_set_defaults`
+   starts both at the platform default (`<RetroArch's folder>/saves` and
+   `/states` on Windows, `<config folder>/saves` / `states` elsewhere; desktop
+   builds always have one), and `config_load_file` keeps it for `default`, and
+   for an empty value or a path that isn't a folder (it logs "is not a
+   directory, ignoring"); the screen notes those. The content-folder fallback
+   in `runloop_path_set_redirect` is only for a build with no default.
 2. `savefiles_in_content_dir` / `savestates_in_content_dir`: the game's
    folder instead.
 3. `sort_savefiles_by_content_enable` / `sort_savestates_by_content_enable`
    add the name of the game's folder, then `sort_savefiles_enable` /
-   `sort_savestates_enable` the core's library name (that order, after the
-   in-content-folder rule). Sorting by core with a core that isn't known
-   makes the saves "not known", rather than guessing.
+   `sort_savestates_enable` the core's library name, to whatever folder step 2
+   left, the game's folder included: `runloop_path_set_redirect` replaces its
+   intermediate folder with the content folder first, then joins
+   `content_dir_name` and `library_name` to it. Sorting by core with a core
+   that isn't known makes the saves "not known", rather than guessing.
 4. The files are named after the game's file without its extension (an
-   archive's own name), or its name when the launcher passes `%ITEM_NAME%`.
+   archive's own name), or its name when the launcher passes `%ITEM_NAME%`
+   (known from the launcher even when its core isn't).
+5. Replays (`.replay`, older `.bsv`) go with the states: RetroArch writes
+   them in the state folder (`name.replay` follows `new_savestate_dir`).
 
-**Which files** (`belongsTo`): exactly the stem (case-sensitive), then a save
-ending (`.srm`, `.sav`, `.rtc`, `.ldci`, `.eep`, `.sra`, `.fla`, `.mpk`,
-`.dsv`, `.mcr`, `.<n>.mcr`) or a state ending (`.state`, `.state<n>`,
-`.state.auto`, any of them + `.png`, `.bsv`, `.replay`, `.replay<n>`), the
-ending ignoring case. `Sonic 2.srm` is never Sonic's, and the game's own file
-is never counted even in its own folder. Another game of the same name whose
-saves resolve to the same folders (the same core, unsorted) is named on the
-screen, since those files are its too.
+**Which files** (`belongsTo`): exactly the stem, then a save ending (`.srm`,
+`.sav`, `.rtc`, `.ldci`, `.eep`, `.sra`, `.fla`, `.mpk`, `.dsv`, `.mcr`,
+`.<n>.mcr`) or a state ending (`.state`, `.state<n>`, `.state.auto`, any of
+them + `.png`, `.bsv`, `.replay`, `.replay<n>`), the ending ignoring case.
+The stem ignores case where the file system does (`Folders::ignoreCase`:
+always on Windows, else found by looking the folder up with its case
+swapped, as on most macOS volumes), because there `Sonic.md` and `sonic.sms`
+write the same `Sonic.srm`. `Sonic 2.srm` is never Sonic's, and the game's
+own file is never counted even in its own folder. Another game of the same
+name (ignoring case where the file system does) whose saves resolve to the
+same folders (the same core, unsorted) is named on the screen, since those
+files are its too.
 
 **Backups**: `<root>/manage/saves/<collection>/<game>/<yyyymmdd-hhmmss>[-n]/`
 with `saves/`, `states/` and `backup.txt` (`reason = ...`), outside every
@@ -406,12 +418,17 @@ content and RetroArch folder and apart from `manage/backups/` (whose
 per-file "original" model doesn't fit snapshots). **Back up now** copies the
 current files (refused when there are none); **Restore** checks every file
 in the backup is the game's (a backup holding anything else is refused,
-nothing copied), backs up the current files ("Before restoring the backup
-from ..."), removes them and copies the backup's in, so the game ends with
-exactly the backup's files; **Delete these saves** (confirmed) backs up
+nothing copied) and that every file it would write over is one of the
+game's current files (never the game itself, or a file the file system
+matches under another spelling), backs up the current files ("Before
+restoring the backup from ..."), removes them and copies the backup's in, so
+the game ends with exactly the backup's files; **Delete these saves** (confirmed) backs up
 ("Before deleting") and removes them; **Delete this backup** (confirmed)
-removes one backup. Backups are kept until deleted. RetroFE doesn't read
-saves: no reload.
+removes one backup. Backups are kept until deleted. A game or system whose
+name can't be a folder name there (a path, a trailing dot or space, a Windows
+device name such as `con` or `com1.x`) can't be backed up, and the screen
+says why. Two backups in one second get `-2`, `-3`...; they're listed newest
+first. RetroFE doesn't read saves: no reload.
 
 Not built: saves of other emulators. Each keeps its own (MAME a folder per
 game under `nvram/`, `sta/`; standalone emulators their own layouts), so a

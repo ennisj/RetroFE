@@ -752,6 +752,10 @@ Setup detect(const std::string& root, const LauncherDef& launcher, const Environ
     }
     std::vector<std::string> args = splitArguments(launcher.arguments);
     auto expand = [&](std::string value) { return Utils::replace(value, "%RETROFE_PATH%", root); };
+    // Set whatever else is known, so a core that isn't known still names a game's saves right
+    const std::string& written = launcher.arguments;
+    s.passesName = written.find("%ITEM_NAME%") != std::string::npos && written.find("%ITEM_FILEPATH%") == std::string::npos
+        && written.find("%ITEM_FILENAME%") == std::string::npos;
 
     // RetroArch's program: relative paths are relative to RetroFE's folder (or,
     // handed to another program, its working folder), a bare name may be on the path
@@ -948,9 +952,6 @@ Setup detect(const std::string& root, const LauncherDef& launcher, const Environ
         return s;
     }
 
-    std::string args0 = launcher.arguments;
-    s.passesName = args0.find("%ITEM_NAME%") != std::string::npos && args0.find("%ITEM_FILEPATH%") == std::string::npos
-        && args0.find("%ITEM_FILENAME%") == std::string::npos;
     s.state = State::Ready;
     return s;
 }

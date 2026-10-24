@@ -90,10 +90,16 @@ namespace Emulators
     // %RETROFE_EXEC_PATH%, %CMD%. Returns the first %NAME% in text that isn't
     // one of them (it would reach the program as it is), or "".
     std::string unknownPlaceholder(const std::string& text);
+    // Whether program is Windows' command prompt or a batch file (cmd, cmd.exe,
+    // %CMD%, *.bat, *.cmd), which expands %NAME% environment variables itself
+    bool runsCommandPrompt(const std::string& program);
     // Empty when the program, arguments and working folder can be written,
-    // otherwise why not: one line, no '#', only known variables
+    // otherwise why not: one line, no '#', only known variables. program is
+    // what runs (the executable as it will be, changed or not): for the
+    // command prompt an unknown %NAME% in the arguments is its own variable
+    // (%APPDATA%) and allowed.
     std::string checkLauncherValues(const std::string& executable, const std::string& arguments,
-                                    const std::string& workingFolder);
+                                    const std::string& workingFolder, const std::string& program = "");
 
     // A path as a new launcher stores it: inside RetroFE's folder as
     // %RETROFE_PATH%/..., so the drive can move; elsewhere as it is. A

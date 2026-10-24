@@ -83,14 +83,35 @@ namespace
         return found != cfg.end() && toLower(trim(found->second)) == "true";
     }
 
-    // One plain path segment: used as a folder name under manage/saves
-    bool isPlainSegment(const std::string& name)
+    // Why name can't be a folder name under manage/saves, or ""
+    std::string segmentProblem(const std::string& name)
     {
-        if (name.empty() || name.find_first_of("/\\:*?\"<>|") != std::string::npos) return false;
-        for (unsigned char c : name) {
-            if (c < 32) return false;
+        if (name.empty() || name.find_first_of("/\\:*?\"<>|") != std::string::npos || name.find_first_not_of('.') == std::string::npos) {
+            return "isn't a plain folder name";
         }
-        return name.find_first_not_of('.') != std::string::npos;
+        for (unsigned char c : name) {
+            if (c < 32) return "isn't a plain folder name";
+        }
+        // Windows drops a trailing dot or space, so "Game." would land in "Game"
+        if (name.back() == '.' || name.back() == ' ') {
+            return "ends with a dot or a space, which Windows drops from folder names";
+        }
+        static const char* const reserved[] = { "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5",
+            "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
+        std::string stem = toLower(trim(name.substr(0, name.find('.'))));
+        for (const char* device : reserved) {
+            if (stem == device) return "starts with a name Windows keeps for itself (" + stem + ")";
+        }
+        return "";
+    }
+
+    bool isPlainSegment(const std::string& name) { return segmentProblem(name).empty(); }
+
+    bool stemMatches(const std::string& fileName, const std::string& stem, bool ignoreCase)
+    {
+        if (stem.empty() || fileName.size() <= stem.size()) return false;
+        std::string head = fileName.substr(0, stem.size());
+        return ignoreCase ? iequals(head, stem) : head == stem;
     }
 
     bool allDigits(const std::string& s, size_t from, size_t to)
@@ -110,7 +131,7 @@ namespace
         return false;
     }
 
-    std::vector<File> filesIn(const std::string& folder, const std::string& stem, Kind wanted, const std::string& skip)
+    std::vector<File> filesIn(const std::string& folder, const std::string& stem, Kind wanted, const std::string& skip, bool ignoreCase)
     {
         std::vector<File> out;
         std::error_code ec;
@@ -121,7 +142,7 @@ namespace
             std::string name;
             if (!narrowName(it->path().filename(), name)) continue;
             Kind kind;
-            if (!belongsTo(name, stem, kind) || kind != wanted) continue;
+            if (!belongsTo(name, stem, kind, ignoreCase) || kind != wanted) continue;
             std::string path = join(folder, name);
             if (!skip.empty() && iequals(path, normalPath(skip))) continue;
             File file;
@@ -171,10 +192,11 @@ namespace
     EditResult copyIntoBackup(const std::string& root, const std::string& collection, const std::string& game,
                               const std::vector<File>& files, const std::string& reason, std::string* idOut)
     {
-        std::string base = backupRoot(root, collection, game);
-        if (base.empty()) {
-            return EditResult::fail("This game's name can't be a folder name, so its saves can't be backed up here.");
+        std::string problem = backupProblem(collection, game);
+        if (!problem.empty()) {
+            return EditResult::fail(problem);
         }
+        std::string base = backupRoot(root, collection, game);
         std::tm tm = localNow();
         std::string stamp = pad(tm.tm_year + 1900, 4) + pad(tm.tm_mon + 1, 2) + pad(tm.tm_mday, 2) + "-"
             + pad(tm.tm_hour, 2) + pad(tm.tm_min, 2) + pad(tm.tm_sec, 2);
@@ -238,17 +260,28 @@ Folders forGame(const RetroArch::Setup& setup, const GameRecord& game, const Ret
         size_t start = v.find_first_not_of("/\\", 1);
         return start == std::string::npos ? std::string() : v.substr(start);
     };
-    // "default" or nothing: the default; a path that isn't a folder is ignored (RetroArch warns and keeps the default)
+    // As configuration.c reads them: config_set_defaults starts both at the
+    // platform's default folder (desktop builds always have one); then
+    // config_load_file takes "default" as that default, a folder as given,
+    // and anything else (an empty value, a path that isn't a folder) is
+    // ignored with a warning, so the default stays. Only a build without a
+    // default would leave the folder empty, which runloop_path_set_redirect
+    // turns into the game's folder.
     auto folder = [&](const std::string& key, const std::string& fallback) {
         auto found = cfg.find(key);
-        std::string v = found == cfg.end() ? "" : trim(found->second);
-        if (v.empty() || v == "default") return normalPath(fallback);
+        if (found == cfg.end()) return normalPath(fallback);
+        std::string v = trim(found->second);
+        if (v == "default") return normalPath(fallback);
+        if (v.empty()) {
+            f.notes.push_back(key + " is empty, so RetroArch ignores it and uses its default folder.");
+            return normalPath(fallback);
+        }
         std::string path;
         if (v[0] == ':') path = join(programFolder, rest(v));
         else if (v[0] == '~') path = join(env.home, rest(v));
         else path = isAbsolute(v) ? normalPath(v) : join(setup.workingFolder, v);
         if (!isDir(path)) {
-            f.notes.push_back(key + " (" + path + ") isn't a folder, so RetroArch uses its default.");
+            f.notes.push_back(key + " (" + path + ") isn't a folder, so RetroArch ignores it and uses its default folder.");
             return normalPath(fallback);
         }
         return path;
@@ -260,7 +293,12 @@ Folders forGame(const RetroArch::Setup& setup, const GameRecord& game, const Ret
     if (isTrue(cfg, "savefiles_in_content_dir")) saves = content;
     if (isTrue(cfg, "savestates_in_content_dir")) states = content;
 
-    // Per content folder, then per core (runloop_path_set_redirect's order)
+    // Per content folder, then per core, added to whichever folder the step
+    // above left, the game's folder included: runloop_path_set_redirect sets
+    // its intermediate folder to the content folder first (savefiles_in_content_dir
+    // or an empty folder) and then joins content_dir_name and library_name to
+    // that intermediate folder (runloop.c, "Per-core and/or
+    // per-content-directory saves"). RetroArch makes those folders as needed.
     auto sorted = [&](std::string dir, const char* byContent, const char* byCore, const std::string& what) {
         if (isTrue(cfg, byContent) && !contentName.empty()) dir = join(dir, contentName);
         if (isTrue(cfg, byCore)) {
@@ -281,13 +319,50 @@ Folders forGame(const RetroArch::Setup& setup, const GameRecord& game, const Ret
         && (isTrue(cfg, "sort_savefiles_enable") || isTrue(cfg, "sort_savestates_enable"))) {
         f.notes.push_back("The core's folder name (" + setup.library + ") isn't confirmed yet.");
     }
+    // The first of the folders that's there decides (they're normally on one drive)
+    for (const std::string& dir : { f.saves, f.states, content }) {
+        if (isDir(dir)) {
+            f.ignoreCase = ignoresCase(dir);
+            break;
+        }
+    }
     f.known = true;
     return f;
 }
 
-bool belongsTo(const std::string& fileName, const std::string& stem, Kind& kind)
+bool ignoresCase(const std::string& folder)
 {
-    if (stem.empty() || fileName.size() <= stem.size() || fileName.compare(0, stem.size(), stem) != 0) return false;
+#ifdef _WIN32
+    (void)folder;
+    return true;
+#else
+    // Swap the case of the last part with a letter in it and see whether it's the same folder
+    fs::path path(folder);
+    std::vector<std::string> parts;
+    for (const auto& part : path) parts.push_back(part.string());
+    for (size_t i = parts.size(); i-- > 0;) {
+        std::string swapped = parts[i];
+        bool letter = false;
+        for (char& c : swapped) {
+            unsigned char u = static_cast<unsigned char>(c);
+            if (std::isalpha(u)) {
+                letter = true;
+                c = static_cast<char>(std::islower(u) ? std::toupper(u) : std::tolower(u));
+            }
+        }
+        if (!letter) continue;
+        fs::path other;
+        for (size_t j = 0; j < parts.size(); j++) other /= j == i ? swapped : parts[j];
+        std::error_code ec;
+        return fs::exists(other, ec) && fs::equivalent(other, path, ec);
+    }
+    return false;
+#endif
+}
+
+bool belongsTo(const std::string& fileName, const std::string& stem, Kind& kind, bool ignoreCase)
+{
+    if (!stemMatches(fileName, stem, ignoreCase)) return false;
     std::string rest = toLower(fileName.substr(stem.size()));
     if (rest[0] != '.') return false;
     static const char* const saveSuffixes[] = { ".srm", ".sav", ".rtc", ".ldci", ".eep", ".sra", ".fla", ".mpk", ".dsv", ".mcr" };
@@ -319,15 +394,28 @@ std::vector<File> list(const Folders& folders)
 {
     std::vector<File> out;
     if (!folders.known) return out;
-    out = filesIn(folders.saves, folders.stem, Kind::Save, folders.contentFile);
-    std::vector<File> states = filesIn(folders.states, folders.stem, Kind::State, folders.contentFile);
+    out = filesIn(folders.saves, folders.stem, Kind::Save, folders.contentFile, folders.ignoreCase);
+    std::vector<File> states = filesIn(folders.states, folders.stem, Kind::State, folders.contentFile, folders.ignoreCase);
     out.insert(out.end(), states.begin(), states.end());
     return out;
 }
 
+std::string backupProblem(const std::string& collection, const std::string& game)
+{
+    std::string problem = segmentProblem(game);
+    if (!problem.empty()) {
+        return "The game's name (" + game + ") " + problem + ", so its saves can't be backed up here.";
+    }
+    problem = segmentProblem(collection);
+    if (!problem.empty()) {
+        return "The system's name (" + collection + ") " + problem + ", so its saves can't be backed up here.";
+    }
+    return "";
+}
+
 std::string backupRoot(const std::string& root, const std::string& collection, const std::string& game)
 {
-    if (!isPlainSegment(collection) || !isPlainSegment(game)) return "";
+    if (!backupProblem(collection, game).empty()) return "";
     return join(join(join(join(root, "manage"), "saves"), collection), game);
 }
 
@@ -414,12 +502,30 @@ EditResult restore(const std::string& root, const std::string& collection, const
     // Only ever the game's own files: a name that isn't is refused, not copied
     for (const File& file : backup.files) {
         Kind kind;
-        if (!belongsTo(file.name, folders.stem, kind) || kind != file.kind) {
+        if (!belongsTo(file.name, folders.stem, kind, folders.ignoreCase) || kind != file.kind) {
             return EditResult::fail(file.name + " in this backup isn't one of " + folders.stem
                                     + "'s saves, so the backup isn't restored.");
         }
     }
     std::vector<File> current = list(folders);
+    // Every file the restore writes over must be one of the game's files now
+    // (which are backed up first): never one that isn't, e.g. the game's own
+    // file, or a file the file system matches by another spelling
+    for (const File& file : backup.files) {
+        std::string to = join(file.kind == Kind::Save ? folders.saves : folders.states, file.name);
+        std::error_code ec;
+        if (!fs::exists(fs::path(to), ec)) continue;
+        bool listed = std::any_of(current.begin(), current.end(), [&](const File& c) {
+            return folders.ignoreCase ? iequals(c.path, to) : c.path == to;
+        });
+        bool same = false;
+        for (const File& c : current) {
+            if (fs::equivalent(fs::path(c.path), fs::path(to), ec)) same = true;
+        }
+        if (!listed && !same) {
+            return EditResult::fail(to + " is there and isn't one of " + folders.stem + "'s saves, so the backup isn't restored.");
+        }
+    }
     std::string before;
     EditResult result;
     if (!current.empty()) {

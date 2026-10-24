@@ -27,7 +27,9 @@
 #include "../Source/Manager/Games/RetroArchProvider.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Utility/Utils.h"
+#include <algorithm>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -107,7 +109,9 @@ namespace
             Manager::Services services{ *config };
             services.library = &indexer;
             services.editor = &editor;
-            model->addProvider(std::make_unique<EmulatorProvider>(services));
+            auto emulators = std::make_unique<EmulatorProvider>(services);
+            provider = emulators.get();
+            model->addProvider(std::move(emulators));
             model->addProvider(std::make_unique<Manager::RetroArchProvider>(services, noEnvironment()));
             indexer.rebuild();
             indexer.wait(10000);
@@ -124,7 +128,20 @@ namespace
         Library::Editor editor;
         std::unique_ptr<Configuration> config;
         std::unique_ptr<ManagerModel> model;
+        EmulatorProvider* provider = nullptr;
     };
+
+    // Every file under root but manage/ (the backups), with its bytes
+    std::map<std::string, std::string> snapshot(const std::string& root)
+    {
+        std::map<std::string, std::string> files;
+        for (const auto& entry : fs::recursive_directory_iterator(root)) {
+            std::string relative = fs::relative(entry.path(), root).generic_string();
+            if (relative.compare(0, 7, "manage/") == 0 || relative == "manage") continue;
+            files[relative] = entry.is_regular_file() ? readFile(entry.path().string()) : std::string("<folder>");
+        }
+        return files;
+    }
 
     std::shared_ptr<const Library::Index> build(const std::string& root)
     {
@@ -320,5 +337,101 @@ static Test::Suite emulatorEdit("emulator-edit", [] {
         check(contains(f.model->get("retroarch:reaches"), "Arcade"), "reaches the systems on the core");
         f.model->setScreen("emulator", { { "id", "notepad" }, { "scope", "global" } });
         checkEqual(f.model->get("retroarch:runs"), "no", "not for another program");
+    });
+
+    run("emulator edit: a launcher Manage created has no original to put back", [] {
+        std::string root = makeInstall("edit-no-original");
+        {
+            auto index = build(root);
+            Library::Editor editor(root);
+            Library::Editor::NewLauncher added;
+            added.name = "fresh";
+            added.executable = "%RETROFE_PATH%/emu/other.exe";
+            check(editor.addLauncher(*index, added).ok, "added");
+            check(editor.renameLauncher(*index, "retro", "renamed").ok, "renamed");
+        }
+        Fixture f(root);
+        for (const char* id : { "fresh", "renamed" }) {
+            f.model->setScreen("emulator-edit", { { "id", id }, { "scope", "global" } });
+            checkEqual(f.model->get("emulator:editIsReady"), "yes", std::string(id) + " is there");
+            f.model->set("emulator:editArguments", "\"%ITEM_FILEPATH%\"");
+            check(f.model->runAction("emulator.save").ok, std::string(id) + " saved");
+            checkEqual(f.model->get("emulator:editHasOriginal"), "no",
+                       std::string(id) + ": its original is an absent marker, and putting that back would delete it");
+            check(!f.model->actionProblem("emulator.restore").empty(), "so there's nothing to put back");
+        }
+        check(exists(root + "/launchers." + os() + "/renamed.conf"), "the renamed launcher is still there");
+    });
+
+    run("emulator edit: says another platform's file isn't changed", [] {
+        Fixture f(makeInstall("edit-other-platform"));
+        f.model->setScreen("emulator-edit", { { "id", "retro" }, { "scope", "global" } });
+        check(contains(f.model->get("emulator:editIntro"), "launchers." + otherOs()), f.model->get("emulator:editIntro"));
+        f.model->setScreen("emulator-edit", { { "id", "notepad" }, { "scope", "global" } });
+        check(!contains(f.model->get("emulator:editIntro"), "Only this file"), "nothing to say without one");
+    });
+
+    run("emulator edit: the command prompt's own variables are allowed", [] {
+        checkEqual(Emulators::checkLauncherValues("", "/c \"%APPDATA%\\tool.bat\" \"%ITEM_FILEPATH%\"", "", "%CMD%"), "",
+                   "%CMD% expands %APPDATA% itself");
+        checkEqual(Emulators::checkLauncherValues("C:\\Tools\\run.bat", "%USERPROFILE%", ""), "", "so does a batch file");
+        check(!Emulators::checkLauncherValues("emu.exe", "%APPDATA%", "").empty(), "another program gets it as it is");
+        check(!Emulators::checkLauncherValues("", "", "%APPDATA%", "cmd.exe").empty(), "the working folder is RetroFE's to replace");
+    });
+
+    run("emulator rename: a failure part way leaves every file as it was", [] {
+        std::string root = makeInstall("edit-rename-rollback");
+        auto index = build(root);
+        // a.conf's temp file can't be written: the rename fails after the new
+        // launcher files and the settings files were written
+        fs::create_directories(root + "/collections/Arcade/launchers/a.conf.tmp");
+        std::map<std::string, std::string> before = snapshot(root);
+        Library::Editor editor(root);
+        Library::EditResult r = editor.renameLauncher(*index, "retro", "RetroArch NES");
+        check(!r.ok && contains(r.message, "Nothing was changed"), r.message);
+        std::map<std::string, std::string> after = snapshot(root);
+        check(after == before, "every file byte for byte, and no new ones");
+        for (const auto& [path, bytes] : after) {
+            if (!before.count(path)) check(false, "new: " + path);
+            else if (before.at(path) != bytes) check(false, "changed: " + path);
+        }
+    });
+
+    run("emulator rename: settings.conf and info.conf both setting the launcher", [] {
+        // info.conf is read last, so it wins: RetroFE starts NES with what info.conf names
+        std::string root = makeInstall("edit-rename-both");
+        writeFile(root + "/collections/NES/info.conf", "launcher = notepad\n");
+        auto index = build(root);
+        checkEqual(index->properties.getOr("collections.NES.launcher"), "notepad", "info.conf wins");
+        Library::Editor editor(root);
+        Library::Editor::RenamePlan plan = editor.planLauncherRename(*index, "retro", "other");
+        check(plan.problem.empty(), plan.problem);
+        check(std::any_of(plan.settingsFiles.begin(), plan.settingsFiles.end(),
+                          [](const std::string& p) { return contains(p, "NES") && contains(p, "settings.conf"); }),
+              "the overridden settings.conf line is renamed too, so it still works if info.conf goes");
+
+        std::string root2 = makeInstall("edit-rename-both-2");
+        writeFile(root2 + "/collections/NES/settings.conf", "list.extensions = nes\nlauncher = notepad\n");
+        writeFile(root2 + "/collections/NES/info.conf", "launcher = retro\n");
+        auto index2 = build(root2);
+        Library::Editor editor2(root2);
+        Library::EditResult r = editor2.renameLauncher(*index2, "retro", "other");
+        check(r.ok, r.message);
+        checkEqual(readFile(root2 + "/collections/NES/info.conf"), "launcher = other\n", "the effective one, in info.conf");
+        checkEqual(readFile(root2 + "/collections/NES/settings.conf"), "list.extensions = nes\nlauncher = notepad\n", "the other untouched");
+        auto after = build(root2);
+        checkEqual(after->resolveLauncher(after->findCollection("NES")).name, "other", "NES now starts with the new name");
+    });
+
+    run("emulator rename: the collections are read once per launcher, not per name typed", [] {
+        Fixture f(makeInstall("edit-rename-scan"));
+        f.model->setScreen("emulator-rename", { { "id", "retro" }, { "scope", "global" } });
+        for (const char* name : { "a", "ab", "notepad", "abc" }) {
+            f.model->set("emulator:renameTo", name);
+            f.model->get("emulator:renameProblem");
+            f.model->list("emulator:renameChanges");
+        }
+        check(f.provider->renameScans() == 1, "one scan for four names: " + std::to_string(f.provider->renameScans()));
+        check(contains(f.model->get("emulator:renameChangesText"), "becomes abc.conf"), "the last name's plan");
     });
 });

@@ -43,6 +43,8 @@ namespace Library
             std::string states;         // save states (.state, .state1 ..., thumbnails, replays)
             std::string stem;           // the name RetroArch gives the game's files
             std::string contentFile;    // the game's own file, never counted as a save
+            bool ignoreCase = false;    // the folders' file system ignores case (Windows; most macOS
+                                        // volumes): Sonic.srm is then also sonic.md's
             std::vector<std::string> notes;
         };
         // setup: RetroArch::detect() for the launcher the game starts with
@@ -54,9 +56,16 @@ namespace Library
         // Whether a file name is one of the game's: exactly <stem> followed by a
         // save suffix (.srm, .sav, .rtc, .ldci, .eep, .sra, .fla, .mpk, .dsv,
         // .mcr, .<n>.mcr) or a state suffix (.state, .state<n>, .state.auto,
-        // any of those + .png, .bsv, .replay, .replay<n>). "Sonic 2.srm" is not
-        // Sonic's. The suffix ignores case; the stem doesn't.
-        bool belongsTo(const std::string& fileName, const std::string& stem, Kind& kind);
+        // any of those + .png, .bsv, .replay, .replay<n>: replays go with the
+        // states, as RetroArch writes them). "Sonic 2.srm" is not Sonic's. The
+        // ending ignores case; the stem does only with ignoreCase (a file
+        // system that ignores case, where RetroArch's sonic.srm and Sonic.srm
+        // are one file).
+        bool belongsTo(const std::string& fileName, const std::string& stem, Kind& kind, bool ignoreCase = false);
+
+        // Whether the file system holding folder ignores case: always on
+        // Windows, else tested by looking the folder up with its case swapped
+        bool ignoresCase(const std::string& folder);
 
         struct File
         {
@@ -77,8 +86,12 @@ namespace Library
             std::vector<File> files;    // saves/ and states/ inside it
             std::uintmax_t size = 0;
         };
-        // <root>/manage/saves/<collection>/<game>; "" when either name isn't one plain path segment
+        // <root>/manage/saves/<collection>/<game>; "" when either name can't be a folder name there
         std::string backupRoot(const std::string& root, const std::string& collection, const std::string& game);
+        // Why a game's backups can't be kept (its or its system's name isn't a
+        // usable folder name: a path, a trailing dot or space, a Windows device
+        // name such as con or com1), or ""
+        std::string backupProblem(const std::string& collection, const std::string& game);
         // Newest first
         std::vector<Backup> backups(const std::string& root, const std::string& collection, const std::string& game);
         bool findBackup(const std::string& root, const std::string& collection, const std::string& game,

@@ -230,6 +230,25 @@ namespace Library
             std::vector<std::string> settingsFiles;   // files whose launcher = line changes
             std::vector<std::string> gameFiles;       // collections/<c>/launchers/<game>.conf
         };
+        // The part that doesn't depend on the new name (reads every
+        // collection's settings files): a screen keeps it per launcher and
+        // snapshot and plans each name typed from it
+        struct RenameScan
+        {
+            struct Setting
+            {
+                std::string collection, fileName, path, value;
+            };
+            std::string id;
+            std::string problem;
+            std::vector<std::pair<std::string, std::string>> files;   // ("launchers.<os>", folder) holding its file
+            std::vector<std::pair<std::string, std::string>> taken;   // ("launchers.<os>", file name) of every file there
+            std::vector<Setting> settings;
+            std::vector<std::pair<std::string, std::string>> games;   // (collection, launcher file)
+            std::vector<std::string> gameNames;
+        };
+        RenameScan scanLauncherRename(const Index& index, const std::string& id) const;
+        RenamePlan planLauncherRename(const Index& index, const RenameScan& scan, const std::string& newName) const;
         RenamePlan planLauncherRename(const Index& index, const std::string& id, const std::string& newName) const;
         EditResult renameLauncher(const Index& index, const std::string& id, const std::string& newName);
 

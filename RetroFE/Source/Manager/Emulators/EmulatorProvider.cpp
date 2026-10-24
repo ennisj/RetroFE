@@ -93,6 +93,7 @@ void EmulatorProvider::refresh()
     editCheckedExecutable_ = "\x01";
     plannedKey_ = "\x01";
     plannedIn_ = nullptr;
+    scannedIn_ = nullptr;
     renameTo_.clear();
     renameFor_.clear();
 }
@@ -343,12 +344,29 @@ void EmulatorProvider::loadEdit(const Manager::Screen& screen)
     };
     edit_.load(editKey(screen), values);
 
+    // Only a kept copy of the file counts: a file Manage created (Add, the new
+    // name of a rename) has an "absent" marker instead, and putting that back
+    // would delete a launcher systems and games use
     Library::Backups* backups = services_.editor ? &services_.editor->backups() : nullptr;
-    if (backups && backups->hasOriginal(editFile_)) {
+    std::string original;
+    if (backups && Library::readFile(backups->backupPath(editFile_), original)) {
         std::string now;
-        std::string original;
-        std::string kept = backups->backupPath(editFile_);
-        editHasOriginal_ = !Library::readFile(kept, original) || !Library::readFile(editFile_, now) || now != original;
+        editHasOriginal_ = !Library::readFile(editFile_, now) || now != original;
+    }
+
+    // The same launcher for another platform is a file of its own, left as it is
+    editOtherPlatforms_.clear();
+    if (editGlobal_) {
+        const Library::Index* index = current();
+        std::string os = index && !index->options.os.empty() ? index->options.os : Utils::getOSType();
+        for (const char* other : { "windows", "linux", "apple" }) {
+            std::error_code ec;
+            std::string file = Utils::combinePath(index ? index->options.root : std::string(),
+                                                  std::string("launchers.") + other, def->name + ".conf");
+            if (other != os && std::filesystem::is_regular_file(file, ec)) {
+                editOtherPlatforms_.push_back(std::string("launchers.") + other);
+            }
+        }
     }
 }
 
@@ -432,8 +450,12 @@ std::string EmulatorProvider::saveProblem(const Manager::Screen& screen)
             return "The program isn't there: " + editExecutableCheck_.path + ".";
         }
     }
+    // What runs, changed or not: the command prompt expands its own %NAME% variables
+    Manager::EditBuffer saved = edit_;
+    saved.reset();
+    std::string program = change.executable.value_or(saved.get("executable"));
     return Emulators::checkLauncherValues(change.executable.value_or(""), change.arguments.value_or(""),
-                                          change.currentDirectory.value_or(""));
+                                          change.currentDirectory.value_or(""), program);
 }
 
 Forms::Model::Result EmulatorProvider::saveEdit(const Manager::Screen& screen)
@@ -487,7 +509,6 @@ const Library::Editor::RenamePlan& EmulatorProvider::renamePlan(const Manager::S
     if (key == plannedKey_ && plannedIn_ == index) {
         return plan_;
     }
-    // Reads every collection's settings: only when the name or the snapshot changes
     plannedKey_ = key;
     plannedIn_ = index;
     plan_ = Library::Editor::RenamePlan();
@@ -501,7 +522,14 @@ const Library::Editor::RenamePlan& EmulatorProvider::renamePlan(const Manager::S
         plan_.problem = updatingText;
     }
     else {
-        plan_ = services_.editor->planLauncherRename(*index, id, renameTo_);
+        // Reading every collection's settings only when the launcher or the
+        // snapshot changes; each name typed is checked against that
+        if (scannedIn_ != index || scan_.id != id) {
+            scannedIn_ = index;
+            scan_ = services_.editor->scanLauncherRename(*index, id);
+            scans_++;
+        }
+        plan_ = services_.editor->planLauncherRename(*index, scan_, renameTo_);
         if (plan_.problem.empty()) {
             // Created since this snapshot, and not in it yet
             for (const Entry& entry : entries_) {
@@ -530,6 +558,7 @@ Forms::Model::Result EmulatorProvider::rename(const Manager::Screen& screen)
     Library::EditResult edit = services_.editor->renameLauncher(*index, id, newName);
     result.message = edit.message;
     plannedKey_ = "\x01";
+    scannedIn_ = nullptr;   // the files may have changed
     if (!edit.ok) {
         return result;
     }
@@ -587,6 +616,11 @@ std::string EmulatorProvider::get(const std::string& key, const Manager::Screen&
             text += found ? found->users.summary() : "";
             if (!editGlobal_) {
                 text += " RetroFE reads a working folder and the restart setting only for global launchers, so they aren't offered here.";
+            }
+            if (!editOtherPlatforms_.empty()) {
+                std::string folders;
+                for (size_t i = 0; i < editOtherPlatforms_.size(); i++) folders += (i ? " and " : "") + editOtherPlatforms_[i];
+                text += " Only this file changes: the launcher of the same name in " + folders + " (another platform's) stays as it is.";
             }
             return text;
         }

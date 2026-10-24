@@ -102,7 +102,10 @@ void SavesProvider::sync(const Screen& screen)
         std::vector<std::string> sharing;
         for (size_t other = 0; other < idx->games.size(); other++) {
             const Library::GameRecord& o = idx->games[other];
-            if (static_cast<int>(other) == g || o.file.empty() || o.name != game.name) continue;
+            if (static_cast<int>(other) == g || o.file.empty()) continue;
+            // A file system that ignores case shares Sonic.srm between Sonic.md and sonic.sms
+            bool sameName = context_.folders.ignoreCase ? Library::iequals(o.name, game.name) : o.name == game.name;
+            if (!sameName) continue;
             Library::LauncherResolution r = idx->resolveLauncher(o.collection, o.name);
             if (r.launcher < 0) continue;
             auto setup = setups_.find(r.launcher);
@@ -110,7 +113,9 @@ void SavesProvider::sync(const Screen& screen)
                 setup = setups_.emplace(r.launcher, RA::detect(idx->options.root, idx->launchers[static_cast<size_t>(r.launcher)], environment_)).first;
             }
             Saves::Folders theirs = Saves::forGame(setup->second, o, environment_);
-            if (theirs.known && theirs.stem == context_.folders.stem
+            bool sameStem = context_.folders.ignoreCase ? Library::iequals(theirs.stem, context_.folders.stem)
+                                                        : theirs.stem == context_.folders.stem;
+            if (theirs.known && sameStem
                 && (Library::iequals(theirs.saves, context_.folders.saves) || Library::iequals(theirs.states, context_.folders.states))) {
                 sharing.push_back(idx->collections[static_cast<size_t>(o.collection)].name);
             }
@@ -184,6 +189,8 @@ std::string SavesProvider::get(const std::string& key, const Screen& screen)
     }
     if (key == "backupsNote") {
         if (!context_.found) return "";
+        std::string problem = Saves::backupProblem(context_.collection, context_.game);
+        if (!problem.empty()) return problem;
         return "Backups are kept in " + Saves::backupRoot(context_.root, context_.collection, context_.game)
             + ". Restoring one backs up the current files first.";
     }
@@ -252,6 +259,8 @@ std::string SavesProvider::actionProblem(const std::string& action, const Screen
     if (!isSavesForm(screen.form)) return Provider::actionProblem(action, screen);
     sync(screen);
     if (!context_.found) return context_.why;
+    std::string folderProblem = Saves::backupProblem(context_.collection, context_.game);
+    if (!folderProblem.empty() && action != "deleteBackup") return folderProblem;
     if (action == "backup" || action == "delete") {
         if (!context_.folders.known) return context_.folders.why;
         if (context_.files.empty()) return "This game has no saves or save states yet.";

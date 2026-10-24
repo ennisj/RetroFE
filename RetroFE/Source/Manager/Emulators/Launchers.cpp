@@ -334,11 +334,32 @@ std::string unknownPlaceholder(const std::string& text)
     return "";
 }
 
-std::string checkLauncherValues(const std::string& executable, const std::string& arguments, const std::string& workingFolder)
+bool runsCommandPrompt(const std::string& program)
 {
-    for (const std::string& value : { executable, arguments, workingFolder }) {
+    std::string value = Utils::trimEnds(program);
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+        value = value.substr(1, value.size() - 2);
+    }
+    size_t slash = value.find_last_of("/\\");
+    std::string name = Library::toLower(slash == std::string::npos ? value : value.substr(slash + 1));
+    auto endsWith = [&](const std::string& suffix) {
+        return name.size() >= suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+    return name == "cmd" || name == "cmd.exe" || name == "%cmd%" || endsWith(".bat") || endsWith(".cmd");
+}
+
+std::string checkLauncherValues(const std::string& executable, const std::string& arguments, const std::string& workingFolder,
+                                const std::string& program)
+{
+    bool prompt = runsCommandPrompt(program.empty() ? executable : program);
+    const std::string* values[] = { &executable, &arguments, &workingFolder };
+    for (const std::string* field : values) {
+        const std::string& value = *field;
         if (value.find_first_of("#\r\n") != std::string::npos) {
             return "The program, arguments and working folder can't contain # or a line break.";
+        }
+        if (prompt && field == &arguments) {
+            continue;   // the command prompt expands its own %NAME% variables
         }
         std::string unknown = unknownPlaceholder(value);
         if (!unknown.empty()) {
