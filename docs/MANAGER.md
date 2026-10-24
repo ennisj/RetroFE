@@ -174,6 +174,8 @@ thing you can change:
 - **Launcher**: another installed launcher for this game only, or the
   system's (which removes `collections/<system>/launchers/<game>.conf`).
   Names that aren't installed are pointed out.
+- **RetroArch** (only for a game whose launcher runs RetroArch): see
+  [RetroArch settings](#retroarch-settings).
 - **Media**: every kind of art, video and text, saying whether the game has its
   own file, shows a fallback (from its title, its parent or the collection's
   default) or has nothing. Replace one from a file, clear the game's own file
@@ -278,6 +280,9 @@ the launcher in effect (and which file sets it), with a link to each part:
   by. A RetroFE Plus list (`launcher = a, b, c`) keeps its alternatives: the
   one you pick moves to the front. When the system has its own launcher file,
   the screen says that file decides.
+- **RetroArch** (only when its default launcher runs RetroArch): the
+  core-wide settings, core options and controls of that core; see
+  [RetroArch settings](#retroarch-settings).
 - **Info**: title, manufacturer, year and genre in `info.conf`; an emptied
   field is taken out. "This is a video collection" writes `type = videos`,
   which moves it to Videos.
@@ -342,6 +347,57 @@ playing beside it: Aeon Nox draws it with `collections/_videos/layout`, and
 the player with `player.xml` there (`player 4x3.xml` for 4:3), and RetroFE has
 built-in pages when no layout is installed. A layout can give one collection
 its own pages in `collections/<name>/layout/` (`layout.xml`, `player.xml`).
+
+### RetroArch settings
+
+A game or system whose launcher runs RetroArch gets a **RetroArch** link.
+A launcher runs RetroArch when its program is `retroarch` (`retroarch.exe`),
+when its arguments load a core (`-L <core>`, `--libretro <core>`), or when it
+hands RetroArch a `*_libretro` core through another program (a script, the
+RetroArch flatpak). The link's status names the core, or says why there's
+nothing to change: **RetroArch not found** (its program, or its
+`retroarch.cfg`, isn't there) or **Core not known**.
+
+Manage finds RetroArch's own settings file the way RetroArch does: the
+launcher's `--config` (`-c`) file, else `retroarch.cfg` beside the program,
+else `%APPDATA%\RetroArch` on Windows, `~/.config/retroarch` on Linux
+(`~/.var/app/org.libretro.RetroArch/...` for the flatpak) and
+`~/Library/Application Support/RetroArch` on macOS. From it come the folders
+RetroArch keeps per-core files in (`rgui_config_directory`,
+`input_remapping_directory`; `:` is RetroArch's own folder, as RetroArch
+writes it). Each core's files live in a folder named after the core's
+**library name** (`Genesis Plus GX`), which Manage takes from its list of
+known cores, else from the core's `.info` file; a name from the info file
+that RetroArch hasn't confirmed yet (by making that folder) is flagged.
+
+A **game's** RetroArch screen shows the core and launcher and:
+
+- **RetroArch settings**: aspect ratio, smooth picture, shader, bezel
+  (overlay), integer scaling, run-ahead, volume and "resume where you left
+  off" (saving and loading the game's state automatically). Each row offers
+  **Default (…)**, naming what applies without the game's own setting, and a
+  few fixed choices. Save writes only the changed keys to
+  `<config>/<Core>/<game>.cfg`, which RetroArch reads on top of the core's
+  `<Core>.cfg` and `retroarch.cfg`; a file left with nothing that differs is
+  removed.
+- **Core options**: the core's options Manage knows (a few per core: region,
+  sprite limit, frameskip...). Choose one to change it. RetroArch reads one
+  options file per game, so a game's own `<game>.opt` starts as a copy of the
+  core's `<Core>.opt`, and is removed again when it ends up the same.
+- **Controls**: whether the stick moves the D-pad, and what each of player
+  1's buttons sends (another button, or nothing), in
+  `<remaps>/<Core>/<game>.rmp`, with the same one-file rule.
+- **Use the system's settings** removes the game's own file for that screen
+  (it's kept in `manage/backups`), and **Reset to original** puts back the
+  file as it was before Manage first changed it.
+
+A **system's** RetroArch screen edits the core-wide `<Core>.cfg`, `.opt` and
+`.rmp` instead, and says which systems it reaches: every system whose
+launcher runs that core (and any game set to such a launcher), unless a game
+has a file of its own. RetroArch reads these files each time it starts a
+game, so nothing needs reloading. When `retroarch.cfg` turns off
+`auto_overrides_enable`, `game_specific_options` or `auto_remaps_enable`, the
+screen says those files won't be used.
 
 ### Themes
 

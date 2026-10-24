@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../../Forms/BuiltinForms.h"
+#include "RetroArchForms.h"
 
 // The Games screens, opened from Manage; bound to the game: provider
 // (GameProvider.h). Games are found by collection (their own system) + id.
@@ -53,6 +54,7 @@ const char* const gameForm = R"(
   <value label="Also shown in" bind="game:shownIn"/>
   <link label="Metadata" open="game-metadata" status="game:metadataStatus" visibleWhen="game:isFound"/>
   <link label="Launcher" open="game-launcher" status="game:launcherStatus" visibleWhen="game:isFound"/>
+  <link label="RetroArch" open="game-retroarch" status="retroarch:status" visibleWhen="retroarch:runs"/>
   <link label="Media" open="game-media" status="game:mediaStatus" visibleWhen="game:isFound"/>
   <link label="Playlists and collections" open="game-playlists" status="game:playlistsStatus" visibleWhen="game:isFound"/>
   <link label="Description" open="game-description" status="game:descriptionStatus" visibleWhen="game:isFound"/>
@@ -202,7 +204,7 @@ const char* const descriptionForm = R"(
 
 Forms::BuiltinTable Forms::gamesForms()
 {
-    return {
+    BuiltinTable table = {
         { "games", gamesForm },
         { "game", gameForm },
         { "game-metadata", metadataForm },
@@ -212,4 +214,8 @@ Forms::BuiltinTable Forms::gamesForms()
         { "game-playlists", playlistsForm },
         { "game-description", descriptionForm },
     };
+    // The game's RetroArch screens (RetroArchForms.cpp, RetroArchProvider)
+    const BuiltinTable& retroArch = Manager::retroArchForms(false);
+    table.insert(table.end(), retroArch.begin(), retroArch.end());
+    return table;
 }

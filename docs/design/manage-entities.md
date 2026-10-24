@@ -129,9 +129,9 @@ file. Results are capped with a "refine the search" note.
 | Playlists | Favourite on/off, add to or remove from playlists and merged collections | `playlists/*.txt`, `*.sub` |
 | Description | The story text | `medium_artwork/story/<game>.txt` |
 | Actions | Test-launch, hide (exclude) | `exclude.txt` |
+| RetroArch | Only when the game's launcher runs RetroArch: curated RetroArch settings, core options and controls (One Saucier's tiles), see [RetroArch settings](#retroarch-settings) | `<config>/<Core>/<rom>.cfg` / `.opt`, `<remaps>/<Core>/<rom>.rmp` |
 
-Later: RetroArch per-game settings, core options and controls (One Saucier's
-curated tiles), saves backup/restore.
+Later: saves backup/restore.
 
 ### Menus
 
@@ -160,6 +160,7 @@ launcher.
 | Details | Name, menus it's in, games folder, extensions, game count, launcher | read-only |
 | Settings | Extensions, sort, include missing items, metadata type | `settings.conf` (allow-listed keys only) |
 | Launcher | Default launcher (choice of installed ones), the collection's own launcher file shown | `settings.conf launcher =` |
+| RetroArch | Only when its default launcher runs RetroArch: the core-wide settings, options and controls, with "reaches N systems" | `<config>/<Core>/<Core>.cfg` / `.opt`, `<remaps>/<Core>/<Core>.rmp` |
 | Info and media | As for menus | `info.conf`, `system_artwork/` |
 | Games | The system's games (a search screen filtered to this system) | — |
 | Playlists | Create, rename, delete; edit entries | `playlists/*.txt` |
@@ -233,8 +234,97 @@ Later: RetroArch core detection and the core-wide settings tiles.
 Existing launchers stay read-only, as in One Saucier: the details screen says
 so and offers **Duplicate and edit**, which opens the add form filled in from
 the launcher (arguments as custom text, its restart setting, name "`<name>` copy"), so the copy can
-be changed before it exists. Deferred: RetroArch core detection and settings
-tiles, and payload checks beyond "the program exists".
+be changed before it exists. RetroArch core detection and the settings tiles
+are built for games and systems ([RetroArch settings](#retroarch-settings));
+deferred here: a launcher's own RetroArch link, and payload checks beyond
+"the program exists".
+
+### RetroArch settings
+
+**Built (round 2)**, modelled on One Saucier's RETROARCH / CORE OPTIONS /
+CONTROLS tiles (rewritten, not shared). The logic is
+`Library/RetroArch.{h,cpp}` (no SDL, unit-tested in `Tests/RetroArchTests.cpp`);
+the screens are one provider, `Manager/Games/RetroArchProvider` (prefix
+`retroarch`), and one set of templates, `Manager/Games/RetroArchForms.cpp`,
+added to the Games table (`game-…`, params `collection` + `id`) and the
+Systems table (`system-…`, param `id`).
+
+**Detection** (`RetroArch::detect`, per launcher, cached per snapshot):
+
+1. A launcher runs RetroArch when its program's file name starts with
+   `retroarch`, its arguments have `-L` / `--libretro`, it's the
+   `org.libretro.RetroArch` flatpak, or an argument is a `*_libretro.<ext>`
+   file (a wrapper script). Otherwise: "runs outside RetroArch".
+2. RetroArch's program is resolved as RetroFE runs it (relative to RetroFE's
+   folder, `%RETROFE_PATH%`, a bare name on the path); missing: "RetroArch
+   not found". The working folder is the launcher's `currentDirectory`, else
+   the program's folder.
+3. `retroarch.cfg`: the launcher's `-c` / `--config`, else beside the
+   program, else `%APPDATA%\RetroArch\` (then `%APPDATA%\`) on Windows,
+   `$XDG_CONFIG_HOME/retroarch`, `~/.config/retroarch`, `~/.retroarch.cfg`
+   on Linux (the flatpak's `~/.var/app/...` first), `~/Library/Application
+   Support/RetroArch` on macOS. None: "RetroArch not found … start RetroArch
+   once". From it: `rgui_config_directory`, `input_remapping_directory`,
+   `libretro_directory`, `libretro_info_path`, `core_options_path`,
+   `global_core_options`, `auto_overrides_enable`, `game_specific_options`,
+   `auto_remaps_enable`. `:` is RetroArch's folder, `~` home, `default` or
+   empty the default (`<base>/config`, `<base>/config/remaps`, where base is
+   the program's folder on Windows and `retroarch.cfg`'s elsewhere).
+4. The core: `-L`'s value (also `-L<core>`, `--libretro=`), resolved against
+   the working folder, the program's folder, RetroFE's folder and the cores
+   folder (a bare name gets `_libretro.<ext>`). A missing file is a note,
+   not a stop.
+5. The folder name is the core's **library_name**: a hand-checked table by
+   file stem (desktop buildbot stems plus OnesaUCE's), else the `.info`
+   file's `corename` (beside the core, in `libretro_info_path`, in the cores
+   folder), "confirmed" only when `<config>/<corename>/` exists (RetroArch
+   makes it the first time the core runs) and flagged on the screen
+   otherwise. Neither: "core not known".
+
+**Files** (`RetroArch::files`), with `<C>` the library name and `<rom>` the
+game's file name without its extension (its name when the launcher passes
+`%ITEM_NAME%`):
+
+| Tile | A game's file | Applies under it | A system's file |
+|------|---------------|------------------|-----------------|
+| RetroArch settings | `<config>/<C>/<rom>.cfg` | `retroarch.cfg`, `<C>.cfg`, `<folder>.cfg` (stacked) | `<config>/<C>/<C>.cfg` |
+| Core options | `<config>/<C>/<rom>.opt` | `<folder>.opt`, else `<C>.opt` (one file wins) | `<config>/<C>/<C>.opt` (the global options file with `global_core_options`) |
+| Controls | `<remaps>/<C>/<rom>.rmp` | `<folder>.rmp`, else `<C>.rmp` (one file wins) | `<remaps>/<C>/<C>.rmp` |
+
+`<folder>` is the name of the folder the game's file is in (RetroArch's
+content-directory files).
+
+**Rows**: RetroArch settings (aspect ratio, smooth picture, shader, bezel,
+integer scaling, run-ahead, volume, resume = auto save/load state; One
+Saucier's keys and values), controls (stick as D-pad, ten buttons sending a
+RetroPad button or nothing: `input_player1_btn_<b>` with RetroArch's ids, -1
+unmapped), and core options from a ported table keyed by library name (One
+Saucier's generated table plus a few desktop cores). Each row offers
+"Default (<what applies without this file>)" and the fixed choices; a value
+no choice names shows as "(not one of these choices)" and is kept unless
+changed. Core options are a list, each opening a one-option screen, because a
+form's fields are fixed and each core has its own set.
+
+**Writes** (`RetroArch::apply`, `useCoreSettings`, `restoreOriginal`):
+only rows and values from the tables (an unknown row or choice is refused);
+`key = "value"` lines changed in place, every other line, comment and line
+ending kept (new files with `\n`, as RetroArch writes); originals through
+`Library::Backups` before the first change (outside the root under
+`manage/backups/_external/`), atomic writes. A game's `.cfg` keeps only keys
+that differ from what stacks under it; a game's `.opt` / `.rmp` starts as a
+copy of the file under it, and "Default" writes that file's value. A file
+left empty, or equal to what it shadows, is removed. "Use the system's
+settings" removes a game's own file (kept in the backups); "Reset to
+original" restores the file as it was before Manage first changed it, and
+shows only while the file differs from that. No reload is requested:
+RetroArch reads these files at every start.
+
+The system screen's "reaches" note lists the systems whose default launcher
+resolves to the same library and config folder.
+
+Not modelled: `--appendconfig`, a launcher's own RetroArch link (Emulators),
+One Saucier's button labels and customization stack, a new `<C>.opt` seeded
+from the legacy global options file, saves.
 
 ### Themes
 
