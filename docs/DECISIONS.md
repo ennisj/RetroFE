@@ -449,6 +449,22 @@ OnesaUCE themes:
   the page centre; the grid applies on the other axis; scripts get guides
   only when asked.
 
+### M21. Round 10 choices — Decided
+- **Replace on a folder-backed slot puts the file beside the folder**
+  [also emptying the folder]: RetroFE's rule already makes the file win,
+  nothing is removed unasked, and "Clear the folder" is one step away.
+  Clear refuses a folder-backed slot; clearing the folder is its own button
+  that asks first.
+- **Menu lists keep one random pick per folder** while the list is shown
+  [a fresh pick each time an item is drawn, which flickers while
+  scrolling].
+- **"Differs from the original" is decided by size and modification time**,
+  reading both files only when the times differ [comparing contents every
+  time, which re-read large videos every frame].
+- **A game literally named `default`** shares the collection-wide fallback
+  folder: per-file edits are allowed, clearing it or keeping only one file
+  is refused.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless

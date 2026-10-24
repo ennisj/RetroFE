@@ -4,6 +4,28 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 10 — media folders in Manage, fourth QA (2026-10-24)
+
+Unit tests: 6,540 → 6,718 checks (also run on Linux in WSL; CI is green on
+all four platforms again).
+
+- **Media folders in Manage.** Games, Systems/Videos and Menus media screens
+  show a slot kept as a folder of files ("a folder of 9 files, one shown at
+  random") and list its files: add one, take one out, keep only one, or
+  clear the folder, all backed up and undone by "Put back the original".
+  Replace puts a file beside the folder (where it wins) and Clear never
+  removes a folder. Menu lists use media folders too, and folder art counts
+  as present.
+- **Fixes:** files added or removed in Manage show after RetroFE reloads
+  instead of after a restart; "Put back the original" is offered only while
+  the file differs; Linux/macOS CI failures in the emulator tests (a test
+  fixture with Windows line endings) fixed.
+- **Fourth QA pass** on both test installs: report in
+  [QA-ROUND10.md](QA-ROUND10.md). Nothing high or medium; RetroFE starts on
+  OneSauce's own controls.conf with no warnings. Fixed: two Settings →
+  Controls wordings, and a blank `quit =` (the kiosk setting) no longer
+  warns at every start.
+
 ## Round 9 — media folders, window close, editor polish (2026-10-24)
 
 Unit tests: 6,329 → 6,540 checks.
