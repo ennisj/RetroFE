@@ -4,6 +4,31 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 9 — media folders, window close, editor polish (2026-10-24)
+
+Unit tests: 6,329 → 6,540 checks.
+
+- **Media folders (OnesaUCE).** When a collection or theme keeps its art or
+  video as a folder of files instead of one file (52 OneSauce collections do
+  for their menu video), RetroFE now plays one picked at random, keeps it
+  while you scroll between entries that use the same folder, and moves to
+  the next with removePlaylist (Cafe80s's "B: play different video"). A file
+  beside the folder still wins; a game's own ROM folder is never used this
+  way.
+- **Closing the window quits RetroFE** (it did nothing before, as upstream),
+  asking about unsaved changes first when Manage is open; ignored in kiosk
+  mode and when `quit =` is blank. Quitting during the splash now waits for
+  start-up to finish instead of tearing it down.
+- **`--theme-check` on OnesaUCE themes** lists names RetroFE harmlessly
+  ignores on a separate line instead of as problems (Cafe80s: 512 → 4).
+- **Theme editor polish.** Align and space-out run on the 4:3 page with its
+  own positions; duplicate, delete, add and animation edits reach the 4:3
+  page too, only where the element surely matches; "All N at once" edits one
+  attribute on every selected element; guides line up a dragged element with
+  others' edges and centres (Alt turns them off); editor scripts wait for the
+  preview instead of needing `wait` lines.
+- Each missing sound is warned about once.
+
 ## Round 8 — controls, third QA (2026-10-24)
 
 Unit tests: 6,103 → 6,329 checks.

@@ -428,6 +428,27 @@ OnesaUCE themes:
 - **Open Settings stays keyboard-only**, F10 when controls.manager lists no
   key.
 
+### M20. Round 9 choices — Decided
+- **A media folder shows a random file** [always the first; a sequence per
+  visit; the next when one ends]: the OneSauce file names imply no order
+  (`ARCADES 1..9` beside `Psikyo 2; video`), RetroFE already has random art,
+  and removePlaylist reaches every file. The evidence is in
+  ONESAUCE-COMPAT.md. Manage's media screens don't show these folders yet.
+- **Window close is ignored in kiosk mode and with a blank `quit =`**, which
+  is how a cabinet says nobody may leave; the quit key itself still works in
+  kiosk mode, as upstream. A close clicked while a game ran is dropped when
+  RetroFE returns (it was meant for the game).
+- **Twin page, destructive edits only on a sure match:** delete, removing
+  animations and copying animations reach the 4:3 page only when the element
+  there is surely the same one (not a wheel slot paired by place or one
+  showing another file); otherwise the note says it stayed [propagating on
+  every match tier, which can delete a different element]. Align and
+  space-out are redone there with that page's own boxes [copying the moves
+  in proportion, which misaligned them].
+- **Guides snap within 6 pixels** to other elements' edges and centres and
+  the page centre; the grid applies on the other axis; scripts get guides
+  only when asked.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
