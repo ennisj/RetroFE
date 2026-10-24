@@ -15,10 +15,14 @@
  */
 #pragma once
 
+#include "FileChooser.h"
 #include "ThemeEditorScreen.h"
 #include "../../../Graphics/PageBuilder.h"
 #include "../../../Graphics/ViewInfo.h"
 #include "../../../ThemeEditor/LayoutSession.h"
+#include "imgui.h"
+#include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,9 +35,12 @@
 // box over it (PageBuilder::setTrace says which element each component came
 // from). Right: the selected element's attributes.
 //
-// It moves, resizes and changes attributes of the elements a page already
-// has, and can duplicate or delete one; it doesn't add new elements. Saving
-// changes only the bytes edited and keeps the original in manage/backups.
+// It moves, resizes and changes attributes of the page's elements,
+// duplicates or deletes one, adds new ones from a palette (asking for the
+// file of an image or video, copied into the theme), and edits their
+// animations (events, steps, changes), playing an event on the preview.
+// Saving changes only the bytes edited and keeps the original in
+// manage/backups.
 //
 // As in the widget editor, the preview page is built in update(), never
 // while drawing, the `layout` setting points at the theme while it's open,
@@ -58,7 +65,15 @@ public:
     void shutdown() override;
 
 private:
-    enum class Job { None, Save, SaveAndLeave, Restore };
+    enum class Job { None, Save, SaveAndLeave, Restore, Import, NativePick };
+    // What a chosen file is for: a new element (from the palette), or the src of an element
+    struct FileFor
+    {
+        bool addElement = false;
+        std::string entry, type;   // the palette entry and its type (addElement)
+        std::string path;          // the element whose src it becomes (otherwise)
+        std::string kind;          // image, video, sound
+    };
     // Where the components came from, as traced, for the boxes
     struct Traced
     {
@@ -97,7 +112,18 @@ private:
     void drawCanvas();
     void drawProperties();
     void drawAttribute(const ThemeEditor::LayoutElement& e, const std::string& name, const std::string& resolved);
+    void drawShows(int element);
+    void drawAnimations(int element);
+    bool drawAnimField(int element, const char* name, const char* hint, float width);
+    bool drawAnimChoice(int element, const char* name, const std::vector<std::string>& choices, const char* none, float width);
+    void drawPalette();
     void drawPopups();
+    void drawDashedRect(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 colour, float dash);
+    // Files
+    void chooseFile(const FileFor& what);
+    bool importChosen(const std::string& path, const FileFor& what);
+    void pickNative();
+    void addFromPalette(const std::string& entry, const std::string& type);
     void syncPopup(const char* name, bool& show, bool& opened);
 
     ThemeEditorScreen::Context ctx_;
@@ -147,6 +173,23 @@ private:
     bool navFlagsSaved_ = false, savedNavKeyboard_ = false;
     bool nudging_ = false;
     float sinceNudge_ = 0.0f;
+
+    // Adding elements and files
+    bool showPalette_ = false, paletteOpen_ = false;
+    std::map<std::string, std::string> paletteTypes_;   // the type chosen for each typed entry
+    Themes::FileChooser chooser_;
+    FileFor chooserFor_;
+    FileFor jobFor_;
+    std::string jobPath_;
+    std::filesystem::path lastBrowseDir_;
+
+    // Animations
+    std::string newEvent_ = "onEnter";
+    std::string copySource_;      // the path of the element to copy animations from
+    std::string replay_;          // an event to play on the preview (engine name), from update()
+    bool showEnd_ = true;         // dashed boxes where onEnter leaves elements
+    bool scrollToAnimations_ = false;   // a script's showanims: the panel scrolls to Animations
+    std::string openEvent_;       // a script's openevent: the event (full path) to unfold
 
     std::vector<ThemeEditor::EditorCommand> script_;
     std::string scriptPath_;

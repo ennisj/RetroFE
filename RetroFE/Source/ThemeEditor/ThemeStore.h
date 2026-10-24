@@ -117,6 +117,16 @@ namespace ThemeEditor
     // path in the theme as it is.
     bool importFile(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
                     const std::string& subfolder, std::string& relOut, std::string& error);
+    // importFile without asking whether the editor made the theme: the
+    // layout editor adds files to hand-made themes this way. It only ever
+    // adds a file (never replaces one) inside layouts/<folder>/<subfolder>
+    // (a folder of the theme: "images", "collections/NES/layout/images").
+    // relOut is the path as a page in the theme's folder `relativeTo` writes
+    // it ("" = the theme folder; "collections/NES/layout" gets
+    // "images/x.png" or "../../../images/x.png"): PageBuilder resolves src
+    // against the page's own folder.
+    bool importIntoTheme(const std::string& layoutsRoot, const std::string& folder, const std::string& sourcePath,
+                         const std::string& subfolder, const std::string& relativeTo, std::string& relOut, std::string& error);
 
     // Why a file isn't a font the theme can use ("" when it is): a .ttf or
     // .otf whose first bytes are a TrueType (00 01 00 00, "true") or

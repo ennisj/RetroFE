@@ -451,6 +451,8 @@ add_library(retrofe_theme_editor STATIC
 	"${RETROFE_DIR}/Source/ThemeEditor/EditorSession.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.cpp"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutCheck.h"
+	"${RETROFE_DIR}/Source/ThemeEditor/LayoutPalette.cpp"
+	"${RETROFE_DIR}/Source/ThemeEditor/LayoutPalette.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutSession.cpp"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutSession.h"
 	"${RETROFE_DIR}/Source/ThemeEditor/LayoutText.cpp"

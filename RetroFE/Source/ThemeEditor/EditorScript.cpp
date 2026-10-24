@@ -294,6 +294,48 @@ namespace ThemeEditor
         if (n == "undo") return result(s.undo());
         if (n == "redo") return result(s.redo());
         if (n == "snap") { s.snap = c.rest != "off"; return CommandResult::Ok; }
+
+        // Adding elements and editing animations
+        if (n == "add") {
+            if (c.words.empty()) return CommandResult::Failed;
+            const std::string type = c.words.size() > 1 && c.words[1] != "-" ? c.words[1] : std::string();
+            bool ok = s.addElement(c.words[0], type, c.tail(2));
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "event") return result(!c.words.empty() && s.addEvent(c.words[0]));
+        if (n == "addset") return result(!c.words.empty() && s.addSet(s.findInSelected(c.words[0])));
+        if (n == "addanimate") return result(!c.words.empty() && s.addAnimate(s.findInSelected(c.words[0])));
+        if (n == "rmanim") return result(!c.words.empty() && s.removeAnimation(s.findInSelected(c.words[0])));
+        if (n == "animattr") {
+            if (c.words.size() < 2) return CommandResult::Failed;
+            s.endCoalesce();
+            return result(s.setAttributeOf(s.findInSelected(c.words[0]), c.words[1], c.tail(2)));
+        }
+        if (n == "rmanimattr") return result(c.words.size() >= 2 && s.removeAttributeOf(s.findInSelected(c.words[0]), c.words[1]));
+        if (n == "getanim") {
+            if (c.words.size() < 2) return CommandResult::Failed;
+            int el = s.findInSelected(c.words[0]);
+            if (el < 0) return CommandResult::Failed;
+            const LayoutElement& e = s.element(el);
+            note = c.words[1] + (e.has(c.words[1]) ? "=\"" + e.value(c.words[1]) + "\"" : " not set");
+            return CommandResult::Ok;
+        }
+        if (n == "copyanims") {
+            bool ok = s.copyAnimationsFrom(s.doc().find(c.rest));
+            note = boxNote();
+            return result(ok);
+        }
+        if (n == "events") {
+            for (const std::string& a : s.animations(s.selected())) note += (note.empty() ? "" : "; ") + a;
+            return result(s.selected() >= 0);
+        }
+        if (n == "endbox") {
+            DragRect r;
+            if (!s.enterEndBox(s.selected(), r)) { note = "no end box"; return CommandResult::Failed; }
+            note = "ends at " + std::to_string(r.x) + "," + std::to_string(r.y) + " " + std::to_string(r.w) + "x" + std::to_string(r.h);
+            return CommandResult::Ok;
+        }
         return CommandResult::NotSession;
     }
 }

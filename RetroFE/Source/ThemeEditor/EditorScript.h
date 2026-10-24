@@ -62,6 +62,11 @@ namespace ThemeEditor
     // element list's order), selectpath PATH ("-" = the page itself), click
     // X Y, move DX DY, resize HANDLE DX DY, nudge DX DY, attr NAME VALUE...,
     // rmattr NAME, get NAME (notes the value), layer N, duplicate, delete,
-    // undo, redo, snap on|off. NotSession for anything else.
+    // undo, redo, snap on|off; add PALETTEID [TYPE|-] [SRC...]; animations,
+    // by paths relative to the selected element ("onEnter[0]/set[0]", "-"
+    // for the element itself): event NAME, addset EVENT, addanimate SET,
+    // rmanim PATH, animattr PATH NAME VALUE..., rmanimattr PATH NAME,
+    // getanim PATH NAME, copyanims SOURCEPATH, events (notes them), endbox
+    // (notes where onEnter leaves it). NotSession for anything else.
     CommandResult runLayoutCommand(LayoutSession& session, const EditorCommand& command, std::string& note);
 }
