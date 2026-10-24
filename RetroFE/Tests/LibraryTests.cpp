@@ -785,13 +785,16 @@ static void runLibraryTests()
         const MediaSlot withClip = slot();
         check(std::any_of(withClip.folderFiles.begin(), withClip.folderFiles.end(),
                           [](const std::string& f) { return fs::path(f).filename() == "clip.MP4"; }), "and listed");
+        // It depends on the drive, not the OS: Windows and most macOS volumes ignore case
+        std::error_code caseEc;
+        const bool ignoresCase = fs::exists(folder + "/CLIP.mp4", caseEc);
         r = editor.addMediaFolderFile(slot(), root + "/incoming2/CLIP.mp4");
-#ifdef WIN32
-        check(!r.ok && readFile(folder + "/clip.MP4") == "clip", "Windows: the same name in another case is the same file, refused");
-#else
-        check(r.ok && readFile(folder + "/CLIP.mp4") == "CLIP" && readFile(folder + "/clip.MP4") == "clip",
-              "elsewhere: another file, as RetroFE lists it: " + r.message);
-#endif
+        if (ignoresCase) {
+            check(!r.ok && readFile(folder + "/clip.MP4") == "clip", "a drive that ignores case: the same file, refused");
+        } else {
+            check(r.ok && readFile(folder + "/CLIP.mp4") == "CLIP" && readFile(folder + "/clip.MP4") == "clip",
+                  "a case-sensitive drive: another file, as RetroFE lists it: " + r.message);
+        }
     });
 
     run("library: a media folder that can't be emptied leaves the new file winning", [&] {
