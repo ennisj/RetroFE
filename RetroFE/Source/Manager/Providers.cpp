@@ -50,6 +50,9 @@
 // themes
 #include "Themes/ThemeProvider.h"
 
+// controls (Settings > Controls)
+#include "Controls/ControlsProvider.h"
+
 void Manager::registerProviders(ManagerModel& model, const Services& services)
 {
     (void)model;
@@ -78,4 +81,7 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
 
     // themes
     model.addProvider(Themes::makeProvider(services));
+
+    // controls
+    model.addProvider(std::make_unique<Manager::ControlsProvider>(services));
 }

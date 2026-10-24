@@ -20,6 +20,8 @@
 #include "LaunchQueue.h"
 #include "ManagerModel.h"
 #include "Navigator.h"
+#include "Controls/InputCapture.h"
+#include "Controls/app/CaptureEvents.h"
 #include "../Catalog/Service.h"
 #include "../Forms/Form.h"
 #include "../Library/Edits.h"
@@ -148,6 +150,13 @@ public:
         currentCollection_ = std::move(current);
     }
 
+    // How RetroFE reads controls.conf and controls1..9.conf again and remaps
+    // its controls (Settings > Controls calls it after Save)
+    void setControlsReload(std::function<void()> reload) { reloadControls_ = std::move(reload); }
+
+    // Waiting for "press it now" (Forms::Model::Result::capture)
+    bool isCapturing() const { return capture_.active(); }
+
 private:
     // Screens that draw themselves with ImGui (Manager::ImGuiScreen), by form id
     bool showImGuiScreen(const Navigator::Frame& frame);
@@ -171,6 +180,11 @@ private:
     void destroyPage();
     void handleWidgetResults();
     void syncKeyboard();
+    void readToggleKey();   // controls.manager
+    // Press it now: feeds an event to the capture (false: RetroFE's input still sees it)
+    bool captureEvent(const SDL_Event& e);
+    void updateCapture();
+    void endCapture();
     bool openKeyboard();
     void closeKeyboard();
 
@@ -217,4 +231,11 @@ private:
     std::vector<std::unique_ptr<Manager::ImGuiScreen>> retired_;   // left; shut down and freed in update()
     std::function<CollectionInfo*(const std::string&)> loadCollection_;
     std::function<std::string()> currentCollection_;
+    std::function<void()> reloadControls_;
+
+    Manager::InputCapture capture_;
+    Manager::CaptureEvents captureEvents_;
+    std::string captureBind_;
+    std::string captureAction_;
+    std::string capturePrompt_;
 };

@@ -12,19 +12,55 @@ Example:
 This will assign both the Keypad 8 (up arrow on your keypad) and the up
 arrow to RetroFE's Up control.
 
+You can also change them from inside RetroFE: **Settings > Controls** (see
+[MANAGER.md](MANAGER.md#controls)) lists every control with its inputs and
+adds one when you press it.
+
+RetroFE reads `controls.conf`, then `controls1.conf` to `controls9.conf` on
+top of it: a control set in a later file replaces the whole value from an
+earlier one. Without a `controls.conf`, RetroFE uses its built-in controls
+(arrows, Return, Escape, Q, Page Up/Down, and a pad's d-pad, left stick, A
+and B). A layout
+can add `controls - <type>.conf` for its pages (the layout's `controls`
+attribute).
+
+An input RetroFE doesn't recognise (a typo, or another program's name for
+it) is skipped with a warning in the log; the control keeps its other
+inputs. RetroFE never stops because of one.
+
 ## RetroFE Control Keys
 
 ### Essential
-These keys must be defined for RetroFE to boot
+RetroFE always has these, unless you leave one empty on purpose:
+
+- **Not set** in any file: Up, Down, Left and Right use their partner's
+  inputs (Up for Left, Left for Up, Down for Right, Right for Down) as
+  before; failing that, and for Select, Back and Quit, RetroFE's built-in
+  default (below), with a warning in the log. (Upstream stopped instead.)
+- **Set, but none of its inputs is one RetroFE knows** (a typo, another
+  program's name): the built-in default, with a warning.
+- **Set to nothing** (`quit =`, e.g. on a kiosk so nobody can leave): nothing
+  is bound to it, as upstream; the log says so.
+
+The built-in defaults are
+`up = Up,joyDPUp,joyLeftY-,joyHat0Up,joyAxis1-` (and the same for the other
+directions), `select = Return,joyA,joyUnmappedButton0`,
+`back = Escape,joyB,joyUnmappedButton1` and `quit = Q`. A pad SDL has a
+mapping for selects with A and goes back with B; a joystick it has no mapping
+for (an arcade encoder such as a Zero Delay) selects with button 0 and goes
+back with button 1, as RetroFE always did. Buttons 0 and 1 are written
+`joyUnmapped...` there because on some mapped pads (a DualShock read through
+DirectInput) button 1 is A, which would make one button both Select and Back.
 | Control | Description |
 |---------|-------------|
 | `up` | Scrolls menu up (for vertical menus) |
-| `down` | Scrolls menu up (for vertical menus) |
+| `down` | Scrolls menu down (for vertical menus) |
 | `left` | Scrolls menu left (for horizontal menus) |
 | `right` | Scrolls menu right (for horizontal menus) |
 | `select` | Selects the active menu item |
 | `back` | Leaves current menu |
 | `quit` | Exits the frontend |
+| `manager` | Opens Settings (default F10). Keyboard keys only: the first one listed is used, and F10 when it lists none. |
 
 The Manage screens use `up`, `down`, `left`, `right`, `select` and `back`
 too, and the theme editor (Manage > Themes > Edit) adds `pageUp` / `pageDown`
@@ -102,13 +138,42 @@ These keys are used to define button combos with two keycodes. The first value d
 ### Deadzone
 | Control | Description |
 |---------|-------------|
-| `deadZone` | Defines the dead zone for analog inputs between 0 and 100, with 100 blocking all analog input |
+| `deadZone` | Defines the dead zone for analog inputs between 0 and 100, with 100 blocking all analog input. Sticks and triggers count as pressed once past it (default 3 when `controls.conf` doesn't set it) |
 
+### Other
+| Control | Description |
+|---------|-------------|
+| `menu` | Opens the menu |
 
-| `menu` | |
+## Game controller codes
 
+Pads that SDL knows as a game controller (Xbox, PlayStation, Switch Pro and
+most others, through SDL's controller mappings) can be named by button, the
+same button whatever the pad. These are SDL's game controller names, with
+`joy` in front:
+
+| Keycode | Description |
+|---------|-------------|
+| `joyA`, `joyB`, `joyX`, `joyY` | The face buttons (Xbox lettering: A bottom, B right, X left, Y top) |
+| `joyBack`, `joyGuide`, `joyStart` | Back (Select, Share), the guide button (Xbox, PS), Start (Menu, Options) |
+| `joyLeftShoulder`, `joyRightShoulder` | LB / L1, RB / R1 |
+| `joyLeftStick`, `joyRightStick` | Pressing a stick in (L3, R3) |
+| `joyDPUp`, `joyDPDown`, `joyDPLeft`, `joyDPRight` | The d-pad |
+| `joyMisc1`, `joyPaddle1` to `joyPaddle4`, `joyTouchpad` | Extra buttons some pads have |
+| `joyLeftX-`, `joyLeftX+`, `joyLeftY-`, `joyLeftY+` | Left stick left, right, up, down |
+| `joyRightX-`, `joyRightX+`, `joyRightY-`, `joyRightY+` | Right stick left, right, up, down |
+| `joyLeftTrigger`, `joyRightTrigger` | LT / L2, RT / R2 (a `+` may follow; `-` isn't allowed) |
+
+Like the joystick codes below, `joy0A` names the first pad connected and
+`joyA` any pad. Names aren't case-sensitive. A stick needs `+` or `-`; a
+button can't have one. A key whose name has a comma in it (`Keypad ,`)
+can't be used, as the comma separates inputs; the `,` key itself can (an
+empty entry stands for it: `random = ,R`). Pads plugged in while RetroFE runs work straight away.
 
 ## Gamepad/Joystick codes
+
+For joysticks SDL has no mapping for (arcade encoders, some sticks), or to
+name a raw button number:
 
 - `X` = Controller number (e.g. `joy0` is the first connected gamepad)
 - `Y` = Button or hat number on controller `X`
@@ -132,15 +197,20 @@ These keys are used to define button combos with two keycodes. The first value d
 | `joyXAxis2-` | Right analog stick, horizontal axis left (joystick X) |
 | `joyXAxis3+` | Right analog stick, vertical axis down (joystick X) |
 | `joyXAxis3-` | Right analog stick, vertical axis up (joystick X) |
+| `joyXUnmappedButtonY`, `joyXUnmappedHatY...`, `joyXUnmappedAxisY+` | The same inputs, but only on joysticks SDL has no game controller mapping for (arcade encoders); a pad that has one ignores them. The built-in defaults use them; `joyButtonY` itself counts on every joystick, as it always did. |
 
 If X is omitted, RetroFE will accept input from all controllers.
-(version 0.8.13+) 
+(version 0.8.13+) An axis needs `+` or `-`.
+
+A pad with a controller mapping sends both kinds of events, so `joyA` and
+`joyButton0` both work on an Xbox pad (Settings > Controls adds the
+controller name when you press one).
 
 ## Mouse Codes
 
 | Keycode | Description |
 |---------|-------------|
-| `mouseButtonleft` | the left mouse button |
+| `mouseButtonLeft` | the left mouse button |
 | `mouseButtonMiddle` | the middle mouse button |
 | `mouseButtonRight` | the right mouse button |
 | `mouseButtonX1` | the X1 mouse button |

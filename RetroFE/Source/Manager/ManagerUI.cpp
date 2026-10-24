@@ -16,6 +16,7 @@
 #include "ManagerUI.h"
 #include "FileDialog.h"
 #include "Setup.h"
+#include "Controls/app/PadInputs.h"
 #include "Themes/ThemeProvider.h"
 #include "Themes/app/ThemeEditorScreen.h"
 #include "../Builtin/Builtin.h"
@@ -68,19 +69,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
     renderer_ = renderer;
     fontCache_ = fontCache;
 
-    // controls.manager picks the key that opens Settings; the first keyboard key listed is used
-    std::string toggle;
-    if (config_.getProperty("controls.manager", toggle)) {
-        std::vector<std::string> keys;
-        Utils::listToVector(toggle, keys, ',');
-        SDL_Scancode key = keys.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(Utils::trimEnds(keys[0]).c_str());
-        if (key != SDL_SCANCODE_UNKNOWN) {
-            toggleKey_ = key;
-        }
-        else {
-            LOG_WARNING("Manager", "controls.manager doesn't start with a keyboard key, using " + std::string(SDL_GetScancodeName(toggleKey_)));
-        }
-    }
+    readToggleKey();
 
     IMGUI_CHECKVERSION();
     context_ = ImGui::CreateContext();
@@ -144,11 +133,39 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
             bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
             return Manager::LaunchQueue::problem(reloadDue, catalog_ && catalog_->isBusy());
         };
+        services.sameInputs = Manager::padSameInputs;
+        services.reloadControls = [this] {
+            if (reloadControls_) {
+                reloadControls_();
+            }
+            readToggleKey();
+            navHeld_.fill(true);   // the Select that saved is still held
+        };
         Manager::registerProviders(model_, services);
         providersAdded_ = true;
     }
     LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open Settings");
     return true;
+}
+
+void ManagerUI::readToggleKey()
+{
+    // controls.manager picks the key that opens Settings: the first keyboard key it lists
+    toggleKey_ = SDL_SCANCODE_F10;
+    std::string toggle;
+    if (!config_.getProperty("controls.manager", toggle)) {
+        return;
+    }
+    std::vector<std::string> keys;
+    Utils::listToVector(toggle, keys, ',');
+    for (const std::string& name : keys) {
+        SDL_Scancode key = SDL_GetScancodeFromName(Utils::trimEnds(name).c_str());
+        if (key != SDL_SCANCODE_UNKNOWN) {
+            toggleKey_ = key;
+            return;
+        }
+    }
+    LOG_WARNING("Manager", "controls.manager lists no keyboard key, using " + std::string(SDL_GetScancodeName(toggleKey_)));
 }
 
 const Forms::Form* ManagerUI::form(const std::string& id)
@@ -406,6 +423,7 @@ void ManagerUI::show()
 
     bool wasOpen = open_;
     status_.clear();
+    capture_.clear();   // a capture belongs to the screen that asked for it
     leaveWarned_ = false;
     launches_.screenChanged();
     view_.reset();
@@ -449,6 +467,7 @@ void ManagerUI::close()
 {
     nav_.clear();
     leaveWarned_ = false;
+    capture_.clear();
     if (!open_) {
         return;
     }
@@ -636,10 +655,85 @@ void ManagerUI::destroyPage()
     widget_ = nullptr;
 }
 
+bool ManagerUI::captureEvent(const SDL_Event& e)
+{
+    if (!Manager::CaptureEvents::isInput(e)) {
+        return false;
+    }
+    Manager::CaptureEvents::Event event = captureEvents_.read(e);
+    float now = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+    if (event.type == Manager::CaptureEvents::Event::Type::Down) {
+        capture_.press(event.input, now);
+    }
+    else if (event.type == Manager::CaptureEvents::Event::Type::Up) {
+        capture_.release(event.input, now);
+    }
+    // Nothing reaches the screen meanwhile (navigate() waits too), but
+    // RetroFE's input still follows keys and buttons going up and down, so
+    // a control held when the capture started doesn't stay pressed
+    return e.type == SDL_TEXTINPUT || e.type == SDL_TEXTEDITING || e.type == SDL_MOUSEBUTTONDOWN
+        || e.type == SDL_MOUSEBUTTONUP || e.type == SDL_MOUSEWHEEL;
+}
+
+void ManagerUI::updateCapture()
+{
+    if (capture_.state() == Manager::InputCapture::State::Idle) {
+        return;
+    }
+    float now = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+    capture_.update(now);
+    switch (capture_.state()) {
+    case Manager::InputCapture::State::Waiting: {
+        std::string prompt = capture_.prompt(now);
+        if (prompt != capturePrompt_) {
+            capturePrompt_ = prompt;
+            setStatus(prompt, false);
+        }
+        break;
+    }
+    case Manager::InputCapture::State::Captured: {
+        std::string token = capture_.token();
+        std::string bind = captureBind_;
+        std::string action = captureAction_;
+        endCapture();
+        LOG_INFO("Manager", "Captured input " + token);
+        model_.set(bind, token);
+        if (!action.empty()) {
+            handleResult(model_.runAction(action));
+        }
+        if (widget_) {
+            widget_->invalidate();
+        }
+        break;
+    }
+    case Manager::InputCapture::State::Cancelled:
+    case Manager::InputCapture::State::TimedOut: {
+        std::string message = capture_.endMessage();
+        endCapture();
+        setStatus(message, false);
+        break;
+    }
+    case Manager::InputCapture::State::Idle:
+        break;
+    }
+}
+
+void ManagerUI::endCapture()
+{
+    capture_.clear();
+    capturePrompt_.clear();
+    // What was pressed for the capture mustn't also act on the screen
+    navHeld_.fill(true);
+}
+
 bool ManagerUI::handleEvent(const SDL_Event& e)
 {
     if (!context_) {
         return false;
+    }
+    // Press it now takes every input first, the Settings key and Escape included
+    if (open_ && capture_.active()) {
+        return captureEvent(e);
     }
     // Kiosk mode keeps people out of Settings, where they could turn it off
     if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_ && !locked_) {
@@ -722,6 +816,11 @@ void ManagerUI::navigate(const Controls& held, float now)
     const float repeatDelay = 0.4f;
     const float repeatInterval = 0.09f;
 
+    // Waiting for "press it now": the press is the capture's, not the screen's
+    if (capture_.active()) {
+        return;
+    }
+
     // Whether control i acts now: once when pressed, and while held for the
     // ones that repeat (everything but select and back)
     auto acts = [&](size_t i, bool& repeat) {
@@ -802,6 +901,7 @@ void ManagerUI::update(float dt)
     if (!open_) {
         return;
     }
+    updateCapture();
     model_.update(dt);
     if (screen_) {
         screen_->update(dt);
@@ -879,6 +979,16 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
     }
     if (open_) {
         setStatus(result.message, !result.ok);
+    }
+    // Press it now: the next input becomes a token for result.capture
+    if (open_ && result.ok && !result.capture.empty()) {
+        float now = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+        captureEvents_.start();   // sticks held now must come back first
+        capture_.start(now);
+        captureBind_ = result.capture;
+        captureAction_ = result.captureAction;
+        capturePrompt_ = capture_.prompt(now);
+        setStatus(capturePrompt_, false);
     }
 }
 

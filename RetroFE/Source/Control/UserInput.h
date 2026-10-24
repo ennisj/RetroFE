@@ -15,7 +15,9 @@
  */
 #pragma once
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_gamecontroller.h>
 #include <SDL2/SDL_joystick.h>
+#include "JoystickSlots.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -95,6 +97,9 @@ public:
 
     explicit UserInput(Configuration& c);
     virtual ~UserInput();
+    // Maps controls.* to inputs (InputToken.h). Always succeeds: unknown
+    // inputs are skipped with a warning, and up/down/left/right, select, back
+    // and quit fall back on the built-in defaults when nothing else works.
     bool initialize();
     void resetStates();
     bool update(SDL_Event& e);
@@ -108,11 +113,19 @@ public:
 private:
     bool MapKey(const std::string& keyDescription, KeyCode_E key);
     bool MapKey(const std::string& keyDescription, KeyCode_E key, bool required);
+    // Every input of a value that works; returns how many. Unknown ones are skipped with a warning.
+    int MapInputs(const std::string& configKey, const std::string& description, KeyCode_E key);
+    // A control RetroFE needs: else alternative's inputs, else the built-in default
+    void MapRequired(const std::string& keyDescription, KeyCode_E key, const std::string& alternative = "");
     bool HandleInputMapping(const std::string& token, KeyCode_E key, const std::string& configKey);
     bool MapKeyCombo(const std::string& keyDescription, KeyCode_E key1, KeyCode_E key2, bool required);
+    void openController(int deviceIndex, int slot);
     Configuration& config_;
     bool updated_{ false };
-    SDL_JoystickID joysticks_[cMaxJoy];
+    JoystickSlots slots_{ cMaxJoy };              // SDL instance ids of joy0, joy1...
+    SDL_GameController* controllers_[cMaxJoy];   // by slot, for pads SDL has a mapping for
+    std::map<SDL_JoystickID, bool> mapped_;       // every joystick connected: is it a game controller?
+    bool eventFromController_ = false;            // the joystick event being handled comes from one
     std::vector<std::pair<InputHandler *, KeyCode_E> > keyHandlers_;
     bool lastKeyState_[KeyCodeMax]; 
     bool currentKeyState_[KeyCodeMax]; 

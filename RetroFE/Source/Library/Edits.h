@@ -31,6 +31,7 @@
 #include "Backups.h"
 #include "Index.h"
 #include "Media.h"
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -254,6 +255,21 @@ namespace Library
 
         // Puts a file changed here back as it was before the first change
         EditResult restoreOriginal(const std::string& file);
+
+        // --- Controls (ControlEdits.cpp) ------------------------------------------------
+        // controls.conf, then controls1..9.conf, as RetroFE loads them (later files win)
+        static std::vector<std::string> controlsFileNames();
+        // Empty when changes (name -> new value) leave every required control
+        // they change (ControlList: up, down, select, back) an input that
+        // works, otherwise why not. Controls not changed aren't checked, so a
+        // value left empty on purpose in the files doesn't block other saves.
+        static std::string checkControls(const std::map<std::string, std::string>& changes);
+        // Writes controls (ControlList names, or deadZone) where each value
+        // comes from now, else to controls.conf (made from the built-in
+        // controls when missing). Every token must parse (InputToken), and
+        // the result must pass checkControls. Comments, order and line
+        // endings are kept; originals go to the backups.
+        EditResult setControls(const std::map<std::string, std::string>& values);
 
     private:
         // Makes RetroFE re-import meta/ (and the overrides) on its next start

@@ -171,6 +171,15 @@ namespace Manager
         // can't be asked for now (a reload is due while the Catalog installs), or "".
         std::function<void(const std::string& collection, const std::string& game)> requestLaunch{};
         std::function<std::string()> launchProblem{};
+
+        // RetroFE reads controls.conf and controls1..9.conf again and maps its
+        // controls (and the key that opens Settings) from them, straight away
+        std::function<void()> reloadControls = [] {};
+
+        // Other names for the same physical input on the pads connected now:
+        // joyButton1 for joyA on a pad whose A is button 1, and back (SDL's
+        // controller mappings). Empty in tests and with no pad.
+        std::function<std::vector<std::string>(const std::string& token)> sameInputs{};
     };
 
     // Adds every provider to the model (Providers.cpp)

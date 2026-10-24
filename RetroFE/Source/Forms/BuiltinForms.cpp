@@ -51,6 +51,7 @@ const char* const settingsForm = R"(
     <toggle label="Play videos" bind="settings:videoEnable" default="yes"/>
     <number label="Attract mode after" bind="settings:attractModeTime" min="0" max="3600" default="0" help="Seconds without input. 0 turns attract mode off."/>
   </section>
+  <link label="Controls" open="controls"/>
   <actions>
     <button label="Save" action="settings.save"/>
   </actions>
@@ -142,7 +143,8 @@ Forms::BuiltinTable allForms()
         { "package", packageForm },
     };
     for (auto section : { Forms::gamesForms, Forms::menusForms, Forms::systemsForms,
-                          Forms::videosForms, Forms::emulatorsForms, Forms::themesForms }) {
+                          Forms::videosForms, Forms::emulatorsForms, Forms::themesForms,
+                          Forms::controlsForms }) {
         Forms::BuiltinTable more = section();
         forms.insert(forms.end(), more.begin(), more.end());
     }

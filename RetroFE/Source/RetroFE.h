@@ -175,6 +175,7 @@ private:
     CollectionInfo *getCatalogCollection( );
     bool            isHomeMenuPage( const std::string& collectionName ) const;  // Home or the Catalog list
     void updatePageControls(const std::string& type);
+    void importControls();   // controls.conf, then controls1..9.conf
     CollectionInfo *getMenuCollection( const std::string& collectionName );
 	void            saveRetroFEState( ) const;
     std::string getLayoutFileName();

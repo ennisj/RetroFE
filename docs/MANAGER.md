@@ -11,7 +11,7 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 | Item     | What it does |
 |----------|--------------|
 | Catalog  | Packages you can install from your sources (see [The Catalog](#the-catalog)) |
-| Settings | Display, menu and video settings |
+| Settings | Display, menu and video settings, and [Controls](#controls) |
 | Manage   | Games, menus, systems, videos, emulators and themes, plus what the Catalog installed and its sources |
 | Browse   | Opens `firstCollection`, your usual top menu. Back returns to Home. |
 
@@ -20,7 +20,8 @@ creates. Existing installs don't have it, so they start on `firstCollection`
 as before. Kiosk mode always skips Home.
 
 F10 opens Settings from anywhere, switches to it from another screen, and
-closes it again; change the key with `manager` in `controls.conf`. Back or
+closes it again; change the key with `manager` in `controls.conf` (the first
+keyboard key it lists), or in Settings > Controls (Open Settings). Back or
 Escape returns to the screen you came from, where you left it, and closes the
 first one.
 
@@ -486,6 +487,54 @@ rewriting only what changes. The first save of a page keeps its
 original in `manage/backups/layouts/<theme>/`, and *Put back the original*
 restores it.
 
+### Controls
+
+**Settings > Controls** lists every control RetroFE reads from
+`controls.conf` (see [CONTROLS.md](CONTROLS.md)), grouped as Essential,
+Navigation, Playlists and favourites, Admin, Advanced, Combos and Jukebox,
+each with its inputs ("Keyboard Return, Controller A..."), plus the dead zone
+for sticks and triggers. A line at the top points out inputs RetroFE doesn't
+recognise (it skips them).
+
+Choosing a control shows its inputs, one per row (with the token as
+`controls.conf` writes it), where its value comes from, and which other
+controls share an input. From there:
+
+- **Add an input (press it now)**: then press the key, joystick or
+  controller button, d-pad, stick or trigger within 5 seconds. It's added when
+  you let go. Every input can be added, Escape and Back's own included, so
+  the ways out are to press nothing for 5 seconds or to hold an input down
+  for 2 seconds. A pad SDL knows as a game controller is added by its
+  controller name (`joyA`, `joyDPUp`, `joyLeftY-`), which means the same
+  button on any pad; other joysticks by number (`joyButton3`, `joyHat0Up`,
+  `joyAxis1-`). Inputs are added for any pad (no `joy0`). The mouse isn't
+  captured. Open Settings takes keyboard keys only; a combo takes two inputs.
+  An input another control already uses is added with a warning (it then
+  does both), also when it's the same button under another name on a pad
+  connected now (`joyA` and `joyButton1` on a DualShock read through
+  DirectInput, from SDL's mapping). A key whose name has a comma
+  (`Keypad ,`) can't be added: `controls.conf` couldn't hold it.
+- Choosing an input opens it, with **Remove this input**.
+- **Put back the default**: RetroFE's built-in inputs for the control
+  (Return, A on a pad, and button 0 on a joystick SDL has no mapping for,
+  for Select; F10 for Open Settings), or none for controls that have no
+  default.
+
+Changes to every control are kept together until **Save** (on the list or a
+control's screen); **Undo changes** drops them, and leaving the list with
+changes asks first. Save refuses a change that leaves Up, Down, Select or
+Back with no input that works, so you can't lock yourself out; a control
+already left empty in the file (`back =` on a kiosk) doesn't hold up other
+changes. Open Settings without a keyboard key is F10, and the screen says so. Each value
+is written where it comes from now: the `controlsN.conf` that sets it (the
+last one wins, as RetroFE reads them), otherwise `controls.conf` (made from
+the built-in controls when there isn't one). Only that line changes;
+comments, order and line endings stay, and the original file is kept in
+`manage/backups/` before the first change. RetroFE reads its controls again
+straight after Save, so the new inputs work at once, in Manage too (the page
+shown keeps its layout's `controls - <type>.conf` on top). The screens show
+`controls.conf` and `controls1..9.conf`, not a layout's own file.
+
 ### Styling the screens
 
 A screen is drawn as a page from your layout, so it can use backgrounds,
@@ -679,8 +728,10 @@ Each Manage section serves its own bindings through a **provider**
 (`RetroFE/Source/Manager/Provider.h`): a `game` provider answers `game:title`,
 `game:search` rows, `options="game:genres"` and actions like `game.save`, and
 gets the screen's parameters with every call. An action can open a screen or
-go back once it succeeds, a provider can object to leaving a screen with
-unsaved changes, and it can ask RetroFE to reload once the manager closes.
+go back once it succeeds, or ask for the next input the user presses
+(`Result::capture`, as Settings > Controls does), a provider can object to
+leaving a screen with unsaved changes, and it can ask RetroFE to reload once
+the manager closes.
 How to add a section, its forms and its provider is in
 [design/manage-forms.md](design/manage-forms.md).
 

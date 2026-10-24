@@ -183,6 +183,17 @@ namespace Forms
             bool keepParams = false;
             bool back = false;
             bool replace = false;
+
+            // After success, the next input the user presses (a key, a
+            // joystick button, hat or axis, a game controller button or
+            // axis) is captured instead of moving around the screen: its
+            // controls.conf token (Control/InputToken.h) is set() on the
+            // binding capture, then the action captureAction runs and its
+            // result is handled like any other. Nothing pressed within a few
+            // seconds, or an input held down for two, cancels (every input
+            // can be captured, Back's included, so it can't be the way out).
+            std::string capture;
+            std::string captureAction;
         };
         virtual Result runAction(const std::string& action) = 0;
     };
