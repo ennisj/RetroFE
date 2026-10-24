@@ -30,7 +30,7 @@ form element and the built-in bindings are in [../MANAGER.md](../MANAGER.md).
 ## Where things go
 
 Each section has its own folder, `RetroFE/Source/Manager/<Section>/`
-(`Games`, `Menus`, `Systems`, `Videos`, `Emulators`, `Themes`). CMake picks
+(`Games`, `Menus`, `Systems`, `Videos`, `Emulators`, `Themes`, and `Controls` for Settings > Controls). CMake picks
 up the files in these folders, so you don't edit `CMakeLists.txt` to add
 files. Re-run the configure step after adding a file (the Visual Studio
 generator only notices new files on the build after the one that finds them).
@@ -244,6 +244,21 @@ Things to know:
   `Result::replace` with `open` when the screen the action ran on is done
   with, e.g. an add form opening what it added: the new screen takes its
   place, so Back goes to the screen before the form, not to the filled-in form.
+- **Press it now**: set `Result::capture` (a binding, e.g.
+  `control:captured`) and `Result::captureAction` (e.g.
+  `control.addCaptured`) on a successful result. `ManagerUI` then takes
+  every input instead of moving around the screen (navigate() waits, the
+  page and ImGui see nothing; RetroFE's own input still follows keys going
+  up and down), shows a countdown as the status, and when an input is
+  pressed and let go `set()`s its controls.conf token (`Control/InputToken.h`)
+  on the binding and runs the action, whose result is handled as usual.
+  Nothing pressed for 5 seconds, or an input held for 2, ends it with a
+  message and nothing set. A game controller's press is taken by its
+  controller name (`joyA`) rather than the joystick button SDL also reports.
+  The rules are `Manager/Controls/InputCapture.h` (SDL-free, tested in
+  `ControlsTests.cpp`); `Controls/app/CaptureEvents.cpp` turns SDL events into
+  presses. Key presses posted to RetroFE's window (WM_KEYDOWN/WM_KEYUP, as
+  the GUI checks do) are captured like real ones.
 - **Reloading**: when RetroFE needs to reload to show a change (a new title,
   a moved game), call `services.requestReload()`: RetroFE reloads after the
   user closes the manager, so they can keep working. `Result::reload`
@@ -263,7 +278,9 @@ Things to know:
   (`Launcher::failure()`). The rules are `Manager/LaunchQueue.h`, tested in
   `GamesTests.cpp`. Both are null in tests unless a test sets them.
 - `Manager::Services` (`Provider.h`) is what providers can use: the
-  configuration, the Catalog, `requestReload`, `requestLaunch`, and the shared library:
+  configuration, the Catalog, `requestReload`, `requestLaunch`,
+  `reloadControls` (RetroFE re-reads controls*.conf and remaps, straight
+  away), and the shared library:
   `library` (one `Library::Indexer` for every section, rebuilt each time the
   manager opens) and `editor` (the `Library::Editor` all writes go through).
   After a write, call `library->changed("what")`; when the manager closes with

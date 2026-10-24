@@ -271,7 +271,7 @@ void RetroFE::launchExit()
 	SDL_Event e;
 	while (SDL_PollEvent(&e))
 	{
-		if (e.type == SDL_JOYDEVICEADDED || e.type == SDL_JOYDEVICEREMOVED)
+		if (e.type == SDL_JOYDEVICEADDED || e.type == SDL_JOYDEVICEREMOVED || e.type == SDL_CONTROLLERDEVICEADDED)
 		{
 			input_.update(e);
 		}
@@ -411,8 +411,6 @@ bool RetroFE::deInitialize()
 // Run RetroFE
 bool RetroFE::run()
 {
-	std::string controlsConfPath = Utils::combinePath(Configuration::absolutePath, "controls");
-
 	// Initialize SDL
 	if (!SDL::initialize(config_))
 		return false;
@@ -454,24 +452,12 @@ bool RetroFE::run()
 	}
 #endif
 	// Define control configuration
-	if (fs::exists(controlsConfPath + ".conf"))
-	{
-		config_.import("controls", controlsConfPath + ".conf");
-	}
-	else
-	{
-		// Nothing installed yet: start with the built-in controls
-		config_.importString("controls", Builtin::controls);
-		LOG_NOTICE("RetroFE", "No controls.conf found in \"" + Configuration::absolutePath + "\", using built-in controls");
-	}
-	for (int i = 1; i < 10; i++)
-	{
-		std::string numberedControlsFile = controlsConfPath + std::to_string(i) + ".conf";
-		if (fs::exists(numberedControlsFile))
-		{
-			config_.import("controls", numberedControlsFile, false);
-		}
-	}
+	importControls();
+	// Settings > Controls saves, then RetroFE uses the new controls at once
+	manager_.setControlsReload([this]() {
+		importControls();
+		input_.reconfigure();
+	});
 
 	if (config_.propertiesEmpty())
 	{
@@ -605,7 +591,7 @@ bool RetroFE::run()
 					exitSplashMode = true;
 					while (SDL_PollEvent(&e))
 					{
-						if (e.type == SDL_JOYDEVICEADDED || e.type == SDL_JOYDEVICEREMOVED)
+						if (e.type == SDL_JOYDEVICEADDED || e.type == SDL_JOYDEVICEREMOVED || e.type == SDL_CONTROLLERDEVICEADDED)
 						{
 							input_.update(e);
 						}
@@ -3831,6 +3817,31 @@ CollectionInfo* RetroFE::getCollection(const std::string& collectionName, bool a
 	}
 
 	return collection;
+}
+
+void RetroFE::importControls()
+{
+	// controls.conf (or the built-in controls when there's none), then
+	// controls1..9.conf on top, key by key
+	std::string controlsConfPath = Utils::combinePath(Configuration::absolutePath, "controls");
+	if (fs::exists(controlsConfPath + ".conf"))
+	{
+		config_.import("controls", controlsConfPath + ".conf");
+	}
+	else
+	{
+		// Nothing installed yet: start with the built-in controls
+		config_.importString("controls", Builtin::controls);
+		LOG_NOTICE("RetroFE", "No controls.conf found in \"" + Configuration::absolutePath + "\", using built-in controls");
+	}
+	for (int i = 1; i < 10; i++)
+	{
+		std::string numberedControlsFile = controlsConfPath + std::to_string(i) + ".conf";
+		if (fs::exists(numberedControlsFile))
+		{
+			config_.import("controls", numberedControlsFile, false);
+		}
+	}
 }
 
 void RetroFE::updatePageControls(const std::string& type)

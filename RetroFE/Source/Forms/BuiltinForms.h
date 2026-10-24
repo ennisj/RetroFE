@@ -35,4 +35,5 @@ namespace Forms
     BuiltinTable videosForms();      // Manager/Videos/VideosForms.cpp
     BuiltinTable emulatorsForms();   // Manager/Emulators/EmulatorsForms.cpp
     BuiltinTable themesForms();      // Manager/Themes/ThemesForms.cpp
+    BuiltinTable controlsForms();    // Manager/Controls/ControlsForms.cpp (Settings > Controls)
 }

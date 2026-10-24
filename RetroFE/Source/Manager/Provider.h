@@ -171,6 +171,10 @@ namespace Manager
         // can't be asked for now (a reload is due while the Catalog installs), or "".
         std::function<void(const std::string& collection, const std::string& game)> requestLaunch{};
         std::function<std::string()> launchProblem{};
+
+        // RetroFE reads controls.conf and controls1..9.conf again and maps its
+        // controls (and the key that opens Settings) from them, straight away
+        std::function<void()> reloadControls = [] {};
     };
 
     // Adds every provider to the model (Providers.cpp)
