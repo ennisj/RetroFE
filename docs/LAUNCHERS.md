@@ -12,6 +12,7 @@ options
 |------------|---------------------------------------------------------------|
 | executable | Path of where the executable exists                           |
 | arguments  | Arguments to pass when executing the launcher (i.e. ROM name) |
+| currentDirectory | The folder the program runs in; by default the executable's own folder, or RetroFE's root folder for a bare name such as `cmd.exe` |
 
     executable = D:/Emulators/Nestopia/nestopia.exe
     arguments  = "%ITEM_FILEPATH%"

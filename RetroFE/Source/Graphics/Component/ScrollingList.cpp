@@ -16,6 +16,7 @@
 
 
 #include "ScrollingList.h"
+#include "ListIndex.h"
 #include "../Animate/Tween.h"
 #include "../Animate/TweenSet.h"
 #include "../Animate/Animation.h"
@@ -140,16 +141,6 @@ std::string ScrollingList::getSelectedItemName()
         return "";
     
     return (*items_)[(itemIndex_ + selectedOffsetIndex_) % static_cast<int>(size)]->name;
-}
-
-size_t loopIncrement(size_t offset, size_t i, size_t size) {
-    if (size == 0) return 0;
-    return (offset + i) % size;
-}
-
-size_t loopDecrement(size_t offset, size_t i, size_t size) {
-    if (size == 0) return 0;
-    return (offset + size - i) % size; // Adjusted to use size_t and ensure no underflow
 }
 
 void ScrollingList::setScrollAcceleration( float value )
@@ -376,15 +367,13 @@ void ScrollingList::letterChange(bool increment)
     }
 }
 
+// The amount may be larger than the list (a short list in a menu with more slots)
 size_t ScrollingList::loopIncrement(size_t currentIndex, size_t incrementAmount, size_t listSize) const {
-    if (listSize == 0) return 0;
-    return (currentIndex + incrementAmount) % listSize;
+    return ::loopIncrement(currentIndex, incrementAmount, listSize);
 }
 
-
 size_t ScrollingList::loopDecrement(size_t currentIndex, size_t decrementAmount, size_t listSize) const {
-    if (listSize == 0) return 0;
-    return (currentIndex + listSize - decrementAmount) % listSize;
+    return ::loopDecrement(currentIndex, decrementAmount, listSize);
 }
 
 void ScrollingList::metaUp(const std::string& attribute)

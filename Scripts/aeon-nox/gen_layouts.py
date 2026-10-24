@@ -525,7 +525,7 @@ write('splash.xml', splash())
 TEXT = {
     'collections/Home/medium_artwork/tagline/Catalog.txt': 'Collections, artwork and layouts to install',
     'collections/Home/medium_artwork/tagline/Settings.txt': 'Display, menus and video',
-    'collections/Home/medium_artwork/tagline/Manage.txt': 'Your collections, packages and sources',
+    'collections/Home/medium_artwork/tagline/Manage.txt': 'Your games, systems, menus and themes',
     'collections/Home/medium_artwork/tagline/Browse.txt': 'Your collections and games',
     'collections/Home/medium_artwork/description/Catalog.txt':
         'Everything your sources offer: collections, artwork, layouts and more. Choose a package to see what it is and install it. '
@@ -534,8 +534,8 @@ TEXT = {
         'Window or full screen, which layout to use, whether RetroFE starts here on Home, and video playback. '
         'The Settings key opens it from anywhere, too.',
     'collections/Home/medium_artwork/description/Manage.txt':
-        'Add a collection from a folder of games and the emulator that runs them. See what the Catalog has installed and remove it, '
-        'and add or remove the sources the Catalog uses.',
+        'Games, menus, systems, videos, emulators and themes: add, change and hide what RetroFE shows and how it starts it. '
+        'See what the Catalog has installed, and the sources it uses.',
     'collections/Home/medium_artwork/description/Browse.txt':
         'Your collections, as set up in Manage or installed from the Catalog. Back brings you here again.',
     'collections/Catalog/medium_artwork/tagline/Catalog Sources.txt': 'Where packages come from',

@@ -157,6 +157,16 @@ static void runLibraryTests()
         check(!findProgram("sh").empty(), "sh is found on PATH");
 #endif
     });
+    run("library: a launcher's program runs in its own folder, a bare name in RetroFE's", [&] {
+        checkEqual(programFolder("cmd.exe", "/rfe"), "/rfe", "a bare name has no folder of its own");
+        checkEqual(programFolder("", "/rfe"), "/rfe", "no program");
+        checkEqual(programFolder("/rfe/emulators/mame/mame", "/rfe"), "/rfe/emulators/mame", "a path: its folder");
+#ifdef WIN32
+        checkEqual(programFolder("E:\\rfe/emulators/mame.exe", "E:\\rfe"), "E:\\rfe/emulators",
+                   "%RETROFE_PATH%/... on Windows: the last separator of either kind");
+        checkEqual(programFolder("C:\\Emus\\mame.exe", "E:\\rfe"), "C:\\Emus", "backslashes");
+#endif
+    });
     run("library: conf edits keep comments, spacing and CRLF", [&] {
         std::string root = makeRoot("lib-conf");
         std::string path = root + "/info.conf";

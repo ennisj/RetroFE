@@ -74,6 +74,11 @@ namespace Library
     // not /c or /k) is returned unchanged.
     std::string cmdArguments(const std::string& arguments);
 
+    // The folder a launcher's program runs in when it sets no currentDirectory:
+    // the program's own folder ("/" and "\" both count on Windows), or root for
+    // a bare name such as cmd.exe, which has none.
+    std::string programFolder(const std::string& executable, const std::string& root);
+
     // A file's lines, each with the ending it had ("\r\n", "\n", or "" for a
     // last line without one). join() gives back the exact bytes.
     struct Line

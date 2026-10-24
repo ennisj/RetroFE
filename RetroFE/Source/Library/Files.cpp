@@ -242,6 +242,12 @@ std::string cmdArguments(const std::string& arguments)
     return arguments.substr(0, command) + "\"" + rest + "\"";
 }
 
+std::string programFolder(const std::string& executable, const std::string& root)
+{
+    std::string folder = fs::path(executable).parent_path().string();
+    return folder.empty() ? root : folder;
+}
+
 std::string findProgram(const std::string& name)
 {
     if (name.empty() || name.find_first_of("/\\") != std::string::npos) {

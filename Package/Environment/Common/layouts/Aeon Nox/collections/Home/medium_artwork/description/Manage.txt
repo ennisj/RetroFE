@@ -1,1 +1,1 @@
-Add a collection from a folder of games and the emulator that runs them. See what the Catalog has installed and remove it, and add or remove the sources the Catalog uses.
+Games, menus, systems, videos, emulators and themes: add, change and hide what RetroFE shows and how it starts it. See what the Catalog has installed, and the sources it uses.

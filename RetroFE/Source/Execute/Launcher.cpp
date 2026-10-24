@@ -533,7 +533,9 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 
 	// Step 5: Determine the current working directory
 	std::string currentDirectoryKey = "launchers." + launcherName + ".currentDirectory";
-	std::string currentDirectory = Utils::getDirectory(executablePath);
+	// By default the program's own folder. A bare name (cmd.exe, found on the
+	// system path) has none: it runs in RetroFE's, not in a folder named after it
+	std::string currentDirectory = Library::programFolder(executablePath, Configuration::absolutePath);
 	config_.getProperty(currentDirectoryKey, currentDirectory);
 
 	currentDirectory = replaceVariables(currentDirectory, selectedItemsPath, collectionItem->name, Utils::getFileName(selectedItemsPath), selectedItemsDirectory, collection);
@@ -727,6 +729,8 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 	if (!isAttractMode) {
 		startTime = std::chrono::steady_clock::now();
 	}
+	// Nothing started at all (Windows): no window to wait for, no time played
+	bool launchFailed = false;
 
 #ifdef WIN32
 
@@ -827,6 +831,7 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 		}
 		else {
 			LOG_ERROR("Launcher", "Failed to launch executable: " + exePathStr + " with error code: " + std::to_string(GetLastError()));
+			launchFailed = true;
 		}
 	}
 	// Use ShellExecuteEx for non-executable files
@@ -851,11 +856,13 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 		}
 		else {
 			LOG_WARNING("Launcher", "ShellExecuteEx failed to launch: " + executable + " with error code: " + std::to_string(GetLastError()));
+			launchFailed = true;
 		}
 	}
 
-	// Fullscreen detection if process handle was not obtained
-	if (!handleObtained) {
+	// Fullscreen detection if process handle was not obtained (a program
+	// started some other way, e.g. through a shortcut); not when nothing started
+	if (!handleObtained && !launchFailed) {
 		auto start = std::chrono::high_resolution_clock::now();
 		HWND hwndFullscreen = nullptr;
 
@@ -1422,7 +1429,7 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 		proc_thread.join();
 	}
 
-	if (!isAttractMode) {
+	if (!isAttractMode && !launchFailed) {
 		endTime = std::chrono::steady_clock::now();
 		double gameplayDuration = static_cast<double>(std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count());
 		LOG_INFO("Launcher", "Gameplay time recorded: " + std::to_string(gameplayDuration) + " seconds.");
