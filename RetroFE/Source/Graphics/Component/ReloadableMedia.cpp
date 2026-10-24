@@ -19,6 +19,7 @@
 #include "VideoBuilder.h"
 #include "ReloadableText.h"
 #include "../ViewInfo.h"
+#include "../LayoutCompat.h"
 #include "../../Video/VideoFactory.h"
 #include "../../Database/Configuration.h"
 #include "../../Database/GlobalOpts.h"
@@ -470,11 +471,7 @@ Component* ReloadableMedia::findComponent(
         std::string preferred;
         if (layoutPreferred_ && !layoutMode_) {
             // mode="layout_preferred": the layout's copy, when it has one
-            std::string found;
-            std::string folder = layoutFolder(collection, type, systemMode);
-            if (Utils::findMatchingFile(Utils::combinePath(folder, basename), extensions, found)) {
-                preferred = folder;
-            }
+            preferred = LayoutCompat::preferredFolder(layoutFolder(collection, type, systemMode), "", basename, extensions);
         }
         // check the system folder
         if (!preferred.empty()) {

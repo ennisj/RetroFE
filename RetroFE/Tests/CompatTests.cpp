@@ -18,13 +18,19 @@
 // layout.lua pages, transform="...", %RETROFE_PATH% and baseLayoutPath in settings
 
 #include "TestSupport.h"
+#include "../Source/Catalog/Installer.h"
+#include "../Source/Catalog/Package.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Graphics/LayoutCompat.h"
+#include "../Source/Library/Index.h"
 #include "../Source/Library/Properties.h"
+#include "../Source/Manager/Themes/ThemeProvider.h"
+#include "../Source/ThemeEditor/LayoutSession.h"
 #include "../Source/Utility/Utils.h"
 #include <cmath>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 using namespace Test;
 namespace fs = std::filesystem;
@@ -213,10 +219,208 @@ namespace
                        "media under the expanded base path");
         });
     }
+
+    void luaEdgeTests()
+    {
+        run("compat: layout.lua paths with or without a leading slash", [] {
+            std::string theme = makeRoot("compat-lua-slash");
+            writeFile(at(theme, "a.lua"), "function build(pb)\n  pb:buildFromXmlFile(pb.layoutPath .. \"collections/main.xml\")\nend\n");
+            checkEqual(LayoutCompat::luaBuildTarget(at(theme, "a.lua"), theme), at(theme, "collections/main.xml"), "no slash");
+            writeFile(at(theme, "lua/m.lua"), "local M = {}\nfunction M.build(pb, f)\n  pb:buildFromXmlFile(pb.layoutPath .. f)\nend\nreturn M\n");
+            writeFile(at(theme, "b.lua"), "local m = require('m')\nfunction build(pb)\n  m.build(pb, \"collections/x.xml\")\nend\n");
+            checkEqual(LayoutCompat::luaBuildTarget(at(theme, "b.lua"), theme), at(theme, "collections/x.xml"), "a module with no prefix");
+        });
+
+        run("compat: keywords inside strings and long comments don't confuse the lua reader", [] {
+            std::string theme = makeRoot("compat-lua-strings");
+            writeFile(at(theme, "a.lua"), "function build(pageBuilder)\n"
+                                         "  pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. \"/collections/end.xml\")\nend\n");
+            checkEqual(LayoutCompat::luaBuildTarget(at(theme, "a.lua"), theme), at(theme, "collections/end.xml"), "\"end\" in the path");
+            writeFile(at(theme, "b.lua"), "function build(pageBuilder)\n"
+                                         "  pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. '/do.xml')\nend\n");
+            checkEqual(LayoutCompat::luaBuildTarget(at(theme, "b.lua"), theme), at(theme, "do.xml"), "\"do\" in the path");
+            writeFile(at(theme, "c.lua"), "--[==[ function build(pageBuilder)\n  if x then end\n]] still a comment ]==]\n"
+                                         "local note = [[ function build(x) end ]]\n"
+                                         "function build(pageBuilder)\n"
+                                         "  pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. \"/real.xml\")\nend\n");
+            checkEqual(LayoutCompat::luaBuildTarget(at(theme, "c.lua"), theme), at(theme, "real.xml"), "long comments and long strings skipped");
+            writeFile(at(theme, "d.lua"), "function build(pageBuilder)\n  -- if this were code it would be refused\n"
+                                         "  pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. \"/a.xml\") -- end\nend\n");
+            checkEqual(LayoutCompat::luaBuildTarget(at(theme, "d.lua"), theme), at(theme, "a.xml"), "line comments in the body");
+        });
+    }
+
+    void transformEdgeTests()
+    {
+        run("compat: transform numbers that can't be read are refused, never thrown", [] {
+            LayoutCompat::QuadTransform q;
+            std::string why;
+            const std::string huge(400, '9');
+            check(!LayoutCompat::parseTransform("(" + huge + ", 0), (100, 100); (0, 0), (100, 0), (0, 100), (100, 100)", q, &why) && !why.empty(),
+                  "a number too big for a double");
+            check(!LayoutCompat::parseTransform("(0, 0), (inf, 100); (0, 0), (100, 0), (0, 100), (100, 100)", q), "inf");
+            check(!LayoutCompat::parseTransform("(0, 0), (nan, 100); (0, 0), (100, 0), (0, 100), (100, 100)", q), "nan");
+            check(!LayoutCompat::parseTransform("(0, 0), (100, 100); (0, 0), (100, 0), (0, 100), (100, 2e9)", q), "far out of range");
+            check(LayoutCompat::parseTransform("(0, 0), (1e3, 1.0E3); (0, 0), (1000, 0), (0, 1000), (1000, 1000)", q), "exponents are one number");
+            float x = 0, y = 0;
+            check(q.apply(500, 500, x, y) && closeTo(x, 500) && closeTo(y, 500), "and read right");
+        });
+
+        run("compat: transform corners must make a convex quad in order", [] {
+            LayoutCompat::QuadTransform q;
+            std::string why;
+            check(!LayoutCompat::parseTransform("(0, 0), (100, 100); (0, 0), (100, 0), (100, 100), (0, 100)", q, &why) && !why.empty(),
+                  "bottom corners swapped (a bow tie)");
+            check(!LayoutCompat::parseTransform("(0, 0), (100, 100); (0, 0), (100, 0), (0, 100), (30, 30)", q), "concave");
+            check(!LayoutCompat::parseTransform("(0, 0), (100, 100); (0, 0), (100, 0), (200, 0), (300, 0)", q), "all in a line");
+            check(LayoutCompat::parseTransform("(0, 0), (100, 100); (100, 0), (0, 0), (100, 100), (0, 100)", q), "a mirror image is fine");
+        });
+
+        run("compat: points far outside the rectangle aren't drawn or are clamped", [] {
+            LayoutCompat::QuadTransform q;
+            // the right edge is shorter: going right the picture shrinks towards x = 125,
+            // going left it grows without bound and then folds back (the horizon)
+            check(LayoutCompat::parseTransform("(0, 0), (100, 100); (0, 0), (100, 40), (0, 100), (100, 60)", q), "parsed");
+            float x = 0, y = 0;
+            check(q.apply(150, 50, x, y) && x > 100 && x < 125, "a bit outside still maps");
+            check(q.apply(100000, 50, x, y) && x < 125, "far right approaches the vanishing point");
+            check(!q.apply(-100000, 50, x, y), "past the horizon isn't drawn");
+            bool clamped = true;
+            bool hidden = false;
+            for (float px = -1.0f; px > -200.0f; px -= 0.01f) {
+                if (q.apply(px, 0, x, y)) clamped = clamped && std::fabs(x) <= LayoutCompat::maxCoordinate && std::fabs(y) <= LayoutCompat::maxCoordinate;
+                else hidden = true;
+            }
+            check(clamped && hidden, "near the horizon points are clamped, past it hidden");
+        });
+    }
+
+    void pathTests()
+    {
+        run("compat: layout_preferred and scrollingText find their files", [] {
+            std::string root = makeRoot("compat-paths");
+            std::string layout = at(root, "layouts/T/collections/Cave/system_artwork");
+            std::string normalFolder = at(root, "media/Cave/system_artwork");
+            writeFile(at(layout, "cabinet.png"), "png");
+            writeFile(at(normalFolder, "marquee.png"), "png");
+            const std::vector<std::string> ext = { "png", "jpg" };
+            checkEqual(LayoutCompat::preferredFolder(layout, normalFolder, "cabinet", ext), layout, "the layout's copy");
+            checkEqual(LayoutCompat::preferredFolder(layout, normalFolder, "marquee", ext), normalFolder, "else the usual folder");
+
+            std::string theme = at(root, "base_assets/layouts/Cafe80s");
+            std::string page = at(theme, "collections/02 ARCADE ALL/layout");
+            fs::create_directories(page);
+            writeFile(at(root, "base_assets/collections/_common/text/menu.txt"), "text");
+            checkEqual(LayoutCompat::themeFile(page, theme, "../../collections/_common/text/menu.txt"),
+                       at(root, "base_assets/collections/_common/text/menu.txt"), "relative to the theme when not to the page");
+            writeFile(at(page, "own.txt"), "text");
+            checkEqual(LayoutCompat::themeFile(page, theme, "own.txt"), at(page, "own.txt"), "the page's folder first");
+            checkEqual(LayoutCompat::themeFile(page, theme, "none.txt"), "", "missing");
+        });
+    }
+
+    // A OneSauce-shaped install: root appdata/retrofe, layouts in base_assets/layouts
+    std::string splitInstall(const std::string& name, std::string& layouts)
+    {
+        std::string top = makeRoot(name);
+        std::string root = at(top, "appdata/retrofe");
+        layouts = at(top, "base_assets/layouts");
+        writeFile(at(root, "settings.conf"), "layout = Lua\nbaseLayoutPath = %RETROFE_PATH%/../../base_assets/layouts\n");
+        writeFile(at(layouts, "Lua/layout.lua"), "function build(pageBuilder)\n"
+                                                "  pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. \"/collections/main.xml\")\nend\n");
+        writeFile(at(layouts, "Lua/collections/main.xml"), "<layout width=\"1280\" height=\"720\"><menu/></layout>");
+        writeFile(at(layouts, "Lua/collections/NES/layout/layout.lua"), "function build(pageBuilder)\n"
+                  "  pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. \"/../../main.xml\")\nend\n");
+        writeFile(at(layouts, "Lua/splash.xml"), "<layout width=\"1280\" height=\"720\"/>");
+        writeFile(at(layouts, "Hand/layout.xml"), "<layout width=\"640\" height=\"480\"/>");
+        return root;
+    }
+
+    void layoutsFolderTests()
+    {
+        run("compat: the Themes list reads the layouts folder and lua-only themes", [] {
+            std::string layouts;
+            std::string root = splitInstall("compat-themes-list", layouts);
+            std::vector<Themes::ThemeFacts> themes = Themes::scanThemes(root, "Lua", layouts);
+            check(themes.size() == 2, "both themes, from base_assets/layouts");
+            const Themes::ThemeFacts* lua = nullptr;
+            for (const auto& t : themes) if (t.folder == "Lua") lua = &t;
+            check(lua && lua->hasLayout && lua->width == 1280 && lua->height == 720, "the main page a layout.lua builds counts");
+            check(lua && lua->collectionPages == std::vector<std::string>({ "NES" }), "and a collection's");
+            check(Themes::scanThemes(root, "Lua").empty(), "<root>/layouts has none (the old split)");
+            checkEqual(Themes::layoutsFolder(root, ""), (fs::path(root) / "layouts").string(), "default folder");
+        });
+
+        run("compat: the library reads layouts where RetroFE does", [] {
+            std::string layouts;
+            std::string root = splitInstall("compat-library-layouts", layouts);
+            Library::ScanOptions options;
+            options.root = root;
+            options.games = false;
+            auto index = Library::buildIndex(options);
+            check(index && index->layouts.size() == 2, "baseLayoutPath from the settings");
+            bool luaMain = false;
+            for (const auto& l : index->layouts) luaMain = luaMain || (l.name == "Lua" && l.hasLayout && l.width == 1280);
+            check(luaMain, "a layout.lua's main page counts");
+            options.layoutsPath = at(root, "nowhere");
+            auto none = Library::buildIndex(options);
+            check(none && none->layouts.empty(), "the folder it's given wins");
+        });
+
+        run("compat: the layout editor opens pages in the layouts folder", [] {
+            std::string layouts;
+            std::string root = splitInstall("compat-layout-session", layouts);
+            ThemeEditor::LayoutSession session;
+            std::string error;
+            check(session.open(root, "Hand", "layout.xml", error, layouts), "opened: " + error);
+            checkEqual(normal(session.file()), at(layouts, "Hand/layout.xml"), "from base_assets/layouts");
+            ThemeEditor::LayoutSession old;
+            check(!old.open(root, "Hand", "layout.xml", error), "not under <root>/layouts");
+        });
+
+        run("compat: catalog layouts go to the layouts folder, but never one holding the root", [] {
+            std::string layouts;
+            std::string root = splitInstall("compat-catalog", layouts);
+            writeFile(at(root, "dl/download.tmp"), "<layout/>");
+            auto package = [](const std::string& id) {
+                Catalog::Package p;
+                p.id = id;
+                p.name = id;
+                p.kind = "layout";
+                p.version = "1";
+                Catalog::PackageFile file;
+                file.url = "https://h.org/files/extra.xml";
+                file.target = "layouts";
+                file.path = "Blue";
+                p.files.push_back(file);
+                return p;
+            };
+            Catalog::Targets targets;
+            targets.root = root;
+            targets.collections = at(root, "collections");
+            targets.items = targets.collections;
+            targets.media = targets.collections;
+            targets.meta = at(root, "meta");
+            targets.layouts = layouts;
+            std::string error;
+            Catalog::Installer installer(at(root, "catalog"), targets);
+            check(installer.install(package("blue"), { at(root, "dl/download.tmp") }, error), "installed: " + error);
+            check(fs::exists(at(layouts, "Blue/extra.xml")), "into base_assets/layouts");
+
+            targets.layouts = at(root, "..");   // a layouts folder that holds the RetroFE folder
+            Catalog::Installer unsafe(at(root, "catalog2"), targets);
+            check(!unsafe.install(package("red"), { at(root, "dl/download.tmp") }, error) && error.find("holds") != std::string::npos,
+                  "refused: " + error);
+        });
+    }
 }
 
 static Test::Suite compatSuite("compat", [] {
     luaTests();
+    luaEdgeTests();
     transformTests();
+    transformEdgeTests();
+    pathTests();
     settingsTests();
+    layoutsFolderTests();
 });

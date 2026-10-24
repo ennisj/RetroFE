@@ -16,6 +16,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 // Fork compatibility for layouts written for a newer RetroFE (the OneSauce
 // themes). Only what the theme data itself makes clear is supported; see
@@ -27,10 +28,11 @@ namespace LayoutCompat
     //   pageBuilder:buildFromXmlFile(pageBuilder.layoutPath .. "<path>")
     // call, or a call to a function of a module the file require()s (looked up
     // in <theme>/lua/<module>.lua) whose body is that call with its argument
-    // appended (luna.build(pageBuilder, "<path>")). layoutPath is the lua
-    // file's folder. Returns the XML file it names, or "" (why says why) when
-    // build() does anything else: a condition, several builds, no build.
-    // The lua file's preUpdate/postUpdate hooks are ignored.
+    // appended (luna.build(pageBuilder, "<path>")). <path> is relative to the
+    // lua file's folder (a leading '/' or none). Returns the XML file it names,
+    // or "" (why says why) when build() does anything else: a condition,
+    // several builds, no build. The lua file's preUpdate/postUpdate hooks are
+    // ignored.
     std::string luaBuildTarget(const std::string& luaFile, const std::string& themeFolder, std::string* why = nullptr);
 
     // transform="(x, y), (w, h); (x1, y1), (x2, y2), (x3, y3), (x4, y4)[; n]"
@@ -44,9 +46,24 @@ namespace LayoutCompat
         float dst[8]{ 0, 0, 0, 0, 0, 0, 0, 0 };
         double h[9]{ 1, 0, 0, 0, 1, 0, 0, 0, 1 };  // unit square -> quad (Heckbert)
 
-        // Where layout point (x, y) lands
-        void apply(float x, float y, float& outX, float& outY) const;
+        // Where layout point (x, y) lands. False when the point is at or behind
+        // the quad's horizon (far outside the rectangle): don't draw it.
+        bool apply(float x, float y, float& outX, float& outY) const;
     };
 
+    // False (why says why) for anything that isn't a rectangle and four corners
+    // of a convex quad in that order, or numbers that aren't finite.
     bool parseTransform(const std::string& value, QuadTransform& out, std::string* why = nullptr);
+
+    // Coordinates a transformed point is clamped to (layout units)
+    constexpr float maxCoordinate = 100000.0f;
+
+    // mode="layout_preferred": layoutFolder when it has <basename>.<one of
+    // extensions>, else normalFolder
+    std::string preferredFolder(const std::string& layoutFolder, const std::string& normalFolder,
+                                const std::string& basename, const std::vector<std::string>& extensions);
+
+    // <scrollingText src>: src against the page's folder, then the layout's
+    // folder, as an image's src; "" when neither exists. Normalised.
+    std::string themeFile(const std::string& pageFolder, const std::string& themeFolder, const std::string& src);
 }

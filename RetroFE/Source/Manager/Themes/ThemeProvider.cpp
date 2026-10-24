@@ -18,6 +18,7 @@
 #include "../../Database/Configuration.h"
 #include "../../Database/GlobalOpts.h"
 #include "../../Forms/SettingsFile.h"
+#include "../../Graphics/LayoutCompat.h"
 #include "../../ThemeEditor/ThemeProject.h"
 #include "../../ThemeEditor/ThemeStore.h"
 #include "../../Utility/Log.h"
@@ -151,10 +152,15 @@ namespace Themes
                "Edit it and add a wheel (Add widget, Wheels and menus) first.";
     }
 
-    std::vector<ThemeFacts> scanThemes(const std::string& root, const std::string& activeLayout)
+    std::string layoutsFolder(const std::string& root, const std::string& layouts)
+    {
+        return layouts.empty() ? (fs::path(root) / "layouts").string() : layouts;
+    }
+
+    std::vector<ThemeFacts> scanThemes(const std::string& root, const std::string& activeLayout, const std::string& layoutsDir)
     {
         std::vector<ThemeFacts> result;
-        const fs::path layouts = fs::path(root) / "layouts";
+        const fs::path layouts = layoutsFolder(root, layoutsDir);
         for (const ThemeEditor::ThemeSummary& summary : ThemeEditor::listThemes(layouts.string())) {
             ThemeFacts facts;
             facts.folder = summary.folder;
@@ -170,6 +176,11 @@ namespace Themes
             const fs::path dir = layouts / summary.folder;
             std::string xml;
             facts.hasLayout = readText(dir / "layout.xml", xml);
+            if (!facts.hasLayout && fs::is_regular_file(dir / "layout.lua", ec)) {
+                // Fork compat: a layout.lua whose build() names the main page (Graphics/LayoutCompat.h)
+                const std::string target = LayoutCompat::luaBuildTarget((dir / "layout.lua").string(), dir.string());
+                facts.hasLayout = !target.empty() && readText(target, xml);
+            }
             if (facts.hasLayout) layoutSize(xml, facts.width, facts.height);
             if (facts.kind == ThemeEditor::TF_EDITOR) facts.mainProblem = facts.hasLayout ? mainPageProblem(xml) : "";
             if (facts.kind == ThemeEditor::TF_EDITOR && summary.projectOk && (facts.width <= 0 || facts.height <= 0)) {
@@ -196,6 +207,11 @@ namespace Themes
                         hasPage = true;
                         break;
                     }
+                }
+                const fs::path lua = it->path() / "layout" / "layout.lua";
+                if (!hasPage && fs::is_regular_file(lua, pageEc)) {
+                    const std::string target = LayoutCompat::luaBuildTarget(lua.string(), dir.string());
+                    hasPage = !target.empty() && fs::is_regular_file(target, pageEc);
                 }
                 if (hasPage) facts.collectionPages.push_back(collection);
             }
@@ -246,7 +262,7 @@ namespace Themes
 
     std::string ThemeProvider::layoutsRoot() const
     {
-        return (fs::path(paths_.root) / "layouts").string();
+        return layoutsFolder(paths_.root, paths_.layouts);
     }
 
     std::string ThemeProvider::activeLayout() const
@@ -259,7 +275,7 @@ namespace Themes
 
     void ThemeProvider::scan()
     {
-        themes_ = scanThemes(paths_.root, activeLayout());
+        themes_ = scanThemes(paths_.root, activeLayout(), paths_.layouts);
     }
 
     void ThemeProvider::refresh()

@@ -17,6 +17,7 @@
 #include "ConfFile.h"
 #include "Files.h"
 #include "LineList.h"
+#include "../Graphics/LayoutCompat.h"
 #include "../Utility/Utils.h"
 #include <rapidxml.hpp>
 #include <sqlite3.h>
@@ -912,7 +913,11 @@ namespace
     void Builder::readLayouts()
     {
         Index& index = *index_;
-        std::string layoutsFolder = Utils::combinePath(options_.root, "layouts");
+        // As RetroFE: the layouts folder it was given, else baseLayoutPath when that's a folder, else <root>/layouts
+        std::string layoutsFolder = options_.layoutsPath;
+        if (layoutsFolder.empty() && (!index.properties.getAbsolutePath("baseLayoutPath", layoutsFolder) || !folderExists(layoutsFolder))) {
+            layoutsFolder = Utils::combinePath(options_.root, "layouts");
+        }
         std::error_code ec;
         if (!folderExists(layoutsFolder)) {
             return;
@@ -923,10 +928,16 @@ namespace
                 continue;
             }
             layout.folder = Utils::combinePath(layoutsFolder, layout.name);
-            layout.hasLayout = fileExists(Utils::combinePath(layout.folder, "layout.xml"));
+            std::string mainPage = Utils::combinePath(layout.folder, "layout.xml");
+            layout.hasLayout = fileExists(mainPage);
+            if (!layout.hasLayout && fileExists(Utils::combinePath(layout.folder, "layout.lua"))) {
+                // Fork compat: a layout.lua whose build() names the main page (Graphics/LayoutCompat.h)
+                mainPage = LayoutCompat::luaBuildTarget(Utils::combinePath(layout.folder, "layout.lua"), layout.folder);
+                layout.hasLayout = !mainPage.empty() && fileExists(mainPage);
+            }
             layout.hasSplash = fileExists(Utils::combinePath(layout.folder, "splash.xml"));
             if (layout.hasLayout) {
-                readLayoutSize(Utils::combinePath(layout.folder, "layout.xml"), layout.width, layout.height);
+                readLayoutSize(mainPage, layout.width, layout.height);
             }
             for (const auto& [stem, path] : filesEnding(layout.folder, ".xml")) {
                 if (stem != "layout" && stem != "splash") {

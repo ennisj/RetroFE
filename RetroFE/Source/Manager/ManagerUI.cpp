@@ -174,6 +174,7 @@ void ManagerUI::startLibrary()
     options.firstCollection = Setup::firstCollection();
     config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, options.baseItemPath);
     config_.getPropertyAbsolutePath(OPTION_BASEMEDIAPATH, options.baseMediaPath);
+    options.layoutsPath = Configuration::layoutsPath();
     library_ = std::make_unique<Library::Indexer>(options);
     libraryEditor_ = std::make_unique<Library::Editor>(Configuration::absolutePath);
 }
@@ -191,7 +192,7 @@ void ManagerUI::startCatalog()
     Catalog::Targets targets;
     targets.root = Configuration::absolutePath;
     targets.collections = Utils::combinePath(Configuration::absolutePath, "collections");
-    targets.layouts = Utils::combinePath(Configuration::absolutePath, "layouts");
+    targets.layouts = Configuration::layoutsPath();   // baseLayoutPath when set (OneSauce)
     targets.meta = Utils::combinePath(Configuration::absolutePath, "meta");
     if (!config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, targets.items)) {
         targets.items = targets.collections;
@@ -487,6 +488,7 @@ bool ManagerUI::showImGuiScreen(const Navigator::Frame& frame)
     context.fontCache = fontCache_;
     context.scale = scale_;
     context.root = Configuration::absolutePath;
+    context.layouts = Configuration::layoutsPath();
     context.loadCollection = loadCollection_;
     context.currentCollection = currentCollection_;
     context.requestReload = [this] { reloadWhenClosed_ = true; };

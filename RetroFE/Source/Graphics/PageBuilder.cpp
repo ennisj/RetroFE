@@ -947,16 +947,12 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 				LOG_ERROR("Layout", "scrollingText needs a src file");
 				continue;
 			}
-			std::string location = Configuration::convertToAbsolutePath(layoutPath, srcXml->value());
-			if (!std::filesystem::exists(location)) {
-				std::string alt = Configuration::convertToAbsolutePath(Utils::combinePath(Configuration::layoutsPath(), layoutKey), srcXml->value());
-				if (!std::filesystem::exists(alt)) {
-					LOG_WARNING("Layout", "scrollingText file not found: " + location + " or " + alt);
-					continue;
-				}
-				location = alt;
+			std::string themeFolder = Utils::combinePath(Configuration::layoutsPath(), layoutKey);
+			std::string location = LayoutCompat::themeFile(layoutPath, themeFolder, srcXml->value());
+			if (location.empty()) {
+				LOG_WARNING("Layout", "scrollingText file not found: " + std::string(srcXml->value()) + " in " + layoutPath + " or " + themeFolder);
+				continue;
 			}
-			location = std::filesystem::path(location).lexically_normal().string();
 			FontManager* font = addFont(componentXml, nullptr, cMonitor);
 			std::string textFormat = textFormatXml ? textFormatXml->value() : "";
 			std::string direction = directionXml ? directionXml->value() : "horizontal";
@@ -1843,7 +1839,14 @@ void PageBuilder::buildViewInfo(xml_node<>* componentXml, ViewInfo& info, xml_no
 	if (xml_attribute<> const* transform = findAttribute(componentXml, "transform", defaultXml)) {
 		auto quad = std::make_shared<LayoutCompat::QuadTransform>();
 		std::string why;
-		if (LayoutCompat::parseTransform(transform->value(), *quad, &why)) {
+		bool parsed = false;
+		try {
+			parsed = LayoutCompat::parseTransform(transform->value(), *quad, &why);
+		}
+		catch (const std::exception& e) {   // never the page: only the transform is dropped
+			why = e.what();
+		}
+		if (parsed) {
 			info.Transform = quad;
 		}
 		else {

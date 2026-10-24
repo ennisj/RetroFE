@@ -27,6 +27,7 @@ std::unique_ptr<Manager::Provider> Themes::makeProvider(const Manager::Services&
 {
     Paths paths;
     paths.root = Configuration::absolutePath;
+    paths.layouts = Configuration::layoutsPath();
     paths.fontBytes = [] { return bundledFont(); };
     return std::make_unique<ThemeProvider>(services, paths);
 }

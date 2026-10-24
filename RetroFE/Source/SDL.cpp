@@ -28,6 +28,10 @@
 #endif
 #include "Utility/Utils.h"
 #include "Graphics/LayoutCompat.h"
+#include <SDL2/SDL_version.h>
+#if !SDL_VERSION_ATLEAST(2, 0, 18)
+#error "RetroFE needs SDL 2.0.18 or newer (SDL_RenderGeometry, used for transform=)"
+#endif
 #include "Graphics/ViewInfo.h"
 #include <algorithm>
 
@@ -564,13 +568,17 @@ static void renderTransformed(SDL_Renderer* renderer, SDL_Texture* texture, floa
 	Uint8 b = 255;
 	SDL_GetTextureColorMod(texture, &r, &g, &b);  // geometry uses vertex colours, not the texture's modulation
 	const Uint8 a = static_cast<Uint8>(std::min(std::max(alpha, 0.f), 1.f) * 255);
+	// The component's box can lie well outside the transform's rectangle (an
+	// animation moving it): points at or past the quad's horizon aren't drawn,
+	// and the rest are clamped (LayoutCompat::QuadTransform::apply)
+	bool visible[(N + 1) * (N + 1)];
 	for (int j = 0; j <= N; ++j) {
 		for (int i = 0; i <= N; ++i) {
 			const float u = static_cast<float>(i) / N;
 			const float v = static_cast<float>(j) / N;
 			float qx = 0;
 			float qy = 0;
-			transform.apply(x + u * w, y + v * h, qx, qy);
+			visible[j * (N + 1) + i] = transform.apply(x + u * w, y + v * h, qx, qy);
 			SDL_Vertex& vertex = vertices[j * (N + 1) + i];
 			vertex.position = { (qx + offX) * scaleX, (qy + offY) * scaleY };
 			vertex.color = { r, g, b, a };
@@ -582,6 +590,9 @@ static void renderTransformed(SDL_Renderer* renderer, SDL_Texture* texture, floa
 		for (int i = 0; i < N; ++i) {
 			const int topLeft = j * (N + 1) + i;
 			const int bottomLeft = topLeft + N + 1;
+			if (!visible[topLeft] || !visible[topLeft + 1] || !visible[bottomLeft] || !visible[bottomLeft + 1]) {
+				continue;
+			}
 			indices[n++] = topLeft;
 			indices[n++] = topLeft + 1;
 			indices[n++] = bottomLeft;
@@ -590,7 +601,9 @@ static void renderTransformed(SDL_Renderer* renderer, SDL_Texture* texture, floa
 			indices[n++] = bottomLeft;
 		}
 	}
-	SDL_RenderGeometry(renderer, texture, vertices, (N + 1) * (N + 1), indices, n);
+	if (n > 0) {
+		SDL_RenderGeometry(renderer, texture, vertices, (N + 1) * (N + 1), indices, n);
+	}
 }
 
 // Render a copy of a texture

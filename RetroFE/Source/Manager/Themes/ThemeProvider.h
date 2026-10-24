@@ -49,6 +49,7 @@ namespace Themes
     struct Paths
     {
         std::string root;                        // the RetroFE folder: settings*.conf and layouts/
+        std::string layouts;                     // the layouts folder when not <root>/layouts (baseLayoutPath)
         std::function<std::string()> fontBytes;  // the bundled font (Roboto) new themes get; may be empty
     };
 
@@ -60,10 +61,10 @@ namespace Themes
         ThemeEditor::ThemeFolderKind kind = ThemeEditor::TF_FOREIGN;
         bool active = false;                    // the `layout` setting names it
         int width = 0, height = 0;              // the main page's design size; 0 = unknown
-        bool hasLayout = false;                 // layout.xml exists
+        bool hasLayout = false;                 // layout.xml exists (or the page a layout.lua builds)
         std::string mainProblem;                // editor-made: mainPageProblem of its layout.xml
         bool hasSplash = false;
-        std::vector<std::string> collectionPages;   // collections/<c>/layout/*.xml, sorted
+        std::vector<std::string> collectionPages;   // collections/<c>/layout/*.xml (or a layout.lua's page), sorted
         std::vector<std::string> variants;      // other main pages: "layout - 1", "layout 4x3"
         bool projectOk = false;                 // editor-made: project.xml loads
         std::string projectError;
@@ -82,8 +83,11 @@ namespace Themes
     // without a menu (a wheel) there's nothing to browse with
     std::string mainPageProblem(const std::string& layoutXml);
 
-    // Every folder under <root>/layouts, sorted by name
-    std::vector<ThemeFacts> scanThemes(const std::string& root, const std::string& activeLayout);
+    // Every folder under the layouts folder ("" = <root>/layouts), sorted by name
+    std::vector<ThemeFacts> scanThemes(const std::string& root, const std::string& activeLayout, const std::string& layouts = "");
+
+    // The layouts folder: layouts, or <root>/layouts when that's ""
+    std::string layoutsFolder(const std::string& root, const std::string& layouts);
 
     // The `layout` the settings files set; "" when none does
     std::string configuredLayout(const std::string& root);

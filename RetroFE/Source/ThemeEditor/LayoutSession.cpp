@@ -270,9 +270,14 @@ namespace ThemeEditor
 
     // ---- opening -------------------------------------------------------------
 
+    std::string LayoutSession::layoutsDir() const
+    {
+        return layouts_.empty() ? (fs::path(root_) / "layouts").string() : layouts_;
+    }
+
     std::string LayoutSession::themeDir() const
     {
-        return (fs::path(root_) / "layouts" / fs::path(folder_)).string();
+        return (fs::path(layoutsDir()) / fs::path(folder_)).string();
     }
 
     std::string LayoutSession::file() const
@@ -289,7 +294,7 @@ namespace ThemeEditor
     {
         std::error_code ec;
         const fs::path theme = fs::weakly_canonical(fs::path(themeDir()), ec);
-        const fs::path layouts = fs::weakly_canonical(fs::path(root_) / "layouts", ec);
+        const fs::path layouts = fs::weakly_canonical(fs::path(layoutsDir()), ec);
         const fs::path target = fs::weakly_canonical(fs::path(file()), ec);
         const fs::path inTheme = target.lexically_relative(theme);
         const fs::path inLayouts = theme.lexically_relative(layouts);
@@ -300,7 +305,8 @@ namespace ThemeEditor
         return true;
     }
 
-    bool LayoutSession::open(const std::string& root, const std::string& folder, const std::string& page, std::string& error)
+    bool LayoutSession::open(const std::string& root, const std::string& folder, const std::string& page, std::string& error,
+                             const std::string& layouts)
     {
         *this = LayoutSession();
         if (!themeFolderValid(folder)) {
@@ -317,6 +323,7 @@ namespace ThemeEditor
             return false;
         }
         root_ = root;
+        layouts_ = layouts;
         folder_ = folder;
         page_ = rel.generic_string();
         if (!insideTheme(error)) return false;

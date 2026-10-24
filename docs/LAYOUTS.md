@@ -389,7 +389,9 @@ height, alpha and their animations work as usual. "(x, y, w, h), (x1, y1),
 or ", 1") is ignored. A transformed component isn't clipped by a container,
 rotated by angle or reflected, and on a rotated or mirrored screen it is
 drawn without the transform. The "quad (x, y, u, v), ..." form (with
-texture coordinates) isn't supported.
+texture coordinates) isn't supported. The corners must make a convex quad in that order;
+otherwise the transform is ignored (with a warning) and the component is
+drawn as usual.
 
 Usage of the x/y/xOffset/yOffset/xOrigin/yOrigin parameters:
 

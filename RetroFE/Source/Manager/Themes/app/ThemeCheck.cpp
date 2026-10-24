@@ -92,17 +92,28 @@ namespace
         for (fs::directory_iterator it(dir / "collections", ec), end; !ec && it != end; it.increment(ec)) {
             luas.push_back(it->path() / "layout" / "layout.lua");
         }
-        std::vector<fs::path> built;
+        // Compared as the same file, however the path is spelled
+        auto key = [](const fs::path& p) {
+            std::error_code keyEc;
+            fs::path canonical = fs::weakly_canonical(p, keyEc);
+            const std::string spelled = (keyEc ? p.lexically_normal() : canonical).generic_string();
+#ifdef WIN32
+            return Utils::toLower(spelled);   // Windows paths aren't case-sensitive
+#else
+            return spelled;
+#endif
+        };
+        std::vector<std::string> seen;
+        for (const fs::path& file : files) seen.push_back(key(file));
         for (const fs::path& lua : luas) {
             std::error_code luaEc;
             if (!fs::is_regular_file(lua, luaEc) || fs::exists(lua.parent_path() / "layout.xml", luaEc)) continue;
             const fs::path target = LayoutCompat::luaBuildTarget(lua.string(), dir.string());
             if (target.empty() || !fs::is_regular_file(target, luaEc) ||
-                std::find(files.begin(), files.end(), target) != files.end() ||
-                std::find(built.begin(), built.end(), target) != built.end()) {
+                std::find(seen.begin(), seen.end(), key(target)) != seen.end()) {
                 continue;
             }
-            built.push_back(target);
+            seen.push_back(key(target));
             CheckPage page;
             page.label = fs::relative(target, dir, luaEc).generic_string() + " (from " + fs::relative(lua, dir, luaEc).generic_string() + ")";
             page.folder = lua.parent_path().string();
