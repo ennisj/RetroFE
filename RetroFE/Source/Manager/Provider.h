@@ -76,8 +76,10 @@ namespace Manager
         // The user is leaving screen (Back, Escape, the Settings key, closing).
         // Return "" to let them, or a warning such as "You have unsaved
         // changes. Save them, or leave again to discard them." to stop them
-        // once: doing it again leaves, after calling discard(screen). When
-        // the manager closes, every open screen is asked, newest first.
+        // once: doing it again (the same way) leaves, after calling
+        // discard(screen). When the manager closes, every open screen is
+        // asked, newest first. Closing RetroFE's window rewords "leave again
+        // to" as "close the window again to quit and" (LeaveWarning.h).
         virtual std::string leaving(const Screen& screen) { (void)screen; return ""; }
         virtual void discard(const Screen& screen) { (void)screen; }
 

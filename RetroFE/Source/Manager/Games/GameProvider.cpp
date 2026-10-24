@@ -1509,6 +1509,7 @@ Forms::Model::Result GameProvider::metadataAction(const std::string& action, con
     if (action == "resetMetadata") {
         metadata_.reset();
         result.ok = true;
+        result.info = true;
         return result;
     }
 
@@ -1668,6 +1669,7 @@ Forms::Model::Result GameProvider::launcherAction(const std::string& action, con
     if (action == "resetLauncher") {
         launcher_.reset();
         result.ok = true;
+        result.info = true;
         return result;
     }
     std::string pick = action == "useSystemLauncher" ? "" : launcher_.get("launcher");
@@ -1797,6 +1799,7 @@ Forms::Model::Result GameProvider::playlistAction(const std::string& action, con
     }
     result.ok = edit.ok;
     result.message = edit.message;
+    result.info = edit.ok && edit.files.empty();   // "... is already in ..."
     if (edit.ok && !edit.files.empty()) {
         changed("game playlists");
     }
@@ -2010,6 +2013,7 @@ Forms::Model::Result GameProvider::storyAction(const std::string& action, const 
     if (action == "resetStory") {
         story_.reset();
         result.ok = true;
+        result.info = true;
         return result;
     }
     const MediaSlot* s = slot(screen, "story");

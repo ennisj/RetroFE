@@ -558,7 +558,8 @@ controls share an input. From there:
 
 Changes to every control are kept together until **Save** (on the list or a
 control's screen); **Undo changes** drops them, and leaving the list with
-changes asks first. Save refuses a change that leaves Up, Down, Select or
+changes asks first (and closing the window after that warns again before
+it quits). Save refuses a change that leaves Up, Down, Select or
 Back with no input that works, so you can't lock yourself out; a control
 already left empty in the file (`back =` on a kiosk) doesn't hold up other
 changes. Open Settings without a keyboard key is F10, and the screen says so. Each value
@@ -618,7 +619,8 @@ The page places the form with a `<form>` element:
 | `headerColor`, `headerAlpha` | Section headers and results' labels (default `fontColor` at 0.7) |
 | `separatorColor`, `separatorAlpha` | A thin line under section headers and between the rows of a results list (default alpha 0: none) |
 | `imageBackgroundColor`, `imageBackgroundAlpha` | Backing behind pictures and results' thumbnail boxes (default alpha 0: none) |
-| `statusColor` | The message an action leaves above the hints (default `fontColor`) |
+| `statusColor` | The message an action that did something leaves above the hints (default `fontColor`) |
+| `infoColor` | The message when nothing happened (cancelled, undone, nothing to do) and "press it now" prompts (default `fontColor`) |
 | `errorColor` | Error messages, and the question of a button waiting for confirmation (default `fontColor`) |
 | `confirmBackgroundColor`, `confirmBackgroundAlpha` | Tint over a button waiting for a second Select to confirm (default alpha 0: none) |
 | `title` | `no` hides the screen's title |
@@ -722,7 +724,17 @@ screen's, so nothing carries over from an unrelated screen. Forms read them
 as `param:<name>`, e.g. `<value label="Id" bind="param:id"/>`.
 
 A screen with unsaved changes can ask before you leave it (Back, Escape,
-F10 or closing): it says so once, and leaving again drops the changes.
+F10, the Close button, or closing RetroFE's window): it says so once, and
+leaving the same way again drops the changes. Each way of leaving gets its
+own warning first: after Back warned, F10 or a window close warns again
+rather than leaving, and a window close says that closing it again quits
+("... or close the window again to quit and discard them."). Moving on the
+screen in between starts over.
+
+The message an action leaves is green when it did something, red (with a
+`!`) for an error or a warning, and plain when nothing happened: a capture
+cancelled or timed out, Undo changes, Reset, "is already ..." (the layout's
+`infoColor`, below).
 Removing a package or a source asks you to confirm first.
 
 `bind` says what a field shows and changes:

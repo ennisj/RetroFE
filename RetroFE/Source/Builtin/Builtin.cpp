@@ -171,7 +171,7 @@ static const char* const formLayout = R"(
         fontSize="22" fontColor="c8c8c8" focusColor="ffffff" rowHeight="34" labelWidth="260"
         rowDetailColor="8fa9c9" headerColor="8fa9c9" headerAlpha="1"
         separatorColor="ffffff" separatorAlpha="0.08" imageBackgroundColor="000000" imageBackgroundAlpha="0.3"
-        statusColor="9fd8a4" errorColor="ff8f80" confirmBackgroundColor="c0392b" confirmBackgroundAlpha="0.45"
+        statusColor="9fd8a4" infoColor="b4bcc6" errorColor="ff8f80" confirmBackgroundColor="c0392b" confirmBackgroundAlpha="0.45"
         backgroundColor="14181e" backgroundAlpha="1"
         focusBackgroundColor="3d6fb6" focusBackgroundAlpha="0.55" layer="1"/>
 </layout>

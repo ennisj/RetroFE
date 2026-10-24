@@ -549,6 +549,7 @@ Forms::Model::Result RetroArchProvider::runAction(const std::string& action, con
     if (action == "reset") {
         view.edits.reset();
         result.ok = true;
+        result.info = true;
         generation_++;
         return result;
     }
@@ -560,6 +561,7 @@ Forms::Model::Result RetroArchProvider::runAction(const std::string& action, con
     loadTile(t, !edit.ok);   // a failed write keeps the unsaved choices
     result.ok = edit.ok;
     result.message = edit.message;
+    result.info = edit.ok && edit.files.empty();   // "No changes."
     result.back = edit.ok && action == "save" && kind == Kind::CoreOption;
     generation_++;
     return result;

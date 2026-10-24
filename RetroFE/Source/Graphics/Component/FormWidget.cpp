@@ -131,6 +131,7 @@ void FormWidget::setFont(FontRole role, FontManager* font)
     case FontRole::Detail: detailFont_ = font; break;
     case FontRole::Header: headerFont_ = font; break;
     case FontRole::Status: statusFont_ = font; break;
+    case FontRole::Info:   infoFont_ = font; break;
     case FontRole::Error:  errorFont_ = font; break;
     }
 }
@@ -157,10 +158,10 @@ void FormWidget::freeGraphicsMemory()
     }
 }
 
-void FormWidget::setStatus(const std::string& message, bool isError)
+void FormWidget::setStatus(const std::string& message, Forms::StatusKind kind)
 {
     status_ = message;
-    statusIsError_ = isError;
+    statusKind_ = kind;
     stale_ = true;
 }
 
@@ -492,7 +493,7 @@ void FormWidget::buildRows()
     }
     addFields(form_->fields);
     if (!status_.empty()) {
-        statusLines_ = wrap((statusIsError_ ? "! " : "") + status_, contentWidth());
+        statusLines_ = wrap((statusKind_ == Forms::StatusKind::Error ? "! " : "") + status_, contentWidth());
     }
 
     // Keep the same field, and result, focused while rows come and go around it.
@@ -1332,8 +1333,12 @@ void FormWidget::draw()
     // The last result or warning stays in view above the hints; the rows'
     // visible height leaves room for it, so it never covers the focused row
     float statusY = top + visible;
+    // infoColor when nothing happened; without one, the normal text colour (a null font)
+    FontManager* statusFont = statusKind_ == Forms::StatusKind::Error ? errorFont_
+                            : statusKind_ == Forms::StatusKind::Info  ? infoFont_
+                                                                      : statusFont_;
     for (const std::string& statusLine : statusLines_) {
-        painter_.textWith(statusIsError_ ? errorFont_ : statusFont_, statusLine, left, statusY + textOffset, width, size, 1.0f);
+        painter_.textWith(statusFont, statusLine, left, statusY + textOffset, width, size, 1.0f);
         statusY += row;
     }
     if (style_.showHints) {

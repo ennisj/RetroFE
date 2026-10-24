@@ -18,6 +18,7 @@
 #include "FormView.h"
 #include "ImGuiScreen.h"
 #include "LaunchQueue.h"
+#include "LeaveWarning.h"
 #include "ManagerModel.h"
 #include "Navigator.h"
 #include "Controls/InputCapture.h"
@@ -84,6 +85,7 @@ public:
     // it). True when Manage closed and RetroFE may quit (a reload the changes
     // asked for is dropped: they're saved, and RetroFE is quitting); false
     // when it warned instead, and closing the window again leaves, dropping them.
+    // A close after another kind of warning (Back's) warns again first.
     bool requestQuit();
 
     // The Catalog, which keeps working while the screens are closed; null before initialize()
@@ -175,14 +177,15 @@ private:
     const Forms::Form* form(const std::string& id);
     void show();   // shows the navigator's current screen
 
-    // The user asked to leave the current screen (or every screen): asks the
-    // providers, and warns once if they object (Provider::leaving)
-    bool mayLeave(bool everything);
+    // The user asked to leave the current screen (or every screen) that way:
+    // asks the providers, and warns once per way of leaving if they object
+    // (Provider::leaving, LeaveWarning)
+    bool mayLeave(bool everything, Manager::Leave how);
     bool requestBack();
-    bool requestClose();
+    bool requestClose(Manager::Leave how = Manager::Leave::Close);
 
     void handleResult(const Forms::Model::Result& result);
-    void setStatus(const std::string& message, bool isError);
+    void setStatus(const std::string& message, Forms::StatusKind kind);
     bool buildPage();
     void destroyPage();
     void handleWidgetResults();
@@ -225,13 +228,13 @@ private:
     bool focusNext_ = false;   // give the panel keyboard/gamepad focus on the next frame
     bool reloadRequested_ = false;
     bool reloadWhenClosed_ = false;   // Services::requestReload was called
-    bool leaveWarned_ = false;        // a provider objected to leaving; doing it again leaves
+    Manager::LeaveWarning leave_;     // a provider objected to leaving one way; leaving that way again leaves
     int cursorWasShown_ = SDL_ENABLE;
     // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
     inline static Manager::LaunchQueue launches_;
 
     std::string status_;
-    bool statusIsError_ = false;
+    Forms::StatusKind statusKind_ = Forms::StatusKind::Success;
     std::string layoutPage_ = "layout";
 
     std::unique_ptr<Manager::ImGuiScreen> screen_;                 // the current screen, when it draws itself

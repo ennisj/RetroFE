@@ -324,7 +324,7 @@ bool ManagerUI::push(const std::string& form, const Forms::Params& params)
     // A form that doesn't exist (e.g. a typo in open="") is reported where the user is
     if (!this->form(form)) {
         LOG_ERROR("Manager", "Can't open " + form + ": there's no such form");
-        setStatus("This screen isn't available (" + form + "). Check the log for details.", true);
+        setStatus("This screen isn't available (" + form + "). Check the log for details.", Forms::StatusKind::Error);
         return false;
     }
     nav_.push(form, params, widget_ ? widget_->focus() : Forms::Focus{});
@@ -342,7 +342,7 @@ void ManagerUI::back()
     }
 }
 
-bool ManagerUI::mayLeave(bool everything)
+bool ManagerUI::mayLeave(bool everything, Manager::Leave how)
 {
     // The current screen, or every screen when the manager is closing
     std::vector<Manager::Screen> leaving;
@@ -355,7 +355,7 @@ bool ManagerUI::mayLeave(bool everything)
     }
     // A screen with its own dialog for unsaved changes asks there
     if (screen_ && screen_->askToLeave()) {
-        leaveWarned_ = false;
+        leave_.reset();
         return false;
     }
     std::string warning;
@@ -371,13 +371,11 @@ bool ManagerUI::mayLeave(bool everything)
             break;
         }
     }
-    if (warning.empty()) {
-        leaveWarned_ = false;
+    switch (leave_.ask(how, warning)) {
+    case Manager::LeaveWarning::Verdict::Leave:
         return true;
-    }
-    // Asked once already: leave, dropping the changes
-    if (leaveWarned_) {
-        leaveWarned_ = false;
+    case Manager::LeaveWarning::Verdict::LeaveDropping:
+        // Warned about leaving this way already: leave, dropping the changes
         if (screen_) {
             screen_->discard();
         }
@@ -385,24 +383,25 @@ bool ManagerUI::mayLeave(bool everything)
             model_.discard(screen);
         }
         return true;
+    case Manager::LeaveWarning::Verdict::Warn:
+        break;
     }
-    leaveWarned_ = true;
-    setStatus(warning, true);
+    setStatus(leave_.message(), Forms::StatusKind::Error);
     return false;
 }
 
 bool ManagerUI::requestBack()
 {
-    if (!mayLeave(nav_.depth() <= 1)) {
+    if (!mayLeave(nav_.depth() <= 1, Manager::Leave::Back)) {
         return false;
     }
     back();
     return true;
 }
 
-bool ManagerUI::requestClose()
+bool ManagerUI::requestClose(Manager::Leave how)
 {
-    if (!mayLeave(true)) {
+    if (!mayLeave(true, how)) {
         return false;
     }
     close();
@@ -411,7 +410,7 @@ bool ManagerUI::requestClose()
 
 bool ManagerUI::requestQuit()
 {
-    if (!requestClose()) {
+    if (!requestClose(Manager::Leave::Quit)) {
         return false;
     }
     reloadRequested_ = false;
@@ -433,7 +432,7 @@ void ManagerUI::show()
     bool wasOpen = open_;
     status_.clear();
     capture_.clear();   // a capture belongs to the screen that asked for it
-    leaveWarned_ = false;
+    leave_.reset();
     launches_.screenChanged();
     view_.reset();
     focusNext_ = true;
@@ -475,7 +474,7 @@ void ManagerUI::show()
 void ManagerUI::close()
 {
     nav_.clear();
-    leaveWarned_ = false;
+    leave_.reset();
     capture_.clear();
     if (!open_) {
         return;
@@ -696,7 +695,7 @@ void ManagerUI::updateCapture()
         std::string prompt = capture_.prompt(now);
         if (prompt != capturePrompt_) {
             capturePrompt_ = prompt;
-            setStatus(prompt, false);
+            setStatus(prompt, Forms::StatusKind::Info);
         }
         break;
     }
@@ -719,7 +718,7 @@ void ManagerUI::updateCapture()
     case Manager::InputCapture::State::TimedOut: {
         std::string message = capture_.endMessage();
         endCapture();
-        setStatus(message, false);
+        setStatus(message, Forms::StatusKind::Info);   // cancelled or timed out: nothing was added
         break;
     }
     case Manager::InputCapture::State::Idle:
@@ -748,7 +747,7 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == toggleKey_ && !locked_) {
         // Opens Settings, or closes it; from another screen it switches to
         // Settings. Either way the screens open now are left.
-        if (!e.key.repeat && mayLeave(true)) {
+        if (!e.key.repeat && mayLeave(true, Manager::Leave::Close)) {
             nav_.toggle(settingsForm) ? show() : close();
         }
         return true;
@@ -889,7 +888,7 @@ void ManagerUI::navigate(const Controls& held, float now)
         }
         // Back after a warning about leaving leaves; anything else and it warns again
         if (navs[i] != FormWidget::Nav::Back) {
-            leaveWarned_ = false;
+            leave_.reset();
         }
         if (!widget_->navigate(navs[i])) {
             requestBack();
@@ -956,7 +955,7 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
     // asking again leaves them), and RetroFE starts it once it's reloaded if it has to
     if (launches_.handle(result.ok, [this](bool discard) {
             if (discard) {
-                leaveWarned_ = true;   // warned last time: this time the changes go
+                leave_.arm(Manager::Leave::Close);   // warned last time: this time the changes go
             }
             return requestClose();
         })) {
@@ -987,7 +986,7 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         }
     }
     if (open_) {
-        setStatus(result.message, !result.ok);
+        setStatus(result.message, Forms::statusKind(result));
     }
     // Press it now: the next input becomes a token for result.capture
     if (open_ && result.ok && !result.capture.empty()) {
@@ -997,19 +996,19 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         captureBind_ = result.capture;
         captureAction_ = result.captureAction;
         capturePrompt_ = capture_.prompt(now);
-        setStatus(capturePrompt_, false);
+        setStatus(capturePrompt_, Forms::StatusKind::Info);
     }
 }
 
-void ManagerUI::setStatus(const std::string& message, bool isError)
+void ManagerUI::setStatus(const std::string& message, Forms::StatusKind kind)
 {
     status_ = message;
-    statusIsError_ = isError;
+    statusKind_ = kind;
     if (widget_) {
-        widget_->setStatus(message, isError);
+        widget_->setStatus(message, kind);
     }
     if (screen_ && !message.empty()) {
-        screen_->setStatus(message, isError);
+        screen_->setStatus(message, kind == Forms::StatusKind::Error);
     }
 }
 
@@ -1081,7 +1080,8 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
     }
-    setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem, !problem.empty());
+    setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem,
+              problem.empty() ? Forms::StatusKind::Info : Forms::StatusKind::Error);
 }
 
 std::string ManagerUI::gameTitle(const std::string& collection, const std::string& game) const
@@ -1140,7 +1140,11 @@ void ManagerUI::drawWindow()
 
     if (!status_.empty()) {
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
+        // Red for errors, green for successes, the plain text colour when nothing happened
+        ImVec4 color = statusKind_ == Forms::StatusKind::Error ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f)
+                     : statusKind_ == Forms::StatusKind::Info  ? ImGui::GetStyleColorVec4(ImGuiCol_Text)
+                                                               : ImVec4(0.5f, 0.9f, 0.5f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::TextWrapped("%s", status_.c_str());
         ImGui::PopStyleColor();
     }

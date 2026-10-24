@@ -1216,6 +1216,7 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 			{ "rowDetailColor", FormWidget::FontRole::Detail },
 			{ "headerColor", FormWidget::FontRole::Header },
 			{ "statusColor", FormWidget::FontRole::Status },
+			{ "infoColor", FormWidget::FontRole::Info },
 			{ "errorColor", FormWidget::FontRole::Error },
 		};
 		for (const auto& [attribute, role] : colorFonts) {

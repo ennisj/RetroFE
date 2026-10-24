@@ -223,13 +223,22 @@ Things to know:
   choice: big files still cost a decode each.
 - **Leaving**: `leaving(screen)` is asked when the user leaves a screen with
   Back or Escape, and for every open screen when the manager closes or F10
-  switches to Settings. Return a warning to stop them once; leaving again
-  calls `discard(screen)` and goes.
+  switches to Settings. Return a warning to stop them once; leaving the same
+  way again calls `discard(screen)` and goes. The ways of leaving (Back,
+  closing Manage, closing RetroFE's window) each warn once
+  (`Manager/LeaveWarning.h`), so a window close after a Back warning warns
+  again; for a window close "leave again to " in the warning becomes "close
+  the window again to quit and ", so word warnings "... Save them, or leave
+  again to discard them.".
 - **Saving**: the convention for Save/Reset screens is in
   `Manager/EditBuffer.h`: `load()` in `enter()`, `get`/`set` through it,
   `isDirty` for `visibleWhen`/`enabledWhen`, `save` writes `changes()` and
   `commit()`s, `reset`/`discard()` call `reset()`, and `leaving()` warns
   while `isDirty()`.
+- **Messages**: `Result::message` shows green when `ok`, red when not. Set
+  `Result::info` when nothing happened (Undo/Reset, a cancel, "X is already
+  in Y", an edit that wrote no files): it's shown plain (`infoColor`), not
+  as a success or an error, whatever `ok` says (`Forms::statusKind`).
 - **Confirming**: put `confirm="Delete this game?"` on the button; the action
   only runs on the second Select, so `runAction` doesn't need to ask.
 - **Buttons that hide themselves** (`visibleWhen` that turns off once

@@ -315,6 +315,8 @@ static Test::Suite controlsSuite("controls", [] {
         check(contains(added.message, "Page up"), "warns PageUp is also Page up's input: " + added.message);
         Forms::Model::Result again = f.capture("PageUp");
         check(!again.ok && contains(again.message, "already"), "not twice");
+        check(Forms::statusKind(again) == Forms::StatusKind::Info, "said as a neutral note, not an error");
+        check(Forms::statusKind(added) == Forms::StatusKind::Success, "an add is a success");
         checkEqual(f.model->get("control:isDirty"), "yes", "a change waiting");
 
         f.model->setScreen("control", { { "id", "manager" } });
@@ -349,6 +351,14 @@ static Test::Suite controlsSuite("controls", [] {
         check(contains(readFile(root + "/controls.conf"), "select = Return,joyA,joyUnmappedButton0\r\n"), "select's default in controls.conf");
         checkEqual(f.model->get("control:isDirty"), "no", "nothing waiting");
         check(f.model->leaving({ "controls", {} }).empty(), "leaving is fine now");
+
+        // Undo changes: they go, said as a neutral note (QA round 10, problem 5)
+        f.model->setScreen("control", { { "id", "letterDown" } });
+        check(f.capture("Y").ok, "a change to undo");
+        Forms::Model::Result undone = f.model->runAction("control.reset");
+        check(undone.ok && undone.message == "Changes undone." && Forms::statusKind(undone) == Forms::StatusKind::Info,
+              "undo reads as nothing happened: " + undone.message);
+        checkEqual(f.model->get("control:isDirty"), "no", "nothing waiting after the undo");
     });
 
     run("controls: key names with a comma can't be written; the comma key itself round-trips", [] {

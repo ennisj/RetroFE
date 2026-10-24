@@ -483,6 +483,7 @@ Forms::Model::Result EmulatorProvider::saveEdit(const Manager::Screen& screen)
     patches_++;
     loadEdit(screen);   // the file as saved
     result.ok = true;
+    result.info = edit.files.empty();   // "... already has these settings."
     return result;
 }
 
@@ -1128,6 +1129,7 @@ Forms::Model::Result EmulatorProvider::runAction(const std::string& action, cons
         result.ok = true;
         if (action == "resetEdit") {
             edit_.reset();
+            result.info = true;
         }
         else {
             // In the launcher screen's place: once renamed, the launcher's screen

@@ -23,6 +23,7 @@
 #include "../Source/Forms/SettingsFile.h"
 #include "../Source/Library/ConfFile.h"
 #include "../Source/Manager/EditBuffer.h"
+#include "../Source/Manager/LeaveWarning.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Navigator.h"
 #include "../Source/Manager/Provider.h"
@@ -606,5 +607,64 @@ void runFormsTests()
         checkEqual(model.leaving(settings), "", "dropped");
         checkEqual(model.get("settings:hideMouse"), "no", "back to the saved value");
         checkEqual(readFile(root + "/settings.conf"), "hideMouse = no\n", "nothing was written");
+    });
+
+    run("each way of leaving gets its own unsaved-changes warning", [&] {
+        using Manager::Leave;
+        using Verdict = Manager::LeaveWarning::Verdict;
+        const std::string warning = "You have unsaved changes. Save them, or leave again to discard them.";
+        Manager::LeaveWarning w;
+
+        check(w.ask(Leave::Back, "") == Verdict::Leave, "nothing unsaved: leave");
+        check(w.ask(Leave::Back, warning) == Verdict::Warn, "Back warns first");
+        checkEqual(w.message(), warning, "in the screen's own words");
+        check(w.ask(Leave::Back, warning) == Verdict::LeaveDropping, "Back again leaves, dropping the changes");
+        check(!w.warned().has_value(), "and the warning is used up");
+
+        // QA round 10, problem 4: a window close after a Back warning warns again
+        check(w.ask(Leave::Back, warning) == Verdict::Warn, "Back warns");
+        check(w.ask(Leave::Quit, warning) == Verdict::Warn, "then closing the window warns too, rather than quitting");
+        checkEqual(w.message(), std::string("You have unsaved changes. Save them, or close the window again to quit and discard them."),
+                   "saying that closing again quits");
+        check(w.ask(Leave::Quit, warning) == Verdict::LeaveDropping, "a second close quits");
+
+        // The Settings key (or Close) after a Back warning warns too, in Back's words
+        check(w.ask(Leave::Back, warning) == Verdict::Warn && w.ask(Leave::Close, warning) == Verdict::Warn,
+              "the Settings key after a Back warning warns again");
+        checkEqual(w.message(), warning, "with the same words: leaving again leaves");
+        check(w.ask(Leave::Close, warning) == Verdict::LeaveDropping, "and pressing it again leaves");
+
+        // A close warning, then Back: Back warns in its own words
+        check(w.ask(Leave::Quit, warning) == Verdict::Warn && w.ask(Leave::Back, warning) == Verdict::Warn, "Back after a close warning warns");
+        checkEqual(w.message(), warning, "as Back");
+
+        // Moving on the screen (or another screen) starts over
+        w.reset();
+        check(w.ask(Leave::Back, warning) == Verdict::Warn, "after a reset it warns again");
+
+        // Changes saved meanwhile: nothing to warn about, and the state is cleared
+        check(w.ask(Leave::Quit, "") == Verdict::Leave && !w.warned().has_value(), "saved meanwhile: leave");
+
+        // A game asked for again after its launch was refused: the close counts as the second
+        w.arm(Leave::Close);
+        check(w.ask(Leave::Close, warning) == Verdict::LeaveDropping, "armed: the next close leaves");
+
+        checkEqual(Manager::LeaveWarning::wording("Your control changes aren't saved. Save them, or leave again to drop them.", Leave::Quit),
+                   std::string("Your control changes aren't saved. Save them, or close the window again to quit and drop them."),
+                   "a close reworded");
+        checkEqual(Manager::LeaveWarning::wording("Unsaved changes.", Leave::Quit),
+                   std::string("Unsaved changes. Close the window again to quit anyway."), "a warning without \"leave again\" gets a sentence");
+        checkEqual(Manager::LeaveWarning::wording(warning, Leave::Close), warning, "Close keeps the words");
+    });
+
+    run("results that report nothing happened are shown as neutral notes", [&] {
+        Forms::Model::Result result;
+        check(Forms::statusKind(result) == Forms::StatusKind::Error, "not ok: an error");
+        result.ok = true;
+        check(Forms::statusKind(result) == Forms::StatusKind::Success, "ok: a success");
+        result.info = true;
+        check(Forms::statusKind(result) == Forms::StatusKind::Info, "nothing happened: neutral");
+        result.ok = false;
+        check(Forms::statusKind(result) == Forms::StatusKind::Info, "even when it didn't run (\"is already one of its inputs\")");
     });
 }
