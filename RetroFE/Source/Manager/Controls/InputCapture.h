@@ -62,6 +62,12 @@ namespace Manager
         // Why it ended without an input, for Cancelled and TimedOut
         std::string endMessage() const;
 
+        // A stick or trigger's state, -1, 0 or +1, after it moved delta from
+        // where it rests: pressed past half way, let go below a quarter (in
+        // between it stays as it was). From one way straight to the other it
+        // goes through 0 first, so the release is seen before the new press.
+        static int axisState(int held, int delta);
+
     private:
         static bool isController(const InputToken::Input& input);
         static bool isJoystick(const InputToken::Input& input);

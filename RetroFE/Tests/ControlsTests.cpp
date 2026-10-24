@@ -18,6 +18,7 @@
 
 #include "TestSupport.h"
 #include "../Source/Control/InputToken.h"
+#include "../Source/Control/JoystickSlots.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Library/Edits.h"
 #include "../Source/Manager/Controls/ControlsProvider.h"
@@ -62,7 +63,7 @@ namespace
 
     struct Fixture
     {
-        explicit Fixture(const std::string& root)
+        explicit Fixture(const std::string& root, std::function<std::vector<std::string>(const std::string&)> sameInputs = {})
             : editor(root)
         {
             Configuration::absolutePath = root;
@@ -71,6 +72,7 @@ namespace
             Manager::Services services{ *config };
             services.editor = &editor;
             services.reloadControls = [this] { reloads++; };
+            services.sameInputs = std::move(sameInputs);
             model->addProvider(std::make_unique<Manager::ControlsProvider>(services));
         }
 
@@ -177,14 +179,14 @@ static Test::Suite controlsSuite("controls", [] {
     });
 
     run("controls: built-in defaults and the control list", [] {
-        checkEqual(ControlList::builtinDefault("select"), "Return,joyButton0", "from Builtin::controls");
+        checkEqual(ControlList::builtinDefault("select"), "Return,joyA", "from Builtin::controls: pads by controller name");
         checkEqual(ControlList::builtinDefault("manager"), "F10", "the Settings key");
         checkEqual(ControlList::builtinDefault("letterUp"), "", "none");
         int required = 0;
         for (const ControlList::Control& control : ControlList::all()) {
             required += control.required ? 1 : 0;
         }
-        checkEqual(std::to_string(required), "5", "up, down, select, back and Open Settings are guarded");
+        checkEqual(std::to_string(required), "4", "up, down, select and back are guarded (Open Settings falls back to F10)");
         check(ControlList::find("quitCombo") && ControlList::find("quitCombo")->combo, "combos are marked");
     });
 
@@ -254,7 +256,12 @@ static Test::Suite controlsSuite("controls", [] {
         check(!editor.setControls({ { "deadZone", "300" } }).ok, "dead zone 0-100");
         Library::EditResult locked = editor.setControls({ { "back", "" } });
         check(!locked.ok && contains(locked.message, "Back"), "Back can't be left without an input: " + locked.message);
-        check(!editor.setControls({ { "manager", "joyGuide" } }).ok, "Open Settings needs a keyboard key");
+        checkEqual(Library::Editor::checkControls({ { "manager", "joyGuide" } }), "", "Open Settings with only a pad button: F10 at runtime, not a lock-out");
+        checkEqual(Library::Editor::checkControls({ { "manager", "joyGuide,F9" } }), "", "with a key too");
+        checkEqual(Library::Editor::checkControls({ { "letterUp", "" } }), "", "optional controls may be empty");
+        check(!Library::Editor::checkControls({ { "up", "joyNope" } }).empty(), "a guarded control with nothing that works");
+        checkEqual(readFile(root + "/controls1.conf"), "# local\nselect = Return,joyA\n", "select only in the last file that sets it");
+        check(contains(readFile(root + "/controls.conf"), "select = 1,Return,joyA,joyStart\r\n"), "controls.conf's select untouched");
         check(contains(readFile(root + "/controls.conf"), "back = F11,joyBack,Escape"), "nothing written by refusals");
     });
 
@@ -264,7 +271,7 @@ static Test::Suite controlsSuite("controls", [] {
         Library::EditResult result = editor.setControls({ { "letterDown", "N" } });
         check(result.ok, "saved: " + result.message);
         std::string text = readFile(root + "/controls.conf");
-        check(contains(text, "select = Return,joyButton0"), "the built-in controls RetroFE was using");
+        check(contains(text, "select = Return,joyA"), "the built-in controls RetroFE was using");
         check(contains(text, "letterDown = N"), "plus the change");
         check(fs::exists(root + "/manage/backups/controls.conf.absent"), "recorded as new, so a reset removes it");
     });
@@ -281,7 +288,7 @@ static Test::Suite controlsSuite("controls", [] {
         std::string notes = f.model->get("control:notes");
         check(contains(notes, "RetroFE skips \"joyFoo\"") && contains(notes, "uses its default"), "explained: " + notes);
         f.model->set("control:deadZone", "20");
-        check(contains(f.model->actionProblem("control.save"), "Select"), "any change waits until Select has an input that works");
+        checkEqual(f.model->actionProblem("control.save"), "", "unrelated changes aren't held up by a control left as it was");
     });
 
     run("controls: the Controls screen lists, captures, removes, guards and saves", [] {
@@ -338,8 +345,100 @@ static Test::Suite controlsSuite("controls", [] {
         check(saved.ok && contains(saved.message, "controls1.conf") && contains(saved.message, "controls.conf"), "saved: " + saved.message);
         checkEqual(std::to_string(f.reloads), "1", "RetroFE re-reads its controls");
         checkEqual(readFile(root + "/controls1.conf"), "letterUp = M,joyButton5,PageUp\n", "letterUp in its override");
-        check(contains(readFile(root + "/controls.conf"), "select = Return,joyButton0\r\n"), "select's default in controls.conf");
+        check(contains(readFile(root + "/controls.conf"), "select = Return,joyA\r\n"), "select's default in controls.conf");
         checkEqual(f.model->get("control:isDirty"), "no", "nothing waiting");
         check(f.model->leaving({ "controls", {} }).empty(), "leaving is fine now");
+    });
+
+    run("controls: key names with a comma can't be written; the comma key itself round-trips", [] {
+        InputToken::Input keypad = InputToken::parse("Keypad ,");
+        check(keypad.kind == Kind::Invalid && contains(keypad.problem, "comma"), "refused: " + keypad.problem);
+        check(InputToken::parse(",").kind == Kind::Keyboard, "the comma key is fine");
+
+        std::string root = makeRoot("controls_comma");
+        writeFile(root + "/controls.conf", oneSauce);
+        Fixture f(root);
+        f.model->setScreen("control", { { "id", "quit" } });
+        Forms::Model::Result comma = f.capture(",");
+        check(comma.ok, "the comma key captured: " + comma.message);
+        Forms::Model::Result keypadComma = f.capture("Keypad ,");
+        check(!keypadComma.ok && contains(keypadComma.message, "comma"), "Keypad , isn't added: " + keypadComma.message);
+        check(f.model->runAction("control.save").ok, "saved");
+        check(contains(readFile(root + "/controls.conf"), "quit = ,Q\r\n"), "written comma first");
+        Fixture again(root);
+        again.model->setScreen("control", { { "id", "quit" } });
+        Forms::Rows rows = again.model->rows("control:inputs", 200);
+        check(rows.items.size() == 2 && rows.items[0].id == "," && rows.items[1].id == "Q", "and read back as the comma key and Q");
+    });
+
+    run("controls: with no controls.conf the screen shows the built-in controls and saves into a new one", [] {
+        std::string root = makeRoot("controls_bare");
+        Fixture f(root);
+        f.model->setScreen("controls", {});
+        const Forms::Row* select = f.row("Essential", "select");
+        check(select && select->detail == "Keyboard Return, Controller A", "built-in select");
+        const Forms::Row* letter = f.row("Navigation", "letterUp");
+        check(letter && letter->detail == "No input", "nothing built in");
+        checkEqual(f.model->get("control:deadZone"), "30", "built-in dead zone");
+        f.model->setScreen("control", { { "id", "select" } });
+        check(contains(f.model->get("control:notes"), "no controls.conf"), "says so");
+        check(f.capture("Space").ok, "added");
+        check(f.model->runAction("control.save").ok, "saved");
+        std::string text = readFile(root + "/controls.conf");
+        check(contains(text, "select = Return,joyA,Space") && contains(text, "back = Escape,joyB"), "a full controls.conf: " + text);
+    });
+
+    run("controls: an empty value stays empty, and Open Settings without a key is F10", [] {
+        std::string root = makeRoot("controls_blank");
+        writeFile(root + "/controls.conf", std::string(oneSauce) + "manager = joyGuide\r\n");
+        writeFile(root + "/controls1.conf", "quit =\n");
+        Fixture f(root);
+        f.model->setScreen("control", { { "id", "quit" } });
+        checkEqual(f.model->get("control:hasInputs"), "no", "quit = binds nothing, as upstream");
+        check(contains(f.model->get("control:notes"), "nothing is bound"), "said: " + f.model->get("control:notes"));
+        f.model->setScreen("control", { { "id", "manager" } });
+        check(contains(f.model->get("control:notes"), "uses F10"), "said: " + f.model->get("control:notes"));
+        f.model->set("control:deadZone", "25");
+        checkEqual(f.model->actionProblem("control.save"), "", "neither blocks saving");
+    });
+
+    run("controls: the same button under another name on a connected pad is a duplicate too", [] {
+        std::string root = makeRoot("controls_twins");
+        writeFile(root + "/controls.conf", "select = Return\nback = Escape,joyButton1\nup = Up\ndown = Down\n");
+        // A DualShock through DirectInput: Cross (joyA) is joyButton1
+        Fixture f(root, [](const std::string& token) {
+            if (token == "joyA") return std::vector<std::string>{ "joyButton1" };
+            if (token == "joyButton1") return std::vector<std::string>{ "joyA" };
+            return std::vector<std::string>{};
+        });
+        f.model->setScreen("control", { { "id", "select" } });
+        Forms::Model::Result added = f.capture("joyA");
+        check(added.ok && contains(added.message, "Back"), "warns it's Back's button too: " + added.message);
+        check(contains(f.model->get("control:notes"), "Back"), "and the control says so");
+    });
+
+    run("controls: joystick slots never give a slot to an invalid id", [] {
+        JoystickSlots slots(2);
+        checkEqual(std::to_string(slots.slotOf(-1)), "-1", "no slot for -1 (a stale device index)");
+        checkEqual(std::to_string(slots.add(-1)), "-1", "nor a new one");
+        checkEqual(std::to_string(slots.add(7)), "0", "first pad is joy0");
+        checkEqual(std::to_string(slots.add(7)), "0", "told twice, same slot");
+        checkEqual(std::to_string(slots.add(9)), "1", "second pad");
+        checkEqual(std::to_string(slots.add(11)), "-1", "no room");
+        checkEqual(std::to_string(slots.remove(7)), "0", "first unplugged");
+        checkEqual(std::to_string(slots.slotOf(-1)), "-1", "a free slot isn't anyone's");
+        checkEqual(std::to_string(slots.add(11)), "0", "the free slot is reused");
+        checkEqual(std::to_string(slots.remove(42)), "-1", "unknown id");
+    });
+
+    run("controls: sticks and triggers count past half way and let go below a quarter", [] {
+        using Manager::InputCapture;
+        checkEqual(std::to_string(InputCapture::axisState(0, 16000)), "0", "not yet");
+        checkEqual(std::to_string(InputCapture::axisState(0, 16384)), "1", "half way");
+        checkEqual(std::to_string(InputCapture::axisState(0, -20000)), "-1", "the other way");
+        checkEqual(std::to_string(InputCapture::axisState(1, 9000)), "1", "still held above a quarter");
+        checkEqual(std::to_string(InputCapture::axisState(1, 8000)), "0", "let go");
+        checkEqual(std::to_string(InputCapture::axisState(1, -30000)), "0", "straight across: released first");
+        checkEqual(std::to_string(InputCapture::axisState(0, 65535)), "1", "a trigger from its rest at one end");
     });
 });

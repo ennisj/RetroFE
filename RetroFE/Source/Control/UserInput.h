@@ -17,6 +17,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_gamecontroller.h>
 #include <SDL2/SDL_joystick.h>
+#include "JoystickSlots.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -118,11 +119,10 @@ private:
     void MapRequired(const std::string& keyDescription, KeyCode_E key, const std::string& alternative = "");
     bool HandleInputMapping(const std::string& token, KeyCode_E key, const std::string& configKey);
     bool MapKeyCombo(const std::string& keyDescription, KeyCode_E key1, KeyCode_E key2, bool required);
-    int slotOf(SDL_JoystickID id) const;
     void openController(int deviceIndex, int slot);
     Configuration& config_;
     bool updated_{ false };
-    SDL_JoystickID joysticks_[cMaxJoy];
+    JoystickSlots slots_{ cMaxJoy };              // SDL instance ids of joy0, joy1...
     SDL_GameController* controllers_[cMaxJoy];   // by slot, for pads SDL has a mapping for
     std::vector<std::pair<InputHandler *, KeyCode_E> > keyHandlers_;
     bool lastKeyState_[KeyCodeMax]; 

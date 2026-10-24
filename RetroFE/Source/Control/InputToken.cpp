@@ -223,6 +223,10 @@ Input parse(const std::string& raw)
     if (token.find('#') != std::string::npos) {
         return invalid("\"#\" starts a comment in controls.conf, so it can't be used.");
     }
+    // Commas separate inputs: only the comma key itself has a way to be written (see join)
+    if (token != "," && token.find(',') != std::string::npos) {
+        return invalid("\"" + token + "\" has a comma in its name, which controls.conf can't hold.");
+    }
     const auto& check = keyNameCheck();
     if (check && !check(token)) {
         return invalid("\"" + token + "\" isn't a key name RetroFE knows.");
@@ -379,7 +383,7 @@ const std::vector<Control>& all()
         { "right", "Right", "Essential", "Moves right in horizontal menus, and changes values in Manage. Without it, Down is used." },
         { "select", "Select", "Essential", "Starts a game or opens the item.", true },
         { "back", "Back", "Essential", "Goes back a menu, and back in Manage.", true },
-        { "manager", "Open Settings", "Essential", "Opens this Settings screen. Only keyboard keys work here; the first one is used.", true, false, true },
+        { "manager", "Open Settings", "Essential", "Opens this Settings screen. Only keyboard keys work here; the first one is used, and F10 when there is none.", false, false, true },
         { "quit", "Quit", "Essential", "Exits RetroFE. Without it, Q is used." },
         { "pageUp", "Page up", "Navigation", "Jumps back a page; the previous region in the theme editor." },
         { "pageDown", "Page down", "Navigation", "Jumps forward a page; the next region in the theme editor." },

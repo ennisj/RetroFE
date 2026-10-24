@@ -456,6 +456,13 @@ bool RetroFE::run()
 	// Settings > Controls saves, then RetroFE uses the new controls at once
 	manager_.setControlsReload([this]() {
 		importControls();
+		// The page shown keeps its layout's controls - <type>.conf on top, as updatePageControls set it
+		std::string type = currentPage_ ? currentPage_->controlsType() : "";
+		std::string typeFile = Utils::combinePath(Configuration::absolutePath, "controls") + " - " + type + ".conf";
+		if (!type.empty() && fs::exists(typeFile))
+		{
+			config_.import("controls", typeFile);
+		}
 		input_.reconfigure();
 	});
 
@@ -622,8 +629,11 @@ bool RetroFE::run()
 			SDL_Event e;
 			while (SDL_PollEvent(&e))
 			{
-				// What the manager doesn't use directly reaches it through the controls below
-				if (!manager_.handleEvent(e))
+				// What the manager doesn't use directly reaches it through the controls below.
+				// Pads coming and going always reach RetroFE's input, whatever the screen
+				// does with them, so its joy0.. slots and controllers stay right.
+				bool device = e.type == SDL_JOYDEVICEADDED || e.type == SDL_JOYDEVICEREMOVED || e.type == SDL_CONTROLLERDEVICEADDED;
+				if (!manager_.handleEvent(e) || device)
 				{
 					input_.update(e);
 				}

@@ -79,7 +79,7 @@ Compat code is marked "Fork compat" in the source. Layout parsing is in
 | `searchMediaWithoutParenthesis = true` | 2 collections (Sega Genesis, Sega MSU-MD) | Find art by the name without "(USA)" etc. Whether as fallback or instead, and whether [brackets] too, isn't clear. | **Unclear**. |
 | `custom = yes` (info.conf) | 3 collections | | **Unclear**, harmless. |
 | `media.basePath`, `list.includeFile`/`excludeFile`, `launcher = a, b, c`, `list.romHierarchy` | collections | | Already supported (DECISIONS LB4, LB11, LB12). |
-| SDL game controller names in controls.conf (`joyA`, `joyDPUp`, `joyLeftX-`, `joyRightTrigger`) | controls.conf | SDL GameController button and axis names. Clear. | **Not implemented** (needs SDL GameController input; RetroFE exits with "Could not initialize user controls" without a controls1.conf that remaps them). The most visible gap left. |
+| SDL game controller names in controls.conf (`joyA`, `joyDPUp`, `joyLeftX-`, `joyRightTrigger`) | controls.conf | SDL GameController button and axis names. Clear. | **Implemented**: every token in OneSauce's controls.conf (buttons, d-pad, sticks with `+`/`-`, triggers, `joy0DPDown`) through SDL's game controller support, alongside the joystick tokens; pads plugged in later work. An unknown token is skipped with a warning and never stops RetroFE (a control left with nothing that works gets the built-in default). OneSauce's file runs without a controls1.conf; Settings > Controls edits it. See CONTROLS.md. |
 
 ## Also changed
 

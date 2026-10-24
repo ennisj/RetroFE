@@ -19,7 +19,8 @@ adds one when you press it.
 RetroFE reads `controls.conf`, then `controls1.conf` to `controls9.conf` on
 top of it: a control set in a later file replaces the whole value from an
 earlier one. Without a `controls.conf`, RetroFE uses its built-in controls
-(arrows, Return, Escape, Q, Page Up/Down and the first joystick). A layout
+(arrows, Return, Escape, Q, Page Up/Down, and a pad's d-pad, left stick, A
+and B). A layout
 can add `controls - <type>.conf` for its pages (the layout's `controls`
 attribute).
 
@@ -30,11 +31,26 @@ inputs. RetroFE never stops because of one.
 ## RetroFE Control Keys
 
 ### Essential
-RetroFE always has these. When one isn't set, or none of its inputs works,
-RetroFE uses its partner (Up for Left, Left for Up, Down for Right, Right for
-Down) or else its built-in default (`up = Up,joyHat0Up,joyAxis1-`,
-`select = Return,joyButton0`, `back = Escape,joyButton1`, `quit = Q`...),
-with a warning in the log.
+RetroFE always has these, unless you leave one empty on purpose:
+
+- **Not set** in any file: Up, Down, Left and Right use their partner's
+  inputs (Up for Left, Left for Up, Down for Right, Right for Down) as
+  before; failing that, and for Select, Back and Quit, RetroFE's built-in
+  default (below), with a warning in the log. (Upstream stopped instead.)
+- **Set, but none of its inputs is one RetroFE knows** (a typo, another
+  program's name): the built-in default, with a warning.
+- **Set to nothing** (`quit =`, e.g. on a kiosk so nobody can leave): nothing
+  is bound to it, as upstream; the log says so.
+
+The built-in defaults name pads by controller button, so A selects and B
+goes back on any pad SDL has a mapping for:
+`up = Up,joyDPUp,joyLeftY-,joyHat0Up,joyAxis1-` (and the same for the other
+directions), `select = Return,joyA`, `back = Escape,joyB`, `quit = Q`. Raw
+button numbers aren't in them, because on some pads (a DualShock read through
+DirectInput) `joyButton1` is the same button as `joyA`, which would make one
+button both Select and Back. A joystick SDL has no mapping for (some arcade
+encoders) still moves with the first hat and stick; give it buttons in
+Settings > Controls or `controls.conf`.
 | Control | Description |
 |---------|-------------|
 | `up` | Scrolls menu up (for vertical menus) |
@@ -44,7 +60,7 @@ with a warning in the log.
 | `select` | Selects the active menu item |
 | `back` | Leaves current menu |
 | `quit` | Exits the frontend |
-| `manager` | Opens Settings (default F10). Keyboard keys only: the first one listed is used. |
+| `manager` | Opens Settings (default F10). Keyboard keys only: the first one listed is used, and F10 when it lists none. |
 
 The Manage screens use `up`, `down`, `left`, `right`, `select` and `back`
 too, and the theme editor (Manage > Themes > Edit) adds `pageUp` / `pageDown`
@@ -150,7 +166,9 @@ same button whatever the pad. These are SDL's game controller names, with
 
 Like the joystick codes below, `joy0A` names the first pad connected and
 `joyA` any pad. Names aren't case-sensitive. A stick needs `+` or `-`; a
-button can't have one. Pads plugged in while RetroFE runs work straight away.
+button can't have one. A key whose name has a comma in it (`Keypad ,`)
+can't be used, as the comma separates inputs; the `,` key itself can (an
+empty entry stands for it: `random = ,R`). Pads plugged in while RetroFE runs work straight away.
 
 ## Gamepad/Joystick codes
 

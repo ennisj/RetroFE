@@ -287,6 +287,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Collection/MenuParser.h"
 	"${RETROFE_DIR}/Source/Control/UserInput.h"
 	"${RETROFE_DIR}/Source/Control/InputToken.h"
+	"${RETROFE_DIR}/Source/Control/JoystickSlots.h"
 	"${RETROFE_DIR}/Source/Control/ControllerHandlers.h"
 	"${RETROFE_DIR}/Source/Control/InputHandler.h"
 	"${RETROFE_DIR}/Source/Control/JoyAxisHandler.h"

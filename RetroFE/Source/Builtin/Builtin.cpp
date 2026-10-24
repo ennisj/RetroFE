@@ -33,15 +33,20 @@ firstCollection = Main
 homeMenu = yes
 )";
 
+// Pads by SDL's controller names, so A selects and B goes back on any pad SDL
+// has a mapping for (raw joyButton0/1 are other buttons on some, e.g. a DualShock
+// through DirectInput, and would cross Select and Back). Directions also keep
+// the first hat and stick, which are the same on mapped pads and still work on
+// joysticks SDL has no mapping for.
 const char* const controls = R"(
-up = Up,joyHat0Up,joyAxis1-
-down = Down,joyHat0Down,joyAxis1+
-left = Left,joyHat0Left,joyAxis0-
-right = Right,joyHat0Right,joyAxis0+
+up = Up,joyDPUp,joyLeftY-,joyHat0Up,joyAxis1-
+down = Down,joyDPDown,joyLeftY+,joyHat0Down,joyAxis1+
+left = Left,joyDPLeft,joyLeftX-,joyHat0Left,joyAxis0-
+right = Right,joyDPRight,joyLeftX+,joyHat0Right,joyAxis0+
 pageUp = PageUp
 pageDown = PageDown
-select = Return,joyButton0
-back = Escape,joyButton1
+select = Return,joyA
+back = Escape,joyB
 quit = Q
 deadZone = 30
 )";

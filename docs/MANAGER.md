@@ -510,22 +510,29 @@ controls share an input. From there:
   `joyAxis1-`). Inputs are added for any pad (no `joy0`). The mouse isn't
   captured. Open Settings takes keyboard keys only; a combo takes two inputs.
   An input another control already uses is added with a warning (it then
-  does both).
+  does both), also when it's the same button under another name on a pad
+  connected now (`joyA` and `joyButton1` on a DualShock read through
+  DirectInput, from SDL's mapping). A key whose name has a comma
+  (`Keypad ,`) can't be added: `controls.conf` couldn't hold it.
 - Choosing an input opens it, with **Remove this input**.
 - **Put back the default**: RetroFE's built-in inputs for the control
-  (`Return, joyButton0` for Select, F10 for Open Settings), or none for
-  controls that have no default.
+  (`Return, joyA` for Select, F10 for Open Settings), or none for controls
+  that have no default.
 
 Changes to every control are kept together until **Save** (on the list or a
 control's screen); **Undo changes** drops them, and leaving the list with
-changes asks first. Save refuses while Up, Down, Select, Back or Open
-Settings has no input that works, so you can't lock yourself out. Each value
+changes asks first. Save refuses a change that leaves Up, Down, Select or
+Back with no input that works, so you can't lock yourself out; a control
+already left empty in the file (`back =` on a kiosk) doesn't hold up other
+changes. Open Settings without a keyboard key is F10, and the screen says so. Each value
 is written where it comes from now: the `controlsN.conf` that sets it (the
 last one wins, as RetroFE reads them), otherwise `controls.conf` (made from
 the built-in controls when there isn't one). Only that line changes;
 comments, order and line endings stay, and the original file is kept in
 `manage/backups/` before the first change. RetroFE reads its controls again
-straight after Save, so the new inputs work at once, in Manage too.
+straight after Save, so the new inputs work at once, in Manage too (the page
+shown keeps its layout's `controls - <type>.conf` on top). The screens show
+`controls.conf` and `controls1..9.conf`, not a layout's own file.
 
 ### Styling the screens
 

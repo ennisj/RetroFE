@@ -14,16 +14,11 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "CaptureEvents.h"
+#include "../InputCapture.h"
 #include <cstdlib>
 
 namespace Manager
 {
-
-namespace
-{
-    const int pressedAt = 16384;   // half way
-    const int releasedAt = 8192;   // a quarter
-}
 
 bool CaptureEvents::isInput(const SDL_Event& e)
 {
@@ -43,25 +38,65 @@ CaptureEvents::Event CaptureEvents::axis(InputToken::Kind kind, SDL_JoystickID w
 {
     Event event;
     int& held = axes_[{ static_cast<int>(kind) * 1000 + which, axis }];
-    int now = held;
-    if (std::abs(delta) >= pressedAt) {
-        now = delta > 0 ? 1 : -1;
-    }
-    else if (std::abs(delta) < releasedAt) {
-        now = 0;
-    }
+    int now = InputCapture::axisState(held, delta);
     if (now == held) {
         return event;
     }
-    // From one way straight to the other: the release is enough, the next event presses
     event.input.kind = kind;
     event.input.index = axis;
     event.input.value = held != 0 ? held : now;
     event.type = held != 0 ? Event::Type::Up : Event::Type::Down;
-    held = held != 0 ? 0 : now;
+    held = now;
     return event;
 }
 
+int CaptureEvents::restOf(SDL_JoystickID which, int axis, Sint16 value)
+{
+    auto found = rests_.find({ which, axis });
+    if (found != rests_.end()) {
+        return found->second;
+    }
+    // Where SDL saw it at first; without that (some drivers), a value at
+    // either end when first seen is a trigger resting there
+    Sint16 initial = 0;
+    SDL_Joystick* joystick = SDL_JoystickFromInstanceID(which);
+    int rest = 0;
+    if (joystick && SDL_JoystickGetAxisInitialState(joystick, axis, &initial)) {
+        rest = initial;
+    }
+    else if (value >= 24000 || value <= -24000) {
+        rest = value;
+    }
+    rests_[{ which, axis }] = rest;
+    return rest;
+}
+
+void CaptureEvents::start()
+{
+    axes_.clear();
+    rests_.clear();
+    hats_.clear();
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
+        SDL_Joystick* joystick = id >= 0 ? SDL_JoystickFromInstanceID(id) : nullptr;
+        if (!joystick) {
+            continue;   // not opened: its events don't come
+        }
+        for (int a = 0; a < SDL_JoystickNumAxes(joystick); a++) {
+            Sint16 value = SDL_JoystickGetAxis(joystick, a);
+            axes_[{ static_cast<int>(InputToken::Kind::JoyAxis) * 1000 + id, a }] = InputCapture::axisState(0, value - restOf(id, a, value));
+        }
+        for (int h = 0; h < SDL_JoystickNumHats(joystick); h++) {
+            hats_[{ id, h }] = SDL_JoystickGetHat(joystick, h);
+        }
+        if (SDL_GameController* pad = SDL_GameControllerFromInstanceID(id)) {
+            for (int a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++) {
+                Sint16 value = SDL_GameControllerGetAxis(pad, static_cast<SDL_GameControllerAxis>(a));
+                axes_[{ static_cast<int>(InputToken::Kind::ControllerAxis) * 1000 + id, a }] = InputCapture::axisState(0, value);
+            }
+        }
+    }
+}
 CaptureEvents::Event CaptureEvents::read(const SDL_Event& e)
 {
     Event event;
@@ -107,11 +142,8 @@ CaptureEvents::Event CaptureEvents::read(const SDL_Event& e)
     }
     case SDL_JOYAXISMOTION: {
         // Measured from where it rests: a trigger read as a joystick axis rests at one end
-        Sint16 rest = 0;
-        if (SDL_Joystick* joystick = SDL_JoystickFromInstanceID(e.jaxis.which)) {
-            SDL_JoystickGetAxisInitialState(joystick, e.jaxis.axis, &rest);
-        }
-        event = axis(InputToken::Kind::JoyAxis, e.jaxis.which, e.jaxis.axis, e.jaxis.value - rest);
+        event = axis(InputToken::Kind::JoyAxis, e.jaxis.which, e.jaxis.axis, e.jaxis.value - restOf(e.jaxis.which, e.jaxis.axis, e.jaxis.value));
+
         break;
     }
     case SDL_CONTROLLERBUTTONDOWN:

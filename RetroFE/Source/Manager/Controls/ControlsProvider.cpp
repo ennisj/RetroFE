@@ -192,17 +192,26 @@ void ControlsProvider::setTokens(const std::string& control, const std::vector<s
 
 std::vector<std::string> ControlsProvider::usedBy(const std::string& token, const std::string& except) const
 {
-    InputToken::Input input = InputToken::parse(token);
+    // The same input by name, or the same button on a pad connected now under
+    // another name (joyA is joyButton1 on some pads)
+    std::vector<InputToken::Input> inputs = { InputToken::parse(token) };
+    for (const std::string& twin : services_.sameInputs ? services_.sameInputs(token) : std::vector<std::string>{}) {
+        inputs.push_back(InputToken::parse(twin));
+    }
     std::vector<std::string> labels;
     for (const ControlList::Control& control : ControlList::all()) {
         if (control.name == except) {
             continue;
         }
+        bool uses = false;
         for (const std::string& other : tokens(control.name)) {
-            if (InputToken::same(input, InputToken::parse(other))) {
-                labels.push_back(control.label);
-                break;
+            InputToken::Input theirs = InputToken::parse(other);
+            for (const InputToken::Input& input : inputs) {
+                uses = uses || InputToken::same(input, theirs);
             }
+        }
+        if (uses) {
+            labels.push_back(control.label);
         }
     }
     return labels;
@@ -226,11 +235,17 @@ std::string ControlsProvider::notes(const std::string& name) const
     bool works = std::any_of(list.begin(), list.end(), [](const std::string& token) {
         return InputToken::parse(token).kind != InputToken::Kind::Invalid;
     });
+    if (list.empty() && alwaysMapped(name) && source != sources_.end() && !source->second.file.empty()) {
+        text += " It's empty there, so nothing is bound to it.";
+    }
+    if (control->keyboardOnly && std::none_of(list.begin(), list.end(), [](const std::string& token) {
+            return InputToken::parse(token).kind == InputToken::Kind::Keyboard;
+        })) {
+        text += " It has no keyboard key, so RetroFE uses F10.";
+    }
     if (!list.empty() && !works && alwaysMapped(name)) {
-        std::string other = partner(name);
-        text += other.empty()
-            ? " None of these works, so RetroFE uses its default: " + describeValue(ControlList::builtinDefault(name)) + "."
-            : " None of these works, so RetroFE uses " + ControlList::find(other)->label + "'s inputs, or its default.";
+        text += " None of these works, so RetroFE uses its default: " + describeValue(ControlList::builtinDefault(name)) + ".";
+
     }
     for (const std::string& token : list) {
         InputToken::Input input = InputToken::parse(token);
@@ -361,11 +376,7 @@ std::string ControlsProvider::actionProblem(const std::string& action, const Scr
         if (!services_.editor) {
             return "Controls can't be saved here.";
         }
-        std::map<std::string, std::string> state;
-        for (const ControlList::Control& each : ControlList::all()) {
-            state[each.name] = edits_.get(each.name);
-        }
-        return Library::Editor::checkControls(state);
+        return Library::Editor::checkControls(edits_.changes());
     }
     if (action == "reset") {
         return edits_.isDirty() ? "" : "No changes to undo.";

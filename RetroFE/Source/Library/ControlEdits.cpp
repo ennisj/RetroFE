@@ -68,24 +68,18 @@ std::vector<std::string> Editor::controlsFileNames()
     return names;
 }
 
-std::string Editor::checkControls(const std::map<std::string, std::string>& current)
+std::string Editor::checkControls(const std::map<std::string, std::string>& changes)
 {
-    for (const ControlList::Control& control : ControlList::all()) {
-        if (!control.required) {
-            continue;
-        }
-        auto found = current.find(control.name);
-        // Not set by any file: RetroFE uses its default, which works
-        std::string value = found == current.end() ? ControlList::builtinDefault(control.name) : found->second;
-        if (!hasWorkingInput(control, value)) {
-            return control.keyboardOnly
-                ? control.label + " needs a keyboard key, or you couldn't open Settings again."
-                : control.label + " needs at least one input, or you couldn't use RetroFE.";
+    // Only what changes: a control the files already leave empty on purpose
+    // (back = on a kiosk) doesn't hold up other changes
+    for (const auto& [name, value] : changes) {
+        const ControlList::Control* control = ControlList::find(name);
+        if (control && control->required && !hasWorkingInput(*control, value)) {
+            return control->label + " needs at least one input, or you couldn't use RetroFE.";
         }
     }
     return "";
 }
-
 EditResult Editor::setControls(const std::map<std::string, std::string>& values)
 {
     if (values.empty()) {
@@ -93,13 +87,7 @@ EditResult Editor::setControls(const std::map<std::string, std::string>& values)
     }
     ConfLayers layers(root_, controlsFileNames());
 
-    // Allowed keys and values first, and the state they'd leave
-    std::map<std::string, std::string> after;
-    for (const ControlList::Control& control : ControlList::all()) {
-        if (layers.has(control.name)) {
-            after[control.name] = layers.get(control.name);
-        }
-    }
+    // Allowed keys and values first
     for (const auto& [key, value] : values) {
         if (key == "deadZone") {
             if (!isNumber(value, 0, 100)) {
@@ -121,9 +109,8 @@ EditResult Editor::setControls(const std::map<std::string, std::string>& values)
         if (!problem.empty()) {
             return EditResult::fail(control->label + ": " + problem);
         }
-        after[key] = value;
     }
-    std::string locked = checkControls(after);
+    std::string locked = checkControls(values);
     if (!locked.empty()) {
         return EditResult::fail(locked);
     }

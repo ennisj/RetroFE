@@ -100,6 +100,24 @@ std::string InputCapture::prompt(float now) const
         + " left). Holding one down for 2 seconds cancels.";
 }
 
+int InputCapture::axisState(int held, int delta)
+{
+    const int pressedAt = 16384;   // half way
+    const int releasedAt = 8192;   // a quarter
+    int magnitude = delta < 0 ? -delta : delta;
+    int now = held;
+    if (magnitude >= pressedAt) {
+        now = delta > 0 ? 1 : -1;
+    }
+    else if (magnitude < releasedAt) {
+        now = 0;
+    }
+    if (held != 0 && now != held) {
+        return 0;   // let go (or straight to the other way: released first)
+    }
+    return now;
+}
+
 std::string InputCapture::endMessage() const
 {
     if (state_ == State::Cancelled) {

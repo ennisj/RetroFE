@@ -24,8 +24,8 @@ namespace Manager
 {
     // SDL events as inputs going down or up, for InputCapture. Inputs are
     // "any joystick" (joyA, not joy0A), as a cabinet's controls.conf usually
-    // says. Sticks and axes count past half way (from where they rest, for
-    // triggers that rest at one end) and are let go below a quarter.
+    // says. Sticks and axes are measured from where they rest (a trigger read
+    // as a joystick axis rests at one end) with InputCapture::axisState.
     class CaptureEvents
     {
     public:
@@ -35,18 +35,23 @@ namespace Manager
             InputToken::Input input;
         };
 
+        // Call when a capture starts: every stick, trigger and hat is taken
+        // as it is now, so one already held off-centre (or a pad that drifts)
+        // has to come back before it can be captured
+        void start();
+
         Event read(const SDL_Event& e);
 
         // Events a capture keeps from the screen: keys, typing, joystick,
         // controller and mouse buttons (the mouse isn't captured)
         static bool isInput(const SDL_Event& e);
 
-        void reset() { axes_.clear(); hats_.clear(); }
-
     private:
         Event axis(InputToken::Kind kind, SDL_JoystickID which, int axis, int delta);
+        int restOf(SDL_JoystickID which, int axis, Sint16 value);
 
         std::map<std::pair<int, int>, int> axes_;   // (kind * 1000 + joystick, axis) -> -1, 0, +1
+        std::map<std::pair<int, int>, int> rests_;  // (joystick, axis) -> where a joystick axis rests
         std::map<std::pair<int, int>, int> hats_;   // (joystick, hat) -> direction held
     };
 }

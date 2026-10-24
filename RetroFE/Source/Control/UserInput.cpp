@@ -34,8 +34,8 @@ UserInput::UserInput(Configuration &c)
         currentKeyState_[i] = false;
         lastKeyState_[i] = false;
     }
+    slots_.clear();
     for ( unsigned int i = 0; i < cMaxJoy; i++ ) {
-        joysticks_[i] = -1;
         controllers_[i] = nullptr;
     }
 }
@@ -160,16 +160,28 @@ int UserInput::MapInputs(const std::string& configKey, const std::string& descri
 
 void UserInput::MapRequired(const std::string& keyDescription, KeyCode_E key, const std::string& alternative)
 {
-    if (MapKey(keyDescription, key, false)) {
+    std::string configKey = "controls." + keyDescription;
+    std::string description;
+    if (config_.getProperty(configKey, description)) {
+        // Deliberately empty (e.g. quit = in a kiosk): nothing bound, as upstream
+        if (InputToken::split(description).empty()) {
+            LOG_WARNING("Input", configKey + " is empty: nothing is bound to it");
+            return;
+        }
+        if (MapInputs(configKey, description, key) > 0) {
+            return;
+        }
+    }
+    else if (!alternative.empty() && config_.getProperty("controls." + alternative, description)
+             && MapInputs("controls." + alternative, description, key) > 0) {
+        // Not set: its partner's inputs, as upstream (a vertical menu's up is a horizontal one's left)
+        LOG_INFO("Input", configKey + " isn't set: using controls." + alternative);
         return;
     }
-    if (!alternative.empty() && MapKey(alternative, key, false)) {
-        LOG_INFO("Input", "controls." + keyDescription + " isn't set: using controls." + alternative);
-        return;
-    }
+    // Not set at all, or every input it lists was skipped: RetroFE's own
     std::string fallback = ControlList::builtinDefault(keyDescription);
-    LOG_WARNING("Input", "controls." + keyDescription + " has no input that works: using RetroFE's default (" + fallback + ")");
-    MapInputs("controls." + keyDescription, fallback, key);
+    LOG_WARNING("Input", configKey + " has no input that works: using RetroFE's default (" + fallback + ")");
+    MapInputs(configKey, fallback, key);
 }
 
 bool UserInput::HandleInputMapping(const std::string& token, KeyCode_E key, const std::string& configKey) {
@@ -268,19 +280,10 @@ void UserInput::resetStates()
 }
 
 
-int UserInput::slotOf(SDL_JoystickID id) const
-{
-    for (int i = 0; i < cMaxJoy; i++) {
-        if (joysticks_[i] == id) {
-            return i;
-        }
-    }
-    return -1;
-}
-
 void UserInput::openController(int deviceIndex, int slot)
 {
-    // Pads SDL has a mapping for also send controller events (joyA, joyDPUp...)
+    // Pads SDL has a mapping for also send controller events (joyA, joyDPUp...).
+    // Only into a slot its joystick holds: slots_ never gives a free one for a lookup
     if (slot < 0 || controllers_[slot] || !SDL_IsGameController(deviceIndex)) {
         return;
     }
@@ -303,29 +306,21 @@ bool UserInput::update( SDL_Event &e )
     if ( e.type == SDL_JOYDEVICEADDED ) {
         SDL_Joystick* joystick = SDL_JoystickOpen( e.jdevice.which );
         SDL_JoystickID id = joystick ? SDL_JoystickInstanceID( joystick ) : -1;
-        int slot = id >= 0 ? slotOf( id ) : -1;
-        if ( id >= 0 && slot < 0 ) {
-            for ( int i = 0; i < cMaxJoy; i++ ) {
-                if ( joysticks_[i] == -1 ) {
-                    joysticks_[i] = id;
-                    slot = i;
-                    break;
-                }
-            }
+        if ( id >= 0 && slots_.slotOf( id ) >= 0 ) {
+            SDL_JoystickClose( joystick );   // told twice: one removal closes it, so keep one reference
         }
-        openController( e.jdevice.which, slot );
+        openController( e.jdevice.which, slots_.add( id ) );
     }
 
-    // A controller mapping can arrive after its joystick
+    // A controller mapping can arrive after its joystick (a stale index gives -1: nothing opens)
     if ( e.type == SDL_CONTROLLERDEVICEADDED ) {
-        openController( e.cdevice.which, slotOf( SDL_JoystickGetDeviceInstanceID( e.cdevice.which ) ) );
+        openController( e.cdevice.which, slots_.slotOf( SDL_JoystickGetDeviceInstanceID( e.cdevice.which ) ) );
     }
 
     // Handle removing a joystick
     if ( e.type == SDL_JOYDEVICEREMOVED ) {
-        int slot = slotOf( e.jdevice.which );
+        int slot = slots_.remove( e.jdevice.which );
         if ( slot >= 0 ) {
-            joysticks_[slot] = -1;
             if ( controllers_[slot] ) {
                 SDL_GameControllerClose( controllers_[slot] );
                 controllers_[slot] = nullptr;
@@ -339,20 +334,18 @@ bool UserInput::update( SDL_Event &e )
          e.type == SDL_JOYBUTTONUP   ||
          e.type == SDL_JOYBUTTONDOWN ||
          e.type == SDL_JOYHATMOTION ) {
-        for ( unsigned int i = 0; i < cMaxJoy; i++ ) {
-            if ( joysticks_[i] == e.jdevice.which ) {
-                e.jdevice.which = i;
-                e.jaxis.which   = i;
-                e.jbutton.which = i;
-                e.jhat.which    = i;
-                break;
-            }
+        int slot = slots_.slotOf( e.jdevice.which );
+        if ( slot >= 0 ) {
+            e.jdevice.which = slot;
+            e.jaxis.which   = slot;
+            e.jbutton.which = slot;
+            e.jhat.which    = slot;
         }
     }
     if ( e.type == SDL_CONTROLLERAXISMOTION ||
          e.type == SDL_CONTROLLERBUTTONDOWN ||
          e.type == SDL_CONTROLLERBUTTONUP ) {
-        int slot = slotOf( e.type == SDL_CONTROLLERAXISMOTION ? e.caxis.which : e.cbutton.which );
+        int slot = slots_.slotOf( e.type == SDL_CONTROLLERAXISMOTION ? e.caxis.which : e.cbutton.which );
         if ( slot >= 0 ) {
             e.caxis.which   = slot;
             e.cbutton.which = slot;
@@ -393,8 +386,8 @@ bool UserInput::newKeyPressed(KeyCode_E code) const
 void UserInput::clearJoysticks( )
 {
     // SDL is going down: it closes them itself
+    slots_.clear();
     for ( unsigned int i = 0; i < cMaxJoy; i++ ) {
-        joysticks_[i] = -1;
         controllers_[i] = nullptr;
     }
 }

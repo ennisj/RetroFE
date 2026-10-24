@@ -16,6 +16,7 @@
 #include "ManagerUI.h"
 #include "FileDialog.h"
 #include "Setup.h"
+#include "Controls/app/PadInputs.h"
 #include "Themes/ThemeProvider.h"
 #include "Themes/app/ThemeEditorScreen.h"
 #include "../Builtin/Builtin.h"
@@ -132,6 +133,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
             bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
             return Manager::LaunchQueue::problem(reloadDue, catalog_ && catalog_->isBusy());
         };
+        services.sameInputs = Manager::padSameInputs;
         services.reloadControls = [this] {
             if (reloadControls_) {
                 reloadControls_();
@@ -422,7 +424,6 @@ void ManagerUI::show()
     bool wasOpen = open_;
     status_.clear();
     capture_.clear();   // a capture belongs to the screen that asked for it
-    captureEvents_.reset();
     leaveWarned_ = false;
     launches_.screenChanged();
     view_.reset();
@@ -467,7 +468,6 @@ void ManagerUI::close()
     nav_.clear();
     leaveWarned_ = false;
     capture_.clear();
-    captureEvents_.reset();
     if (!open_) {
         return;
     }
@@ -721,7 +721,6 @@ void ManagerUI::updateCapture()
 void ManagerUI::endCapture()
 {
     capture_.clear();
-    captureEvents_.reset();
     capturePrompt_.clear();
     // What was pressed for the capture mustn't also act on the screen
     navHeld_.fill(true);
@@ -984,7 +983,7 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
     // Press it now: the next input becomes a token for result.capture
     if (open_ && result.ok && !result.capture.empty()) {
         float now = static_cast<float>(SDL_GetTicks()) / 1000.0f;
-        captureEvents_.reset();
+        captureEvents_.start();   // sticks held now must come back first
         capture_.start(now);
         captureBind_ = result.capture;
         captureAction_ = result.captureAction;

@@ -259,10 +259,11 @@ namespace Library
         // --- Controls (ControlEdits.cpp) ------------------------------------------------
         // controls.conf, then controls1..9.conf, as RetroFE loads them (later files win)
         static std::vector<std::string> controlsFileNames();
-        // Empty when the controls (name -> value, as the files would set them)
-        // leave every required control (ControlList) an input that works,
-        // otherwise why not. Controls no file sets get RetroFE's default.
-        static std::string checkControls(const std::map<std::string, std::string>& values);
+        // Empty when changes (name -> new value) leave every required control
+        // they change (ControlList: up, down, select, back) an input that
+        // works, otherwise why not. Controls not changed aren't checked, so a
+        // value left empty on purpose in the files doesn't block other saves.
+        static std::string checkControls(const std::map<std::string, std::string>& changes);
         // Writes controls (ControlList names, or deadZone) where each value
         // comes from now, else to controls.conf (made from the built-in
         // controls when missing). Every token must parse (InputToken), and
