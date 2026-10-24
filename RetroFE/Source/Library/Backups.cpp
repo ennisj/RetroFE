@@ -30,6 +30,7 @@ namespace Library
 namespace
 {
     const char* const absentSuffix = ".absent";
+    const char* const numberedList = ".numbered";   // the numbered copies made in a folder, one name per line
 }
 
 Backups::Backups(const std::string& root)
@@ -154,8 +155,45 @@ bool Backups::keepIfChanged(const std::string& path, std::string& error)
     if (!copyFileAtomic(path, copy, error)) {
         return false;
     }
+    recordNumberedCopy(copy);
     LOG_INFO("Library", "Kept the changed " + path + " as " + copy);
     return true;
+}
+
+void Backups::recordNumberedCopy(const std::string& copy)
+{
+    fs::path list = fs::path(copy).parent_path() / numberedList;
+    std::string names;
+    readFile(narrow(list), names);
+    std::string error;
+    if (!writeFileAtomic(narrow(list), names + narrow(fs::path(copy).filename()) + "\n", error)) {
+        LOG_WARNING("Library", "Could not note " + copy + " as a kept copy: " + error);
+    }
+}
+
+bool Backups::isNumberedCopy(const std::string& backupFile) const
+{
+    std::string names;
+    if (!readFile(narrow(fs::path(backupFile).parent_path() / numberedList), names)) {
+        return false;
+    }
+    const std::string name = narrow(fs::path(backupFile).filename());
+    size_t start = 0;
+    while (start < names.size()) {
+        size_t end = names.find('\n', start);
+        if (end == std::string::npos) {
+            end = names.size();
+        }
+        std::string line = names.substr(start, end - start);
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line == name) {
+            return true;
+        }
+        start = end + 1;
+    }
+    return false;
 }
 
 bool Backups::isOriginal(const std::string& path) const
@@ -197,7 +235,11 @@ bool Backups::removeKeepingOriginal(const std::string& path, std::string& error)
             return false;
         }
         LOG_INFO("Library", "Kept the changed " + path + " as " + copy);
-        return moveFile(path, copy, error);
+        if (!moveFile(path, copy, error)) {
+            return false;
+        }
+        recordNumberedCopy(copy);
+        return true;
     }
     fs::remove(path, ec);
     if (ec) {

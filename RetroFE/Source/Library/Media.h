@@ -70,8 +70,9 @@ namespace Library
         size_t shownFolderFiles = 0;      // how many files that folder has; 0 = file is a plain file
 
         bool fromFolder() const { return shownFolderFiles > 0; }
-        // The slot's own file is a single file beside its folder (which then isn't shown)
-        bool fileBesideFolder() const { return own && !fromFolder() && !folder.empty(); }
+        // The slot's own file is a single file beside its folder of files (which
+        // then aren't shown); an empty folder doesn't count
+        bool fileBesideFolder() const { return own && !fromFolder() && !folderFiles.empty(); }
     };
 
     // Media types to offer for a collection: RetroFE's standard folders,

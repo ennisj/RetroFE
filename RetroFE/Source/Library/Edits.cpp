@@ -1999,7 +1999,6 @@ std::vector<std::string> Editor::mediaFolderOriginals(const MediaSlot& slot) con
             names.push_back(name);
         }
     }
-    auto has = [&](const std::string& name) { return std::find(names.begin(), names.end(), name) != names.end(); };
     for (const std::string& name : names) {
         const bool absent = name.size() > 7 && name.compare(name.size() - 7, 7, ".absent") == 0;
         const std::string original = absent ? name.substr(0, name.size() - 7) : name;
@@ -2007,24 +2006,60 @@ std::vector<std::string> Editor::mediaFolderOriginals(const MediaSlot& slot) con
         if (dot == std::string::npos || std::find(accepted.begin(), accepted.end(), toLower(original.substr(dot + 1))) == accepted.end()) {
             continue;
         }
-        // "<name> (2).<ext>" beside "<name>.<ext>" is a kept copy (Backups), not an original
-        const std::string stem = original.substr(0, dot);
-        const size_t open = stem.rfind(" (");
-        if (!absent && open != std::string::npos && stem.back() == ')') {
-            const std::string base = stem.substr(0, open) + original.substr(dot);
-            const std::string number = stem.substr(open + 2, stem.size() - open - 3);
-            if (!number.empty() && std::all_of(number.begin(), number.end(), [](char c) { return c >= '0' && c <= '9'; })
-                && (has(base) || has(base + ".absent"))) {
-                continue;
-            }
+        // A copy Backups kept of a changed file ("<name> (2).<ext>"), not an original
+        if (!absent && backups_.isNumberedCopy(narrow(kept / name))) {
+            continue;
         }
         const std::string path = Utils::combinePath(folder, original);
-        const bool differs = absent ? fs::exists(path, ec) : !fs::exists(path, ec) || !backups_.isOriginal(path);
+        const bool differs = absent ? fs::exists(path, ec) : !fs::exists(path, ec) || !sameAsKept(path, narrow(kept / name));
         if (differs) {
             live.push_back(path);
         }
     }
     return live;
+}
+
+bool Editor::differsFromOriginal(const std::string& file) const
+{
+    std::error_code ec;
+    const std::string kept = backups_.backupPath(file);
+    if (fs::is_regular_file(kept, ec)) {
+        return !fs::exists(file, ec) || !sameAsKept(file, kept);
+    }
+    return fs::exists(kept + ".absent", ec) && fs::exists(file, ec);
+}
+
+bool Editor::sameAsKept(const std::string& live, const std::string& kept) const
+{
+    // Screens ask this for every file of a folder of big videos: decided by
+    // size and modification time, reading the files only when the times
+    // differ (a copy that didn't keep its time), and then once per state
+    std::error_code ec;
+    const uintmax_t liveSize = fs::file_size(live, ec);
+    if (ec) {
+        return false;
+    }
+    const uintmax_t keptSize = fs::file_size(kept, ec);
+    if (ec || liveSize != keptSize) {
+        return false;
+    }
+    const long long liveTime = static_cast<long long>(fs::last_write_time(live, ec).time_since_epoch().count());
+    const long long keptTime = ec ? 0 : static_cast<long long>(fs::last_write_time(kept, ec).time_since_epoch().count());
+    if (ec) {
+        return false;
+    }
+    if (liveTime == keptTime) {
+        return true;   // moved there and back, or copied with its time
+    }
+    Compared state{ liveSize, liveTime, keptTime, false };
+    auto found = compared_.find(live);
+    if (found != compared_.end() && found->second.size == state.size && found->second.liveTime == state.liveTime
+        && found->second.keptTime == state.keptTime) {
+        return found->second.same;
+    }
+    state.same = backups_.isOriginal(live);
+    compared_[live] = state;
+    return state.same;
 }
 
 // --- Launchers ----------------------------------------------------------------------

@@ -502,6 +502,18 @@ namespace
     std::map<std::pair<std::string, const std::vector<std::string>*>, std::vector<std::string>> listed;
 }
 
+const std::vector<std::string>& mediaFolderImageExtensions()
+{
+    static const std::vector<std::string> extensions = { "gif", "webp", "png", "jpg", "jpeg" };
+    return extensions;
+}
+
+const std::vector<std::string>& mediaFolderVideoExtensions()
+{
+    static const std::vector<std::string> extensions = { "mp4", "avi", "mkv", "mp3", "wav", "flac" };
+    return extensions;
+}
+
 void clearMediaFolderCache()
 {
     subfolders.clear();
@@ -531,9 +543,10 @@ bool findMediaFolderFile(const std::string& prefix, const std::vector<std::strin
                          const std::string& current, bool another, unsigned random, std::string& file)
 {
     // A miss is the usual case (a game with no folder of its own): each media
-    // folder's subfolder names are read once per run, so a miss costs a
-    // lookup, not a file system call, and adds nothing to the caches. A
-    // missing parent folder is read as having no subfolders.
+    // folder's subfolder names are read once (until a reload), so a miss costs
+    // a lookup, not a file system call. A miss adds at most one entry, for a
+    // parent folder not seen before; a missing parent is kept as having no
+    // subfolders, so it isn't looked for again.
     const fs::path folder = fs::path(Utils::combinePath(Configuration::absolutePath, prefix));
     const std::string parent = folder.parent_path().string();
     auto parentIt = subfolders.find(parent);

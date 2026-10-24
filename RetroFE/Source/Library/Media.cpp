@@ -152,9 +152,10 @@ std::vector<std::string> mediaFolderFiles(const std::string& directory, const st
     if (!mediaFoldersApply(kind) || directory.empty() || basename.empty()) {
         return {};
     }
-    // The lists ReloadableMedia passes for folders: ImageBuilder's (with webp), VideoBuilder's
+    // The lists RetroFE passes for folders (not cached here: a screen reads them afresh)
     return LayoutCompat::mediaFolderFiles(Utils::combinePath(directory, basename),
-                                          kind == MediaKind::Image ? imageExtensions() : videoExtensions());
+                                          kind == MediaKind::Image ? LayoutCompat::mediaFolderImageExtensions()
+                                                                   : LayoutCompat::mediaFolderVideoExtensions());
 }
 
 namespace

@@ -253,6 +253,9 @@ leaves the folder as it is; **Clear** removes only a single file, never a
 folder (clearing a file that wins over a folder shows the folder again).
 Folders count as art the slot has. Folders aren't used for text (a story),
 or in a game's own ROM folder. Menus (the scrolling list) use folders too.
+A game named `default` has the collection's `default/` folder as its own,
+which every game without art of its own shows, so its screen says so and
+**Clear the folder** and **Keep only this file** are refused there.
 
 **Systems** and **Videos** are described [below](#systems-and-videos).
 On a bare install Manage opens by itself and says where to start.

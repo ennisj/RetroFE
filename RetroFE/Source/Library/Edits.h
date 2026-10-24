@@ -31,6 +31,7 @@
 #include "Backups.h"
 #include "Index.h"
 #include "Media.h"
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -188,8 +189,15 @@ namespace Library
         // Every file of the folder goes to the backups; the emptied folder is removed
         EditResult clearMediaFolder(const MediaSlot& slot);
         // The folder's files Manage changed and that differ now: what "Put back
-        // the original" restores for the folder (also once the folder is gone)
+        // the original" restores for the folder (also once the folder is gone).
+        // A directory listing and a few file checks; content is read only when
+        // a file's time changed (remembered), so it's cheap but not per frame:
+        // screens keep the result per slot
         std::vector<std::string> mediaFolderOriginals(const MediaSlot& slot) const;
+        // file was changed here and differs from what was kept (it was made
+        // here and is still there, or its original is kept and it's gone or
+        // other than that): a Put back would change it. Cheap as above.
+        bool differsFromOriginal(const std::string& file) const;
 
         // --- Launchers ---------------------------------------------------------------
         // A new launcher is written whole, as launchers.<os>/<name>.conf (os =
@@ -296,6 +304,17 @@ namespace Library
         // createMenu ("" source) and createMerged
         EditResult createListed(const Index& index, const std::string& name, const std::string& parent,
                                 const std::string& source);
+
+        // live is the same as its kept original (mediaFolderOriginals): size
+        // and time first, content once per (size, times), remembered
+        bool sameAsKept(const std::string& live, const std::string& kept) const;
+        struct Compared
+        {
+            uintmax_t size = 0;
+            long long liveTime = 0, keptTime = 0;
+            bool same = false;
+        };
+        mutable std::map<std::string, Compared> compared_;   // by live path (main thread, as the screens)
 
         std::string root_;
         Backups backups_;

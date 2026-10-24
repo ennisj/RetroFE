@@ -1238,6 +1238,7 @@ const MediaSlot* GameProvider::slot(const Screen& screen, const std::string& typ
 void GameProvider::forgetSlot(const std::string& type)
 {
     media_.slots.erase(type);
+    media_.originals.erase(type);
     mediaEpoch_++;   // a lookup running now may have read the old file
     generation_++;
 }
@@ -1250,16 +1251,22 @@ std::string GameProvider::slotStatus(const MediaSlot& slot) const
     return "Missing";
 }
 
-std::vector<std::string> GameProvider::originals(const MediaSlot& slot) const
+const std::vector<std::string>& GameProvider::originals(const MediaSlot& slot)
 {
-    // The slot's own files that Manage changed: each extension it could have
-    std::vector<std::string> files;
+    // Asked every frame (hasOriginal, the Put back button's problem): worked
+    // out once per looked-up slot; forgetSlot() and a new game drop it
+    auto cached = media_.originals.find(slot.type);
+    if (cached != media_.originals.end()) {
+        return cached->second;
+    }
+    std::vector<std::string>& files = media_.originals[slot.type];
     if (!services_.editor || slot.directory.empty() || slot.basename.empty()) {
         return files;
     }
+    // The slot's own files that Manage changed and that differ now: each extension it could have
     for (const std::string& extension : Library::acceptedExtensions(slot.kind)) {
         std::string file = Utils::combinePath(slot.directory, slot.basename + "." + extension);
-        if (services_.editor->backups().hasOriginal(file)) {
+        if (services_.editor->differsFromOriginal(file)) {
             files.push_back(file);
         }
     }
@@ -1310,7 +1317,13 @@ std::string GameProvider::slotValue(const std::string& key, const Screen& screen
     if (key == "slot:file") return s->fromFolder() ? Library::mediaShownText(*s) : s->file;
     if (key == "slot:status") return slotStatus(*s);
     if (key == "slot:place") return Utils::combinePath(s->directory, s->basename) + ".*";
-    if (key == "slot:folderNote") return Library::mediaFolderNote(*s);
+    if (key == "slot:folderNote") {
+        std::string note = Library::mediaFolderNote(*s);
+        if (!note.empty() && Library::iequals(s->basename, "default")) {
+            note += " A game named default shares this folder with every game that has no " + s->type + " of its own.";
+        }
+        return note;
+    }
     if (key == "slot:hasFolder") return yesNo(!s->folder.empty());
     if (key == "slot:isImage") return yesNo(s->kind == MediaKind::Image);
     if (key == "slot:isVideo") return yesNo(s->kind == MediaKind::Video);
@@ -1372,13 +1385,17 @@ Forms::Model::Result GameProvider::mediaAction(const std::string& action, const 
     }
     result.ok = edit.ok;
     result.message = edit.message;
-    if (edit.ok) {
+    // A failure part way can still have changed files (a folder made one
+    // file, then not emptied): look the slot up again whenever any were touched
+    if (edit.ok || !edit.files.empty()) {
         // Back to the list: pictures are cached by path, and the slot's file
         // has the same path as before, so a fresh screen shows the new one.
         // A folder's changes stay on the slot's screen (adding several files),
         // or go back to it from one of its files.
-        result.back = action != "addToFolder" && action != "clearFolder";
-        newFile_.clear();
+        result.back = edit.ok && action != "addToFolder" && action != "clearFolder";
+        if (edit.ok) {
+            newFile_.clear();
+        }
         forgetSlot(type);
         thumbnails_.erase(screen.param("collection") + "/" + screen.param("id"));
         if (type == "story") {
@@ -2126,6 +2143,12 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
         if (!s) return lookingMessage;
         if (s->folder.empty()) return "It has no folder of files.";
         if (action == "addToFolder") return Utils::trimEnds(newFile_).empty() ? "Choose a file first." : "";
+        // A game named "default": its folder is the collection's default art,
+        // which every game without its own shows; it isn't emptied from here
+        if ((action == "clearFolder" || action == "keepFolderFile") && Library::iequals(s->basename, "default")) {
+            return "This folder is the collection's default " + s->type + ", which every game without its own shows; "
+                   "change it file by file, or in the folder itself.";
+        }
         if (action == "clearFolder") return "";
         std::string file = Utils::combinePath(s->folder, screen.param("file"));
         return std::find(s->folderFiles.begin(), s->folderFiles.end(), file) == s->folderFiles.end()

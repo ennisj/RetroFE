@@ -454,6 +454,38 @@ static void runGamesTests()
               && fs::exists(root + "/collections/Arcade/medium_artwork/logo/a.png"), "folder cleared, file kept: " + cleared.message);
     });
 
+    run("games: keep only one file of a media folder, then put it all back", [] {
+        std::string root = makeInstall("games-media-folder-keep");
+        const std::string videos = root + "/collections/Arcade/medium_artwork/video";
+        writeFile(videos + "/a/a_1.mp4", "one");
+        writeFile(videos + "/a/a_2.mp4", "two");
+        writeFile(root + "/collections/Arcade/roms/default.zip", "x");        // a game named "default"
+        writeFile(videos + "/default/d1.mp4", "d1");                        // ... whose folder is everyone's default
+        Fixture f(root);
+        f.open("game-media-folder-file", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" }, { "file", "a_2.mp4" } });
+        Forms::Model::Result kept = f.model.runAction("game.keepFolderFile");
+        check(kept.ok && kept.back, "kept: " + kept.message);
+        check(Test::readFile(videos + "/a.mp4") == "two" && !fs::exists(videos + "/a"), "a.mp4 is a_2, the folder gone");
+        f.settle();
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" } });
+        checkEqual(f.model.get("game:slot:status"), "Its own file", "one file now");
+        checkEqual(f.model.get("game:slot:hasFolder"), "no", "no folder");
+        checkEqual(f.model.get("game:slot:hasOriginal"), "yes", "Put back is offered");
+        check(f.model.actionProblem("game.restoreMedia").empty(), "and allowed");
+        Forms::Model::Result back = f.model.runAction("game.restoreMedia");
+        check(back.ok && !fs::exists(videos + "/a.mp4") && Test::readFile(videos + "/a/a_1.mp4") == "one"
+              && Test::readFile(videos + "/a/a_2.mp4") == "two", "the folder as it was: " + back.message);
+        f.settle();
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" } });
+        checkEqual(f.model.get("game:slot:hasOriginal"), "no", "nothing left to put back");
+
+        // The game named default: its folder is the collection's default, not emptied from here
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "default" }, { "type", "video" } });
+        check(f.model.get("game:slot:folderNote").find("shares this folder") != std::string::npos, "the note says it's shared");
+        check(f.model.actionProblem("game.clearFolder").find("default") != std::string::npos, "Clear the folder is refused");
+        check(fs::exists(videos + "/default/d1.mp4"), "the default folder is untouched");
+    });
+
     run("games: favourites, playlists and merged collections", [] {
         std::string root = makeInstall("games-playlists");
         Fixture f(root);

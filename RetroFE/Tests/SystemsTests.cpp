@@ -429,6 +429,27 @@ static void runSystemsTests()
         check(contains(f.model.get("system:mediumFile"), "video.mp4"), "shows the file");
     });
 
+    run("systems: a folder made one file that can't be emptied shows the file winning", [] {
+        Fixture f("sys-media-folder-fail");
+        const std::string art = f.root + "/collections/Arcade/system_artwork";
+        writeFile(art + "/video/one.mp4", "one");
+        writeFile(art + "/video/two.mp4", "two");
+        writeFile(f.root + "/manage/backups/collections/Arcade/system_artwork/video", "in the way");
+        f.rescan();
+        f.open("system-medium-file", { { "id", "Arcade" }, { "slot", "video" }, { "file", "one.mp4" } });
+        Forms::Model::Result kept = f.model.runAction("system.keepFolderFile");
+        check(!kept.ok && !kept.back && contains(kept.message, "couldn't be emptied"), "fails part way: " + kept.message);
+        check(readFile(art + "/video.mp4") == "one", "the file is in place");
+        // Read again at once, on the screen it ran on
+        check(contains(f.model.get("system:folderFileNote"), "wins"), "the file's screen says the file wins: "
+              + f.model.get("system:folderFileNote"));
+        f.settle();
+        f.open("system-medium", { { "id", "Arcade" }, { "slot", "video" } });
+        check(contains(f.model.get("system:mediumFile"), "video.mp4"), "the screen shows the file: " + f.model.get("system:mediumFile"));
+        check(contains(f.model.get("system:mediumFolderNote"), "The file wins"), "and that it wins: " + f.model.get("system:mediumFolderNote"));
+        checkEqual(f.model.get("system:canRestoreMedia"), "yes", "and it can be put back");
+    });
+
     run("systems: playlists and their entries", [] {
         Fixture f("sys-playlists");
         f.open("system-playlists", { { "id", "Arcade" } });

@@ -1897,13 +1897,19 @@ Forms::Model::Result SystemProvider::mediaAction(const std::string& action, cons
         }
     }
     result.message = edit.message;
-    if (!edit.ok) {
+    // A failure part way can still have changed files: read the art again whenever any were touched
+    if (!edit.ok && edit.files.empty()) {
         return result;
     }
-    mediaFile_.clear();
+    if (edit.ok) {
+        mediaFile_.clear();
+    }
     changed(target.type + " art of " + screen.param("id"));
     ensureMedia(screen, true);
     detailsIndex_.reset();
+    if (!edit.ok) {
+        return result;
+    }
     result.ok = true;
     // From one of a folder's files, back to the art's screen
     result.back = action == "removeFolderFile" || action == "keepFolderFile";

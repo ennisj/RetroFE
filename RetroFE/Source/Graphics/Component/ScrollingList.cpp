@@ -979,10 +979,6 @@ void ScrollingList::buildPaths(std::string& imagePath, std::string& videoPath, c
 
 namespace
 {
-    // Fork compat (OneSauce media folders): the lists ReloadableMedia passes
-    // for folders (one static list each: LayoutCompat caches by list)
-    const std::vector<std::string> folderImageExtensions = { "gif", "webp", "png", "jpg", "jpeg" };
-    const std::vector<std::string> folderVideoExtensions = { "mp4", "avi", "mkv", "mp3", "wav", "flac" };
     std::minstd_rand folderRandom(static_cast<unsigned>(std::time(nullptr)));
 }
 
@@ -996,7 +992,7 @@ Component* ScrollingList::createVideoOrFolder(const std::string& path, const std
         return t;
     }
     std::string file;
-    if (LayoutCompat::menuFolderFile(Utils::combinePath(path, name), folderVideoExtensions, folderPicks_,
+    if (LayoutCompat::menuFolderFile(Utils::combinePath(path, name), LayoutCompat::mediaFolderVideoExtensions(), folderPicks_,
                                      static_cast<unsigned>(folderRandom()), file)) {
         return new VideoComponent(page, file, baseViewInfo.Monitor, -1, false, listId_, corners);
     }
@@ -1010,7 +1006,7 @@ Component* ScrollingList::createImageOrFolder(const std::string& path, const std
         return t;
     }
     std::string file;
-    if (LayoutCompat::menuFolderFile(Utils::combinePath(path, name), folderImageExtensions, folderPicks_,
+    if (LayoutCompat::menuFolderFile(Utils::combinePath(path, name), LayoutCompat::mediaFolderImageExtensions(), folderPicks_,
                                      static_cast<unsigned>(folderRandom()), file)) {
         return new Image(file, "", page, baseViewInfo.Monitor, baseViewInfo.Additive, useTextureCaching_);
     }

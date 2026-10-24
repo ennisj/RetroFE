@@ -87,12 +87,19 @@ namespace LayoutCompat
     bool naturalLess(const std::string& a, const std::string& b);
 
     // A file of the media folder <prefix>/ chosen by pickMediaFile, or false.
-    // prefix is relative to RetroFE's folder or absolute. Cached for the run,
-    // like findMatchingFile: each parent folder's subfolder names are read
-    // once (so a miss costs no file system call), each media folder's files
-    // once per extension list (pass the caller's static list).
+    // prefix is relative to RetroFE's folder or absolute. Cached until a
+    // reload, like findMatchingFile: each parent folder's subfolder names are
+    // read once (so a miss costs no file system call, and adds at most an
+    // entry for a parent not seen before), each media folder's files once per
+    // extension list (pass one of the lists below). Main thread only.
     bool findMediaFolderFile(const std::string& prefix, const std::vector<std::string>& extensions,
                              const std::string& current, bool another, unsigned random, std::string& file);
+
+    // The extensions media folders take, lower case (compared ignoring case):
+    // ImageBuilder's (with webp) and VideoBuilder's. Every caller passes these
+    // same lists, since findMediaFolderFile keeps a listing per list.
+    const std::vector<std::string>& mediaFolderImageExtensions();
+    const std::vector<std::string>& mediaFolderVideoExtensions();
 
     // Forgets those caches (and nothing else), so folders and files added or
     // removed since show up: RetroFE's reload calls it with Utils::clearFileCache
