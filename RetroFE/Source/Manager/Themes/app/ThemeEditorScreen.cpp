@@ -240,7 +240,8 @@ void ThemeEditorScreen::update(float dt)
     else {
         sinceChange_ += dt;
     }
-    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_)) {
+    // A script doesn't wait out the delay (it waits for the rebuild before its next command)
+    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || scriptAt_ < script_.size())) {
         rebuildPreview();
     }
 
@@ -2090,14 +2091,16 @@ void ThemeEditorScreen::drawSharedSettings()
         auto apply = [this, &s](const std::string& value) {
             session_.setCoalesceKey("shared:" + s.name);
             bool ok = false;
-            if (s.name == "layer" && !s.var) ok = session_.setLayerAll(std::atoi(value.c_str()));
-            else if (s.name == "alpha" && !s.var) ok = session_.setAlphaAll(std::atoi(value.c_str()));
+            // A number only once there is one (a field typed empty on the way to another isn't 0)
+            const bool number = !value.empty() && value.find_first_not_of("0123456789") == std::string::npos;
+            if (s.name == "layer" && !s.var) ok = number && session_.setLayerAll(std::atoi(value.c_str()));
+            else if (s.name == "alpha" && !s.var) ok = number && session_.setAlphaAll(std::atoi(value.c_str()));
             else if (s.name == "fontColor" && !s.var) {
                 // Written once it's a whole colour (or emptied: the theme's own)
                 const std::string colour = normalizeColour(value);
                 if (value.empty() || !colour.empty()) ok = session_.setFontColorAll(colour);
             }
-            else ok = session_.setVarAll(s.name, value);
+            else ok = session_.setVarAll(s.name, value);   // a colour only once it's whole (setVarAll)
             return ok;
         };
         const VarKind kind = s.var ? varKind(*s.var) : VarKind::Text;

@@ -162,7 +162,9 @@ private:
     bool duplicateSelected();
     bool deleteSelected();
     bool addElement(const std::string& entry, const std::string& type, const std::string& src = "");
-    bool animationEdit(int element, const std::function<bool(ThemeEditor::LayoutSession&, int)>& edit, const std::string& what);
+    // destructive: it removes or replaces animations (only where the element is surely the same there)
+    bool animationEdit(int element, const std::function<bool(ThemeEditor::LayoutSession&, int)>& edit, const std::string& what,
+                       bool destructive = false);
     // A script waits for this before its next command: the preview is
     // rebuilt after the last change, nothing is being opened or saved
     bool scriptBusy() const;

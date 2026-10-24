@@ -347,11 +347,16 @@ namespace ThemeEditor
     // doesn't pull it off), any other keeps the grid's value. handle: CH_BODY
     // moves (every edge and the centre take part), a resize handle moves only
     // its edges (the size changes with them). moveX / moveY: the axes the
-    // pointer really moved along (an axis it didn't stays put). `lines` gets
-    // what to draw for the result.
-    static inline DragRect applyGuides(const DragRect& snapped, const DragRect& raw, int handle, const std::vector<DragRect>& others,
-                                       int canvasW, int canvasH, int reach, bool moveX, bool moveY, std::vector<GuideLine>& lines)
+    // pointer really moved along (an axis it didn't stays put). As the drag
+    // itself, the result stays on the canvas (or where `start`, the box when
+    // the drag began, already was) and a resize keeps at least minW x minH.
+    // `lines` gets what to draw for the result.
+    static inline DragRect applyGuides(const DragRect& snapped, const DragRect& raw, const DragRect& start, int handle,
+                                       const std::vector<DragRect>& others, int canvasW, int canvasH, int reach, int minW, int minH,
+                                       bool moveX, bool moveY, std::vector<GuideLine>& lines)
     {
+        if (minW < 1) minW = 1;
+        if (minH < 1) minH = 1;
         DragRect out = snapped;
         int edgesX = GE_ALL, edgesY = GE_ALL;
         if (handle != CH_BODY) {
@@ -371,18 +376,27 @@ namespace ThemeEditor
             int& pos = x ? out.x : out.y;
             int& size = x ? out.w : out.h;
             const int rawPos = x ? raw.x : raw.y, rawSize = x ? raw.w : raw.h;
+            const int canvas = x ? canvasW : canvasH;
+            const int startPos = x ? start.x : start.y, startSize = x ? start.w : start.h;
+            const int minSize = x ? minW : minH;
             if (handle == CH_BODY) {
-                pos = rawPos + shift;
+                // On the canvas, or where it already was (canvasMove's range)
+                int lo = canvas - size < 0 ? canvas - size : 0;
+                int hi = canvas - size > 0 ? canvas - size : 0;
+                if (startPos < lo) lo = startPos;
+                if (startPos > hi) hi = startPos;
+                pos = std::max(lo, std::min(hi, rawPos + shift));
             }
             else if (edges & GE_LOW) {
-                // The low edge moves, the high one stays where the grid left it
+                // The low edge moves, the high one stays where the grid left it;
+                // not past the canvas's (or its own start's) edge, not below the minimum
                 const int high = pos + size;
-                const int next = rawPos + shift;
-                if (high - next >= 1) { pos = next; size = high - next; }
+                const int next = std::max(std::min(0, startPos), rawPos + shift);
+                if (high - next >= minSize) { pos = next; size = high - next; }
             }
             else {
-                const int next = rawPos + rawSize + shift;
-                if (next - pos >= 1) size = next - pos;
+                const int next = std::min(std::max(canvas, startPos + startSize), rawPos + rawSize + shift);
+                if (next - pos >= minSize) size = next - pos;
             }
         }
         lines = guideLines(out, others, canvasW, canvasH, moveX ? edgesX : 0, moveY ? edgesY : 0);

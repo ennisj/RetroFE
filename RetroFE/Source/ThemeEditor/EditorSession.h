@@ -161,7 +161,8 @@ namespace ThemeEditor
         bool setCanvasHidden(bool hidden);
         // The same on every selected widget, one undo step (typing coalesces
         // as the single ones do). A setting only some of them have (a widget
-        // variable another kind of widget hasn't) changes where it's had.
+        // variable another kind of widget hasn't) changes where it's had. A
+        // colour variable takes only a whole colour (normalised) or empty.
         bool setLayerAll(int layer);
         bool setAlphaAll(int pct);
         bool setFontColorAll(const std::string& hex);

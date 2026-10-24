@@ -471,16 +471,39 @@ static Test::Suite editorGroupEdit("editor group edits", [] {
 
         // With the grid: an axis in reach lines up exactly, the other keeps the grid's value
         std::vector<GuideLine> out;
-        DragRect r = applyGuides(makeRect(105, 305, 50, 50), makeRect(103, 307, 50, 50), CH_BODY, others, 1920, 1080, 6, true, true, out);
+        const DragRect start = makeRect(500, 500, 50, 50);
+        DragRect r = applyGuides(makeRect(105, 305, 50, 50), makeRect(103, 307, 50, 50), start, CH_BODY, others, 1920, 1080, 6, 1, 1, true, true, out);
         check(r.x == 100 && r.y == 305, "x on the other's left, y on the grid: " + str(r));
         // An axis the pointer didn't move along isn't touched
-        r = applyGuides(makeRect(105, 305, 50, 50), makeRect(103, 307, 50, 50), CH_BODY, others, 1920, 1080, 6, false, true, out);
+        r = applyGuides(makeRect(105, 305, 50, 50), makeRect(103, 307, 50, 50), start, CH_BODY, others, 1920, 1080, 6, 1, 1, false, true, out);
         check(r.x == 105, "not along x");
         // Resizing from the right edge: only that edge lines up
-        r = applyGuides(makeRect(200, 400, 95, 30), makeRect(200, 400, 97, 30), CH_E, others, 1920, 1080, 6, true, false, out);
+        const DragRect box = makeRect(200, 400, 90, 30);
+        r = applyGuides(makeRect(200, 400, 95, 30), makeRect(200, 400, 97, 30), box, CH_E, others, 1920, 1080, 6, 1, 1, true, false, out);
         check(r.x == 200 && r.w == 100, "the right edge onto the other's right (300): " + str(r));
-        r = applyGuides(makeRect(105, 400, 95, 30), makeRect(103, 400, 97, 30), CH_W, others, 1920, 1080, 6, true, false, out);
+        r = applyGuides(makeRect(105, 400, 95, 30), makeRect(103, 400, 97, 30), box, CH_W, others, 1920, 1080, 6, 1, 1, true, false, out);
         check(r.x == 100 && r.x + r.w == 200, "the left edge onto 100, the right one where it was: " + str(r));
+
+        // A resize never goes under the minimum to reach a guide: the left edge pulled onto
+        // the other box's right edge (300) would leave it 2 wide
+        const DragRect narrow = makeRect(290, 600, 12, 30);   // right edge 302 stays; left edge dragged towards 297
+        r = applyGuides(makeRect(295, 600, 7, 30), makeRect(297, 600, 5, 30), narrow, CH_W, others, 1920, 1080, 6, 1, 1, true, false, out);
+        check(r.x == 300 && r.w == 2, "with a minimum of 1 it lines up (left edge on 300): " + str(r));
+        r = applyGuides(makeRect(295, 600, 7, 30), makeRect(297, 600, 5, 30), narrow, CH_W, others, 1920, 1080, 6, 8, 8, true, false, out);
+        check(r.x == 295 && r.w == 7, "with a minimum of 8 the guide is passed up, the grid's box kept: " + str(r));
+        // A move whose guide lies past the canvas edge stays on the canvas
+        const std::vector<DragRect> overhang = { makeRect(-4, 0, 100, 100) };
+        r = applyGuides(makeRect(0, 300, 50, 50), makeRect(1, 300, 50, 50), makeRect(200, 300, 50, 50), CH_BODY, overhang, 1920, 1080, 6, 1, 1,
+                        true, false, out);
+        check(r.x == 0, "the guide at -4 doesn't take it off the canvas: " + str(r));
+        // ...unless it was already off it where the drag began (as canvasMove allows)
+        r = applyGuides(makeRect(0, 300, 50, 50), makeRect(-1, 300, 50, 50), makeRect(-10, 300, 50, 50), CH_BODY, overhang, 1920, 1080, 6, 1, 1,
+                        true, false, out);
+        check(r.x == -4, "from off the canvas it may line up there: " + str(r));
+        // A resize edge stops at the canvas edge too
+        r = applyGuides(makeRect(1840, 0, 80, 30), makeRect(1840, 0, 79, 30), makeRect(1840, 0, 60, 30), CH_E,
+                        { makeRect(1800, 500, 123, 10) }, 1920, 1080, 6, 1, 1, true, false, out);
+        check(r.x + r.w <= 1920, "the right edge stays on the canvas: " + str(r));
     });
 
     Test::run("guides: dragging with the mouse in both editors", [] {
@@ -518,5 +541,263 @@ static Test::Suite editorGroupEdit("editor group edits", [] {
         check(w.page().widgets[2].x == 500, "dropped there");
         std::string note;
         check(runSessionCommand(w, parseEditorCommand("guides off"), note) == CommandResult::Ok && !w.guides, "a script turns them off");
+    });
+});
+
+namespace
+{
+    // Pages with the same elements but different animations, art and wheels
+    const std::string ANIM_WIDE =
+        "<layout width=\"1920\" height=\"1080\">\n"
+        "    <image src=\"images/logo.png\" x=\"100\" y=\"100\" width=\"300\" height=\"150\" layer=\"5\">\n"
+        "        <onEnter><set duration=\".3\"><animate type=\"alpha\" from=\"0\" to=\"1\"/></set><set duration=\".5\"><animate type=\"y\" to=\"200\"/></set></onEnter>\n"
+        "    </image>\n"
+        "    <image src=\"images/a.png\" x=\"500\" y=\"100\" width=\"200\" height=\"100\" layer=\"5\"/>\n"
+        "    <reloadableText type=\"year\" x=\"100\" y=\"600\" fontSize=\"40\" layer=\"10\">\n"
+        "        <onEnter><set duration=\".3\"><animate type=\"alpha\" to=\"1\"/></set></onEnter>\n"
+        "    </reloadableText>\n"
+        "    <reloadableText type=\"genre\" x=\"100\" y=\"700\" fontSize=\"40\" layer=\"10\"/>\n"
+        "    <menu type=\"custom\">\n"
+        "        <itemDefaults x=\"center\" y=\"980\" width=\"100\" height=\"100\"/>\n"
+        "        <item xOffset=\"-400\"/><item xOffset=\"-300\"/><item xOffset=\"-200\"/><item xOffset=\"-100\"/>\n"
+        "        <item xOffset=\"0\" selected=\"true\"/>\n"
+        "        <item xOffset=\"100\"/><item xOffset=\"200\"/><item xOffset=\"300\"/><item xOffset=\"400\"/>\n"
+        "    </menu>\n"
+        "</layout>\n";
+    // The logo's steps the other way round, the image showing another file, the
+    // texts in the other order, the year's step a change of another type, a 7-item wheel
+    const std::string ANIM_NARROW =
+        "<layout width=\"1600\" height=\"1200\">\n"
+        "  <image src=\"images/logo.png\" x=\"80\" y=\"110\" width=\"240\" height=\"120\" layer=\"5\">\n"
+        "    <onEnter><set duration=\".5\"><animate type=\"y\" to=\"220\"/></set><set duration=\".3\"><animate type=\"alpha\" from=\"0\" to=\"1\"/></set></onEnter>\n"
+        "  </image>\n"
+        "  <image src=\"images/b.png\" x=\"400\" y=\"110\" width=\"160\" height=\"80\" layer=\"5\"/>\n"
+        "  <reloadableText type=\"genre\" x=\"90\" y=\"780\" fontSize=\"40\" layer=\"10\"/>\n"
+        "  <reloadableText type=\"year\" x=\"90\" y=\"660\" fontSize=\"40\" layer=\"10\">\n"
+        "    <onEnter><set duration=\".3\"><animate type=\"x\" to=\"90\"/></set></onEnter>\n"
+        "  </reloadableText>\n"
+        "  <menu type=\"custom\">\n"
+        "    <itemDefaults x=\"center\" y=\"1100\" width=\"100\" height=\"100\"/>\n"
+        "    <item xOffset=\"-300\"/><item xOffset=\"-200\"/><item xOffset=\"-100\"/>\n"
+        "    <item xOffset=\"0\" selected=\"true\"/>\n"
+        "    <item xOffset=\"100\"/><item xOffset=\"200\"/><item xOffset=\"300\"/>\n"
+        "  </menu>\n"
+        "</layout>\n";
+
+    TwinOp opOf(std::function<bool(LayoutSession&, const std::function<int(int)>&)> run, bool destructive = false, bool primaryOnly = false)
+    {
+        TwinOp t;
+        t.run = run;
+        t.destructive = destructive;
+        t.primaryOnly = primaryOnly;
+        return t;
+    }
+
+    void redoBoth(Pair& p)
+    {
+        const unsigned link = p.here.redoLink();
+        p.here.redo();
+        if (link && p.there.redoLink() == link) p.there.redo();
+        p.state.reset(p.here);
+    }
+}
+
+static Test::Suite editorGroupReview("editor group edits after review", [] {
+    Test::run("twin animations: a step or change is the same one only if it agrees", [] {
+        const LayoutDoc a = parse(ANIM_WIDE), b = parse(ANIM_NARROW);
+        MatchKind kind = MatchKind::None;
+        // The logo's steps are listed the other way round there: neither step matches the one in its place
+        check(matchElement(a, a.find("image[0]/onEnter[0]"), b, &kind) == b.find("image[0]/onEnter[0]") && kind == MatchKind::Exact,
+              "the event matches");
+        check(matchElement(a, a.find("image[0]/onEnter[0]/set[0]"), b) < 0 && matchElement(a, a.find("image[0]/onEnter[0]/set[1]"), b) < 0,
+              "steps with another duration in their place don't");
+        // The year's change animates x there, alpha here
+        check(matchElement(a, a.find("reloadableText[0]/onEnter[0]/set[0]"), b) >= 0, "its step matches (same duration)");
+        check(matchElement(a, a.find("reloadableText[0]/onEnter[0]/set[0]/animate[0]"), b) < 0, "its change doesn't (another type)");
+        check(matchElement(a, a.find("reloadableText[0]"), b, &kind) == b.find("reloadableText[1]") && kind == MatchKind::Exact,
+              "the year matches across the other order");
+        check(matchElement(a, a.find("image[1]"), b, &kind) == b.find("image[1]") && kind == MatchKind::Weak, "another file: a weak match");
+        check(matchElement(a, a.find("menu[0]/item[3]"), b, &kind) == b.find("menu[0]/item[2]") && kind == MatchKind::Slot,
+              "a wheel item: the same slot of a shorter wheel");
+
+        Pair p;
+        check(openPair(p, "review_anims", ANIM_WIDE, ANIM_NARROW), "both pages open");
+        auto removeHere = [&](const std::string& path) {
+            p.here.selectPath(path.substr(0, path.find('/')));
+            const int el = p.here.doc().find(path);
+            TwinOp op = opOf([el](LayoutSession& s, const std::function<int(int)>& map) { return s.removeAnimation(map(el)); }, true, true);
+            op.touches = { el };
+            return runOnBoth(p.here, p.there, p.state, op);
+        };
+        // Removing the first step here would have removed the other step there (same index)
+        TwinOpResult r = removeHere("image[0]/onEnter[0]/set[0]");
+        check(r.here && !r.there && r.missing.size() == 1 && p.there.text() == ANIM_NARROW, "removed here only, the 4:3 page's steps untouched");
+        p.here.undo();
+        p.state.reset(p.here);
+        // A step list of another length: nothing there either
+        const std::string fewer = ANIM_NARROW.substr(0, ANIM_NARROW.find("<set duration=\".5\">")) +
+                                  ANIM_NARROW.substr(ANIM_NARROW.find("</set>") + 6);
+        Pair q;
+        check(openPair(q, "review_anims_fewer", ANIM_WIDE, fewer), "a 4:3 page with one step");
+        q.here.selectPath("image[0]");
+        const int step = q.here.doc().find("image[0]/onEnter[0]/set[0]");
+        TwinOp rm = opOf([step](LayoutSession& s, const std::function<int(int)>& map) { return s.removeAnimation(map(step)); }, true, true);
+        rm.touches = { step };
+        r = runOnBoth(q.here, q.there, q.state, rm);
+        check(r.here && !r.there && r.missing.size() == 1 && q.there.text() == fewer, "a step of a list of another length isn't removed there");
+        // Adding a change into a step that isn't the same there
+        p.here.selectPath("reloadableText[0]");
+        const int set0 = p.here.doc().find("reloadableText[0]/onEnter[0]/set[0]");
+        TwinOp add = opOf([set0](LayoutSession& s, const std::function<int(int)>& map) { return s.addAnimate(map(set0)); }, false, true);
+        add.touches = { set0 };
+        r = runOnBoth(p.here, p.there, p.state, add);
+        check(r.here && r.there, "the year's step is the same (duration .3): a change added on both");
+        p.here.undo();
+        p.there.undo();
+        p.state.reset(p.here);
+        // Removing a change of another type there
+        r = removeHere("reloadableText[0]/onEnter[0]/set[0]/animate[0]");
+        check(r.here && !r.there && r.missing.size() == 1 && p.there.text() == ANIM_NARROW, "the alpha change here isn't the x change there");
+    });
+
+    Test::run("twin: delete only removes what's surely the same element there", [] {
+        Pair p;
+        check(openPair(p, "review_delete", ANIM_WIDE, ANIM_NARROW), "both pages open");
+        const TwinOp del = opOf([](LayoutSession& s, const std::function<int(int)>&) { return s.deleteSelected(); }, true);
+        // Showing another file there (weak): deleted here, left there and said
+        select(p.here, { "image[1]" });
+        TwinOpResult r = runOnBoth(p.here, p.there, p.state, del);
+        check(r.here && !r.there && r.unsure.size() == 1 && r.missing.empty() && p.there.text() == ANIM_NARROW, "image b.png stays on the 4:3 page");
+        p.here.undo();
+        p.state.reset(p.here);
+        // A wheel slot of another-length wheel
+        select(p.here, { "menu[0]/item[3]" });
+        r = runOnBoth(p.here, p.there, p.state, del);
+        check(r.here && !r.there && r.unsure.size() == 1 && p.there.text() == ANIM_NARROW, "the 7-item wheel keeps its item");
+        p.here.undo();
+        p.state.reset(p.here);
+        // The same element, in another place among its siblings: deleted there too
+        select(p.here, { "reloadableText[1]" });   // genre (first there)
+        r = runOnBoth(p.here, p.there, p.state, del);
+        check(r.linked && p.there.text().find("genre") == std::string::npos && p.there.text().find("year") != std::string::npos,
+              "the genre goes from both, the year stays");
+        undoBoth(p);
+        check(p.here.text() == ANIM_WIDE && p.there.text() == ANIM_NARROW, "one undo back");
+        // Replacing events (copy animations) is destructive too: not onto a weak match
+        select(p.here, { "image[1]" });
+        const int src = p.here.doc().find("reloadableText[0]");
+        TwinOp copy = opOf([src](LayoutSession& s, const std::function<int(int)>& map) { return s.copyAnimationsFrom(map(src)); }, true, true);
+        copy.touches = { src };
+        r = runOnBoth(p.here, p.there, p.state, copy);
+        check(r.here && !r.there && r.unsure.size() == 1 && p.there.text() == ANIM_NARROW, "the weakly matched image keeps its (no) events there");
+        // A weak match still lines up, its box marked a guess when its size is the art's
+        ElementGeom g;
+        g.x = 500; g.y = 100; g.w = 200; g.h = 100;
+        const LayoutDoc a = parse("<layout width=\"1920\" height=\"1080\"><image src=\"a.png\" x=\"500\" y=\"100\"/></layout>");
+        const LayoutDoc b = parse("<layout width=\"1600\" height=\"1200\"><image src=\"b.png\" x=\"400\" y=\"110\"/></layout>");
+        ElementGeom t;
+        check(twinGeometry(a, 1, g, 1920, 1080, b, 1, 1600, 1200, t, false) && t.approximate, "another file's size is a guess");
+        check(twinGeometry(a, 1, g, 1920, 1080, b, 1, 1600, 1200, t, true) && !t.approximate, "the same file's isn't");
+    });
+
+    Test::run("twin: duplicate when the siblings are in another order there", [] {
+        Pair p;
+        check(openPair(p, "review_duplicate_order", ANIM_WIDE, ANIM_NARROW), "both pages open");
+        select(p.here, { "reloadableText[0]" });   // the year, second there
+        const TwinOpResult r =
+            runOnBoth(p.here, p.there, p.state, opOf([](LayoutSession& s, const std::function<int(int)>&) { return s.duplicateSelected(); }));
+        check(r.linked, "duplicated on both");
+        const LayoutDoc there = parse(p.there.text());
+        check(there.elements[there.find("reloadableText[2]")].value("type") == "year" &&
+              there.elements[there.find("reloadableText[1]")].value("type") == "year", "the 4:3 copy right after its own year");
+        const LayoutDoc here = p.here.doc();
+        bool paired = true;
+        for (int i = 1; i < static_cast<int>(here.elements.size()); ++i) {
+            if (here.elements[i].name != "reloadableText") continue;
+            const int j = matchElement(here, i, there);
+            paired = paired && j >= 0 && there.elements[j].value("type") == here.elements[i].value("type");
+        }
+        check(paired, "every text still matches one of its own type");
+        undoBoth(p);
+        check(p.here.text() == ANIM_WIDE && p.there.text() == ANIM_NARROW, "one undo back");
+    });
+
+    Test::run("twin: structural, attribute, Also apply toggled, undo and redo", [] {
+        Pair p;
+        check(openPair(p, "review_undo_mix"), "both pages open");
+        MirrorResult m;
+        // 1. A duplicate on both (linked)
+        select(p.here, { "reloadableText[2]" });
+        check(runOnBoth(p.here, p.there, p.state, opOf([](LayoutSession& s, const std::function<int(int)>&) { return s.duplicateSelected(); })).linked,
+              "duplicated on both");
+        const std::string here1 = p.here.text(), there1 = p.there.text();
+        // 2. An attribute copied (linked)
+        p.here.selectPath("reloadableText[0]");
+        p.here.endCoalesce();
+        p.here.setAttribute("fontColor", "ffcc00");
+        check(syncTwinPages(p.here, p.there, p.state, m) == TwinCopy::Copied, "the colour copied");
+        const std::string here2 = p.here.text(), there2 = p.there.text();
+        // 3. Also apply off: an edit here alone; then on again (the screen starts afresh)
+        p.state.reset(p.here);
+        p.here.endCoalesce();
+        p.here.setAttribute("layer", "11");
+        p.state.reset(p.here);
+        check(p.there.text() == there2, "not copied while off");
+        // Undo: the lone edit here only, then the colour on both, then the duplicate on both
+        undoBoth(p);
+        check(p.here.text() == here2 && p.there.text() == there2, "the lone edit undone, the twin untouched");
+        undoBoth(p);
+        check(p.here.text() == here1 && p.there.text() == there1, "the colour undone on both");
+        // Redo after a linked undo: both again
+        redoBoth(p);
+        check(p.here.text() == here2 && p.there.text() == there2, "redone on both");
+        undoBoth(p);
+        undoBoth(p);
+        check(p.here.text() == WIDE && p.there.text() == NARROW, "the duplicate undone on both");
+        redoBoth(p);
+        check(p.here.text() == here1 && p.there.text() == there1, "and redone on both");
+        redoBoth(p);
+        redoBoth(p);
+        check(p.here.text() != here2 && p.there.text() == there2, "the lone edit redone here only");
+    });
+
+    Test::run("twin: an attribute removed from several goes from the twin too", [] {
+        Pair p;
+        check(openPair(p, "review_removeall"), "both pages open");
+        select(p.here, { "reloadableText[0]", "reloadableText[1]" });
+        check(p.here.removeAttributeAll("maxWidth"), "removed here");
+        MirrorResult m;
+        check(syncTwinPages(p.here, p.there, p.state, m) == TwinCopy::Copied, "copied");
+        check(value(p.there.text(), "reloadableText[0]", "maxWidth") == "(unset)" && value(p.there.text(), "reloadableText[1]", "maxWidth") == "(unset)" &&
+              value(p.there.text(), "reloadableText[2]", "maxWidth") == "300", "gone from the two there, the year keeps it");
+        undoBoth(p);
+        check(p.here.text() == WIDE && p.there.text() == NARROW, "one undo back");
+    });
+
+    Test::run("guides: a widget's resize keeps its minimum size", [] {
+        const std::string root = makeRoot("review_guides_min");
+        EditorSession w;
+        check(openThree(root, w), "a theme with three texts");
+        w.select(1);
+        w.setRect(1085, 300, 200, 100);   // a left edge at 1085 to line up with
+        w.select(2);                       // 900,600 200x100; a Static Text is at least 20 wide
+        w.guides = true;
+        w.pointerDown(unitFit(), 900, 650, 4.0f);
+        w.pointerMove(unitFit(), 1090, 650);
+        check(w.dragRect().w >= 20 && w.dragRect().x == 1080, "the guide at 1085 would leave it 15 wide: it stops at 20: " + str(w.dragRect()));
+        w.cancelDrag();
+    });
+
+    Test::run("widget editor: a colour setting for several only once it's a colour", [] {
+        const std::string root = makeRoot("review_shared_colour");
+        EditorSession w;
+        check(openThree(root, w), "a theme");
+        check(w.addWidget("wheel_vertical") && w.addWidget("wheel_vertical"), "two wheels");
+        const int n = static_cast<int>(w.page().widgets.size());
+        w.setSelection({ n - 2, n - 1 });
+        check(!w.setVarAll("WHEELFONTCOLOR", "ff") && w.page().widgets[n - 1].varValue("WHEELFONTCOLOR", "") != "ff", "half a colour: nothing");
+        check(w.setVarAll("WHEELFONTCOLOR", "#ff8800") && w.page().widgets[n - 2].varValue("WHEELFONTCOLOR", "") == "FF8800" &&
+              w.page().widgets[n - 1].varValue("WHEELFONTCOLOR", "") == "FF8800", "a whole one, as its own field writes it");
+        check(w.setVarAll("WHEELFONTCOLOR", "") && w.page().widgets[n - 1].varValue("WHEELFONTCOLOR", "x").empty(), "emptied: the default");
     });
 });

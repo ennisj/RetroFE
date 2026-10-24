@@ -359,8 +359,12 @@ namespace ThemeEditor
                 // Every other widget on the page, not hidden in the editor
                 std::vector<DragRect> others;
                 const auto& widgets = page().widgets;
+                std::vector<char> moving(widgets.size(), 0);
+                for (int i : selection_) {
+                    if (i >= 0 && i < static_cast<int>(widgets.size())) moving[i] = 1;
+                }
                 for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
-                    if (widgets[i].canvasHide || isSelected(i)) continue;
+                    if (widgets[i].canvasHide || moving[i]) continue;
                     DragRect r;
                     canvasHitRect(widgets[i], r.x, r.y, r.w, r.h);
                     others.push_back(r);
@@ -368,8 +372,9 @@ namespace ThemeEditor
                 const int reach = std::max(1, roundDelta(guideReachPx / fit.scale));
                 const bool movedX = std::fabs(sx - drag_.startSx) >= CLICK_SLOP;
                 const bool movedY = std::fabs(sy - drag_.startSy) >= CLICK_SLOP;
-                drag_.rect = applyGuides(drag_.rect, raw, drag_.handle, others, project_.canvasW(), project_.canvasH(), reach,
-                                         movedX, movedY, guideLines_);
+                const WidgetDef* def = drag_.handle == CH_BODY ? nullptr : selectedDef();
+                drag_.rect = applyGuides(drag_.rect, raw, drag_.start, drag_.handle, others, project_.canvasW(), project_.canvasH(), reach,
+                                         def ? def->minW : 8, def ? def->minH : 8, movedX, movedY, guideLines_);
             }
         }
     }
@@ -747,7 +752,14 @@ namespace ThemeEditor
         return editEach(coalesce_.empty() ? "" : coalesce_ + "/all/" + token, [&](WidgetInstance& w, const WidgetDef* def) {
             const WidgetVar* var = def ? def->var(token) : nullptr;
             std::string v;
-            if (!var || !varTakes(*var, value, v) || w.varValue(token, var->def) == v) return false;
+            if (!var || !varTakes(*var, value, v)) return false;
+            // A colour as its own field writes it (FFAA00), and only once it's whole: a
+            // half-typed "ff" or "#ff8800" never reaches every widget as it is
+            if (varKind(*var) == VarKind::Colour && !v.empty()) {
+                v = normalizeColour(v);
+                if (v.empty()) return false;
+            }
+            if (w.varValue(token, var->def) == v) return false;
             w.setVar(token, v);
             return true;
         });

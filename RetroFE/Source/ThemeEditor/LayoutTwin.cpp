@@ -245,7 +245,7 @@ namespace ThemeEditor
     }
 
     bool twinGeometry(const LayoutDoc& here, int i, const ElementGeom& g, int hereW, int hereH,
-                      const LayoutDoc& there, int j, int thereW, int thereH, ElementGeom& out)
+                      const LayoutDoc& there, int j, int thereW, int thereH, ElementGeom& out, bool sameArt)
     {
         if (i <= 0 || j <= 0 || i >= static_cast<int>(here.elements.size()) || j >= static_cast<int>(there.elements.size()) || g.around) {
             return false;
@@ -278,6 +278,8 @@ namespace ThemeEditor
             out.approximate = true;
             return true;
         }
+        // Showing another file there (a weak match): its size from the art is a guess
+        if (!sameArt && (b.width < 0 || b.height < 0)) out.approximate = true;
         if (a == b) return true;
         // Its own (unscaled) size, from here: known when nothing set or clamped it
         const bool setHere = a.width >= 0 || a.height >= 0;
@@ -349,19 +351,27 @@ namespace ThemeEditor
         std::vector<int> mapped;
         std::map<int, int> map;
         std::vector<std::pair<std::string, ElementGeom>> boxes;
-        auto missing = [&r, &here](int i) {
+        auto note = [&here](std::vector<std::string>& list, int i) {
             const std::string label = here.label(i);
-            if (std::find(r.missing.begin(), r.missing.end(), label) == r.missing.end()) r.missing.push_back(label);
+            if (std::find(list.begin(), list.end(), label) == list.end()) list.push_back(label);
+        };
+        // A match there, or -1 (noted as missing, or as not surely the same for a destructive one)
+        auto find = [&](int i, MatchKind& kind) {
+            const int j = matchElement(here.doc(), i, there.doc(), &kind);
+            if (j < 0) { note(r.missing, i); return -1; }
+            if (op.destructive && kind != MatchKind::Exact) { note(r.unsure, i); return -1; }
+            return j;
         };
         for (int i : acting) {
-            const int j = matchElement(here.doc(), i, there.doc());
-            if (j < 0) { missing(i); continue; }
+            MatchKind kind = MatchKind::None;
+            const int j = find(i, kind);
+            if (j < 0) continue;
             if (op.boxes) {
                 const ElementGeom* g = here.geometry(i);
                 ElementGeom tg;
                 if (!g || !twinGeometry(here.doc(), i, *g, here.canvasW(), here.canvasH(), there.doc(), j, there.canvasW(),
-                                        there.canvasH(), tg)) {
-                    missing(i);
+                                        there.canvasH(), tg, kind != MatchKind::Weak)) {
+                    note(r.missing, i);
                     continue;
                 }
                 boxes.emplace_back(there.element(j).path, tg);
@@ -371,13 +381,13 @@ namespace ThemeEditor
         }
         for (int i : op.touches) {
             if (i < 0 || i >= here.elementCount()) continue;
-            const int j = matchElement(here.doc(), i, there.doc());
-            if (j < 0) missing(i);
-            else map[i] = j;
+            MatchKind kind = MatchKind::None;
+            const int j = find(i, kind);
+            if (j >= 0) map[i] = j;
         }
 
         r.here = op.run(here, self);
-        if (!r.missing.empty() || (!r.here && !op.evenIfUnchanged)) return r;
+        if (!r.missing.empty() || !r.unsure.empty() || (!r.here && !op.evenIfUnchanged)) return r;
 
         // The same there, on its own elements
         std::vector<std::string> keep;
@@ -389,14 +399,21 @@ namespace ThemeEditor
             auto it = map.find(i);
             return it == map.end() ? -1 : it->second;
         };
+        const unsigned structure = there.structure();
         r.there = op.run(there, toThere);
+        r.failed = !r.there;
         // The boxes were only for this; the page isn't shown
         if (op.boxes) there.clearGeometry();
         there.endCoalesce();
+        // Its own selection back, by path; after elements came or went the paths
+        // may name other elements, so then none (showing that page selects the
+        // matches of this page's selection anyway)
         std::vector<int> back;
-        for (const std::string& p : keep) {
-            const int k = there.doc().find(p);
-            if (k >= 0) back.push_back(k);
+        if (there.structure() == structure) {
+            for (const std::string& p : keep) {
+                const int k = there.doc().find(p);
+                if (k >= 0) back.push_back(k);
+            }
         }
         there.setSelection(back);
         if (r.here && r.there) {
@@ -431,66 +448,104 @@ namespace ThemeEditor
         return "";
     }
 
-    int matchElement(const LayoutDoc& from, int element, const LayoutDoc& to)
+    namespace
     {
-        if (element < 0 || element >= static_cast<int>(from.elements.size()) || to.elements.empty()) return -1;
-        if (element == 0) return 0;
-        const int owner = pageElementOf(from, element);
-        if (owner != element) {
-            // Inside an event: the same steps under the same element there
-            const int there = matchElement(from, owner, to);
-            if (there < 0) return -1;
-            const std::string& ownerPath = from.elements[owner].path;
-            const std::string rel = from.elements[element].path.substr(ownerPath.empty() ? 0 : ownerPath.size() + 1);
-            const std::string& base = to.elements[there].path;
-            const int j = to.find(base.empty() ? rel : base + "/" + rel);
-            return j >= 0 && to.elements[j].name == from.elements[element].name ? j : -1;
+        // What tells an event, a step or a change apart from its siblings: a
+        // step by its duration, a change by what it animates (its from / to
+        // are positions, which the pages tune each on their own)
+        std::string animationIdentity(const LayoutElement& e)
+        {
+            if (e.name == "set") return e.name + "\x1f" + e.value("duration");
+            if (e.name == "animate") return e.name + "\x1f" + e.value("type");
+            return e.name;
         }
-        const LayoutElement& e = from.elements[element];
-        // Its parent first (the page, a menu): what's under it is looked for under its match
-        const int parentThere = matchElement(from, e.parent, to);
-        if (parentThere < 0) return -1;
-        const std::vector<int> here = childrenNamed(from, e.parent, e.name);
-        const std::vector<int> there = childrenNamed(to, parentThere, e.name);
-        const int k = indexIn(here, element);
-        if (k < 0 || there.empty()) return -1;
 
-        // A menu's items: by their index= when they have one (a vertical menu's
-        // slots), else by their place from the selected item, so a 9-item wheel
-        // and a 7-item one pair up around the middle; one with no counterpart
-        // there has no match
-        if (e.name == "item" && from.elements[e.parent].name == "menu") {
-            if (e.has("index")) {
-                for (int t : there) {
-                    if (to.elements[t].value("index") == e.value("index")) return t;
+        // The weaker of two
+        MatchKind weaker(MatchKind a, MatchKind b) { return static_cast<int>(a) > static_cast<int>(b) ? a : b; }
+
+        int matchIn(const LayoutDoc& from, int element, const LayoutDoc& to, MatchKind& kind)
+        {
+            kind = MatchKind::None;
+            if (element < 0 || element >= static_cast<int>(from.elements.size()) || to.elements.empty()) return -1;
+            if (element == 0) { kind = MatchKind::Exact; return 0; }
+            const LayoutElement& e = from.elements[element];
+            const int owner = pageElementOf(from, element);
+            if (owner != element) {
+                // Inside an event: under its parent's match, the one in the same place
+                // among as many of its tag, and what it is agrees (an event's name, a
+                // step's duration, a change's type), so a different step list there
+                // isn't taken for this one
+                MatchKind parentKind = MatchKind::None;
+                const int parentThere = matchIn(from, e.parent, to, parentKind);
+                if (parentThere < 0) return -1;
+                const std::vector<int> here = childrenNamed(from, e.parent, e.name);
+                const std::vector<int> there = childrenNamed(to, parentThere, e.name);
+                const int k = indexIn(here, element);
+                if (k < 0 || here.size() != there.size()) return -1;
+                if (animationIdentity(to.elements[there[k]]) != animationIdentity(e)) return -1;
+                kind = parentKind;
+                return there[k];
+            }
+            // Its parent first (the page, a menu): what's under it is looked for under its match
+            MatchKind parentKind = MatchKind::None;
+            const int parentThere = matchIn(from, e.parent, to, parentKind);
+            if (parentThere < 0) return -1;
+            const std::vector<int> here = childrenNamed(from, e.parent, e.name);
+            const std::vector<int> there = childrenNamed(to, parentThere, e.name);
+            const int k = indexIn(here, element);
+            if (k < 0 || there.empty()) return -1;
+
+            // A menu's items: by their index= when they have one (a vertical menu's
+            // slots), else by their place from the selected item, so a 9-item wheel
+            // and a 7-item one pair up around the middle; one with no counterpart
+            // there has no match
+            if (e.name == "item" && from.elements[e.parent].name == "menu") {
+                if (e.has("index")) {
+                    for (int t : there) {
+                        if (to.elements[t].value("index") == e.value("index")) { kind = parentKind; return t; }
+                    }
+                    return -1;
                 }
-                return -1;
+                int at = -1;
+                const int selHere = selectedItem(from, here);
+                const int selThere = selectedItem(to, there);
+                if (selHere >= 0 && selThere >= 0) at = selThere + (k - selHere);
+                else if (here.size() == there.size()) at = k;
+                if (at < 0 || at >= static_cast<int>(there.size())) return -1;
+                kind = weaker(parentKind, MatchKind::Slot);
+                return there[at];
             }
-            const int selHere = selectedItem(from, here);
-            const int selThere = selectedItem(to, there);
-            if (selHere >= 0 && selThere >= 0) {
-                const int at = selThere + (k - selHere);
-                return at >= 0 && at < static_cast<int>(there.size()) ? there[at] : -1;
-            }
-            return here.size() == there.size() ? there[k] : -1;
-        }
 
-        // The same place among as many alike siblings, and what it is agrees
-        const std::string id = identity(e);
-        const bool sameCount = here.size() == there.size();
-        if (sameCount && identity(to.elements[there[k]]) == id) return there[k];
-        // Elsewhere under the parent: the only one like it, or the same one of as many
-        std::vector<int> hereAlike, thereAlike;
-        for (int h : here) {
-            if (identity(from.elements[h]) == id) hereAlike.push_back(h);
+            // The same place among as many alike siblings, and what it is agrees
+            const std::string id = identity(e);
+            const bool sameCount = here.size() == there.size();
+            kind = parentKind;
+            if (sameCount && identity(to.elements[there[k]]) == id) return there[k];
+            // Elsewhere under the parent: the only one like it, or the same one of as many
+            std::vector<int> hereAlike, thereAlike;
+            for (int h : here) {
+                if (identity(from.elements[h]) == id) hereAlike.push_back(h);
+            }
+            for (int t : there) {
+                if (identity(to.elements[t]) == id) thereAlike.push_back(t);
+            }
+            if (!thereAlike.empty() && thereAlike.size() == hereAlike.size()) return thereAlike[indexIn(hereAlike, element)];
+            // The same place, showing another file or text (the pages' art differs, or an edit of src wasn't copied)
+            if (sameCount && identity(to.elements[there[k]], true) == identity(e, true)) {
+                kind = weaker(parentKind, MatchKind::Weak);
+                return there[k];
+            }
+            kind = MatchKind::None;
+            return -1;
         }
-        for (int t : there) {
-            if (identity(to.elements[t]) == id) thereAlike.push_back(t);
-        }
-        if (!thereAlike.empty() && thereAlike.size() == hereAlike.size()) return thereAlike[indexIn(hereAlike, element)];
-        // The same place, showing another file or text (the pages' art differs, or an edit of src wasn't copied)
-        if (sameCount && identity(to.elements[there[k]], true) == identity(e, true)) return there[k];
-        return -1;
+    }
+
+    int matchElement(const LayoutDoc& from, int element, const LayoutDoc& to, MatchKind* kind)
+    {
+        MatchKind k = MatchKind::None;
+        const int j = matchIn(from, element, to, k);
+        if (kind) *kind = j < 0 ? MatchKind::None : k;
+        return j;
     }
 
     bool attributeChanges(const LayoutDoc& before, const LayoutDoc& after, std::vector<AttrChange>& out)

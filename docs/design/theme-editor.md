@@ -1417,6 +1417,60 @@ shared settings, layer/colour for all (`r9-w1-K-shared.png`), a guided
 drag (810, 815 without), undo, leave without saving: every file of the
 theme unchanged (hashes).
 
+### After the adversarial review (6fc79df8 + 5f89e7b6)
+
+- **Animations matched by place only (medium).** A step or change on the
+  other page was "the same" by index and tag, so removing step 0 here could
+  remove a different step there. `matchElement` now takes an event, step or
+  change only when its parent matched, its siblings of that tag are as many,
+  and it agrees: the event's name, a step's `duration`, a change's `type`
+  (not `from` / `to`, which are positions each page tunes). Otherwise it has
+  no match: structural edits stay here, attribute copies say "not on the
+  other page". The shipped-pages test still pairs every element of Aeon Nox.
+- **Destructive ops on weak matches (medium).** `matchElement` reports how
+  sure it is (`MatchKind`: Exact, Slot — a wheel item by its place from the
+  selected item, Weak — the same place showing another file or text).
+  `TwinOp::destructive` (delete, removing animations, Copy of animations,
+  which replaces events) acts only on Exact matches; the others are listed
+  in `TwinOpResult::unsure`, left there, and named in the note ("isn't
+  surely the same element ... another slot of a wheel of another length, or
+  showing another file there"); the delete dialog says so beforehand.
+  `twinGeometry` marks a box approximate when the match is Weak and its size
+  comes from the art.
+- **Script waits cost the rebuild delay (medium).** While a script runs the
+  preview is rebuilt as soon as it's dirty (no 0.25 s settle), in both
+  editors; the docs say what the 600-frame cap is for.
+- **Shared colour variables (medium).** `setVarAll` takes a colour variable
+  only as a whole colour, normalised (FF8800), or empty, so a half-typed
+  `ff` or `#ff8800` never reaches every widget; layer and opacity in the
+  shared fields apply only once they're a number.
+- **Guides past the limits (low-medium).** `applyGuides` takes the drag's
+  start box and minimum size: a guided move stays in canvasMove's range (on
+  the canvas, or where it already was), a guided resize stops at the
+  canvas's edge and never goes under the minimum (a Static Text's 20).
+- **Low:** undo/redo here when the other page's step isn't next now says
+  that page has a later change of its own "(made there, or lined up there
+  alone)"; `onBoth`'s notes say "nothing was lined up on either page" when
+  nothing moved, and that an operation "couldn't be done on the other page,
+  so the two pages differ now" when everything matched but it failed there;
+  after a structural op the other page's selection isn't restored by stale
+  paths (it's cleared; Show selects the matches anyway); the guides'
+  exclusion is a mask, not a search per element.
+- Tests added (`EditorGroupEditTests.cpp`, "after review"): steps listed in
+  another order there (index collision), a list of another length, a change
+  of another type, a step that agrees (added on both); delete onto a weak
+  match and onto a shorter wheel's slot (left, `unsure`), onto the same
+  element in another sibling place (deleted); Copy of animations onto a weak
+  match; duplicate with the siblings in another order there (every text
+  still pairs up); duplicate, then an attribute copy, then Also apply off
+  and on with a lone edit, then undo and redo through all of it (redo after
+  a linked undo takes both); `removeAttributeAll` copied to the twin; a
+  widget's guided resize kept at its minimum; guided moves and resizes kept
+  on the canvas; the shared colour variable.
+- GUI: the first scripted run again (no saving): the same results, the
+  84-command script ran in about 9 seconds with its own waits; both pages
+  unchanged afterwards.
+
 ### Left for later
 
 - Guides for equal spacing, and guides while nudging with keys or the

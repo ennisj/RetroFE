@@ -359,7 +359,14 @@ toolbar offers:
   - **Duplicate**, **Delete**, **Add element...** (after the same element
     there; in the middle of that page) and adding or removing **events,
     steps and changes**, and **Copy** of animations, happen at the same
-    place there.
+    place there. A step or change there is the same one only when it's in
+    the same place among as many, with the same duration (a step) or type
+    (a change); a different list of steps there is left alone. **Delete**,
+    removing animations and **Copy** (which replaces events) touch an
+    element there only when it's surely the same one: not a wheel item
+    paired by its place from the selected item of a wheel of another
+    length, nor one showing another file or text there. Those stay, and the
+    line says so; the delete dialog says it beforehand.
   Both are one undo step with this page's. When one of the elements isn't
   on the other page, nothing is done there and the line beside the switch
   says which: lining up and spacing then copy the moves in proportion, as
@@ -497,9 +504,13 @@ and the results go to `log.txt` (`[ThemeEditor] script:`). It exists so the
 editor can be checked without a mouse. Coordinates and distances are theme
 units; blank lines and lines starting with `#` are skipped. After a command
 that changes the page, the next one waits until the preview has been built
-again (and, in the layout editor, the boxes measured), so a script needs no
-`wait` after `undo` or `nudge`; `wait N` is only for holding the screen (a
-page whose art never loads holds a script up for 600 frames at most).
+again (and, in the layout editor, the boxes measured); while a script runs
+the preview is rebuilt straight away rather than after the usual quarter
+second, so this costs a frame or two. A script needs no `wait` after `undo`
+or `nudge`; `wait N` is only for holding the screen. Art that loads after
+the page is built (game art, videos) isn't waited for, and if the preview
+can't be rebuilt at all (a drag left open) the script goes on after 600
+frames.
 
 | Command | Does |
 |---------|------|

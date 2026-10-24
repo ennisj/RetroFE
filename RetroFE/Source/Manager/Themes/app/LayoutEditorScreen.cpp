@@ -241,7 +241,9 @@ void LayoutEditorScreen::update(float dt)
     }
     // Playing an event shows the page as edited: a rebuild that's due happens first
     const bool replay = !replay_.empty() && !session_.dragging();
-    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || replay)) rebuildPreview();
+    // A script doesn't wait out the delay (it waits for the rebuild before its next command)
+    const bool scripted = scriptAt_ < script_.size();
+    if (previewDirty_ && !session_.dragging() && (sinceChange_ >= REBUILD_DELAY || !page_ || replay || scripted)) rebuildPreview();
     if (replay && page_) {
         // As RetroFE does: the menus' events go through every menu and component
         page_->setSelectedItem();
@@ -750,7 +752,7 @@ bool LayoutEditorScreen::runCommand(const EditorCommand& command, std::string& n
                 else if (n == "addanimate") edit = [](LayoutSession& p, int e) { return p.addAnimate(e); };
                 else edit = [](LayoutSession& p, int e) { return p.removeAnimation(e); };
             }
-            const bool ok = animationEdit(element, edit, n);
+            const bool ok = animationEdit(element, edit, n, n == "rmanim" || n == "copyanims");
             note = twinNote_;
             return ok;
         }
@@ -1491,8 +1493,8 @@ void LayoutEditorScreen::undoBoth()
         if (twin_.undoLink() == link) twin_.undo();
         else if (twin_.hasUndoLink(link)) {
             // Its copy isn't next in the other page's history (that page was changed on its own since): say so
-            setStatus("Undone on " + session_.page() + " only: " + twin_.page() + " was changed on its own since, so its copy "
-                      "of this change stays. Show " + twin_.page() + " to undo it there.", true);
+            setStatus("Undone on " + session_.page() + " only: " + twin_.page() + " has a later change of its own (made there, or lined up "
+                      "there alone), so its copy of this change stays. Show " + twin_.page() + " to undo it there.", true);
         }
     }
     twinSync_.reset(session_);
@@ -1506,8 +1508,8 @@ void LayoutEditorScreen::redoBoth()
     if (link != 0 && twin_.isOpen()) {
         if (twin_.redoLink() == link) twin_.redo();
         else if (twin_.hasRedoLink(link)) {
-            setStatus("Redone on " + session_.page() + " only: " + twin_.page() + " was changed on its own since, so it "
-                      "doesn't get this change again. Show " + twin_.page() + " to make it there.", true);
+            setStatus("Redone on " + session_.page() + " only: " + twin_.page() + " has a change of its own since (made there, or "
+                      "lined up there alone), so it doesn't get this change again. Show " + twin_.page() + " to make it there.", true);
         }
     }
     twinSync_.reset(session_);
@@ -1550,19 +1552,30 @@ bool LayoutEditorScreen::onBoth(const TwinOp& op, const std::string& what)
     const std::function<int(int)> self = [](int i) { return i; };
     if (!alsoOnTwin()) return op.run(session_, self);
     const TwinOpResult r = runOnBoth(session_, twin_, twinSync_, op);
-    if (!r.missing.empty()) {
-        std::string names;
-        for (size_t k = 0; k < r.missing.size() && k < 3; ++k) names += (k ? ", " : "") + r.missing[k];
-        if (r.missing.size() > 3) names += " and " + std::to_string(r.missing.size() - 3) + " more";
-        const std::string isnt = names + (r.missing.size() == 1 ? " isn't" : " aren't") + " on " + twin_.page();
+    auto names = [](const std::vector<std::string>& list) {
+        std::string out;
+        for (size_t k = 0; k < list.size() && k < 3; ++k) out += (k ? ", " : "") + list[k];
+        if (list.size() > 3) out += " and " + std::to_string(list.size() - 3) + " more";
+        return out;
+    };
+    if (!r.missing.empty() || !r.unsure.empty()) {
+        std::string why;
+        if (!r.missing.empty()) why = names(r.missing) + (r.missing.size() == 1 ? " isn't" : " aren't") + " on " + twin_.page();
+        if (!r.unsure.empty()) {
+            why += (why.empty() ? "" : "; ") + names(r.unsure) +
+                   (r.unsure.size() == 1 ? " isn't surely the same element" : " aren't surely the same elements") + " on " +
+                   twin_.page() + " (another slot of a wheel of another length, or showing another file there)";
+        }
         if (op.boxes) {
             // Lined up here; the twin gets the moves in proportion, as any other edit (M18)
             syncTwin();
-            twinNote_ = isnt + ", so " + what + " used this page's boxes: " + twin_.page() + " got the same moves, in proportion.";
+            twinNote_ = why + (r.here ? ", so " + what + " used this page's boxes: " + twin_.page() + " got the same moves, in proportion."
+                                      : ". Nothing was lined up on either page.");
         }
         else {
             twinSync_.reset(session_);
-            twinNote_ = isnt + ": " + what + " stays on " + session_.page() + ". Make it on " + twin_.page() + " too.";
+            twinNote_ = why + (r.here ? ": " + what + " was done on " + session_.page() + " only; " + twin_.page() + " is left as it was."
+                                      : ". Nothing was done.");
         }
         LOG_INFO("ThemeEditor", twinNote_);
     }
@@ -1571,7 +1584,10 @@ bool LayoutEditorScreen::onBoth(const TwinOp& op, const std::string& what)
                     (op.boxes ? " and boxes." : ".");
     }
     else if (r.here) {
-        twinNote_ = "Nothing to change on " + twin_.page() + ".";
+        // Everything matched, yet it changed nothing there
+        twinNote_ = op.boxes ? twin_.page() + " is lined up that way already."
+                             : what + " couldn't be done on " + twin_.page() + ", so the two pages differ now.";
+        if (!op.boxes) LOG_WARNING("ThemeEditor", twinNote_);
     }
     return r.here || r.there;
 }
@@ -1587,6 +1603,7 @@ bool LayoutEditorScreen::deleteSelected()
 {
     TwinOp op;
     op.run = [](LayoutSession& p, const std::function<int(int)>&) { return p.deleteSelected(); };
+    op.destructive = true;   // only elements surely the same there
     return onBoth(op, "deleting");
 }
 
@@ -1599,9 +1616,11 @@ bool LayoutEditorScreen::addElement(const std::string& entry, const std::string&
     return onBoth(op, "adding an element");
 }
 
-bool LayoutEditorScreen::animationEdit(int element, const std::function<bool(LayoutSession&, int)>& edit, const std::string& what)
+bool LayoutEditorScreen::animationEdit(int element, const std::function<bool(LayoutSession&, int)>& edit, const std::string& what,
+                                       bool destructive)
 {
     TwinOp op;
+    op.destructive = destructive;
     if (element >= 0) op.touches.push_back(element);
     op.run = [edit, element](LayoutSession& p, const std::function<int(int)>& map) {
         return edit(p, element < 0 ? -1 : map(element));
@@ -2358,7 +2377,7 @@ void LayoutEditorScreen::drawAnimations(int element)
         if (ImGui::SmallButton("Play")) replay_ = engineName;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Plays %s on the preview (as RetroFE triggers \"%s\")", event.name.c_str(), engineName.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton("x")) structural = animationEdit(ev, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing an event");
+        if (ImGui::SmallButton("x")) structural = animationEdit(ev, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing an event", true);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove %s and its steps", event.name.c_str());
         if (open && !structural) {
             ImGui::AlignTextToFramePadding();
@@ -2376,7 +2395,7 @@ void LayoutEditorScreen::drawAnimations(int element)
                 ImGui::SameLine();
                 ImGui::TextDisabled("s");
                 ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonW));
-                if (ImGui::SmallButton("x")) structural = animationEdit(set, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing a step");
+                if (ImGui::SmallButton("x")) structural = animationEdit(set, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing a step", true);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this step");
                 std::vector<int> animates = session_.childrenNamed(set, "animate");
                 ImGui::Indent(12.0f * s);
@@ -2388,7 +2407,7 @@ void LayoutEditorScreen::drawAnimations(int element)
                     ImGui::SameLine();
                     drawAnimChoice(a, "algorithm", tweenAlgorithmNames(), "linear", half);
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("x")) structural = animationEdit(a, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing a change");
+                    if (ImGui::SmallButton("x")) structural = animationEdit(a, [](LayoutSession& p, int e) { return p.removeAnimation(e); }, "removing a change", true);
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this change");
                     if (!structural) {
                         ImGui::AlignTextToFramePadding();
@@ -2461,7 +2480,7 @@ void LayoutEditorScreen::drawAnimations(int element)
     ImGui::BeginDisabled(source <= 0 || source == element);
     if (ImGui::Button("Copy")) {
         const std::string from = sourceLabel;
-        if (animationEdit(source, [](LayoutSession& p, int e) { return p.copyAnimationsFrom(e); }, "copying animations")) setStatus("Its animations are now a copy of " + from + "'s (Undo brings back its own).", false);
+        if (animationEdit(source, [](LayoutSession& p, int e) { return p.copyAnimationsFrom(e); }, "copying animations", true)) setStatus("Its animations are now a copy of " + from + "'s (Undo brings back its own).", false);
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Replaces this element's events with copies of the chosen element's");
@@ -2641,7 +2660,7 @@ void LayoutEditorScreen::drawPopups()
         if (!showDelete_) ImGui::CloseCurrentPopup();
         if (session_.selectionCount() > 1) ImGui::Text("Delete the %d selected elements from the page?", session_.selectionCount());
         else ImGui::Text("Delete %s from the page?", session_.label(session_.selected()).c_str());
-        if (alsoOnTwin()) ImGui::Text("The same goes from %s too, where it's there.", twin_.page().c_str());
+        if (alsoOnTwin()) ImGui::TextWrapped("It goes from %s too where it's surely the same element there; otherwise it stays there, and the line by Also apply says so.", twin_.page().c_str());
         ImGui::TextDisabled("Undo brings it back until you leave the editor.");
         if (ImGui::Button("Delete (Enter)") || (ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !pad_.selectHeld() && !pad_.controllerActive())) {
             deleteSelected();

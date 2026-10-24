@@ -770,15 +770,21 @@ namespace ThemeEditor
         guideLines_.clear();
         if (guides) {
             // Every other box on the page (not one being moved, nor inside one)
+            // (a mask, so select-all on a big page isn't a search per element and ancestor)
+            std::vector<char> moving(doc_.elements.size(), 0);
+            for (int i : selection_) {
+                if (i >= 0 && i < elementCount()) moving[i] = 1;
+            }
             std::vector<DragRect> others;
             for (int i : listed()) {
                 if (i <= 0 || !hasBox(i) || hidden(i)) continue;
-                bool moving = false;
-                for (int e = i; e > 0 && !moving; e = doc_.elements[e].parent) moving = isSelected(e);
-                if (!moving) others.push_back(box(i));
+                bool inside = false;
+                for (int e = i; e > 0 && !inside; e = doc_.elements[e].parent) inside = moving[e] != 0;
+                if (!inside) others.push_back(box(i));
             }
             const int reach = std::max(1, roundDelta(guideReachPx / fit.scale));
-            drag_.rect = applyGuides(drag_.rect, raw, drag_.handle, others, canvasW(), canvasH(), reach, movedX, movedY, guideLines_);
+            drag_.rect = applyGuides(drag_.rect, raw, drag_.start, drag_.handle, others, canvasW(), canvasH(), reach, 1, 1, movedX, movedY,
+                                     guideLines_);
         }
     }
 
