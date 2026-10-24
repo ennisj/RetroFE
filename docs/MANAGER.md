@@ -383,7 +383,10 @@ A **game's** RetroArch screen shows the core and launcher and:
 - **Core options**: the core's options Manage knows (a few per core: region,
   sprite limit, frameskip...). Choose one to change it. RetroArch reads one
   options file per game, so a game's own `<game>.opt` starts as a copy of the
-  core's `<Core>.opt`, and is removed again when it ends up the same.
+  core's `<Core>.opt` (or, while the core has none, of its entries in
+  RetroArch's all-cores `retroarch-core-options.cfg`), and is removed again
+  when it ends up the same. A game whose name can't be a file name, or is the
+  core's own name, can't have settings of its own, and its screen says so.
 - **Controls**: whether the stick moves the D-pad, and what each of player
   1's buttons sends (another button, or nothing), in
   `<remaps>/<Core>/<game>.rmp`, with the same one-file rule.

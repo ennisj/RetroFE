@@ -243,7 +243,9 @@ static Test::Suite retroarch("retroarch", [] {
         check(mystery.ready() && mystery.library == "Mystery Core" && !mystery.libraryCertain, "the info file's corename, flagged");
         check(!mystery.notes.empty() && contains(mystery.notes[0], "isn't confirmed"), "and the screen says so");
         fs::create_directories(root + "/emu/RetroArch/config/Mystery Core");
-        check(setupOf(root, "mystery").libraryCertain, "RetroArch's own folder of that name confirms it");
+        check(!setupOf(root, "mystery").libraryCertain, "an empty folder of that name isn't evidence");
+        writeFile(root + "/emu/RetroArch/config/Mystery Core/Mystery Core.opt", "mystery_x = \"1\"\n");
+        check(setupOf(root, "mystery").libraryCertain, "a file RetroArch wrote in a folder of that name confirms it");
 
         fs::remove(root + "/emu/RetroArch/retroarch.cfg");
         RA::Setup noCfg = setupOf(root, "genesis");
@@ -445,5 +447,170 @@ static Test::Suite retroarch("retroarch", [] {
 
         f.model->setScreen("system", { { "id", "Gone" } });
         checkEqual(f.model->get("retroarch:status"), "RetroArch not found", "a missing RetroArch is said");
+    });
+
+    run("retroarch: a core name from the info file stays unconfirmed after Manage's own first save", [] {
+        std::string root = makeInstall("ra-unconfirmed");
+        Library::Backups backups(root);
+        RA::Target t = RA::gameTarget(setupOf(root, "mystery"), gameRecord(root, "Mystery", "puzzle.bin"));
+        check(!t.setup.libraryCertain, "unconfirmed to start with");
+        check(RA::apply(backups, t, RA::Tile::Settings, { { "aspect", 2 } }).ok, "saved");
+        check(exists(root + "/emu/RetroArch/config/Mystery Core/puzzle.cfg"), "the save made the folder");
+        check(!setupOf(root, "mystery").libraryCertain, "a folder holding only Manage's file confirms nothing");
+    });
+
+    run("retroarch: without <Core>.opt, RetroArch's all-cores options file is what applies and seeds new files", [] {
+        std::string root = makeInstall("ra-legacy-options");
+        Library::Backups backups(root);
+        std::string ra = root + "/emu/RetroArch/";
+        writeFile(ra + "retroarch-core-options.cfg",
+                  "genesis_plus_gx_region_detect = \"pal\"\ngenesis_plus_gx_bram = \"per bios\"\nsnes9x_region = \"ntsc\"\n");
+        RA::Target game = RA::gameTarget(setupOf(root, "genesis"), gameRecord(root, "MegaDrive", "sonic.md"));
+        RA::TileState state = RA::read(game, RA::Tile::CoreOptions, backups);
+        check(state.files.belowShared && contains(state.files.below, "retroarch-core-options.cfg"), "the all-cores file is under the game");
+        const RA::Row* region = nullptr;
+        for (const RA::Row& row : state.rows) if (row.id == "genesis_plus_gx_region_detect") region = &row;
+        check(region && region->choices[0] == "Default (Europe)", "Default names the all-cores file's value");
+        check(RA::apply(backups, game, RA::Tile::CoreOptions, { { "genesis_plus_gx_no_sprite_limit", 2 } }).ok, "saved");
+        std::string own = readFile(ra + "config/Genesis Plus GX/sonic.opt");
+        check(contains(own, "genesis_plus_gx_region_detect = \"pal\"") && contains(own, "genesis_plus_gx_bram = \"per bios\"")
+                  && !contains(own, "snes9x"), "seeded with this core's entries only: " + own);
+
+        // The core-wide file: made from the all-cores file, so the core's other games keep their values
+        RA::Target core = RA::coreTarget(game.setup);
+        check(RA::apply(backups, core, RA::Tile::CoreOptions, { { "genesis_plus_gx_overclock", 3 } }).ok, "saved core-wide");
+        std::string coreOpt = readFile(ra + "config/Genesis Plus GX/Genesis Plus GX.opt");
+        check(contains(coreOpt, "genesis_plus_gx_region_detect = \"pal\"") && contains(coreOpt, "genesis_plus_gx_overclock = \"150\"")
+                  && !contains(coreOpt, "snes9x"), "seeded from the all-cores file: " + coreOpt);
+        check(RA::files(core, RA::Tile::CoreOptions).below.empty(), "once <Core>.opt exists the all-cores file no longer applies");
+
+        // global_core_options: the core-wide file is the all-cores file itself, a game's copy takes only its core's keys
+        writeFile(ra + "retroarch.cfg", std::string(retroarchCfg) + "global_core_options = \"true\"\n");
+        RA::Target global = RA::gameTarget(setupOf(root, "genesis"), gameRecord(root, "MegaDrive", "streets.md"));
+        check(contains(RA::files(RA::coreTarget(global.setup), RA::Tile::CoreOptions).own, "retroarch-core-options.cfg"), "the core's file is the shared one");
+        check(RA::apply(backups, global, RA::Tile::CoreOptions, { { "genesis_plus_gx_no_sprite_limit", 2 } }).ok, "saved");
+        check(!contains(readFile(ra + "config/Genesis Plus GX/streets.opt"), "snes9x"), "no other core's keys in the game's file");
+
+        for (const std::string& library : RA::coresWithOptions()) {
+            std::string prefix = RA::coreOptionPrefix(library);
+            check(!prefix.empty(), library + " has a key prefix");
+            for (const RA::RowDef& def : RA::coreOptionRows(library)) {
+                check(def.id.compare(0, prefix.size(), prefix) == 0, def.id + " starts with " + prefix);
+            }
+        }
+    });
+
+    run("retroarch: names that can't be file names, and games named like their core, are refused", [] {
+        std::string root = makeInstall("ra-names");
+        Library::Backups backups(root);
+        RA::Setup s = setupOf(root, "genesis");
+        Library::GameRecord listed;   // a name from include.txt with no file
+        listed.name = "../../evil";
+        listed.directory = root + "/collections/MegaDrive/roms";
+        RA::Target bad = RA::gameTarget(s, listed);
+        check(!bad.problem.empty() && !bad.usable(), "a name with folders in it is refused");
+        check(RA::files(bad, RA::Tile::Settings).own.empty() && !RA::apply(backups, bad, RA::Tile::Settings, { { "aspect", 2 } }).ok,
+              "nothing is written for it");
+        check(!RA::useCoreSettings(backups, bad, RA::Tile::Settings).ok, "and nothing removed");
+
+        RA::Target sameAsCore = RA::gameTarget(s, gameRecord(root, "MegaDrive", "Genesis Plus GX.md"));
+        check(contains(sameAsCore.problem, "named like its core"), sameAsCore.problem);
+        writeFile(root + "/emu/RetroArch/config/Genesis Plus GX/Genesis Plus GX.cfg", "video_smooth = \"true\"\n");
+        check(!RA::useCoreSettings(backups, sameAsCore, RA::Tile::Settings).ok
+                  && exists(root + "/emu/RetroArch/config/Genesis Plus GX/Genesis Plus GX.cfg"), "the core's file is never taken for the game's");
+
+        Library::GameRecord odd = gameRecord(root, "MegaDrive", "sonic.md");
+        odd.directory = root + "/collections/..";
+        checkEqual(RA::gameTarget(s, odd).contentFolder, "", "a folder name that isn't plain has no folder files");
+
+        // An info file's corename with ".." is no folder name either
+        writeFile(root + "/emu/RetroArch/info/unknown_libretro.info", "corename = \"..\"\n");
+        check(setupOf(root, "unknown").state == RA::State::CoreUnknown, "a corename of \"..\" isn't used");
+    });
+
+    run("retroarch: -L means RetroArch only with a core, and RetroArch handed to another program is found", [] {
+        std::string root = makeInstall("ra-wrappers");
+        Library::LauncherDef other;
+        other.id = "other";
+        other.executable = "tool.exe";
+        other.arguments = "-L \"%ITEM_FILEPATH%\"";
+        check(!RA::runsRetroArch(other), "-L for another program isn't a core");
+        other.arguments = "-L snes9x \"%ITEM_FILEPATH%\"";
+        check(RA::runsRetroArch(other), "a core the table knows is");
+        other.arguments = "-c retroarch.cfg \"%ITEM_FILEPATH%\"";
+        check(!RA::runsRetroArch(other), "retroarch.cfg isn't a RetroArch program");
+
+        Library::LauncherDef start;
+        start.id = "start";
+        start.executable = "cmd.exe";
+        start.arguments = "/c start \"\" \"%RETROFE_PATH%/emu/RetroArch/retroarch.exe\" -L cores/genesis_plus_gx_libretro.dll \"%ITEM_FILEPATH%\"";
+        check(RA::runsRetroArch(start), "cmd /c start retroarch.exe runs RetroArch");
+        RA::Setup s = RA::detect(root, start, noEnvironment());
+        check(s.ready() && contains(s.configFile, "RetroArch") && s.library == "Genesis Plus GX", "retroarch.cfg beside it: " + s.why);
+        check(!s.coreFile.empty(), "the core, from RetroArch's folder");
+    });
+
+    run("retroarch: --config, ~ and relative folders in retroarch.cfg", [] {
+        std::string root = makeInstall("ra-config-paths");
+        std::string ra = root + "/emu/RetroArch/";
+        writeFile(ra + "cfg/other.cfg", "rgui_config_directory = \"~/racfg\"\ninput_remapping_directory = \"myremaps\"\n");
+        Library::LauncherDef def = launcherDef(root, "genesis");
+        def.arguments = "-c cfg/other.cfg " + def.arguments;
+        RA::Environment env = noEnvironment();
+        env.home = root + "/home";
+        RA::Setup s = RA::detect(root, def, env);
+        checkEqual(s.configFile, Library::normalPath(ra + "cfg/other.cfg"), "-c, relative to the working folder");
+        checkEqual(s.configDir, Library::normalPath(root + "/home/racfg"), "~ is the home folder");
+        checkEqual(s.remapDir, Library::normalPath(ra + "myremaps"), "a relative folder is relative to the working folder");
+    });
+
+    run("retroarch: #include in retroarch.cfg is followed for what applies, never written", [] {
+        std::string root = makeInstall("ra-include");
+        Library::Backups backups(root);
+        std::string ra = root + "/emu/RetroArch/";
+        writeFile(ra + "retroarch.cfg", std::string("#include \"extra.cfg\"\n") + retroarchCfg);
+        writeFile(ra + "extra.cfg", "#include \"retroarch.cfg\"\nvideo_smooth = \"true\"\n");   // a loop, too
+        RA::Target t = RA::gameTarget(setupOf(root, "genesis"), gameRecord(root, "MegaDrive", "sonic.md"));
+        RA::TileState state = RA::read(t, RA::Tile::Settings, backups);
+        checkEqual(state.rows[1].choices[0], "Default (On)", "the included file's value comes first, and the loop ends");
+
+        std::string cfg = ra + "config/Genesis Plus GX/sonic.cfg";
+        writeFile(cfg, "#include \"mine.cfg\"\naspect_ratio_index = \"0\"\n");
+        check(RA::apply(backups, t, RA::Tile::Settings, { { "aspect", 0 } }).ok, "saved");
+        checkEqual(readFile(cfg), "#include \"mine.cfg\"\n", "the key goes; a file with an #include stays");
+        checkEqual(readFile(ra + "retroarch.cfg").substr(0, 21), "#include \"extra.cfg\"\n", "retroarch.cfg isn't touched");
+    });
+
+    run("retroarch: other keys survive, the folder's files stack, a duplicated key's first line is the one changed", [] {
+        std::string root = makeInstall("ra-other-keys");
+        Library::Backups backups(root);
+        std::string folder = root + "/emu/RetroArch/config/Genesis Plus GX/";
+        std::string remaps = root + "/emu/RetroArch/config/remaps/Genesis Plus GX/";
+        RA::Target t = RA::gameTarget(setupOf(root, "genesis"), gameRecord(root, "MegaDrive", "sonic.md"));
+        checkEqual(t.contentFolder, "roms", "the game's folder");
+
+        writeFile(folder + "sonic.cfg", "video_fullscreen = \"true\"\naspect_ratio_index = \"0\"\n");
+        check(RA::apply(backups, t, RA::Tile::Settings, { { "aspect", 0 } }).ok, "cfg saved");
+        checkEqual(readFile(folder + "sonic.cfg"), "video_fullscreen = \"true\"\n", "a key Manage doesn't offer stays, and so does the file");
+        writeFile(folder + "sonic.opt", "genesis_plus_gx_no_sprite_limit = \"enabled\"\ngenesis_plus_gx_lcd_filter = \"enabled\"\n");
+        check(RA::apply(backups, t, RA::Tile::CoreOptions, { { "genesis_plus_gx_no_sprite_limit", 0 } }).ok, "opt saved");
+        check(contains(readFile(folder + "sonic.opt"), "genesis_plus_gx_lcd_filter = \"enabled\""), "the other option stays");
+        writeFile(remaps + "sonic.rmp", "input_libretro_device_p1 = \"5\"\ninput_player1_analog_dpad_mode = \"1\"\n");
+        check(RA::apply(backups, t, RA::Tile::Controls, { { "dpad", 0 } }).ok, "rmp saved");
+        checkEqual(readFile(remaps + "sonic.rmp"), "input_libretro_device_p1 = \"5\"\n", "the device line stays");
+
+        // retroarch.cfg, then <Core>.cfg, then the folder's roms.cfg: the last one wins
+        writeFile(folder + "Genesis Plus GX.cfg", "video_smooth = \"true\"\n");
+        writeFile(folder + "roms.cfg", "video_smooth = \"false\"\n");
+        RA::TileFiles files = RA::files(t, RA::Tile::Settings);
+        check(files.layers.size() == 3 && contains(files.layers[2], "roms.cfg"), "three layers, the folder's last");
+        checkEqual(RA::read(t, RA::Tile::Settings, backups).rows[1].choices[0], "Default (Off)", "the folder's value applies");
+        writeFile(folder + "roms.opt", "genesis_plus_gx_region_detect = \"ntsc-j\"\n");
+        writeFile(folder + "Genesis Plus GX.opt", "genesis_plus_gx_region_detect = \"pal\"\n");
+        fs::remove(folder + "sonic.opt");
+        check(contains(RA::files(t, RA::Tile::CoreOptions).below, "roms.opt"), "the folder's options win over the core's");
+
+        checkEqual(RA::editConfig("a = \"1\"\nb = \"x\"\na = \"2\"\n", { { "a", std::string("3") } }), "a = \"3\"\nb = \"x\"\na = \"2\"\n",
+                   "only the first line of a duplicated key (the one RetroArch reads) changes");
     });
 });

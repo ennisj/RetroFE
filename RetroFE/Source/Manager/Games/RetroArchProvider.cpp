@@ -39,12 +39,6 @@ namespace
         return slash == std::string::npos ? path : path.substr(slash + 1);
     }
 
-    bool exists(const std::string& path)
-    {
-        std::error_code ec;
-        return !path.empty() && std::filesystem::is_regular_file(path, ec);
-    }
-
     std::string yesNo(bool value) { return value ? "yes" : "no"; }
 
     std::string listNames(const std::vector<std::string>& names, size_t most = 6)
@@ -190,12 +184,13 @@ void RetroArchProvider::loadContext(const Screen& screen, const std::string& key
     context_.setup = setupFor(*idx, resolution.launcher);
     context_.target = game ? RA::gameTarget(context_.setup, *game) : RA::coreTarget(context_.setup);
     if (!context_.setup.ready()) context_.why = context_.setup.why;
+    else if (!context_.target.problem.empty()) context_.why = context_.target.problem;
 }
 
 RetroArchProvider::TileView& RetroArchProvider::tile(Tile t)
 {
     TileView& view = tiles_[static_cast<int>(t)];
-    if (!view.loaded && context_.setup.ready()) loadTile(t, true);
+    if (!view.loaded && context_.target.usable()) loadTile(t, true);
     return view;
 }
 
@@ -258,7 +253,7 @@ void RetroArchProvider::enter(const Screen& screen)
     Kind kind = kindOf(screen.form);
     if (kind == Kind::None) return;
     sync(screen);
-    if (!context_.setup.ready()) return;
+    if (!context_.target.usable()) return;
     Tile t = Tile::Settings;
     if (tileOf(kind, t)) {
         loadTile(t, true);
@@ -302,7 +297,7 @@ std::string RetroArchProvider::get(const std::string& key, const Screen& screen)
     if (kind == Kind::None) return "";
     sync(screen);
     const RA::Setup& s = context_.setup;
-    const bool ready = s.ready();
+    const bool ready = context_.target.usable();
 
     if (key == "runs") return yesNo(context_.found && s.state != RA::State::NotRetroArch);
     if (key == "status") {
@@ -313,6 +308,7 @@ std::string RetroArchProvider::get(const std::string& key, const Screen& screen)
         case RA::State::CoreUnknown: return "Core not known";
         case RA::State::Ready: break;
         }
+        if (!context_.target.problem.empty()) return s.library + ": not for this game";
         int own = 0;
         if (context_.game) {
             for (Tile t : { Tile::Settings, Tile::CoreOptions, Tile::Controls }) {
@@ -429,7 +425,7 @@ void RetroArchProvider::set(const std::string& key, const std::string& value, co
     Tile t = Tile::Settings;
     if (!tileOf(kindOf(screen.form), t)) return;
     sync(screen);
-    if (!context_.setup.ready()) return;
+    if (!context_.target.usable()) return;
     if (startsWith(key, "row:")) {
         tile(t).edits.set(key.substr(4), value);
     }
@@ -445,7 +441,7 @@ std::vector<std::pair<std::string, std::string>> RetroArchProvider::options(cons
     Tile t = Tile::Settings;
     if (!tileOf(kindOf(screen.form), t)) return out;
     sync(screen);
-    if (!context_.setup.ready()) return out;
+    if (!context_.target.usable()) return out;
     std::string id;
     if (startsWith(key, "choices:")) id = key.substr(8);
     else if (key == "optChoices") id = screen.param("key");
@@ -464,7 +460,7 @@ Forms::Rows RetroArchProvider::rows(const std::string& key, size_t limit, const 
     Forms::Rows out;
     if (key != "coreOptions" || kindOf(screen.form) != Kind::CoreOptions) return out;
     sync(screen);
-    if (!context_.setup.ready()) return out;
+    if (!context_.target.usable()) return out;
     TileView& view = tile(Tile::CoreOptions);
     out.total = view.state.rows.size();
     for (const RA::Row& row : view.state.rows) {
@@ -499,7 +495,7 @@ std::string RetroArchProvider::actionProblem(const std::string& action, const Sc
     Kind kind = kindOf(screen.form);
     if (!tileOf(kind, t)) return Provider::actionProblem(action, screen);
     sync(screen);
-    if (!context_.setup.ready()) return context_.why.empty() ? "RetroArch isn't set up for this." : context_.why;
+    if (!context_.target.usable()) return context_.why.empty() ? "RetroArch isn't set up for this." : context_.why;
     TileView& view = tile(t);
     if (action == "save") {
         if (pendingChoices(t).empty()) return "No changes to save.";

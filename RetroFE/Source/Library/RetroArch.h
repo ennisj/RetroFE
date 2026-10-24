@@ -121,9 +121,11 @@ namespace Library
         {
             Setup setup;
             std::string rom;              // the name RetroArch gives the game's files
-            std::string contentFolder;    // the name of the folder the game's file is in
+            std::string contentFolder;    // the name of the folder the game's file is in ("" none, or not a plain name)
+            std::string problem;          // why this game can't have files of its own (its name), else ""
 
             bool game() const { return !rom.empty(); }
+            bool usable() const { return setup.ready() && problem.empty(); }
         };
         // A game's files: named after its file without the extension (RetroArch's
         // rule), or after its name when the launcher passes %ITEM_NAME%
@@ -134,7 +136,9 @@ namespace Library
         {
             std::string own;      // the file this tile writes
             std::string below;    // core options / controls: the one file that applies without own
-                                  // (the folder's, else the core's, if it exists); "" none
+                                  // (the folder's, else the core's, else RetroArch's all-cores
+                                  // options file, if it exists); "" none
+            bool belowShared = false;   // below is the all-cores options file: only this core's keys count
             std::vector<std::string> layers;  // RetroArch settings: what stacks under own, lowest first (existing files)
         };
         TileFiles files(const Target& target, Tile tile);
@@ -158,6 +162,9 @@ namespace Library
         std::vector<RowDef> rowDefs(const Target& target, Tile tile);
         // Every core the option table covers
         std::vector<std::string> coresWithOptions();
+        // The prefix that core's option keys share ("genesis_plus_gx_"), used to take
+        // its entries out of RetroArch's all-cores options file; "" when not covered
+        std::string coreOptionPrefix(const std::string& library);
 
         struct Row
         {

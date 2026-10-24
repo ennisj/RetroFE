@@ -251,10 +251,14 @@ Systems table (`system-…`, param `id`).
 
 **Detection** (`RetroArch::detect`, per launcher, cached per snapshot):
 
-1. A launcher runs RetroArch when its program's file name starts with
-   `retroarch`, its arguments have `-L` / `--libretro`, it's the
-   `org.libretro.RetroArch` flatpak, or an argument is a `*_libretro.<ext>`
-   file (a wrapper script). Otherwise: "runs outside RetroArch".
+1. A launcher runs RetroArch when its program's file name is `retroarch`
+   (`retroarch.exe`, `retroarch32`; not `retroarch.cfg`), an argument is such
+   a program (`cmd /c start "" "...\retroarch.exe" -L ...`: used as the
+   program when it's there, so its `retroarch.cfg` is found), it's the
+   `org.libretro.RetroArch` flatpak, an argument is a `*_libretro.<ext>` file
+   (a wrapper script), or `-L` / `--libretro` names something that looks like
+   a core (`*_libretro*`, or a stem the table knows): `-L` means something
+   else to other programs. Otherwise: "runs outside RetroArch".
 2. RetroArch's program is resolved as RetroFE runs it (relative to RetroFE's
    folder, `%RETROFE_PATH%`, a bare name on the path); missing: "RetroArch
    not found". The working folder is the launcher's `currentDirectory`, else
@@ -275,11 +279,20 @@ Systems table (`system-…`, param `id`).
    folder (a bare name gets `_libretro.<ext>`). A missing file is a note,
    not a stop.
 5. The folder name is the core's **library_name**: a hand-checked table by
-   file stem (desktop buildbot stems plus OnesaUCE's), else the `.info`
-   file's `corename` (beside the core, in `libretro_info_path`, in the cores
-   folder), "confirmed" only when `<config>/<corename>/` exists (RetroArch
-   makes it the first time the core runs) and flagged on the screen
-   otherwise. Neither: "core not known".
+   file stem (desktop buildbot stems plus OnesaUCE's; a core whose name isn't
+   sure, such as gw, fuse, bsnes or duckstation, is left out, because a wrong
+   row would count as certain), else the `.info` file's `corename` (beside
+   the core, in `libretro_info_path`, in the cores folder; it must be one
+   plain path segment), "confirmed" only when `<config>/<corename>/` or
+   `<remaps>/<corename>/` holds a file Manage didn't create (Manage's new
+   files have an `.absent` original in the backups, so its own first save
+   confirms nothing) and flagged on the screen otherwise. Neither: "core not
+   known".
+
+`retroarch.cfg` and every file read for what applies follow
+`#include "file"` (relative to the including file, at most 16 deep, each
+file once) at the point the line appears; writes change only the target
+file, and a file that still has an `#include` line is never removed.
 
 **Files** (`RetroArch::files`), with `<C>` the library name and `<rom>` the
 game's file name without its extension (its name when the launcher passes
@@ -288,11 +301,21 @@ game's file name without its extension (its name when the launcher passes
 | Tile | A game's file | Applies under it | A system's file |
 |------|---------------|------------------|-----------------|
 | RetroArch settings | `<config>/<C>/<rom>.cfg` | `retroarch.cfg`, `<C>.cfg`, `<folder>.cfg` (stacked) | `<config>/<C>/<C>.cfg` |
-| Core options | `<config>/<C>/<rom>.opt` | `<folder>.opt`, else `<C>.opt` (one file wins) | `<config>/<C>/<C>.opt` (the global options file with `global_core_options`) |
+| Core options | `<config>/<C>/<rom>.opt` | `<folder>.opt`, else `<C>.opt`, else the all-cores `retroarch-core-options.cfg` (one file wins) | `<config>/<C>/<C>.opt`, made from the all-cores file while it doesn't exist; with `global_core_options`, the all-cores file itself |
 | Controls | `<remaps>/<C>/<rom>.rmp` | `<folder>.rmp`, else `<C>.rmp` (one file wins) | `<remaps>/<C>/<C>.rmp` |
 
 `<folder>` is the name of the folder the game's file is in (RetroArch's
-content-directory files).
+content-directory files), when it's a plain name. The all-cores options file
+(`core_options_path`, else `retroarch-core-options.cfg` beside
+`retroarch.cfg`) is what RetroArch takes a core's values from while that
+core has no `<C>.opt`, and with `global_core_options`; only the core's own
+entries count, picked by the key prefix its options share
+(`coreOptionPrefix`: `genesis_plus_gx_`, `fbneo-`...; a key without it is
+left to the core's default), and only those seed a new file.
+
+A game's name must be one plain path segment (a name from `include.txt` such
+as `../x` is refused) and not the core's name (a `MAME.zip` on core MAME would
+make the game's file the core's): such a game says why and has no files.
 
 **Rows**: RetroArch settings (aspect ratio, smooth picture, shader, bezel,
 integer scaling, run-ahead, volume, resume = auto save/load state; One
@@ -323,8 +346,8 @@ The system screen's "reaches" note lists the systems whose default launcher
 resolves to the same library and config folder.
 
 Not modelled: `--appendconfig`, a launcher's own RetroArch link (Emulators),
-One Saucier's button labels and customization stack, a new `<C>.opt` seeded
-from the legacy global options file, saves.
+One Saucier's button labels and customization stack, saves. Core option rows
+whose values differ between core versions are left out (mGBA's frameskip).
 
 ### Themes
 

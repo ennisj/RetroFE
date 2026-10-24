@@ -39,20 +39,22 @@ namespace
     // corename (cap32's info says Caprice32). Stems as the libretro buildbot names
     // the files (genesis_plus_gx_libretro.dll), plus the stems OnesaUCE's cabinet
     // cores use (genesisplusgx), which One Saucier read off those binaries.
+    // A wrong row would be taken as certain, so a core whose name isn't sure
+    // (gw, fuse, blastem, bsnes, duckstation, kronos...) is left to its .info file.
     const char* const coreTable[][2] = {
         // libretro buildbot (Windows, Linux, macOS)
         { "genesis_plus_gx", "Genesis Plus GX" }, { "genesis_plus_gx_wide", "Genesis Plus GX Wide" },
-        { "picodrive", "PicoDrive" }, { "blastem", "BlastEm" },
+        { "picodrive", "PicoDrive" },
         { "fceumm", "FCEUmm" }, { "nestopia", "Nestopia" }, { "mesen", "Mesen" }, { "quicknes", "QuickNES" },
         { "snes9x", "Snes9x" }, { "snes9x2010", "Snes9x 2010" }, { "snes9x2005", "Snes9x 2005" },
-        { "snes9x2005_plus", "Snes9x 2005 Plus" }, { "snes9x2002", "Snes9x 2002" }, { "bsnes", "bsnes" },
+        { "snes9x2005_plus", "Snes9x 2005 Plus" }, { "snes9x2002", "Snes9x 2002" },
         { "mesen-s", "Mesen-S" },
         { "gambatte", "Gambatte" }, { "sameboy", "SameBoy" }, { "gearboy", "Gearboy" },
         { "mgba", "mGBA" }, { "vba_next", "VBA Next" }, { "vbam", "VBA-M" }, { "gpsp", "gpSP" },
         { "mupen64plus_next", "Mupen64Plus-Next" }, { "parallel_n64", "ParaLLEl N64" },
         { "mednafen_psx", "Beetle PSX" }, { "mednafen_psx_hw", "Beetle PSX HW" }, { "pcsx_rearmed", "PCSX-ReARMed" },
-        { "swanstation", "SwanStation" }, { "duckstation", "DuckStation" },
-        { "mednafen_saturn", "Beetle Saturn" }, { "yabause", "Yabause" }, { "kronos", "Kronos" },
+        { "swanstation", "SwanStation" },
+        { "mednafen_saturn", "Beetle Saturn" }, { "yabause", "Yabause" },
         { "flycast", "Flycast" },
         { "mednafen_pce_fast", "Beetle PCE Fast" }, { "mednafen_pce", "Beetle PCE" },
         { "mednafen_supergrafx", "Beetle SuperGrafx" }, { "mednafen_ngp", "Beetle NeoPop" },
@@ -71,8 +73,8 @@ namespace
         { "freeintv", "FreeIntv" }, { "freechaf", "FreeChaF" }, { "gearcoleco", "Gearcoleco" }, { "vecx", "VecX" },
         { "pokemini", "PokeMini" }, { "ppsspp", "PPSSPP" }, { "desmume", "DeSmuME" }, { "melonds", "melonDS" },
         { "dolphin", "dolphin-emu" }, { "citra", "Citra" }, { "neocd", "NeoCD" }, { "hatari", "Hatari" },
-        { "fuse", "fuse" }, { "px68k", "PX68K" }, { "np2kai", "Neko Project II kai" }, { "81", "EightyOne" },
-        { "gw", "Game & Watch" }, { "tic80", "TIC-80" }, { "prboom", "PrBoom" }, { "2048", "2048" },
+        { "px68k", "PX68K" }, { "np2kai", "Neko Project II kai" }, { "81", "EightyOne" },
+        { "tic80", "TIC-80" }, { "prboom", "PrBoom" }, { "2048", "2048" },
         { "theodore", "theodore" }, { "quasi88", "QUASI88" }, { "minivmac", "Mini vMac" }, { "xmil", "X millennium" },
         { "fake08", "fake-08" },
         // OnesaUCE's cabinet cores (as One Saucier read them off the binaries)
@@ -114,13 +116,12 @@ namespace
             { "Snes9x", "snes9x_region", "Region", "auto", { { "auto", "Auto" }, { "ntsc", "NTSC" }, { "pal", "PAL" } } },
             { "Snes9x", "snes9x_aspect", "Aspect ratio", "4:3", { { "4:3", "4:3" }, { "uncorrected", "Uncorrected" }, { "auto", "Auto" }, { "ntsc", "NTSC" }, { "pal", "PAL" } } },
             { "Gambatte", "gambatte_gb_colorization", "Game Boy colors", "disabled", { { "disabled", "Off" }, { "auto", "Auto" }, { "GBC", "GBC" }, { "SGB", "SGB" }, { "internal", "Internal" }, { "custom", "Custom" } } },
-            { "mGBA", "mgba_frameskip", "Frameskip", "0", { { "0", "Off" }, { "1", "1" }, { "2", "2" } } },
             { "gpSP", "gpsp_frameskip", "Frameskip", "disabled", { { "disabled", "Off" }, { "auto", "Auto" } } },
             { "Beetle SuperGrafx", "sgx_nospritelimit", "Remove sprite limit (less flicker)", "disabled", { { "disabled", "Off" }, { "enabled", "On" } } },
             { "PCSX-ReARMed", "pcsx_rearmed_frameskip_type", "Frameskip", "disabled", { { "disabled", "Off" }, { "auto", "Auto" } } },
             { "PCSX-ReARMed", "pcsx_rearmed_neon_enhancement_enable", "Enhanced resolution (slower)", "disabled", { { "disabled", "Off" }, { "enabled", "On" } } },
             { "PCSX-ReARMed", "pcsx_rearmed_multitap", "Multitap (more players)", "disabled", { { "disabled", "Off" }, { "port 1", "Port 1" }, { "port 2", "Port 2" }, { "ports 1 and 2", "Ports 1 and 2" } } },
-            { "SwanStation", "swanstation_Display_AspectRatio", "Aspect ratio", "4:3", { { "Auto", "Corrected (NTSC)" }, { "4:3", "4:3" }, { "16:9", "16:9" } } },
+            { "SwanStation", "swanstation_Display_AspectRatio", "Aspect ratio", "Auto", { { "Auto", "Corrected (NTSC)" }, { "4:3", "4:3" }, { "16:9", "16:9" } } },
             { "SwanStation", "swanstation_GPU_WidescreenHack", "Widescreen hack", "false", { { "false", "Off" }, { "true", "On" } } },
             { "SwanStation", "swanstation_GPU_PGXPEnable", "Geometry correction (PGXP)", "false", { { "false", "Off" }, { "true", "On" } } },
             { "Beetle PSX HW", "beetle_psx_hw_widescreen_hack", "Widescreen hack", "disabled", { { "disabled", "Off" }, { "enabled", "On" } } },
@@ -166,6 +167,39 @@ namespace
             { "Mjolnir", "mjolnir_frameskip", "Frameskip", "0", { { "0", "Off" }, { "1", "1" }, { "2", "2" } } },
         };
         return table;
+    }
+
+    // The prefix a core's option keys share, for taking one core's options out of
+    // RetroArch's all-cores options file. A core may have a key without it, which
+    // is then left to the core's default; "" for a core the table doesn't cover.
+    std::string optionPrefix(const std::string& library)
+    {
+        static const std::map<std::string, std::string> prefixes = {
+            { "Genesis Plus GX", "genesis_plus_gx_" }, { "PicoDrive", "picodrive_" }, { "FCEUmm", "fceumm_" },
+            { "Nestopia", "nestopia_" }, { "Snes9x", "snes9x_" }, { "Gambatte", "gambatte_" }, { "gpSP", "gpsp_" },
+            { "Beetle SuperGrafx", "sgx_" }, { "PCSX-ReARMed", "pcsx_rearmed_" }, { "SwanStation", "swanstation_" },
+            { "Beetle PSX HW", "beetle_psx_hw_" }, { "Beetle PSX", "beetle_psx_" }, { "Mupen64Plus-Next", "mupen64plus-" },
+            { "LudicrousN64 Xtreme Amped", "LudicrousN64-" }, { "Stella 2014", "stella2014_" }, { "Stella", "stella_" },
+            { "FinalBurn Neo", "fbneo-" }, { "FinalBurn Neo Light", "fbneo-" }, { "MAME 2003-Plus", "mame2003-plus_" },
+            { "MAME 2010", "mame_" }, { "Flycast", "reicast_" }, { "Flycast 2021", "reicast_" },
+            { "DOSBox-pure", "dosbox_pure_" }, { "cap32", "cap32_" }, { "VICE x64", "vice_" }, { "VICE x64sc", "vice_" },
+            { "VICE xvic", "vice_" }, { "PUAE 2021", "puae_" }, { "PX68K", "px68k_" }, { "Gearcoleco", "gearcoleco_" },
+            { "Mjolnir", "mjolnir_" },
+        };
+        auto found = prefixes.find(library);
+        return found == prefixes.end() ? "" : found->second;
+    }
+
+    // One core's entries of the all-cores options file
+    std::map<std::string, std::string> coreEntries(const std::map<std::string, std::string>& all, const std::string& library)
+    {
+        std::map<std::string, std::string> out;
+        std::string prefix = optionPrefix(library);
+        if (prefix.empty()) return out;
+        for (const auto& [key, value] : all) {
+            if (key.compare(0, prefix.size(), prefix) == 0) out[key] = value;
+        }
+        return out;
     }
 
     // ---- RetroArch settings and controls ----------------------------------------------
@@ -292,20 +326,66 @@ namespace
         return dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
     }
 
-    std::map<std::string, std::string> readConfig(const std::string& path, bool* exists = nullptr)
+    // The file named by an `#include "file"` line ("" when the line isn't one)
+    std::string includeOf(std::string line)
+    {
+        line = trim(line);
+        if (!startsWith(line, "#include")) return "";
+        std::string rest = trim(line.substr(8));
+        if (rest.size() < 2 || rest.front() != '"') return "";
+        size_t close = rest.find('"', 1);
+        return close == std::string::npos ? "" : rest.substr(1, close - 1);
+    }
+
+    // A file's values as RetroArch reads them, following `#include "file"`
+    // (relative to the including file) at the point it appears, at most 16
+    // deep (RetroArch's limit), never the same file twice. First one wins.
+    void readConfigInto(const std::string& path, int depth, std::set<std::string>& seen,
+                        std::map<std::string, std::string>& out, bool* exists)
     {
         std::string text;
-        bool ok = !path.empty() && readFile(path, text);
+        bool ok = !path.empty() && depth < 16 && !seen.count(normalPath(path)) && readFile(path, text);
         if (exists) *exists = ok;
-        return ok ? parseConfig(text) : std::map<std::string, std::string>();
+        if (!ok) return;
+        seen.insert(normalPath(path));
+        for (const Line& line : Lines::parse(text).lines) {
+            std::string include = includeOf(line.text);
+            if (!include.empty()) {
+                readConfigInto(isAbsolute(include) ? normalPath(include) : join(parentOf(path), include), depth + 1, seen, out, nullptr);
+                continue;
+            }
+            for (const auto& [key, value] : parseConfig(line.text)) {
+                out.emplace(key, value);   // emplace keeps the first
+            }
+        }
+    }
+
+    std::map<std::string, std::string> readConfig(const std::string& path, bool* exists = nullptr)
+    {
+        std::map<std::string, std::string> out;
+        std::set<std::string> seen;
+        readConfigInto(path, 0, seen, out, exists);
+        return out;
+    }
+
+    // A name used as a file name in RetroArch's folders: one plain path segment
+    bool isPlainName(const std::string& name)
+    {
+        if (name.empty() || name == "." || name == "..") return false;
+        if (name.find_first_of("/\\:*?\"<>|") != std::string::npos) return false;
+        for (unsigned char c : name) {
+            if (c < 32) return false;
+        }
+        return name.find_first_not_of('.') != std::string::npos;   // not ".", "..", "..."
     }
 
     // A RetroArch program by its file name: retroarch, retroarch.exe, retroarch32...
     bool isRetroArchProgram(const std::string& executable)
     {
+        // retroarch, retroarch.exe, retroarch32, retroarch_debug.exe; not retroarch.cfg
         std::string name = toLower(fileNameOf(unquote(executable)));
         if (endsWith(name, ".exe")) name = name.substr(0, name.size() - 4);
-        return startsWith(name, "retroarch");
+        return startsWith(name, "retroarch") && name.find('.') == std::string::npos;
     }
 
     bool isCoreFileName(const std::string& token)
@@ -349,6 +429,36 @@ namespace
             if (startsWith(a, "--config=")) return a.substr(9);
         }
         return "";
+    }
+
+    // A RetroArch program handed to another one (cmd /c start "" "...\retroarch.exe" -L ...)
+    std::string programArgumentOf(const std::vector<std::string>& args)
+    {
+        for (const std::string& a : args) {
+            if (isRetroArchProgram(a)) return a;
+        }
+        return "";
+    }
+
+    // The value after -L looks like a core: a *_libretro file, or a core the table knows
+    bool looksLikeCore(const std::string& value)
+    {
+        return toLower(value).find("_libretro") != std::string::npos || !libraryForStem(coreStem(value)).empty();
+    }
+
+    // A folder RetroArch made: it holds a file Manage didn't create (Manage's
+    // own new files have an ".absent" original in the backups)
+    bool madeByRetroArch(const Backups& backups, const std::string& folder)
+    {
+        std::error_code ec;
+        for (fs::directory_iterator it(fs::path(folder), ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code fileEc;
+            if (!it->is_regular_file(fileEc)) continue;
+            std::string file;
+            if (!narrowName(it->path(), file)) continue;
+            if (!isFile(backups.backupPath(file) + ".absent")) return true;
+        }
+        return false;
     }
 
     bool isTrue(const std::map<std::string, std::string>& cfg, const std::string& key, bool fallback)
@@ -420,8 +530,10 @@ namespace
     {
         Layers l;
         l.ownExists = !f.own.empty() && readFile(f.own, l.ownText);
-        if (l.ownExists) l.own = parseConfig(l.ownText);
-        l.oneFile = tile != Tile::Settings && target.game();
+        if (l.ownExists) l.own = readConfig(f.own);
+        // One file wins for a game's options and controls, and for a core's
+        // options while RetroArch still takes them from the all-cores file
+        l.oneFile = tile != Tile::Settings && (target.game() || !f.below.empty());
         if (tile == Tile::Settings) {
             for (const std::string& layer : f.layers) {
                 for (const auto& [key, value] : readConfig(layer)) {
@@ -431,6 +543,7 @@ namespace
         }
         else if (!f.below.empty()) {
             l.below = readConfig(f.below);
+            if (f.belowShared) l.below = coreEntries(l.below, target.setup.library);
         }
         l.builtin = builtinValues(target, tile);
         return l;
@@ -507,10 +620,17 @@ bool runsRetroArch(const LauncherDef& launcher)
     if (isRetroArchProgram(launcher.executable)) return true;
     std::vector<std::string> args = splitArguments(launcher.arguments);
     if (isFlatpakRetroArch(launcher, args)) return true;
-    for (const std::string& a : args) {
-        if (a == "-L" || a == "--libretro" || startsWith(a, "--libretro=")) return true;
+    // Another program handed RetroArch itself (cmd /c start "" "...\retroarch.exe" -L ...)
+    if (!programArgumentOf(args).empty()) return true;
+    // -L means "load a core" only to RetroArch: elsewhere the value must look like one
+    for (size_t i = 0; i < args.size(); i++) {
+        const std::string& a = args[i];
+        if ((a == "-L" || a == "--libretro") && i + 1 < args.size() && looksLikeCore(args[i + 1])) return true;
+        if (startsWith(a, "--libretro=") && looksLikeCore(a.substr(11))) return true;
+        if (startsWith(a, "-L") && a.size() > 2 && a[2] != '-' && looksLikeCore(a.substr(2))) return true;
+        if (isCoreFileName(a)) return true;
     }
-    return !coreArgumentOf(args).empty();
+    return false;
 }
 
 std::string coreStem(const std::string& coreArgument)
@@ -628,20 +748,23 @@ Setup detect(const std::string& root, const LauncherDef& launcher, const Environ
     std::vector<std::string> args = splitArguments(launcher.arguments);
     auto expand = [&](std::string value) { return Utils::replace(value, "%RETROFE_PATH%", root); };
 
-    // RetroArch's program: relative paths are relative to RetroFE's folder, a bare name may be on the path
-    std::string programPath;
+    // RetroArch's program: relative paths are relative to RetroFE's folder (or,
+    // handed to another program, its working folder), a bare name may be on the path
+    auto resolveProgram = [&](const std::string& written, const std::string& from) {
+        std::string value = expand(written);
+        if (isAbsolute(value)) return normalPath(value);
+        std::string path = join(from, value);
+        if (!isFile(path) && from != root) path = join(root, value);
+        if (!isFile(path) && value.find_first_of("/\\") == std::string::npos) {
+            std::string found = findProgram(value);
+            if (!found.empty()) path = normalPath(found);
+        }
+        return path;
+    };
+    std::string configuredWorking = expand(trim(launcher.currentDirectory));
+    if (!configuredWorking.empty() && !isAbsolute(configuredWorking)) configuredWorking = join(root, configuredWorking);
     if (isRetroArchProgram(program)) {
-        std::string value = expand(program);
-        if (isAbsolute(value)) {
-            programPath = normalPath(value);
-        }
-        else {
-            programPath = join(root, value);
-            if (!isFile(programPath) && value.find_first_of("/\\") == std::string::npos) {
-                std::string found = findProgram(value);
-                if (!found.empty()) programPath = normalPath(found);
-            }
-        }
+        std::string programPath = resolveProgram(program, root);
         if (!isFile(programPath)) {
             s.state = State::NotFound;
             s.why = "RetroArch wasn't found: its launcher " + launcher.id + " starts " + programPath + ", which isn't there.";
@@ -650,15 +773,24 @@ Setup detect(const std::string& root, const LauncherDef& launcher, const Environ
         s.program = programPath;
     }
 
-    // Where RetroFE starts it: its working folder, else the program's folder
-    std::string working = expand(trim(launcher.currentDirectory));
+    // Where RetroFE starts it: its working folder, else the folder of the
+    // program as written (RetroFE's own folder for a bare name)
+    std::string working = configuredWorking;
     if (working.empty()) {
-        working = s.program.empty() ? root : parentOf(s.program);
-    }
-    else if (!isAbsolute(working)) {
-        working = join(root, working);
+        bool hasFolder = expand(program).find_first_of("/\\") != std::string::npos;
+        working = !hasFolder ? root : !s.program.empty() ? parentOf(s.program) : parentOf(resolveProgram(program, root));
     }
     s.workingFolder = normalPath(working);
+
+    // RetroArch started through another program: use it when it's there (its
+    // retroarch.cfg is then beside it), else look in the platform's places
+    if (s.program.empty()) {
+        std::string token = programArgumentOf(args);
+        if (!token.empty()) {
+            std::string path = resolveProgram(token, s.workingFolder);
+            if (isFile(path)) s.program = path;
+        }
+    }
 
     // retroarch.cfg: --config, else beside the program, else the platform's place
     std::vector<std::string> candidates;
@@ -786,9 +918,12 @@ Setup detect(const std::string& root, const LauncherDef& launcher, const Environ
             bool exists = false;
             std::map<std::string, std::string> fields = readConfig(info, &exists);
             std::string corename = trim(valueIn(fields, "corename"));
-            if (exists && !corename.empty() && corename.find_first_of("/\\:*?\"<>|") == std::string::npos) {
+            if (exists && isPlainName(corename)) {
                 s.library = corename;
-                s.libraryCertain = isDir(join(s.configDir, corename));
+                // RetroArch's own folder of that name confirms it, not one Manage's writes made
+                Backups backups(root);
+                s.libraryCertain = madeByRetroArch(backups, join(s.configDir, corename))
+                    || madeByRetroArch(backups, join(s.remapDir, corename));
                 s.librarySource = s.libraryCertain
                     ? "its info file, confirmed by RetroArch's own settings folder of that name"
                     : "its info file only";
@@ -822,6 +957,16 @@ Target gameTarget(const Setup& setup, const GameRecord& game)
     t.rom = setup.passesName || game.file.empty() ? game.name : stemOf(game.file);
     if (t.rom.empty()) t.rom = game.name;
     t.contentFolder = fileNameOf(game.directory);
+    if (!isPlainName(t.contentFolder)) t.contentFolder.clear();
+    // The name becomes a file name in RetroArch's folders: one plain segment,
+    // and never the core's own name (its files would be the core-wide ones)
+    if (!isPlainName(t.rom)) {
+        t.problem = "This game's name (" + t.rom + ") can't be a file name in RetroArch's folders, so it can't have settings of its own here.";
+    }
+    else if (setup.ready() && iequals(t.rom, setup.library)) {
+        t.problem = "This game is named like its core (" + setup.library + "), so its own files would be the core's: "
+                    "change these on its system's RetroArch screen instead.";
+    }
     return t;
 }
 
@@ -836,13 +981,13 @@ TileFiles files(const Target& target, Tile tile)
 {
     TileFiles f;
     const Setup& s = target.setup;
-    if (!s.ready()) return f;
+    if (!s.ready() || !target.problem.empty()) return f;
     std::string configFolder = join(s.configDir, s.library);
     std::string remapFolder = join(s.remapDir, s.library);
     std::string name = target.game() ? target.rom : s.library;
     // A game's folder file, when its folder isn't named like the game or the core
-    bool folder = target.game() && !target.contentFolder.empty() && target.contentFolder != target.rom
-        && target.contentFolder != s.library;
+    bool folder = target.game() && !target.contentFolder.empty() && !iequals(target.contentFolder, target.rom)
+        && !iequals(target.contentFolder, s.library);
     switch (tile) {
     case Tile::Settings:
         f.own = join(configFolder, name + ".cfg");
@@ -856,15 +1001,30 @@ TileFiles files(const Target& target, Tile tile)
         }
         break;
     case Tile::CoreOptions:
+        // Without a <Core>.opt (per-core options, RetroArch's default), RetroArch
+        // takes a core's values from the legacy all-cores file, and makes
+        // <Core>.opt from it: so that file is what applies, and seeds a new one
         if (!target.game()) {
             f.own = s.globalCoreOptions ? s.globalOptionsFile : join(configFolder, s.library + ".opt");
+            if (!s.globalCoreOptions && !isFile(f.own) && isFile(s.globalOptionsFile)) {
+                f.below = s.globalOptionsFile;
+                f.belowShared = true;
+            }
         }
         else {
             f.own = join(configFolder, name + ".opt");
             std::string folderFile = folder ? join(configFolder, target.contentFolder + ".opt") : "";
-            std::string core = s.globalCoreOptions ? s.globalOptionsFile : join(configFolder, s.library + ".opt");
-            if (!folderFile.empty() && isFile(folderFile)) f.below = folderFile;
-            else if (isFile(core)) f.below = core;
+            std::string core = join(configFolder, s.library + ".opt");
+            if (!folderFile.empty() && isFile(folderFile)) {
+                f.below = folderFile;
+            }
+            else if (!s.globalCoreOptions && isFile(core)) {
+                f.below = core;
+            }
+            else if (isFile(s.globalOptionsFile)) {
+                f.below = s.globalOptionsFile;
+                f.belowShared = true;
+            }
         }
         break;
     case Tile::Controls:
@@ -941,6 +1101,11 @@ std::vector<RowDef> coreOptionRows(const std::string& library)
     return rows;
 }
 
+std::string coreOptionPrefix(const std::string& library)
+{
+    return optionPrefix(library);
+}
+
 std::vector<std::string> coresWithOptions()
 {
     std::vector<std::string> cores;
@@ -963,7 +1128,7 @@ std::vector<RowDef> rowDefs(const Target& target, Tile tile)
 TileState read(const Target& target, Tile tile, const Backups& backups)
 {
     TileState state;
-    if (!target.setup.ready()) return state;
+    if (!target.usable()) return state;
     state.files = files(target, tile);
     Layers l = readLayers(target, tile, state.files);
     state.ownExists = l.ownExists;
@@ -1028,8 +1193,9 @@ TileState read(const Target& target, Tile tile, const Backups& backups)
 
 EditResult apply(Backups& backups, const Target& target, Tile tile, const std::map<std::string, int>& choices)
 {
-    if (!target.setup.ready()) {
-        return EditResult::fail(target.setup.why.empty() ? "RetroArch isn't set up for this." : target.setup.why);
+    if (!target.usable()) {
+        std::string why = !target.problem.empty() ? target.problem : target.setup.why;
+        return EditResult::fail(why.empty() ? "RetroArch isn't set up for this." : why);
     }
     std::vector<RowDef> defs = rowDefs(target, tile);
     TileFiles f = files(target, tile);
@@ -1073,17 +1239,31 @@ EditResult apply(Backups& backups, const Target& target, Tile tile, const std::m
         }
     }
 
-    // A game's new options or controls file starts as a copy of the one under it
+    // A new options or controls file starts as a copy of the one under it (of
+    // this core's entries only, when that's RetroArch's all-cores options file)
     std::string start = l.ownText;
     if (!l.ownExists && l.oneFile && !f.below.empty()) {
-        readFile(f.below, start);
+        if (f.belowShared) {
+            for (const auto& [key, value] : l.below) start += key + " = \"" + value + "\"\n";
+        }
+        else {
+            readFile(f.below, start);
+        }
     }
     std::string text = editConfig(start, edits);
     std::map<std::string, std::string> result = parseConfig(text);
+    // An #include line keeps the file: what it brings in isn't Manage's to judge
+    bool includes = false;
+    for (const Line& line : Lines::parse(text).lines) {
+        if (!includeOf(line.text).empty()) includes = true;
+    }
 
     // Nothing left, or nothing that differs from what it shadows: the file goes
-    bool remove = result.empty();
-    if (!remove && tile == Tile::Settings) {
+    bool remove = result.empty() && !includes;
+    if (includes) {
+        remove = false;
+    }
+    else if (!remove && tile == Tile::Settings) {
         remove = std::all_of(result.begin(), result.end(), [&](const auto& kv) {
             auto under = l.base.find(kv.first);
             return under != l.base.end() && sameValue(under->second, kv.second);
@@ -1127,7 +1307,7 @@ EditResult apply(Backups& backups, const Target& target, Tile tile, const std::m
 
 EditResult useCoreSettings(Backups& backups, const Target& target, Tile tile)
 {
-    if (!target.setup.ready()) return EditResult::fail(target.setup.why);
+    if (!target.usable()) return EditResult::fail(target.problem.empty() ? target.setup.why : target.problem);
     if (!target.game()) return EditResult::fail("These are the core's own settings already.");
     TileFiles f = files(target, tile);
     if (!isFile(f.own)) return EditResult::fail("This game has no " + tileNoun(tile) + " file of its own.");
@@ -1139,7 +1319,7 @@ EditResult useCoreSettings(Backups& backups, const Target& target, Tile tile)
 
 EditResult restoreOriginal(Backups& backups, const Target& target, Tile tile)
 {
-    if (!target.setup.ready()) return EditResult::fail(target.setup.why);
+    if (!target.usable()) return EditResult::fail(target.problem.empty() ? target.setup.why : target.problem);
     TileFiles f = files(target, tile);
     if (!differsFromOriginal(backups, f.own)) {
         return EditResult::fail("Manage hasn't changed these " + tileNoun(tile) + ".");
