@@ -47,12 +47,15 @@ namespace
         static const std::set<std::string> images = { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp" };
         return images.count(extension) ? extension : "";
     }
+}
 
+namespace Catalog
+{
     // The collections/ folders a package's files are in
-    std::set<std::string> collectionsOf(const Catalog::Manifest& manifest)
+    std::set<std::string> collectionsOf(const Manifest& manifest)
     {
         std::set<std::string> names;
-        for (const Catalog::InstalledFile& file : manifest.files) {
+        for (const InstalledFile& file : manifest.files) {
             size_t slash = file.path.find('/');
             if (file.target == "collections" && slash != std::string::npos && slash > 0) {
                 names.insert(file.path.substr(0, slash));
@@ -60,10 +63,7 @@ namespace
         }
         return names;
     }
-}
 
-namespace Catalog
-{
     Service::Service(const std::string& catalogFolder, const Targets& targets, std::unique_ptr<Http> http)
         : folder_(catalogFolder)
         , targets_(targets)
@@ -352,6 +352,21 @@ namespace Catalog
         return true;
     }
 
+    bool Service::hasChanges() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return changed_;
+    }
+
+    bool Service::sourceStatus(const std::string& name, SourceStatus& status) const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto found = sourceStatus_.find(name);
+        if (found == sourceStatus_.end()) return false;
+        status = found->second;
+        return true;
+    }
+
     bool Service::takeRestartRequest()
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -463,10 +478,16 @@ namespace Catalog
         std::vector<Package> packages;
         std::vector<std::string> warnings;
         std::set<std::string> ids;
+        std::map<std::string, SourceStatus> statuses;
 
         for (const SourceConfig& source : sources) {
             if (!source.enabled) continue;
             SourceContents contents = readSource(source, cacheFolder(), http_.get());
+            SourceStatus& status = statuses[source.name];
+            status.checked = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            status.fromCache = contents.fromCache;
+            status.error = contents.error;
             if (!contents.error.empty()) {
                 warnings.push_back(source.name + ": " + contents.error);
                 LOG_WARNING("Catalog", source.name + ": " + contents.error);
@@ -488,6 +509,7 @@ namespace Catalog
             std::lock_guard<std::mutex> lock(mutex_);
             packages_ = packages;
             warnings_ = warnings;
+            sourceStatus_ = statuses;
             rebuildEntries();
         }
         enqueue({ Job::Kind::Artwork, "" });

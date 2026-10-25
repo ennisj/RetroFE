@@ -91,6 +91,42 @@ std::string ControlsProvider::describeValue(const std::string& value)
     return text;
 }
 
+std::string ControlsProvider::describeShort(const InputToken::Input& input)
+{
+    // InputToken::describe's words, shortened: "Keyboard" -> "Key",
+    // "Joystick" -> "Joy", "Controller" -> "Pad", and the long note on
+    // joyUnmapped... inputs -> "(unmapped)"; the input's own screen keeps the long form
+    std::string text = InputToken::describe(input);
+    auto replace = [&](const std::string& from, const std::string& to, bool atStart) {
+        size_t at = text.find(from);
+        if (at != std::string::npos && (!atStart || at == 0)) {
+            text.replace(at, from.size(), to);
+        }
+    };
+    replace("Keyboard ", "Key ", true);
+    replace("Joystick", "Joy", true);
+    replace("Controller", "Pad", true);
+    replace(" (joysticks with no controller mapping)", " (unmapped)", false);
+    return text;
+}
+
+std::string ControlsProvider::describeValueShort(const std::string& value)
+{
+    std::vector<std::string> words;
+    for (const std::string& token : nonEmpty(InputToken::split(value))) {
+        InputToken::Input input = InputToken::parse(token);
+        words.push_back(input.kind == InputToken::Kind::Invalid ? "\"" + token + "\"?" : describeShort(input));
+    }
+    if (words.empty()) {
+        return "No input";
+    }
+    std::string text;
+    for (size_t i = 0; i < words.size(); i++) {
+        text += (i == 0 ? "" : ", ") + words[i];
+    }
+    return text;
+}
+
 void ControlsProvider::refresh()
 {
     // The files may have changed while the manager was closed
@@ -362,7 +398,7 @@ Forms::Rows ControlsProvider::rows(const std::string& key, size_t limit, const S
             Forms::Row row;
             row.id = control.name;
             row.label = control.label + (changed.count(control.name) ? " (changed)" : "");
-            row.detail = describeValue(edits_.get(control.name));
+            row.detail = describeValueShort(edits_.get(control.name));
             rows.items.push_back(row);
         }
     }

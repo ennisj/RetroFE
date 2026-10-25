@@ -1205,6 +1205,7 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		style.confirmBackgroundAlpha = number(componentXml, "confirmBackgroundAlpha", style.confirmBackgroundAlpha);
 		style.showTitle = flag(componentXml, "title", style.showTitle);
 		style.showHints = flag(componentXml, "hints", style.showHints);
+		style.titleDetail = text(componentXml, "titleDetail", style.titleDetail);
 		if (const xml_attribute<>* image = componentXml->first_attribute("focusImage")) {
 			style.focusImage = Configuration::convertToAbsolutePath(layoutPath, image->value());
 		}

@@ -183,6 +183,8 @@ private:
     RETROFE_STATE   selectHomeItem( const Item *item );
     // Manage's "Start this game": launched as from its own system's page, then back to Manage
     RETROFE_STATE   launchFromManager( const ManagerUI::LaunchRequest& request );
+    // Result::browse: shows a collection Manage asked for (one just installed, the Catalog list)
+    RETROFE_STATE   browseFromManager( const std::string& collection );
     CollectionInfo *getCatalogCollection( );
     bool            isHomeMenuPage( const std::string& collectionName ) const;  // Home or the Catalog list
     void updatePageControls(const std::string& type);
@@ -230,4 +232,5 @@ private:
     bool               homeMenu_{ false };
     std::string        browseCollection_;  // where Home's Browse goes
     std::string        nextPageName_;      // overrides nextPageItem_->name for the next page
+    std::string        browseAfterBack_;   // browseFromManager went back first (to rebuild that page): go in again
 };

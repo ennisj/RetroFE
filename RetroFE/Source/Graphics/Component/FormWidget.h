@@ -80,6 +80,10 @@ public:
         std::string offText = "Off";
         bool showTitle = true;
         bool showHints = true;
+        // titleDetail="info:pendingChanges": a model binding drawn at the
+        // right of the title row in infoColor, e.g. "2 changes apply when you
+        // close Manage"; nothing when empty (the default) or without a title
+        std::string titleDetail;
     };
 
     // Fonts of the same face in other colors; null means the normal font
@@ -114,6 +118,10 @@ public:
     // Where the user is, and putting them back there after returning to the form
     Forms::Focus focus() const;
     void restoreFocus(const Forms::Focus& focus);
+
+    // Focuses the field key names (Forms::findField), now or as soon as it's
+    // shown, unless the user moves first (Result::focus)
+    void focusOn(const std::string& key);
 
     // Whether Select on a folder or file field asks for a native picker
     // (takeBrowse) rather than editing the path as text
@@ -235,8 +243,10 @@ private:
     std::unordered_map<std::string, std::vector<std::string>> wrapped_;   // by width and text
     std::unordered_map<std::string, std::vector<Forms::TextLine>> layouts_;   // multi-line fields', likewise
     int focus_ = -1;              // index into rows_
-    bool focusGuarded_ = false;   // focus landed on a file or folder field because rows went away:
-                                  // Select there waits for the user to move first (it opens a picker)
+    bool focusGuarded_ = false;   // focus landed on a Guarded row (Forms::refocusTarget) because rows
+                                  // went away: Select there waits for the user to move first
+    std::vector<const Forms::Field*> shownFields_;   // focusable fields of the last build, to tell new ones
+    std::string wantedFocus_;     // Result::focus not shown yet: focused when it is, until the user moves
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key
     float scroll_ = 0.0f;

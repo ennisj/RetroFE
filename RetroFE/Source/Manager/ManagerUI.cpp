@@ -47,12 +47,14 @@ ManagerUI::ManagerUI(Configuration& config)
 {
     // Setup reads firstCollection as RetroFE uses it (command-line overrides included)
     Setup::setConfiguration(&config_);
+    afterReload_.started();   // what the last RetroFE kept for after its reload is this one's
 }
 
 ManagerUI::~ManagerUI()
 {
     // RetroFE is going: a game waiting to start goes too, unless it waits for this reload
     launches_.shutdown();
+    afterReload_.shutdown();
     deInitialize();
     Setup::setConfiguration(nullptr);
 }
@@ -142,6 +144,7 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
             navHeld_.fill(true);   // the Select that saved is still held
         };
         Manager::registerProviders(model_, services);
+        model_.setPendingChanges([this] { return pendingChanges(); });
         providersAdded_ = true;
     }
     LOG_INFO("Manager", "Press " + std::string(SDL_GetScancodeName(toggleKey_)) + " to open Settings");
@@ -414,7 +417,42 @@ bool ManagerUI::requestQuit()
         return false;
     }
     reloadRequested_ = false;
+    afterReload_.clear();   // there's no reload to come back from
     return true;
+}
+
+Manager::PendingChanges ManagerUI::pendingChanges() const
+{
+    Manager::PendingChanges pending;
+    if (library_) {
+        pending.library = library_->pendingChanges();
+        pending.libraryFlag = library_->changesPending();
+    }
+    pending.reloadAsked = reloadWhenClosed_;
+    pending.catalog = catalog_ && catalog_->hasChanges();
+    return pending;
+}
+
+bool ManagerUI::reopenAfterReload()
+{
+    Manager::AfterReload::Screen screen;
+    if (!context_ || locked_ || !afterReload_.takeReopen(screen)) {
+        return false;
+    }
+    // The hub as the first screen, so Back goes there from a deeper one
+    open("manage");
+    if (open_ && screen.form != "manage") {
+        push(screen.form, screen.params);
+    }
+    if (open_) {
+        setStatus(screen.message, Forms::StatusKind::Success);
+    }
+    return open_;
+}
+
+bool ManagerUI::takeBrowseRequest(std::string& collection)
+{
+    return afterReload_.takeBrowse(open_, reloadRequested_, collection);
 }
 
 void ManagerUI::show()
@@ -969,8 +1007,24 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         return;
     }
     if (result.ok && result.reload) {
+        // Where to go once RetroFE is back: Manage on a screen, a collection
+        if (!result.open.empty()) {
+            const Navigator::Frame* frame = nav_.current();
+            afterReload_.reopen({ result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result), result.message });
+        }
+        if (!result.browse.empty()) {
+            afterReload_.browse(result.browse);
+        }
         reloadRequested_ = true;
         close();
+        return;
+    }
+    // A collection to show (the Catalog list): close, asking about unsaved
+    // changes as Close does, and RetroFE goes there
+    if (result.ok && !result.browse.empty()) {
+        if (requestClose()) {
+            afterReload_.browse(result.browse);
+        }
         return;
     }
     // After success an action can move to another screen, which then shows its message
@@ -991,6 +1045,10 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         if (!push(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result))) {
             return;
         }
+    }
+    // Focus where the action says, now or once that field shows; on the screen it ended on
+    if (open_ && result.ok && !result.focus.empty() && widget_) {
+        widget_->focusOn(result.focus);
     }
     if (open_) {
         setStatus(result.message, Forms::statusKind(result));
@@ -1064,6 +1122,10 @@ bool ManagerUI::takeReloadRequest()
     }
     reloadRequested_ = false;
     launches_.reloading();   // a game waiting for this reload starts once RetroFE is back
+    afterReload_.reloading();   // and Manage, or a collection, is shown once it's back
+    // Catalog installs finished meanwhile go on the Main menu now: the
+    // Catalog that knows about them doesn't survive the reload
+    takeCatalogChanges();
     return true;
 }
 
@@ -1086,6 +1148,10 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string
     if (!open_ || !push("games", { { "collection", request.collection } })
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
+    }
+    // Back on the button that started it, so it can be started again
+    if (widget_) {
+        widget_->focusOn("game.launch");
     }
     setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem,
               problem.empty() ? Forms::StatusKind::Info : Forms::StatusKind::Error);
@@ -1135,6 +1201,12 @@ void ManagerUI::drawWindow()
     }
     bool keepOpen = true;
     ImGui::Begin(title.c_str(), &keepOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+
+    // Changes waiting for a reload, as the page's title row shows them
+    std::string pending = model_.get("info:pendingChanges");
+    if (!pending.empty()) {
+        ImGui::TextDisabled("%s", pending.c_str());
+    }
 
     if (shown) {
         view_.draw(*shown, model_);

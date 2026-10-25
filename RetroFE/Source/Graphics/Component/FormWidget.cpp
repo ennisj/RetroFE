@@ -90,6 +90,8 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     model_ = model;
     focus_ = -1;
     focusGuarded_ = false;
+    shownFields_.clear();
+    wantedFocus_.clear();
     focusedField_ = nullptr;
     focusedItem_.clear();
     scroll_ = 0.0f;
@@ -121,8 +123,18 @@ void FormWidget::restoreFocus(const Forms::Focus& focus)
     scroll_ = focus.scroll;
     focus_ = -1;
     focusGuarded_ = false;
+    shownFields_.clear();
     rows_.clear();
     stale_ = true;
+}
+
+void FormWidget::focusOn(const std::string& key)
+{
+    if (!form_ || key.empty()) {
+        return;
+    }
+    wantedFocus_ = key;
+    stale_ = true;   // buildRows focuses it if it's shown
 }
 
 void FormWidget::setFont(FontRole role, FontManager* font)
@@ -489,11 +501,27 @@ void FormWidget::buildRows()
         Row title;
         title.kind = RowKind::Title;
         title.text = titleText;
+        if (!style_.titleDetail.empty()) {
+            title.detail = model_->get(style_.titleDetail);   // e.g. changes waiting for a reload
+        }
         rows_.push_back(title);
     }
     addFields(form_->fields);
     if (!status_.empty()) {
         statusLines_ = wrap((statusKind_ == Forms::StatusKind::Error ? "! " : "") + status_, contentWidth());
+    }
+
+    // A field an action asked for (Result::focus) takes focus once it's shown
+    if (!wantedFocus_.empty()) {
+        for (const Row& r : rows_) {
+            if (r.focusable && r.field && Forms::fieldMatches(*r.field, wantedFocus_)) {
+                focusedField_ = r.field;
+                focusedItem_ = r.item;
+                focusGuarded_ = false;
+                wantedFocus_.clear();
+                break;
+            }
+        }
     }
 
     // Keep the same field, and result, focused while rows come and go around it.
@@ -517,18 +545,19 @@ void FormWidget::buildRows()
     }
     if (focus_ < 0 && focusedField_ && previousFocus >= 0) {
         // The focused field went away (e.g. a button that hides itself once
-        // pressed): stay where it was, or go up. Not onto a file or folder field
-        // when there's anything else, and if it has to be one, Select there
-        // waits for a move, so a second press doesn't open a picker.
+        // pressed): stay where it was, or go up. Not onto a file or folder
+        // field, a button that asks for confirmation, or a button that has
+        // just appeared (the undo of what was pressed) when there's anything
+        // else; if it has to be one, Select there waits for a move, so a
+        // second press doesn't open a picker or undo the action.
         std::vector<Forms::FocusTarget> targets;
         targets.reserve(rows_.size());
         for (const Row& r : rows_) {
-            targets.push_back(!r.focusable ? Forms::FocusTarget::None
-                              : isPathField(r.field) ? Forms::FocusTarget::Guarded
-                              : Forms::FocusTarget::Free);
+            bool wasShown = std::find(shownFields_.begin(), shownFields_.end(), r.field) != shownFields_.end();
+            targets.push_back(Forms::refocusTarget(r.field, r.focusable, wasShown));
         }
         focus_ = Forms::refocusIndex(targets, previousFocus);
-        focusGuarded_ = focus_ >= 0 && isPathField(rows_[focus_].field);
+        focusGuarded_ = focus_ >= 0 && targets[focus_] == Forms::FocusTarget::Guarded;
     }
     if (focus_ < 0) {
         for (size_t i = 0; i < rows_.size(); i++) {
@@ -541,6 +570,12 @@ void FormWidget::buildRows()
     if (focus_ >= 0) {
         focusedField_ = rows_[focus_].field;
         focusedItem_ = rows_[focus_].item;
+    }
+    shownFields_.clear();
+    for (const Row& r : rows_) {
+        if (r.focusable && r.field && (shownFields_.empty() || shownFields_.back() != r.field)) {
+            shownFields_.push_back(r.field);
+        }
     }
 }
 
@@ -646,6 +681,7 @@ bool FormWidget::navigate(Nav nav)
         buildRows();
     }
     stale_ = true;   // whatever happens next shows on the next draw
+    wantedFocus_.clear();   // the user is moving on: an action's focus request is dropped
 
     const Row* row = focus_ >= 0 ? &rows_[focus_] : nullptr;
     const Field* field = row ? row->field : nullptr;
@@ -728,6 +764,9 @@ void FormWidget::activate(const Row& row)
         change(field, 1);
         break;
     case FieldType::Button:
+        if (focusGuarded_) {
+            break;   // focus only got here because the pressed button went away; the user moves first
+        }
         if (model_->actionProblem(field.action).empty() && confirm_.select(field)) {
             result_ = model_->runAction(field.action);
             pictures_.recheck();   // it may have written artwork
@@ -984,7 +1023,9 @@ std::string FormWidget::hintText() const
         case FieldType::Number: hint = "Left/Right: change   Select: type"; break;
         case FieldType::Toggle: hint = "Select: change"; break;
         case FieldType::Choice: hint = "Left/Right: change"; break;
-        case FieldType::Button: hint = "Select: " + field->label; break;
+        case FieldType::Button:
+            hint = focusGuarded_ ? "Any direction, then Select: " + field->label : "Select: " + field->label;
+            break;
         case FieldType::Link:   hint = "Select: open"; break;
         case FieldType::Folder:
         case FieldType::File:
@@ -1201,9 +1242,21 @@ void FormWidget::draw()
         }
 
         switch (r.kind) {
-        case RowKind::Title:
-            painter_.text(r.text, left, y + (row - size * 1.3f) / 2.0f, width, size * 1.3f, false, 1.0f);
+        case RowKind::Title: {
+            const float titleSize = size * 1.3f;
+            float titleWidth = width;
+            if (!r.detail.empty()) {
+                // The title's detail on the right, smaller, as much as the title leaves
+                const float detailSize = size * noteScale;
+                float detailNeeds = painter_.textWidthWith(infoFont_, r.detail, detailSize);
+                Forms::RowSplit split = Forms::splitRow(painter_.textWidth(r.text, titleSize), detailNeeds, width, gap, 0.6f);
+                painter_.textWith(infoFont_, r.detail, left + width - std::min(detailNeeds, split.detail),
+                                  y + (row - detailSize) / 2.0f, split.detail, detailSize, 1.0f);
+                titleWidth = split.label;
+            }
+            painter_.text(r.text, left, y + (row - titleSize) / 2.0f, titleWidth, titleSize, false, 1.0f);
             break;
+        }
         case RowKind::Header: {
             float headerSize = size * noteScale;
             painter_.textWith(headerFont_, r.text, left, y + (row - headerSize) / 2.0f, width, headerSize, style_.headerAlpha);
