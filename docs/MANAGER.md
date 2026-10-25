@@ -19,6 +19,12 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 creates. Existing installs don't have it, so they start on `firstCollection`
 as before. Kiosk mode always skips Home.
 
+Home keeps that order, but starts on **Browse** once there's something to
+browse (any collection), and on **Manage** on a bare install, where Manage
+opens anyway to add the first system. That holds after every reload too
+(closing Manage after a change, Settings' Save, a Catalog install), so Home
+never comes back on the Catalog.
+
 F10 opens Settings from anywhere, switches to it from another screen, and
 closes it again; change the key with `manager` in `controls.conf` (the first
 keyboard key it lists), or in Settings > Controls (Open Settings). Back or
@@ -39,18 +45,35 @@ index format, is in [design/catalog-sources.md](design/catalog-sources.md).
 - **Catalog** on Home lists every package your sources offer, followed by a
   **Sources** item. Until there's something to list it opens the Sources screen.
 - Selecting a package shows its details, with **Install**, **Update**,
-  **Remove** or **Stop** as they apply. Downloads continue in the background,
-  so you can go back to the list and pick another; they run one at a time.
+  **Remove** or **Stop** as they apply, and **Back to the Catalog**. Downloads
+  continue in the background, so you can go back to the list and pick
+  another; they run one at a time. Pressing Install leaves focus on Back to
+  the Catalog, never on Remove (which takes Install's place), and the outcome
+  ("Installed QA Pack 1.0.0.") is said once.
+- Once a collection is installed, **Show it in Browse** reloads RetroFE and
+  opens that collection; Back from it goes to Home. Focus moves to it when the
+  install finishes, unless you've moved on.
 - Once you're back on Home with nothing left to do, RetroFE reloads so new
   content shows up. Installed collections are added to the Main menu, so they
-  appear under Browse; removed ones are taken off it. Saving Settings while an
-  install is running also waits for it before reloading.
-- **Sources** (from the Catalog or Manage) adds and removes sources. Adding
-  one asks you to confirm that you trust it: RetroFE doesn't check what sources
-  offer. Plain `http://` is only allowed on your own network (localhost, a
-  machine name like `nas`, or a private address), for indexes and downloads alike.
-- **Manage** lists what's installed and can remove any of it, including
-  packages no source offers any more.
+  appear under Browse; removed ones are taken off it. Any other reload (Show
+  it in Browse, Settings' Save, Apply changes now) does the same first, and
+  waits for an install that's running.
+- **Sources** (from the Catalog or Manage) lists your sources, each with what
+  it offers ("12 packages", "Can't be read", "Off"). Choosing one opens its
+  screen: its type and address, when it was last read and how that went (or
+  that it couldn't be reached, so its packages are the last copy), its
+  problems, the packages it offers (each opens its package), **Check for
+  updates**, and **Remove this source** (after a second Select; packages
+  installed from it stay installed).
+- Adding a source asks you to confirm that you trust it: RetroFE doesn't
+  check what sources offer. Plain `http://` is only allowed on your own
+  network (localhost, a machine name like `nas`, or a private address), for
+  indexes and downloads alike. Once its packages have been read, **Open the
+  Catalog** appears at the top of Sources and takes focus; it shows the
+  Catalog list (with Home on).
+- **Manage** lists what's installed from the Catalog; each package opens its
+  screen, where Remove takes it off again, also for a package no source
+  offers any more.
 - A package can only be updated from the source it was installed from. If
   another source offers the same package, remove it first to switch.
 
@@ -157,9 +180,36 @@ field (a game's story), Enter starts a new line and **Ctrl+Enter** keeps the
 text; the arrows, Home, End, Page Up and Page Down move the cursor, and
 Delete removes the character after it.
 
+**Settings** starts with **Controls** (see [Controls](#controls)), then
+Display (Fullscreen; **Screen size**: the screen's size, 1920 x 1080,
+1280 x 720 and other common sizes, or Custom, which shows Width and Height;
+Hide mouse), Menus (**Theme**, which sets `layout`; Start on Home; Browse
+opens) and Video, then Save. A size that isn't in the list shows as Custom.
+
 **Manage** links to a screen for each part of your setup: Games, Menus,
-Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
-its Sources, and removing a package).
+Systems, Videos, Emulators and Themes, then the Catalog (its Sources, and
+each package it installed).
+
+- On a bare install it says so and starts on **Add your first system**. Once
+  a system exists (added on another screen, before any reload) the welcome
+  and that link are gone.
+- Changes Manage saves show after RetroFE reloads, when you close Manage.
+  Every screen says how many are waiting at the right of its title ("2
+  changes apply when you close Manage"): each different thing saved counts
+  once (saving the same screen twice is one change), plus a theme to switch
+  to, and Catalog installs not shown yet. Unsaved edits don't count.
+- While changes are waiting, **Apply changes now** at the top of Manage
+  reloads RetroFE straight away and opens Manage again ("Applied 2
+  changes."). It waits for a Catalog install to finish first.
+
+After an action, focus stays where it was. When the button you pressed goes
+away (Hide this game, Install, Undo changes), it moves to the nearest other
+row, but never onto a button that has just appeared (usually the undo of
+what you pressed: Show this game again, Remove) or one that asks for
+confirmation, when there's anything else. If that's all there is, Select
+there waits until you've moved ("Any direction, then Select: ..."), so a
+second press from someone still holding Select does nothing. After **Start
+this game**, Manage comes back with focus on Start this game.
 
 **Games** searches every installed game by name or title, in one system or
 merged collection or under a menu, optionally only games without metadata,
@@ -528,8 +578,10 @@ restores it.
 **Settings > Controls** lists every control RetroFE reads from
 `controls.conf` (see [CONTROLS.md](CONTROLS.md)), grouped as Essential,
 Navigation, Playlists and favourites, Admin, Advanced, Combos and Jukebox,
-each with its inputs ("Keyboard Return, Controller A..."), plus the dead zone
-for sticks and triggers. A line at the top points out inputs RetroFE doesn't
+each with its inputs in short words ("Key Return, Pad A, D-pad up, Joy
+button 0 (unmapped)": unmapped means only on joysticks SDL has no controller
+mapping for, such as arcade encoders), plus the dead zone for sticks and
+triggers. A control's own screen gives each input in full. A line at the top points out inputs RetroFE doesn't
 recognise (it skips them).
 
 Choosing a control shows its inputs, one per row (with the token as
@@ -624,6 +676,7 @@ The page places the form with a `<form>` element:
 | `errorColor` | Error messages, and the question of a button waiting for confirmation (default `fontColor`) |
 | `confirmBackgroundColor`, `confirmBackgroundAlpha` | Tint over a button waiting for a second Select to confirm (default alpha 0: none) |
 | `title` | `no` hides the screen's title |
+| `titleDetail` | A value drawn at the right of the title row, smaller, in `infoColor`; nothing when it's empty. `titleDetail="info:pendingChanges"` shows the changes waiting for a reload ("2 changes apply when you close Manage"), as the built-in page and Aeon Nox do. Default: none. |
 | `hints` | `no` hides the controls hint at the bottom |
 
 Text that doesn't fit its column ends in `...`; a result's detail gets the
@@ -697,7 +750,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. `multiline="yes"` makes `text` several lines, `rows` high (default 4), wrapped at spaces, with "..." when there's more than fits; the value keeps a `\n` between lines. |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
-| `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |
+| `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes`, `installed` or `screenSizes`) |
 | `list` | A read-only list (`empty` is shown when there's nothing in it) |
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
 | `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
@@ -741,18 +794,30 @@ Removing a package or a source asks you to confirm first.
 
 - `settings:<key>`: a setting from `settings.conf`. Changes are kept until
   `settings.save`. `default` is the value RetroFE uses when no file sets it.
+  `settings:screenSize` is `horizontal` and `vertical` as one choice
+  (`options="screenSizes"`: `stretch`, `1920x1080`..., `custom`);
+  `info:customScreenSize` is on while it's `custom`.
 - `draft:<key>`: input for an action, such as a new system's name.
   `default` is its starting value.
 - `param:<name>`: the screen's parameters (read-only).
 - `info:<key>`: read-only: `info:collections`, `info:sources`,
-  `info:installed` and `info:catalogWarnings` (lists), `info:romCount`,
-  `info:catalogStatus`, `info:removalStatus`, and `info:hasCollections`,
-  `info:hasSources`, `info:hasInstalled` and `info:sourceIsFolder` for
-  `visibleWhen`.
-- `package:<key>`: the Catalog package the screen is about (`param:id`):
+  `info:installed` and `info:catalogWarnings` (lists; `info:sources` and
+  `info:installed` are also `results`, a row per source or package, opening
+  `source` or `package`), `info:romCount`, `info:catalogStatus`,
+  `info:removalStatus`, `info:pendingChanges` (the changes waiting for a
+  reload, or nothing), and `info:hasCollections` (counting systems added since
+  Manage opened), `info:hasSources`, `info:hasInstalled`,
+  `info:sourceIsFolder`, `info:hasPendingChanges` and `info:canOpenCatalog`
+  for `visibleWhen`.
+- `package:<key>`: the Catalog package the screen is about (`param:id`), also
+  one that's installed but no source offers any more:
   `name`, `summary`, `description`, `installedStatus`, `requires`, `checksum`
   (a warning when the source gives none), `progress`, and `canInstall`,
-  `canUpdate`, `canRemove` and `isBusy` for `visibleWhen`.
+  `canUpdate`, `canRemove`, `canShow` (an installed collection),
+  `isInstalled` and `isBusy` for `visibleWhen`.
+- `source:<key>`: the source the screen is about (`param:id`, its name):
+  `name`, `type`, `location`, `status` (when it was read and how that went),
+  the list `source:problems` and the rows `source:packages`.
 - Other prefixes, such as `game:`, come from the Manage sections that provide
   them; see [design/manage-forms.md](design/manage-forms.md).
 
@@ -764,9 +829,13 @@ Actions:
 | `collection.create` | Creates a system (collection) from `draft:name`, `draft:romPath`, `draft:extensions`, `draft:executable` and `draft:arguments` |
 | `package.install`, `package.remove`, `package.cancel` | Install or update, remove, or stop the package the screen is about |
 | `package.removeInstalled` | Removes the installed package `draft:removePackage` |
+| `package.showInBrowse` | Reloads RetroFE, then opens the collection the package installed |
 | `source.add` | Adds `draft:sourceName` of `draft:sourceType` at `draft:sourceUrl` or `draft:sourcePath`, once `draft:sourceTrusted` is on. A layout's form can't give these a `default`. |
 | `source.remove` | Removes `draft:removeSource` |
+| `source.removeThis` | Removes the source the screen is about, then goes back |
 | `catalog.refresh` | Reads the sources again |
+| `catalog.open` | Closes the screens and shows the Catalog list |
+| `changes.apply` | Reloads RetroFE now, then opens this screen again |
 | `open.<form>` | Opens a screen with this screen's parameters, like a `link`, e.g. `open.sources` |
 | `back` | Returns to the previous screen, e.g. for a Done button |
 
@@ -779,7 +848,11 @@ gets the screen's parameters with every call. An action can open a screen or
 go back once it succeeds, or ask for the next input the user presses
 (`Result::capture`, as Settings > Controls does), a provider can object to
 leaving a screen with unsaved changes, and it can ask RetroFE to reload once
-the manager closes.
+the manager closes (which the "changes waiting" line counts). An action can
+also name the field to focus afterwards (`Result::focus`, by its action, bind
+or open; focused as soon as it shows), reload now and come back to a screen
+(`Result::reload` with `open`), or close the screens and show a collection
+(`Result::browse`).
 How to add a section, its forms and its provider is in
 [design/manage-forms.md](design/manage-forms.md).
 
@@ -811,6 +884,12 @@ above, so it's a working example:
 | `layout 4x3.xml` next to each `layout.xml` | 4:3 versions, used with `randomLayout = layout 4x3` |
 
 The pages are generated from upstream's theme by `Scripts/aeon-nox/`.
+
+The wheels of menus, Home and the Catalog have `repeatItems="no"` on their
+`<menu>`: with fewer items than the wheel has places, each is drawn once
+around the selected one (Browse's Main menu with one system shows it once,
+not five times). Any layout can use it; without it a short list repeats to
+fill the menu, as RetroFE always did.
 
 ### Which page a collection gets
 

@@ -24,6 +24,7 @@
 #include "../Source/Control/InputToken.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
+#include "../Source/Graphics/Component/ListIndex.h"
 #include "../Source/Manager/AfterReload.h"
 #include "../Source/Manager/Controls/ControlsProvider.h"
 #include "../Source/Manager/Home.h"
@@ -190,6 +191,21 @@ static Test::Suite manageHub("manage hub", [] {
         checkEqual(Home::items[Home::landing(true)], "Browse", "content");
         checkEqual(Home::items[Home::landing(false)], "Manage", "first run");
         checkEqual(Home::items[0], "Catalog", "the order stays as it was");
+    });
+
+    run("menus: repeatItems=\"no\" draws a short list once, around the selected position", [] {
+        auto shown = [](size_t selected, size_t slots, size_t size) {
+            std::string drawn;
+            for (size_t slot = 0; slot < slots; slot++) drawn += showsMenuSlot(slot, selected, slots, size) ? 'x' : '.';
+            return drawn;
+        };
+        checkEqual(shown(4, 9, 1), "....x....", "one system: just the selected position (Browse's Main menu)");
+        checkEqual(shown(4, 9, 2), "....xx...", "two: the selected one and the next (the Catalog list)");
+        checkEqual(shown(4, 9, 4), "...xxxx..", "four: one before, two after (Home)");
+        checkEqual(shown(4, 9, 5), "..xxxxx..", "five: two either side");
+        checkEqual(shown(4, 9, 9), "xxxxxxxxx", "as many as positions: all of them");
+        checkEqual(shown(4, 9, 30), "xxxxxxxxx", "more: all of them");
+        checkEqual(shown(0, 5, 2), "xx...", "selected at the start");
     });
 
     run("hub: a system added on another screen counts straight away", [] {
@@ -435,6 +451,8 @@ static Test::Suite manageHub("manage hub", [] {
     run("controls: inputs in the list use short names", [] {
         checkEqual(Manager::ControlsProvider::describeShort(InputToken::parse("Return")), "Key Return", "a key");
         checkEqual(Manager::ControlsProvider::describeShort(InputToken::parse("joyA")), "Pad A", "a pad button");
+        checkEqual(Manager::ControlsProvider::describeShort(InputToken::parse("joyDPUp")), "D-pad up", "a pad's D-pad");
+        checkEqual(Manager::ControlsProvider::describeShort(InputToken::parse("joyLeftY-")), "Left stick up", "a pad's stick");
         checkEqual(Manager::ControlsProvider::describeShort(InputToken::parse("joyUnmappedButton0")), "Joy button 0 (unmapped)",
                    "an encoder button");
         checkEqual(Manager::ControlsProvider::describeValueShort("Return,joyA"), "Key Return, Pad A", "a value");

@@ -275,6 +275,8 @@ def systems_blocks(variant):
     menu = find(systems, 'imageType="logo"')
     # Collections without a logo show their name, in the theme's display font
     sub(menu, 'orientation="horizontal"', 'orientation="horizontal" textFallback="true"')
+    # Fewer collections than places on the wheel: each once, not repeated to fill it
+    sub(menu, 'textFallback="true"', 'textFallback="true" repeatItems="no"')
     menu['text'] = re.sub(r'(<itemDefaults [^>]*?)(loadFontSize="\d+" fontSize="\d+"|fontSize="\d+" loadFontSize="\d+")',
                           r'\1font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="%d" fontSize="%d"' % (g['logo_font'], g['logo_font']), menu['text'])
     # Text stops at maxWidth, mid-word: leave room for long names (items are 480 or 500 apart)
@@ -389,7 +391,7 @@ def form_attrs(up):
         'rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="%s" headerAlpha="0.95"' % ACCENT,
         'separatorColor="%s" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"' % ACCENT,
         'statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"',
-        'backgroundColor="000000" backgroundAlpha="0"',
+        'backgroundColor="000000" backgroundAlpha="0" titleDetail="info:pendingChanges"',
     ]
     return ('\n' + ' ' * 10).join(lines)
 
@@ -525,14 +527,14 @@ write('splash.xml', splash())
 
 TEXT = {
     'collections/Home/medium_artwork/tagline/Catalog.txt': 'Collections, artwork and layouts to install',
-    'collections/Home/medium_artwork/tagline/Settings.txt': 'Display, menus and video',
+    'collections/Home/medium_artwork/tagline/Settings.txt': 'Controls, display, menus and video',
     'collections/Home/medium_artwork/tagline/Manage.txt': 'Your games, systems, menus and themes',
     'collections/Home/medium_artwork/tagline/Browse.txt': 'Your collections and games',
     'collections/Home/medium_artwork/description/Catalog.txt':
         'Everything your sources offer: collections, artwork, layouts and more. Choose a package to see what it is and install it. '
         'Downloads carry on in the background while you look around.',
     'collections/Home/medium_artwork/description/Settings.txt':
-        'Window or full screen, which layout to use, whether RetroFE starts here on Home, and video playback. '
+        'Your controls, window or full screen and the screen size, which theme to use, whether RetroFE starts here on Home, and video playback. '
         'The Settings key opens it from anywhere, too.',
     'collections/Home/medium_artwork/description/Manage.txt':
         'Games, menus, systems, videos, emulators and themes: add, change and hide what RetroFE shows and how it starts it. '

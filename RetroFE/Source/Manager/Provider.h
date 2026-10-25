@@ -61,7 +61,7 @@ namespace Manager
         virtual ~Provider() = default;
 
         // The prefix served, e.g. "game". Built-in prefixes (settings, draft,
-        // info, param, package, collection, source, catalog, open, back) can't be used.
+        // info, param, package, collection, source, catalog, open, back, changes) can't be used.
         virtual std::string prefix() const = 0;
 
         // The manager is opening: re-read anything cached, it may have changed while closed

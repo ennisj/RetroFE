@@ -1430,6 +1430,10 @@ ScrollingList* PageBuilder::buildMenu(xml_node<>* menuXml, Page& page, int monit
 	}
 
 	menu = new ScrollingList(config_, page, layoutMode, commonMode, playlistType, selectedImage, font, layoutKey, imageType, videoType, useTextureCache);
+	if (const xml_attribute<>* repeatXml = menuXml->first_attribute("repeatItems")) {
+		std::string repeat = Utils::toLower(repeatXml->value());
+		menu->setRepeatItems(!(repeat == "no" || repeat == "false"));
+	}
 	trace(menu, nullptr, menuXml);
 	menu->baseViewInfo.Monitor = cMonitor;
 	menu->baseViewInfo.Layout = page.getCurrentLayout();

@@ -1,1 +1,1 @@
-Window or full screen, which layout to use, whether RetroFE starts here on Home, and video playback. The Settings key opens it from anywhere, too.
+Your controls, window or full screen and the screen size, which theme to use, whether RetroFE starts here on Home, and video playback. The Settings key opens it from anywhere, too.

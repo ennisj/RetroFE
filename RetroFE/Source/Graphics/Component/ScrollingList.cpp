@@ -146,6 +146,14 @@ std::string ScrollingList::getSelectedItemName()
     return (*items_)[(itemIndex_ + selectedOffsetIndex_) % static_cast<int>(size)]->name;
 }
 
+bool ScrollingList::showsSlot(size_t slot) const
+{
+    if (repeatItems_ || !items_ || !scrollPoints_) {
+        return true;
+    }
+    return ::showsMenuSlot(slot, selectedOffsetIndex_, scrollPoints_->size(), items_->size());
+}
+
 void ScrollingList::setScrollAcceleration( float value )
 {
     scrollAcceleration_ = value;

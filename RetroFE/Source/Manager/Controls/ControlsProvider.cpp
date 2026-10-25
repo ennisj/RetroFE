@@ -105,6 +105,10 @@ std::string ControlsProvider::describeShort(const InputToken::Input& input)
     };
     replace("Keyboard ", "Key ", true);
     replace("Joystick", "Joy", true);
+    // A pad's D-pad and sticks say what they are; other pad inputs say "Pad"
+    replace("Controller D-pad", "D-pad", true);
+    replace("Controller left stick", "Left stick", true);
+    replace("Controller right stick", "Right stick", true);
     replace("Controller", "Pad", true);
     replace(" (joysticks with no controller mapping)", " (unmapped)", false);
     return text;
