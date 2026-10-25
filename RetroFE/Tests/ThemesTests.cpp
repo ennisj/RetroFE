@@ -891,4 +891,19 @@ static Test::Suite themes("themes", [] {
         std::error_code ec;
         fs::remove_all(root + "_src", ec);
     });
+    Test::run("themes: a theme's preview picture", [] {
+        std::string root = makeRoot("theme-preview");
+        std::string dir = root + "/layouts/Shiny";
+        writeFile(dir + "/layout.xml", "<layout width=\"1920\" height=\"1080\">\n  <image src=\"%ITEM%\"/>\n  <image src=\"images/missing.png\"/>\n  <image x=\"0\" src=\"images/bg.png\"/>\n</layout>\n");
+        writeFile(dir + "/images/bg.png", "PNG");
+        check(fs::path(Themes::themePreview(dir)).filename() == "bg.png", "the main page's first picture that's there: " + Themes::themePreview(dir));
+        writeFile(dir + "/splash.xml", "<layout><image src=\"images/splash.png\" x=\"0\"/></layout>\n");
+        writeFile(dir + "/images/splash.png", "PNG");
+        check(fs::path(Themes::themePreview(dir)).filename() == "splash.png", "the splash page's picture comes first");
+        writeFile(dir + "/preview.png", "PNG");
+        check(fs::path(Themes::themePreview(dir)).filename() == "preview.png", "a preview.png wins");
+        check(Themes::themePreview(root + "/layouts/None").empty(), "none for a folder without pictures");
+        std::vector<Themes::ThemeFacts> facts = Themes::scanThemes(root, "Shiny");
+        check(facts.size() == 1 && fs::path(facts[0].preview).filename() == "preview.png", "the Themes screen's facts have it");
+    });
 });

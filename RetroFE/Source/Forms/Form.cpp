@@ -19,6 +19,7 @@
 #include "../Utility/Utils.h"
 #include <rapidxml.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -499,6 +500,37 @@ int refocusIndex(const std::vector<FocusTarget>& targets, int previous)
     };
     int found = search(FocusTarget::Free);
     return found >= 0 ? found : search(FocusTarget::Guarded);
+}
+
+int letterJump(const std::vector<std::string>& labels, int current, int direction)
+{
+    int count = static_cast<int>(labels.size());
+    if (count == 0 || current < 0 || current >= count || direction == 0) {
+        return current;
+    }
+    // A letter, ignoring case; anything else is one group ('#')
+    auto group = [&](int i) {
+        const std::string& label = labels[static_cast<size_t>(i)];
+        unsigned char c = label.empty() ? 0 : static_cast<unsigned char>(label[0]);
+        return std::isalpha(c) ? static_cast<char>(std::toupper(c)) : '#';
+    };
+    // The first row of the group i is in
+    auto groupStart = [&](int i) {
+        while (i > 0 && group(i - 1) == group(i)) {
+            i--;
+        }
+        return i;
+    };
+    if (direction > 0) {
+        for (int i = current + 1; i < count; i++) {
+            if (group(i) != group(current)) {
+                return i;
+            }
+        }
+        return current;
+    }
+    int start = groupStart(current);
+    return start == 0 ? current : groupStart(start - 1);
 }
 
 // --- Editing text ------------------------------------------------------------

@@ -115,6 +115,10 @@ namespace Forms
         std::string detail;   // shown on the right, e.g. a year or a status
         std::string image;    // optional thumbnail, an absolute path
         Params params;
+        // Drawn like a link (with the layout's link marker at the right), for a
+        // row that stands for a screen to go to rather than a record, e.g.
+        // "Add a launcher called lr-stella2014", or a system's "Games: 622 games"
+        bool link = false;
     };
 
     struct Rows
@@ -317,6 +321,13 @@ namespace Forms
     enum class FocusTarget { None, Free, Guarded };
     int refocusIndex(const std::vector<FocusTarget>& targets, int previous);
 
+    // Letter jump in a list (RetroFE's letterUp / letterDown): from row
+    // current, the first row of the next group of labels starting with the
+    // same letter (direction +1), or of the previous group (-1). Letters
+    // ignore case; digits and other characters count as one group. Stays at
+    // current when there's no group that way.
+    int letterJump(const std::vector<std::string>& labels, int current, int direction);
+
     // A layout attribute's color, "rrggbb" or "#rrggbb" in hex: false (rgb
     // untouched) for anything else, e.g. "red" or "fff"
     bool parseColor(const std::string& text, unsigned char rgb[3]);
@@ -328,7 +339,7 @@ namespace Forms
     // --- Editing text --------------------------------------------------------------
 
     // Text being edited and where the cursor is: a byte offset, always at the
-    // start of a UTF-8 character. A one-line field keeps it at the end.
+    // start of a UTF-8 character. Editing starts with it at the end.
     struct TextEdit
     {
         std::string text;
@@ -340,6 +351,8 @@ namespace Forms
         void erase();                            // the character at the cursor (Delete)
         void left();
         void right();
+        void home() { cursor = 0; }              // the start of the text (a one-line field's Home)
+        void end() { cursor = text.size(); }     // and its end
     };
 
     // The byte offset of the next / previous UTF-8 character

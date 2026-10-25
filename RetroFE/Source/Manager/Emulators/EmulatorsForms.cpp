@@ -22,17 +22,29 @@
 namespace
 {
 
-// Every launcher, searchable, then the names asked for but not defined
+// Add first, as on Systems and Themes; every launcher, searchable; then the
+// names asked for but not defined: inline when there are a few, else a link
+// with their count to a screen of their own
 const char* const emulatorsForm = R"(
 <form id="emulators" title="Emulators">
   <note bind="emulator:status"/>
+  <link label="Add a launcher" open="emulator-new"/>
   <text label="Search" bind="emulator:query" live="yes" hint="Launcher, program or system"/>
   <results bind="emulator:search" open="emulator" empty="No launchers match."/>
-  <link label="Add a launcher" open="emulator-new"/>
-  <section label="Used but not defined" visibleWhen="emulator:hasUnresolved">
+  <link label="Used but not defined" open="emulators-unresolved" status="emulator:unresolvedCount" visibleWhen="emulator:hasManyUnresolved"/>
+  <section label="Used but not defined" visibleWhen="emulator:hasFewUnresolved">
     <note bind="emulator:unresolvedNote"/>
     <results bind="emulator:unresolved" open="emulator-new" param="name"/>
   </section>
+</form>
+)";
+
+// Every name used but not defined; each opens Add a launcher with that name
+const char* const emulatorsUnresolvedForm = R"(
+<form id="emulators-unresolved" title="Used but not defined">
+  <note bind="emulator:status"/>
+  <note bind="emulator:unresolvedNote"/>
+  <results bind="emulator:unresolved" open="emulator-new" param="name" limit="500" empty="Every launcher asked for is defined."/>
 </form>
 )";
 
@@ -48,7 +60,7 @@ const char* const emulatorForm = R"(
   <value label="Working folder" bind="emulator:workingFolder"/>
   <value label="Restarts RetroFE" bind="emulator:reboot"/>
   <link label="Used by" open="emulator-users" status="emulator:usersStatus"/>
-  <link label="Edit" open="emulator-edit" status="emulator:usersStatus"/>
+  <link label="Edit" open="emulator-edit"/>
   <link label="RetroArch" open="emulator-retroarch" status="retroarch:status" visibleWhen="retroarch:runs"/>
   <link label="The file" open="emulator-file" status="emulator:fileName"/>
   <section label="Actions">
@@ -119,11 +131,11 @@ const char* const emulatorEditForm = R"(
     <toggle label="Restarts RetroFE" bind="emulator:editReboot" visibleWhen="emulator:editIsGlobal"
             help="RetroFE restarts once the program exits, e.g. after one that switches the theme."/>
     <value label="Runs" bind="emulator:editCommand"/>
-    <value label="File" bind="emulator:editFile"/>
+    <value label="Saved in" bind="emulator:editFile"/>
   </section>
   <actions>
     <button label="Save" action="emulator.save"/>
-    <button label="Reset" action="emulator.resetEdit" visibleWhen="emulator:editIsDirty"/>
+    <button label="Undo changes" action="emulator.resetEdit" visibleWhen="emulator:editIsDirty"/>
   </actions>
   <actions>
     <button label="Put back the original" action="emulator.restore" visibleWhen="emulator:editHasOriginal"
@@ -154,6 +166,7 @@ Forms::BuiltinTable Forms::emulatorsForms()
 {
     BuiltinTable table = {
         { "emulators", emulatorsForm },
+        { "emulators-unresolved", emulatorsUnresolvedForm },
         { "emulator", emulatorForm },
         { "emulator-users", emulatorUsersForm },
         { "emulator-file", emulatorFileForm },

@@ -33,7 +33,7 @@ namespace Forms
         // LineUp / LineDown: the owner moves the cursor a line as the field draws it
         enum class Result { None, Done, Cancel, LineUp, LineDown };
         enum class Nav { Up, Down, Left, Right, Select, Back };
-        enum class Action { Insert, Shift, Space, Delete, Done, NewLine, CursorLeft, CursorRight, LineUp, LineDown };
+        enum class Action { Insert, Shift, Space, Delete, Done, NewLine, CursorLeft, CursorRight, LineUp, LineDown, Home, End };
         struct Key
         {
             std::string label;
@@ -43,16 +43,28 @@ namespace Forms
         using Rows = std::vector<std::vector<Key>>;
 
         // numeric shows a number pad (decimal adds a "." key); multiline adds
-        // a New line key and a row of cursor keys
+        // a New line key and a row of cursor keys. A one-line text has a row
+        // of path and address symbols with cursor keys and Home / End.
+        // Focus starts on the key last typed with on this kind of keyboard
+        // (letters, lines or numbers), else on the first letter or on 1.
         void reset(bool numeric, bool multiline, bool decimal = false)
         {
             numeric_ = numeric;
             multiline_ = multiline && !numeric;
             decimal_ = decimal && numeric;
             shift_ = false;
-            // Start on the first row of letters, or on 1 for numbers
-            row_ = numeric ? 0 : 1;
-            column_ = 0;
+            const Position& last = lastKey(mode());
+            row_ = last.row >= 0 ? last.row : numeric ? 0 : 1;
+            column_ = last.row >= 0 ? last.column : 0;
+            clampFocus();
+        }
+
+        // Tests: every keyboard starts on its first key again
+        static void forgetLastKeys()
+        {
+            for (int mode = 0; mode < 3; mode++) {
+                lastKey(mode) = Position();
+            }
         }
 
         bool numeric() const { return numeric_; }
@@ -68,11 +80,20 @@ namespace Forms
             };
             // Covers what names and paths need: \ / : . - _ ' and more under Shift.
             // ASCII only: the fonts' atlases only have ASCII.
+            // A one-line text adds a row for paths and addresses: the symbols
+            // they're made of, whatever Shift says, and keys that move the
+            // cursor, so a long value can be changed in the middle
+            static const std::vector<Key> pathKeys = {
+                { ".", Action::Insert, 1 }, { "/", Action::Insert, 1 }, { "\\", Action::Insert, 1 }, { ":", Action::Insert, 1 },
+                { "-", Action::Insert, 1 }, { "_", Action::Insert, 1 },
+                { "<-", Action::CursorLeft, 1 }, { "->", Action::CursorRight, 1 },
+                { "Home", Action::Home, 1 }, { "End", Action::End, 1 }
+            };
             static const Rows lower = {
-                keyRow("1234567890"), keyRow("qwertyuiop"), keyRow("asdfghjkl-"), keyRow("zxcvbnm./\\"), bottom
+                keyRow("1234567890"), keyRow("qwertyuiop"), keyRow("asdfghjkl-"), keyRow("zxcvbnm./\\"), pathKeys, bottom
             };
             static const Rows upper = {
-                keyRow("!@$%&()_+="), keyRow("QWERTYUIOP"), keyRow("ASDFGHJKL'"), keyRow("ZXCVBNM,:\""), bottom
+                keyRow("!@$%&()_+="), keyRow("QWERTYUIOP"), keyRow("ASDFGHJKL'"), keyRow("ZXCVBNM,:\""), pathKeys, bottom
             };
             static const Rows numbers = {
                 keyRow("123"), keyRow("456"), keyRow("789"),
@@ -147,8 +168,15 @@ namespace Forms
                 }
                 break;
             }
-            case Nav::Select:
-                return press(all[row_][column_], text);
+            case Nav::Select: {
+                const Key& key = all[row_][column_];
+                // Remembered for the next edit: a key that types or moves, not
+                // Done or Shift (starting there, one Select would end the edit)
+                if (key.action != Action::Done && key.action != Action::Shift) {
+                    lastKey(mode()) = Position{ row_, column_ };
+                }
+                return press(key, text);
+            }
             case Nav::Back:
                 return Result::Cancel;
             }
@@ -165,6 +193,8 @@ namespace Forms
             case Action::Delete: text.backspace(); break;   // the whole UTF-8 character before the cursor
             case Action::CursorLeft: text.left(); break;
             case Action::CursorRight: text.right(); break;
+            case Action::Home: text.home(); break;
+            case Action::End: text.end(); break;
             case Action::Shift: shift_ = !shift_; break;
             case Action::Done: return Result::Done;
             case Action::LineUp: return Result::LineUp;
@@ -181,6 +211,20 @@ namespace Forms
         }
 
     private:
+        struct Position
+        {
+            int row = -1;   // -1: nothing typed yet
+            int column = 0;
+        };
+        // The last key typed with, per kind of keyboard, for as long as RetroFE
+        // runs: shared by every keyboard (the forms' and the theme editor's)
+        int mode() const { return numeric_ ? 2 : multiline_ ? 1 : 0; }
+        static Position& lastKey(int mode)
+        {
+            static Position positions[3];
+            return positions[mode];
+        }
+
         static std::vector<Key> keyRow(const std::string& characters)
         {
             std::vector<Key> row;

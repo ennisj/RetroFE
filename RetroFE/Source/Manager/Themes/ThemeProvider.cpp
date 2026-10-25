@@ -157,6 +157,39 @@ namespace Themes
         return layouts.empty() ? (fs::path(root) / "layouts").string() : layouts;
     }
 
+    std::string themePreview(const std::string& dir)
+    {
+        std::error_code ec;
+        const fs::path folder(dir);
+        for (const char* name : { "preview.png", "preview.jpg", "preview.jpeg", "preview.webp", "screenshot.png", "thumbnail.png" }) {
+            if (fs::is_regular_file(folder / name, ec)) return (folder / name).string();
+        }
+        // The first <image src="..."> a page shows whose file is there (paths are the theme folder's)
+        auto firstImage = [&](const fs::path& page) -> std::string {
+            std::string xml;
+            if (!readText(page, xml)) return "";
+            size_t at = 0;
+            while ((at = xml.find("<image", at)) != std::string::npos) {
+                size_t end = xml.find('>', at);
+                if (end == std::string::npos) break;
+                std::string tag = xml.substr(at, end - at);
+                at = end;
+                size_t src = tag.find(" src=\"");
+                if (src == std::string::npos) continue;
+                size_t start = src + 6;
+                size_t close = tag.find('"', start);
+                if (close == std::string::npos) continue;
+                std::string path = tag.substr(start, close - start);
+                if (path.empty() || path.find('%') != std::string::npos) continue;   // a placeholder, not a file
+                fs::path file = (folder / fs::path(path)).lexically_normal();
+                if (fs::is_regular_file(file, ec)) return file.string();
+            }
+            return "";
+        };
+        std::string splash = firstImage(folder / "splash.xml");
+        return splash.empty() ? firstImage(folder / "layout.xml") : splash;
+    }
+
     std::vector<ThemeFacts> scanThemes(const std::string& root, const std::string& activeLayout, const std::string& layoutsDir)
     {
         std::vector<ThemeFacts> result;
@@ -215,6 +248,7 @@ namespace Themes
                 }
                 if (hasPage) facts.collectionPages.push_back(collection);
             }
+            facts.preview = themePreview(dir.string());
             auto byName = [](const std::string& a, const std::string& b) { return lower(a) < lower(b); };
             std::sort(facts.collectionPages.begin(), facts.collectionPages.end(), byName);
             std::sort(facts.variants.begin(), facts.variants.end(), byName);
@@ -333,6 +367,7 @@ namespace Themes
         if (!t) return "";
 
         if (key == "name") return t->name;
+        if (key == "preview") return t->preview;
         if (key == "folder") return t->folder == t->name ? "" : "layouts/" + t->folder;
         if (key == "kind") return editor ? "Made with the theme editor" : "Made by hand";
         if (key == "size") {
@@ -466,7 +501,7 @@ namespace Themes
             services_.requestReload();
             scan();
             result.ok = true;
-            result.message = "RetroFE switches to this theme when you close the manager.";
+            result.message = "RetroFE switches to this theme after it reloads, when you close Manage.";
         }
         else if (action == "edit") {
             // Widgets for an editor-made theme; the page's own elements for a hand-made one

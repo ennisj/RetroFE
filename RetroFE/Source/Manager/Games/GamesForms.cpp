@@ -21,21 +21,33 @@
 namespace
 {
 
-// Every installed game; opened with param collection, it starts filtered to it
+// Every installed game; opened with param collection, it starts filtered to
+// it. The results come straight after Search; the filters are a screen of
+// their own, summed up on the Filters link. letterUp/letterDown jump through
+// the results by first letter.
 const char* const gamesForm = R"(
 <form id="games" title="Games">
   <note bind="game:status"/>
   <text label="Search" bind="game:query" live="yes" hint="Name or title"/>
+  <link label="Filters" open="games-filters" status="game:filterSummary"/>
+  <results bind="game:search" open="game" limit="300" empty="No games match."/>
+</form>
+)";
+
+// What the Games search looks through
+const char* const gamesFiltersForm = R"(
+<form id="games-filters" title="Filters">
   <choice label="In" bind="game:filter" options="game:filters"
           help="A system, a merged collection, or a menu: a menu covers everything below it."/>
   <toggle label="Only games without metadata" bind="game:onlyNoMetadata" visibleWhen="!game:onlyHidden"/>
   <toggle label="Only hidden games" bind="game:onlyHidden"
           help="Games whose system's exclude list keeps RetroFE from showing them. Open one to show it again."/>
-  <results bind="game:search" open="game" limit="100" empty="No games match."/>
+  <value label="Matching" bind="game:filterCount"/>
 </form>
 )";
 
-// One game: facts, then a link per thing that can be changed
+// One game: facts, then a link per thing that can be changed. A hidden game
+// keeps the links that don't need RetroFE to list it (metadata, media, story).
 const char* const gameForm = R"(
 <form id="game" title="Game" bind="game:title">
   <note bind="game:notFound"/>
@@ -52,12 +64,12 @@ const char* const gameForm = R"(
   <value label="Time played" bind="game:timePlayed"/>
   <value label="Favourite" bind="game:favourite"/>
   <value label="Also shown in" bind="game:shownIn"/>
-  <link label="Metadata" open="game-metadata" status="game:metadataStatus" visibleWhen="game:isFound"/>
+  <link label="Metadata" open="game-metadata" status="game:metadataStatus" visibleWhen="game:isKnown"/>
   <link label="Launcher" open="game-launcher" status="game:launcherStatus" visibleWhen="game:isFound"/>
   <link label="RetroArch" open="game-retroarch" status="retroarch:status" visibleWhen="retroarch:runs"/>
-  <link label="Media" open="game-media" status="game:mediaStatus" visibleWhen="game:isFound"/>
+  <link label="Media" open="game-media" status="game:mediaStatus" visibleWhen="game:isKnown"/>
   <link label="Playlists and collections" open="game-playlists" status="game:playlistsStatus" visibleWhen="game:isFound"/>
-  <link label="Description" open="game-description" status="game:descriptionStatus" visibleWhen="game:isFound"/>
+  <link label="Description" open="game-description" status="game:descriptionStatus" visibleWhen="game:isKnown"/>
   <link label="Saves" open="game-saves" status="saves:status" visibleWhen="game:isFound"/>
   <actions>
     <button label="Start this game" action="game.launch" visibleWhen="game:isFound"/>
@@ -72,59 +84,67 @@ const char* const gameForm = R"(
 const char* const metadataForm = R"(
 <form id="game-metadata" title="Metadata" bind="game:screenTitle">
   <note bind="game:notFound"/>
-  <section label="Metadata" visibleWhen="game:isFound">
+  <section label="Metadata" visibleWhen="game:isKnown">
     <text label="Title" bind="game:meta:description" status="game:metaStatus:description"/>
     <text label="Year" bind="game:meta:year" hint="e.g. 1981" status="game:metaStatus:year"/>
     <text label="Manufacturer" bind="game:meta:manufacturer" status="game:metaStatus:manufacturer"/>
     <text label="Developer" bind="game:meta:developer" status="game:metaStatus:developer"/>
-    <text label="Genre" bind="game:meta:genre" status="game:metaStatus:genre"/>
-    <text label="Players" bind="game:meta:players" hint="e.g. 2" status="game:metaStatus:players"/>
-    <text label="Rating" bind="game:meta:rating" status="game:metaStatus:rating"/>
+    <choice label="Genre" bind="game:metaPick:genre" options="game:metaChoices:genre" status="game:metaStatus:genre"/>
+    <text label="Other genre" bind="game:meta:genre" hint="Type it" visibleWhen="game:metaTyping:genre"/>
+    <choice label="Players" bind="game:metaPick:players" options="game:metaChoices:players" status="game:metaStatus:players"/>
+    <text label="Other players" bind="game:meta:players" hint="e.g. 2" visibleWhen="game:metaTyping:players"/>
+    <choice label="Rating" bind="game:metaPick:rating" options="game:metaChoices:rating" status="game:metaStatus:rating"/>
+    <text label="Other rating" bind="game:meta:rating" hint="Type it" visibleWhen="game:metaTyping:rating"/>
     <text label="Score" bind="game:meta:score" status="game:metaStatus:score"/>
     <text label="Clone of" bind="game:meta:cloneof" hint="the parent game's name" status="game:metaStatus:cloneof"/>
   </section>
   <actions>
     <button label="Save" action="game.saveMetadata"/>
-    <button label="Reset" action="game.resetMetadata" visibleWhen="game:isMetadataDirty"/>
+    <button label="Undo changes" action="game.resetMetadata" visibleWhen="game:isMetadataDirty"/>
   </actions>
   <section label="Changed here" visibleWhen="game:hasOverrides">
-    <button label="Put back the shipped title" action="game.unset.description" visibleWhen="game:isChanged:description"/>
-    <button label="Put back the shipped year" action="game.unset.year" visibleWhen="game:isChanged:year"/>
-    <button label="Put back the shipped manufacturer" action="game.unset.manufacturer" visibleWhen="game:isChanged:manufacturer"/>
-    <button label="Put back the shipped developer" action="game.unset.developer" visibleWhen="game:isChanged:developer"/>
-    <button label="Put back the shipped genre" action="game.unset.genre" visibleWhen="game:isChanged:genre"/>
-    <button label="Put back the shipped players" action="game.unset.players" visibleWhen="game:isChanged:players"/>
-    <button label="Put back the shipped rating" action="game.unset.rating" visibleWhen="game:isChanged:rating"/>
-    <button label="Put back the shipped score" action="game.unset.score" visibleWhen="game:isChanged:score"/>
-    <button label="Put back the shipped clone of" action="game.unset.cloneof" visibleWhen="game:isChanged:cloneof"/>
+    <button label="Put back the original title" action="game.unset.description" visibleWhen="game:isChanged:description"/>
+    <button label="Put back the original year" action="game.unset.year" visibleWhen="game:isChanged:year"/>
+    <button label="Put back the original manufacturer" action="game.unset.manufacturer" visibleWhen="game:isChanged:manufacturer"/>
+    <button label="Put back the original developer" action="game.unset.developer" visibleWhen="game:isChanged:developer"/>
+    <button label="Put back the original genre" action="game.unset.genre" visibleWhen="game:isChanged:genre"/>
+    <button label="Put back the original players" action="game.unset.players" visibleWhen="game:isChanged:players"/>
+    <button label="Put back the original rating" action="game.unset.rating" visibleWhen="game:isChanged:rating"/>
+    <button label="Put back the original score" action="game.unset.score" visibleWhen="game:isChanged:score"/>
+    <button label="Put back the original clone of" action="game.unset.cloneof" visibleWhen="game:isChanged:cloneof"/>
   </section>
+  <value label="Saved in" bind="game:metadataFile"/>
   <note bind="game:metadataNote"/>
 </form>
 )";
 
+// When it won't start: one line saying why, and a way to add the launcher it asks for
 const char* const launcherForm = R"(
 <form id="game-launcher" title="Launcher" bind="game:screenTitle">
   <note bind="game:notFound"/>
+  <note bind="game:launcherProblem"/>
+  <results bind="game:addLaunchers" open="emulator-new" param="name"/>
   <value label="The system uses" bind="game:systemLauncher"/>
   <value label="This game starts with" bind="game:gameLauncher"/>
   <value label="Command" bind="game:launcherCommand"/>
-  <note bind="game:launcherProblem"/>
-  <note bind="game:unresolvedNote"/>
   <choice label="Launcher" bind="game:launcher" options="game:launchers" visibleWhen="game:isFound"
-          help="Another launcher for this game only. It's kept in the system's launchers folder; the system's launcher removes it."/>
+          help="Another launcher for this game only. Choosing the system's launcher takes it away again."/>
+  <value label="Saved in" bind="game:launcherFile"/>
   <actions>
     <button label="Save" action="game.saveLauncher"/>
-    <button label="Reset" action="game.resetLauncher" visibleWhen="game:isLauncherDirty"/>
+    <button label="Undo changes" action="game.resetLauncher" visibleWhen="game:isLauncherDirty"/>
     <button label="Use the system's launcher" action="game.useSystemLauncher" visibleWhen="game:hasLauncherOverride"/>
   </actions>
 </form>
 )";
 
+// What shows, then what's missing; pictures as thumbnails
 const char* const mediaForm = R"(
 <form id="game-media" title="Media" bind="game:screenTitle">
   <note bind="game:notFound"/>
   <note bind="game:mediaNote"/>
-  <results bind="game:media" open="game-media-slot" param="type" empty="No media folders."/>
+  <results label="Shown" bind="game:mediaShown" open="game-media-slot" param="type" empty="Nothing shows yet."/>
+  <results label="Missing" bind="game:mediaMissing" open="game-media-slot" param="type" empty="Nothing is missing."/>
 </form>
 )";
 
@@ -134,7 +154,7 @@ const char* const mediaSlotForm = R"(
   <image bind="game:slot:image" rows="7"/>
   <value label="Status" bind="game:slot:status"/>
   <value label="Shows" bind="game:slot:file"/>
-  <value label="Its own file" bind="game:slot:place"/>
+  <value label="Saved in" bind="game:slot:place"/>
   <note bind="game:slot:folderNote"/>
   <results label="In the folder" bind="game:slot:folderFiles" open="game-media-folder-file" param="file"
            empty="No files of this kind." visibleWhen="game:slot:hasFolder"/>
@@ -178,18 +198,17 @@ const char* const playlistsForm = R"(
   <note bind="game:notFound"/>
   <section label="Favourite" visibleWhen="game:isFound">
     <choice label="On the page of" bind="game:favouritePage" options="game:favouritePages" visibleWhen="game:hasSeveralPages"/>
-    <value label="Favourite" bind="game:favouriteText"/>
-    <button label="Add to favourites" action="game.addFavourite" visibleWhen="!game:isFavourite" enabledWhen="game:canFavourite"/>
-    <button label="Remove from favourites" action="game.removeFavourite" visibleWhen="game:isFavourite" enabledWhen="game:canFavourite"/>
+    <toggle label="Favourite" bind="game:favouriteToggle" enabledWhen="game:canFavourite" status="game:favouriteStatus"/>
     <note bind="game:favouriteNote"/>
   </section>
   <section label="Playlists" visibleWhen="game:isFound">
     <list label="In" bind="game:playlistsListing" empty="It isn't in any playlist."/>
     <choice label="Playlist" bind="game:playlist" options="game:playlists" visibleWhen="game:hasPlaylists"/>
     <note bind="game:playlistStatus"/>
-    <button label="Add to this playlist" action="game.addToPlaylist" visibleWhen="!game:isInPlaylist"/>
+    <button label="Add to this playlist" action="game.addToPlaylist" visibleWhen="game:canAddToPlaylist"/>
     <button label="Remove from this playlist" action="game.removeFromPlaylist" visibleWhen="game:isInPlaylist"
             confirm="Remove it from this playlist?"/>
+    <results bind="game:newPlaylist" open="system-playlists" visibleWhen="!game:hasPlaylists"/>
   </section>
   <section label="Merged collections" visibleWhen="game:isFound">
     <value label="Comes from" bind="game:from"/>
@@ -209,9 +228,10 @@ const char* const descriptionForm = R"(
   <note bind="game:story:status"/>
   <text label="Story" bind="game:story:text" multiline="yes" rows="8" visibleWhen="game:story:canEdit"
         hint="No story text yet"/>
+  <value label="Saved in" bind="game:story:file"/>
   <actions>
     <button label="Save" action="game.saveStory"/>
-    <button label="Reset" action="game.resetStory" visibleWhen="game:isStoryDirty"/>
+    <button label="Undo changes" action="game.resetStory" visibleWhen="game:isStoryDirty"/>
   </actions>
   <actions>
     <button label="Replace from a file" action="game.replaceStory"/>
@@ -230,19 +250,26 @@ const char* const savesForm = R"(
   <value label="Save files in" bind="saves:savesFolder"/>
   <value label="Save states in" bind="saves:statesFolder"/>
   <note bind="saves:notes"/>
-  <section label="This game's files" visibleWhen="saves:isKnown">
-    <note bind="saves:filesText"/>
-    <note bind="saves:filesNote"/>
-  </section>
+  <link label="This game's files" open="game-saves-files" status="saves:filesStatus" visibleWhen="saves:isKnown"/>
   <actions>
     <button label="Back up now" action="saves.backup" visibleWhen="saves:isKnown"/>
     <button label="Delete these saves" action="saves.delete" visibleWhen="saves:hasFiles"
             confirm="Delete this game's saves and save states? A backup is made first, in manage/saves."/>
   </actions>
   <section label="Backups">
-    <note bind="saves:backupsNote"/>
     <results bind="saves:backups" open="game-saves-backup" param="backup" empty="No backups yet."/>
+    <value label="Saved in" bind="saves:backupsFolder"/>
+    <note bind="saves:backupsNote"/>
   </section>
+</form>
+)";
+
+// The game's save files, one line each
+const char* const savesFilesForm = R"(
+<form id="game-saves-files" title="This game's files" bind="saves:screenTitle">
+  <note bind="saves:why"/>
+  <note bind="saves:filesText"/>
+  <note bind="saves:filesNote"/>
 </form>
 )";
 
@@ -253,7 +280,7 @@ const char* const savesBackupForm = R"(
   <value label="Made" bind="saves:backupWhen"/>
   <value label="Why" bind="saves:backupReason"/>
   <value label="Size" bind="saves:backupSize"/>
-  <value label="Kept in" bind="saves:backupFolder"/>
+  <value label="Saved in" bind="saves:backupFolder"/>
   <section label="Files">
     <note bind="saves:backupFilesText"/>
   </section>
@@ -272,6 +299,7 @@ Forms::BuiltinTable Forms::gamesForms()
 {
     BuiltinTable table = {
         { "games", gamesForm },
+        { "games-filters", gamesFiltersForm },
         { "game", gameForm },
         { "game-metadata", metadataForm },
         { "game-launcher", launcherForm },
@@ -281,6 +309,7 @@ Forms::BuiltinTable Forms::gamesForms()
         { "game-playlists", playlistsForm },
         { "game-description", descriptionForm },
         { "game-saves", savesForm },
+        { "game-saves-files", savesFilesForm },
         { "game-saves-backup", savesBackupForm },
     };
     // The game's RetroArch screens (RetroArchForms.cpp, RetroArchProvider)

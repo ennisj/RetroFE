@@ -868,7 +868,14 @@ void ManagerUI::navigate(const Controls& held, float now)
     }
 
     syncKeyboard();
-    for (size_t i = 0; i < 6 && widget_; i++) {
+    for (size_t i = 0; i < held.size() && widget_; i++) {
+        // The six controls, and letterUp/letterDown (jump by letter in a list,
+        // move the cursor on the on-screen keyboard); not pageUp/pageDown
+        FormWidget::Nav nav;
+        if (i < 6) nav = navs[i];
+        else if (i == static_cast<size_t>(Control::LetterUp)) nav = FormWidget::Nav::LetterUp;
+        else if (i == static_cast<size_t>(Control::LetterDown)) nav = FormWidget::Nav::LetterDown;
+        else continue;
         bool repeat = false;
         if (!acts(i, repeat)) {
             continue;
@@ -876,7 +883,7 @@ void ManagerUI::navigate(const Controls& held, float now)
 
         // While a field is edited the controls type on the on-screen keyboard
         if (keyboard_) {
-            KeyboardWidget::Result result = keyboard_->navigate(navs[i]);
+            KeyboardWidget::Result result = keyboard_->navigate(nav);
             if (result == KeyboardWidget::Result::LineUp || result == KeyboardWidget::Result::LineDown) {
                 // A line as the field draws it, which only the field knows
                 widget_->moveEditLine(result == KeyboardWidget::Result::LineUp ? -1 : 1);
@@ -891,10 +898,10 @@ void ManagerUI::navigate(const Controls& held, float now)
             continue;
         }
         // Back after a warning about leaving leaves; anything else and it warns again
-        if (navs[i] != FormWidget::Nav::Back) {
+        if (nav != FormWidget::Nav::Back) {
             leave_.reset();
         }
-        if (!widget_->navigate(navs[i])) {
+        if (!widget_->navigate(nav)) {
             requestBack();
         }
         else {

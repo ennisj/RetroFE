@@ -274,19 +274,37 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:canDelete"), "no", "a system with games that wasn't made here stays");
         check(contains(f.model.actionProblem("system.delete"), "2 games"), "and says why");
 
+        check(games.items.size() == 1 && games.items[0].link, "drawn as a link");
+        checkEqual(f.model.get("system:launcherStatus"), "mame", "one Launcher row, the link");
+        checkEqual(f.model.get("system:settingsFile"), "collections/Arcade/settings.conf", "Saved in: settings");
+        checkEqual(f.model.get("system:infoFile"), "collections/Arcade/info.conf", "Saved in: info");
+
         f.open("system-check", { { "id", "Arcade" } });
         check(f.anyFinding("system", "C.ZIP"), "a wrong-case extension");
-        check(contains(f.model.get("system:checkSummary"), "Arcade: "), "a summary");
+        std::string summary = f.model.get("system:checkSummary");
+        check(contains(summary, "Arcade: ") && contains(summary, " problem"), "a summary counting problems: " + summary);
+        // "launcher = mame, fbneo" is how this fork reads a OneSauce list: a note, not a problem
+        check(!f.anyFinding("system", "several launchers"), "not a problem");
+        checkEqual(f.model.get("system:hasNotes"), "yes", "a note");
+        check(contains(f.model.get("system:note0"), "several launchers"), "the note: " + f.model.get("system:note0"));
+        f.open("system", { { "id", "Arcade" } });
+        std::string counted = summary.substr(std::string("Arcade: ").size(), summary.find('.') - std::string("Arcade: ").size());
+        checkEqual(f.model.get("system:checkStatus"), counted, "the link counts the same problems, not the notes");
 
         f.open("system-check", { { "id", "Lonely" } });
         check(f.anyFinding("system", "No menu lists Lonely"), "not in a menu");
         check(f.anyFinding("system", "doesn't exist"), "missing folder");
         check(f.anyFinding("system", "ghost"), "launcher not installed");
         check(contains(f.model.get("system:checkSummary"), "in no menu"), "summary says where it is");
+        checkEqual(f.model.get("system:hasNotes"), "no", "no notes");
+        f.open("system", { { "id", "Lonely" } });
+        checkEqual(f.model.get("system:launcherStatus"), "ghost, which isn't installed", "the Launcher link carries the warning");
 
         f.open("system-check", { { "id", "NES" } });
         check(f.anyFinding("system", "No launcher is set"), "no launcher");
         check(f.anyFinding("system", "meta/hyperlist/NES.xml"), "no metadata file");
+        f.open("system", { { "id", "NES" } });
+        checkEqual(f.model.get("system:launcherStatus"), "None: its games can't start", "no launcher: said on the link");
     });
 
     run("systems: settings save allow-listed keys in the file's own style", [] {

@@ -42,7 +42,7 @@ SavesProvider::SavesProvider(const Services& services, RA::Environment environme
 
 bool SavesProvider::isSavesForm(const std::string& form)
 {
-    return form == "game" || form == "game-saves" || form == "game-saves-backup";
+    return form == "game" || form == "game-saves" || form == "game-saves-files" || form == "game-saves-backup";
 }
 
 void SavesProvider::refresh()
@@ -187,12 +187,21 @@ std::string SavesProvider::get(const std::string& key, const Screen& screen)
         return "Files named " + f.stem + " with a save or save state ending (.srm, .state, .state1, .state.auto, "
             "their .png pictures...). Other games' files are never counted.";
     }
+    if (key == "filesStatus") {
+        // The Files link: how many, the list itself is a screen of its own
+        if (!context_.found || !f.known) return "";
+        return context_.files.empty() ? "None yet" : plural(context_.files.size(), "file", "files");
+    }
     if (key == "backupsNote") {
         if (!context_.found) return "";
         std::string problem = Saves::backupProblem(context_.collection, context_.game);
         if (!problem.empty()) return problem;
-        return "Backups are kept in " + Saves::backupRoot(context_.root, context_.collection, context_.game)
-            + ". Restoring one backs up the current files first.";
+        return "Restoring one backs up the current files first.";
+    }
+    if (key == "backupsFolder") {
+        // Where Back up now writes (Saved in)
+        if (!context_.found || !Saves::backupProblem(context_.collection, context_.game).empty()) return "";
+        return Saves::backupRoot(context_.root, context_.collection, context_.game);
     }
     // One backup (param backup)
     const Saves::Backup* backup = nullptr;

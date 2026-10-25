@@ -151,6 +151,33 @@ static Test::Suite renderingSuite("rendering", [] {
         check(Forms::refocusIndex(rows, 0) == 1, "the file field when it's all there is");
     });
 
+    run("letterJump goes to the next or previous letter's first row", [] {
+        std::vector<std::string> labels = { "1942", "Alpha", "asteroids", "Beta", "Bomb", "bravo", "Zed" };
+        check(Forms::letterJump(labels, 0, 1) == 1, "from the numbers to A");
+        check(Forms::letterJump(labels, 1, 1) == 3, "A (any case) to B");
+        check(Forms::letterJump(labels, 4, 1) == 6, "from the middle of B to Z");
+        check(Forms::letterJump(labels, 6, 1) == 6, "nothing after Z: stays");
+        check(Forms::letterJump(labels, 5, -1) == 1, "from the middle of B to the first A");
+        check(Forms::letterJump(labels, 3, -1) == 1, "from the first B to the first A");
+        check(Forms::letterJump(labels, 2, -1) == 0, "A back to the numbers");
+        check(Forms::letterJump(labels, 0, -1) == 0, "nothing before: stays");
+        check(Forms::letterJump({}, 0, 1) == 0, "an empty list");
+    });
+
+    run("a one-line edit moves its cursor: Home, End, left and right", [] {
+        Forms::TextEdit edit;
+        edit.set("C:\\games");
+        edit.home();
+        check(edit.cursor == 0, "Home");
+        edit.right();
+        edit.right();
+        edit.right();
+        edit.insert("roms\\");
+        check(edit.text == "C:\\roms\\games", "typed in the middle: " + edit.text);
+        edit.end();
+        check(edit.cursor == edit.text.size(), "End");
+    });
+
     run("FileStamp tells when a file was replaced under the same name", [] {
         std::string root = Test::makeRoot("filestamp");
         std::string path = root + "/logo.png";

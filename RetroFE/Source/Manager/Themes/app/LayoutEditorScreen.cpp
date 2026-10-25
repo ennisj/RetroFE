@@ -1229,6 +1229,7 @@ void LayoutEditorScreen::draw()
     const float propsW = 340.0f * s;
     const float statusH = ImGui::GetTextLineHeightWithSpacing() * 4.2f;
     ImVec2 avail = ImGui::GetContentRegionAvail();
+    avail.y -= Themes::hintStripHeight() + ImGui::GetStyle().ItemSpacing.y;   // the controller hints along the bottom
 
     pad_.beginRegion(EF_THEME, "##pages", ImVec2(sideW, avail.y), ImGuiChildFlags_Borders);
     drawLeft();
@@ -1243,11 +1244,6 @@ void LayoutEditorScreen::draw()
     drawCanvas();
     ImGui::EndChild();
     ImGui::BeginChild("##status", ImVec2(canvasW, 0), ImGuiChildFlags_None);
-    if (pad_.controllerActive() && !controllerHints().empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.77f, 0.16f, 1.0f));
-        ImGui::TextWrapped("%s", controllerHints().c_str());
-        ImGui::PopStyleColor();
-    }
     if (!status_.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : statusIsInfo_ ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
         ImGui::TextWrapped("%s", status_.c_str());
@@ -1268,6 +1264,11 @@ void LayoutEditorScreen::draw()
     pad_.beginRegion(EF_PROPS, "##props", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
     drawProperties();
     ImGui::EndChild();
+
+    // What the controls do here; the mouse's and keys' shortcuts are under the canvas
+    const std::string hints = pad_.controllerActive() ? controllerHints() : "";
+    Themes::drawHintStrip(!hints.empty() ? hints
+        : "Select: pick / move / resize   Hold Select + direction: add   Letter up/down: previous / next   Back: pick, then leave");
 
     drawPopups();
     pad_.endFrame(ctx_.scale);

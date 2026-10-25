@@ -40,22 +40,27 @@ using Library::MediaSlot;
 // Bindings (game:<key>):
 //   status                    while the library is being read: how far it got
 //   query, filter (options filters), onlyNoMetadata, onlyHidden    the search; rows search
+//   filterSummary, filterCount    the Filters link's status ("All games"), and how many match
 //   title, screenTitle        the game's title; "<title> - Metadata" etc. for sub-screens
-//   isFound, notFound         whether param collection + id is a game in the library
+//   isFound, notFound         whether param collection + id is a game RetroFE lists
 //   isHidden, hiddenNote      a game its system's exclude list hides (not isFound)
+//   isKnown                   isFound or isHidden: metadata, media and story work for both
 //   system, file, folder, size, year, manufacturer, developer, genre, players,
 //   favourite, from, shownIn, image, played, timePlayed       details
 //   metadataStatus, launcherStatus, mediaStatus, playlistsStatus, descriptionStatus   link statuses
-//   meta:<element>, metaStatus:<element>, isChanged:<element>, isMetadataDirty, hasOverrides, metadataNote
+//   meta:<element>, metaStatus:<element>, isChanged:<element>, isMetadataDirty, hasOverrides,
+//   metadataFile, metadataNote; metaPick:<element> (options metaChoices:<element>) and
+//   metaTyping:<element> for genre, players and rating (a choice, or "Other..." to type)
 //   launcher (options launchers), systemLauncher, gameLauncher, launcherCommand,
-//   launcherProblem, unresolvedNote, isLauncherDirty, hasLauncherOverride
-//   rows media; mediaNote; slot:title, slot:image, slot:file, slot:status, slot:place,
+//   launcherProblem, rows addLaunchers, launcherFile, isLauncherDirty, hasLauncherOverride
+//   rows media, mediaShown, mediaMissing; mediaNote; slot:title, slot:image, slot:file, slot:status, slot:place,
 //   slot:text, slot:isImage, slot:isVideo, slot:isText, slot:canClear, slot:hasOriginal, slot:newFile
 //   favouritePage (options favouritePages), hasSeveralPages, favouriteText, isFavourite,
+//   favouriteToggle (setting it adds or removes the favourite), favouriteStatus,
 //   canFavourite, favouriteNote, list playlistsListing, playlist (options playlists),
-//   playlistStatus, isInPlaylist, hasPlaylists, list shownInList, merged (options mergedCollections),
-//   mergedStatus, isInMerged, hasMerged
-//   story:text (multi-line), story:status, story:canEdit, isStoryDirty, story:canClear, story:hasOriginal
+//   playlistStatus, isInPlaylist, canAddToPlaylist, hasPlaylists, rows newPlaylist,
+//   list shownInList, merged (options mergedCollections), mergedStatus, isInMerged, hasMerged
+//   story:text (multi-line), story:status, story:file, story:canEdit, isStoryDirty, story:canClear, story:hasOriginal
 // Actions (game.<name>):
 //   launch                    closes Manage and starts the game (Services::requestLaunch)
 //   hide, unhide              the system's exclude list
@@ -156,6 +161,42 @@ namespace
         return text.size() > most ? text.substr(0, most) + "..." : text;
     }
 
+    // The "Other..." option of a metadata choice: the field is typed instead
+    const char* const otherChoice = "\x1fother";
+
+    // The metadata fields offered as choices of the values the system has
+    bool isChoiceField(const std::string& field)
+    {
+        return field == "genre" || field == "players" || field == "rating";
+    }
+
+    // Numbers by value ("2" before "10"), anything else alphabetically, ignoring case
+    bool naturalLess(const std::string& a, const std::string& b)
+    {
+        char* endA = nullptr;
+        char* endB = nullptr;
+        long numberA = std::strtol(a.c_str(), &endA, 10);
+        long numberB = std::strtol(b.c_str(), &endB, 10);
+        bool isNumberA = endA != a.c_str() && *endA == '\0';
+        bool isNumberB = endB != b.c_str() && *endB == '\0';
+        if (isNumberA && isNumberB && numberA != numberB) return numberA < numberB;
+        if (isNumberA != isNumberB) return isNumberA;
+        std::string lowerA = Library::toLower(a);
+        std::string lowerB = Library::toLower(b);
+        return lowerA != lowerB ? lowerA < lowerB : a < b;
+    }
+
+    // A path as Saved in shows it: from RetroFE's folder when it's inside it
+    std::string shownPath(const std::string& root, const std::string& path)
+    {
+        if (root.empty() || path.empty()) return path;
+        fs::path relative = fs::path(path).lexically_normal().lexically_relative(fs::path(root).lexically_normal());
+        if (relative.empty() || *relative.begin() == "..") return path;
+        std::string text = Library::narrow(relative);
+        std::replace(text.begin(), text.end(), '\\', '/');
+        return text;
+    }
+
     template <typename T>
     bool isReady(const std::future<T>& future)
     {
@@ -225,6 +266,15 @@ const GameRecord* GameProvider::findGame(const Index& index, const Screen& scree
     return &index.games[static_cast<size_t>(found)];
 }
 
+const GameRecord* GameProvider::findRecord(const Index& index, const Screen& screen) const
+{
+    if (const GameRecord* game = findGame(index, screen)) {
+        return game;
+    }
+    int hidden = index.findHiddenGame(screen.param("collection"), screen.param("id"));
+    return hidden < 0 ? nullptr : &index.hiddenGames[static_cast<size_t>(hidden)];
+}
+
 void GameProvider::refresh()
 {
     // The manager is opening: files may have changed while it was closed, and
@@ -248,6 +298,10 @@ void GameProvider::refresh()
     metadata_.load("", {});
     pendingMetadata_.clear();
     shippedCache_.clear();
+    choicesIndex_.reset();
+    choices_.clear();
+    typing_.clear();
+    favouriteStatus_.clear();
     launcher_.load("", {});
     story_.load("", {});
     generation_++;
@@ -270,6 +324,12 @@ void GameProvider::enter(const Screen& screen)
     if (screen.form == "game-media-slot") {
         newFile_.clear();
     }
+    if (screen.form == "game-metadata" && !metadata_.isDirty()) {
+        typing_.clear();   // the choices show the values again
+    }
+    if (screen.form == "game-playlists") {
+        favouriteStatus_.clear();
+    }
 }
 
 std::string GameProvider::leaving(const Screen& screen)
@@ -284,7 +344,10 @@ std::string GameProvider::leaving(const Screen& screen)
 
 void GameProvider::discard(const Screen& screen)
 {
-    if (screen.form == "game-metadata") metadata_.reset();
+    if (screen.form == "game-metadata") {
+        metadata_.reset();
+        typing_.clear();
+    }
     if (screen.form == "game-launcher") launcher_.reset();
     if (screen.form == "game-description") story_.reset();
 }
@@ -314,7 +377,7 @@ void GameProvider::update(float dt)
     if (!idx) {
         return;
     }
-    if (isGameForm(current_.form) && findGame(*idx, current_)) {
+    if (isGameForm(current_.form) && findRecord(*idx, current_)) {
         prepareMedia(*idx, current_);
         startMediaJob();
     }
@@ -328,7 +391,7 @@ void GameProvider::finishPendingWork()
     if (!idx) {
         return;
     }
-    if (isGameForm(current_.form) && findGame(*idx, current_)) {
+    if (isGameForm(current_.form) && findRecord(*idx, current_)) {
         prepareMedia(*idx, current_);
         while (media_.slots.size() < media_.types.size()) {
             startMediaJob();
@@ -388,9 +451,15 @@ void GameProvider::startMediaJob()
         // File checks only, on a snapshot that never changes
         std::map<std::string, MediaSlot> slots;
         int game = idx->findGame(collection, name);
+        int hidden = game < 0 ? idx->findHiddenGame(collection, name) : -1;
         for (const std::string& type : batch) {
             if (game >= 0) {
                 slots[type] = Library::gameMedia(*idx, game, type, Library::defaultKind(type));
+            }
+            else if (hidden >= 0) {
+                // A hidden game keeps its media, found as RetroFE would if it listed it
+                slots[type] = Library::gameMedia(*idx, idx->hiddenGames[static_cast<size_t>(hidden)], type,
+                                                 Library::defaultKind(type));
             }
             else {
                 MediaSlot empty;
@@ -465,14 +534,17 @@ std::string GameProvider::get(const std::string& key, const Screen& screen)
     if (key == "filter") return filter_;
     if (key == "onlyNoMetadata") return yesNo(onlyNoMetadata_);
     if (key == "onlyHidden") return yesNo(onlyHidden_);
+    if (key == "filterSummary") return filterSummary(false);
+    if (key == "filterCount") return filterSummary(true);
     if (key == "isHidden" || key == "hiddenNote") return hiddenValue(key, screen);
 
     if (startsWith(key, "meta:") || startsWith(key, "metaStatus:") || startsWith(key, "isChanged:")
-        || key == "isMetadataDirty" || key == "metadataNote" || key == "hasOverrides") {
+        || startsWith(key, "metaPick:") || startsWith(key, "metaTyping:")
+        || key == "isMetadataDirty" || key == "metadataNote" || key == "metadataFile" || key == "hasOverrides") {
         return metadataValue(key, screen);
     }
     if (key == "launcher" || key == "systemLauncher" || key == "gameLauncher" || key == "launcherCommand"
-        || key == "launcherProblem" || key == "unresolvedNote" || key == "isLauncherDirty" || key == "hasLauncherOverride") {
+        || key == "launcherProblem" || key == "launcherFile" || key == "isLauncherDirty" || key == "hasLauncherOverride") {
         return launcherValue(key, screen);
     }
     if (startsWith(key, "slot:") || startsWith(key, "folderFile:") || key == "mediaNote") {
@@ -482,10 +554,13 @@ std::string GameProvider::get(const std::string& key, const Screen& screen)
         return storyValue(key, screen);
     }
     if (key == "favouritePage" || key == "hasSeveralPages" || key == "favouriteText" || key == "isFavourite"
-        || key == "canFavourite" || key == "favouriteNote" || key == "playlist"
-        || key == "playlistStatus" || key == "isInPlaylist" || key == "hasPlaylists" || key == "merged"
-        || key == "mergedStatus" || key == "isInMerged" || key == "hasMerged") {
+        || key == "favouriteToggle" || key == "canFavourite" || key == "favouriteNote" || key == "playlist"
+        || key == "playlistStatus" || key == "isInPlaylist" || key == "canAddToPlaylist" || key == "hasPlaylists"
+        || key == "merged" || key == "mergedStatus" || key == "isInMerged" || key == "hasMerged") {
         return playlistValue(key, screen);
+    }
+    if (key == "favouriteStatus") {
+        return favouriteStatusKey_ == gameKey(screen) ? favouriteStatus_ : "";
     }
     return detail(key, screen);
 }
@@ -503,6 +578,26 @@ void GameProvider::set(const std::string& key, const std::string& value, const S
     }
     else if (key == "onlyHidden") {
         onlyHidden_ = Forms::isTruthy(value);
+    }
+    else if (startsWith(key, "metaPick:")) {
+        // A value the system's games have, or "Other...", which shows a text field instead
+        std::string field = key.substr(9);
+        if (value == otherChoice) {
+            typing_.insert(field);
+        }
+        else {
+            typing_.erase(field);
+            set("meta:" + field, value, screen);
+        }
+    }
+    else if (key == "favouriteToggle") {
+        // Adds or removes the favourite straight away, saying so under the toggle
+        bool wanted = Forms::isTruthy(value);
+        if (wanted != (playlistValue("isFavourite", screen) == "yes")) {
+            Forms::Model::Result result = runAction(wanted ? "addFavourite" : "removeFavourite", screen);
+            favouriteStatusKey_ = gameKey(screen);
+            favouriteStatus_ = result.message + (result.ok && !result.info ? " RetroFE shows it after it reloads, when you close Manage." : "");
+        }
     }
     else if (startsWith(key, "meta:")) {
         IndexPtr idx = index();
@@ -583,6 +678,35 @@ std::string GameProvider::searchStatus() const
     int percent = static_cast<int>(status.progress * 100);
     return "Reading your games" + (status.phase.empty() ? std::string() : ": " + status.phase)
         + " (" + std::to_string(percent) + "%)...";
+}
+
+std::string GameProvider::filterSummary(bool withCount)
+{
+    // "All games", "Arcade", "Arcade, without metadata", "Hidden games in Arcade"
+    std::string text;
+    if (onlyHidden_) {
+        text = filter_.empty() ? "Hidden games" : "Hidden games in " + filter_;
+    }
+    else {
+        text = filter_.empty() ? "All games" : filter_;
+        if (onlyNoMetadata_) {
+            text += ", without metadata";
+        }
+    }
+    if (!withCount) {
+        return text;
+    }
+    if (!index()) {
+        return "";
+    }
+    // How many the search shows with these filters (and the search text, if any)
+    size_t total = onlyHidden_ ? hiddenRows(1).total : searchRows(1).total;
+    std::string digits = std::to_string(total);
+    for (int at = static_cast<int>(digits.size()) - 3; at > 0; at -= 3) {
+        digits.insert(static_cast<size_t>(at), ",");
+    }
+    return (total == 1 ? std::string("1 game") : digits + " games")
+        + (Utils::trimEnds(query_).empty() ? "" : " matching \"" + Utils::trimEnds(query_) + "\"");
 }
 
 std::string GameProvider::thumbnail(const Index& index, const std::string& collection, const std::string& name)
@@ -733,7 +857,7 @@ std::string GameProvider::hiddenValue(const std::string& key, const Screen& scre
         list = Library::narrow(relative);
         std::replace(list.begin(), list.end(), '\\', '/');
     }
-    return "Hidden: " + list + " lists it, so RetroFE doesn't show it. Show it again to list it.";
+    return "Hidden from RetroFE: " + list + " names it. Show this game again lists it.";
 }
 
 Forms::Model::Result GameProvider::hideAction(const std::string& action, const Screen& screen)
@@ -751,7 +875,7 @@ Forms::Model::Result GameProvider::hideAction(const std::string& action, const S
     Library::EditResult edit = services_.editor->setGameHidden(*idx, collection, name, action == "hide");
     result.ok = edit.ok;
     result.message = edit.ok ? edit.message + (action == "hide" ? " Find it again with \"Only hidden games\" on Games." : "")
-                                 + " RetroFE shows the change after it reloads."
+                                 + " RetroFE shows the change after it reloads, when you close Manage."
                              : edit.message;
     if (edit.ok && !edit.files.empty()) {
         changed("game hidden");
@@ -764,7 +888,53 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
     if (key == "search") {
         return onlyHidden_ ? hiddenRows(limit) : searchRows(limit);
     }
+    if (key == "media" || key == "mediaShown" || key == "mediaMissing") {
+        return mediaRows(screen, key == "mediaShown" ? 1 : key == "mediaMissing" ? 2 : 0, limit);
+    }
     Forms::Rows rows;
+    IndexPtr idx = index();
+    if (key == "addLaunchers") {
+        // A link per launcher name this game or its system asks for that isn't defined
+        const GameRecord* game = idx ? findGame(*idx, screen) : nullptr;
+        if (!game) {
+            return rows;
+        }
+        Library::LauncherResolution system = idx->resolveLauncher(game->collection);
+        Library::LauncherResolution now = idx->resolveLauncher(game->collection, game->name);
+        std::vector<std::string> asked = { now.overrideName, system.configured };
+        asked.insert(asked.end(), system.alternatives.begin(), system.alternatives.end());
+        for (const std::string& name : asked) {
+            bool unresolved = std::find(idx->unresolvedLaunchers.begin(), idx->unresolvedLaunchers.end(), name)
+                              != idx->unresolvedLaunchers.end();
+            bool listed = std::any_of(rows.items.begin(), rows.items.end(), [&](const Forms::Row& r) { return r.id == name; });
+            if (name.empty() || !unresolved || listed) {
+                continue;
+            }
+            Forms::Row row;
+            row.id = name;
+            row.label = "Add a launcher called " + name;
+            row.link = true;
+            rows.items.push_back(row);
+        }
+        rows.total = rows.items.size();
+        return rows;
+    }
+    if (key == "newPlaylist") {
+        // Playlists are made on the system's Playlists screen
+        const GameRecord* game = idx ? findGame(*idx, screen) : nullptr;
+        if (!game) {
+            return rows;
+        }
+        const std::string& own = idx->collections[static_cast<size_t>(game->collection)].name;
+        Forms::Row row;
+        row.id = own;
+        row.label = "New playlist...";
+        row.detail = "on " + own + "'s page";
+        row.link = true;
+        rows.items.push_back(row);
+        rows.total = 1;
+        return rows;
+    }
     if (key == "slot:folderFiles") {
         // The files of the slot's own media folder, each opening its screen
         const MediaSlot* s = slot(screen, screen.param("type"));
@@ -786,31 +956,41 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
         }
         return rows;
     }
-    if (key != "media") {
-        return rows;
-    }
+    return rows;
+}
+
+Forms::Rows GameProvider::mediaRows(const Screen& screen, int which, size_t limit)
+{
+    // Every slot (which 0), the ones that show something (1), or the missing
+    // ones (2), with what shows in words; pictures as thumbnails. A slot not
+    // looked up yet counts as missing until it is.
+    Forms::Rows rows;
     IndexPtr idx = index();
-    if (!idx || !findGame(*idx, screen)) {
+    if (!idx || !findRecord(*idx, screen)) {
         return rows;
     }
     prepareMedia(*idx, screen);
-    rows.total = media_.types.size();
     for (const std::string& type : media_.types) {
+        auto found = media_.slots.find(type);
+        bool shows = found != media_.slots.end() && !found->second.file.empty();
+        if ((which == 1 && !shows) || (which == 2 && shows)) {
+            continue;
+        }
+        rows.total++;
         if (rows.items.size() >= limit) {
-            break;
+            continue;
         }
         Forms::Row row;
         row.id = type;
         row.label = mediaLabel(type);
         row.params["collection"] = screen.param("collection");
         row.params["id"] = screen.param("id");
-        auto found = media_.slots.find(type);
         if (found == media_.slots.end()) {
             row.detail = "Checking...";
         }
         else {
             const MediaSlot& slot = found->second;
-            row.detail = slot.own ? (slot.fromFolder() ? "Own folder (" + std::to_string(slot.shownFolderFiles) + ")" : "Own file")
+            row.detail = slot.own ? (slot.fromFolder() ? "Its own folder (" + std::to_string(slot.shownFolderFiles) + ")" : "Its own file")
                        : !slot.file.empty() ? "Fallback: " + slot.fallback : "Missing";
             if (slot.kind == MediaKind::Image) {
                 row.image = slot.file;
@@ -824,6 +1004,9 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
 std::vector<std::pair<std::string, std::string>> GameProvider::options(const std::string& key, const Screen& screen)
 {
     std::vector<std::pair<std::string, std::string>> result;
+    if (startsWith(key, "metaChoices:")) {
+        return metadataChoices(key.substr(12), screen);
+    }
     IndexPtr idx = index();
     if (key == "filters") {
         if (idx && idx != filtersIndex_) {
@@ -1036,7 +1219,7 @@ std::string GameProvider::playlistsSummary(const Index& index, int game)
 std::string GameProvider::mediaSummary(const Screen& screen)
 {
     IndexPtr idx = index();
-    if (!idx || !findGame(*idx, screen)) {
+    if (!idx || !findRecord(*idx, screen)) {
         return "";
     }
     prepareMedia(*idx, screen);
@@ -1055,16 +1238,19 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
     IndexPtr idx = index();
     int g = -1;
     const GameRecord* game = idx ? findGame(*idx, screen, &g) : nullptr;
+    // A hidden game: what RetroFE would list if its exclude list didn't name it
+    const GameRecord* record = game ? game : idx ? findRecord(*idx, screen) : nullptr;
 
     if (key == "isFound") return yesNo(game != nullptr);
+    if (key == "isKnown") return yesNo(record != nullptr);
     if (key == "notFound") {
         if (!idx) return searchStatus();
-        if (game || (screen.form == "game" && findHidden(idx, screen))) return "";
+        if (record) return "";
         return "This game isn't in the library any more: it may have been removed or renamed. Go back and search again.";
     }
     if (key == "title" || key == "screenTitle") {
         // A hidden game has its title too (the library reads their metadata)
-        const GameRecord* named = game ? game : idx && screen.form == "game" ? findHidden(idx, screen) : nullptr;
+        const GameRecord* named = record;
         std::string title = named ? (named->title.empty() ? named->name : named->title) : screen.param("id");
         if (key == "title" || screen.form == "game") return title;
         static const std::map<std::string, std::string> sections = {
@@ -1076,28 +1262,24 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
         if (screen.form == "game-media-folder-file") return title + " - " + mediaLabel(screen.param("type")) + " folder";
         return section == sections.end() ? title : title + " - " + section->second;
     }
-    if (!game) {
-        // A hidden game: what RetroFE would list if its exclude list didn't name it
-        const HiddenGame* hidden = idx && screen.form == "game" ? findHidden(idx, screen) : nullptr;
-        if (!hidden) return "";
-        if (key == "system") return idx->collections[static_cast<size_t>(hidden->collection)].name;
-        if (key == "file") return fileName(hidden->file);
-        if (key == "folder") return hidden->directory;
-        if (key == "year") return hidden->meta.year;
-        if (key == "manufacturer") return hidden->meta.manufacturer;
-        if (key == "genre") return hidden->meta.genre;
-        if (key == "players") return hidden->meta.players;
+    if (!record) {
         return "";
     }
-    const Library::CollectionRecord& own = idx->collections[static_cast<size_t>(game->collection)];
+    if (!game) {
+        // A hidden game: no file to measure, plays, favourites or launcher, as RetroFE doesn't list it
+        if (key == "file") return fileName(record->file);
+        if (key == "size" || key == "played" || key == "timePlayed" || key == "favourite" || key == "shownIn"
+            || key == "launcherStatus" || key == "playlistsStatus") return "";
+    }
+    const Library::CollectionRecord& own = idx->collections[static_cast<size_t>(record->collection)];
     std::string key2 = gameKey(screen);
     if (detailsKey_ != key2) {
         // Once per game: its file size, play counts and metadata changes (files read)
         detailsKey_ = key2;
         std::error_code ec;
-        uintmax_t bytes = game->file.empty() ? 0 : fs::file_size(game->file, ec);
-        size_ = game->file.empty() || ec ? "" : describeSize(bytes);
-        PlayStats stats = readPlayStats(idx->options.root, own.name, game->name);
+        uintmax_t bytes = record->file.empty() ? 0 : fs::file_size(record->file, ec);
+        size_ = record->file.empty() || ec ? "" : describeSize(bytes);
+        PlayStats stats = readPlayStats(idx->options.root, own.name, record->name);
         played_ = describePlays(stats);
         if (stats.count <= 0) {
             std::string why = playsNotCounted(idx->properties.getOr("lastPlayedSkipCollection"),
@@ -1105,35 +1287,18 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
             if (!why.empty()) played_ = why;
         }
         timePlayed_ = stats.seconds >= 1 ? describeTime(stats.seconds) : "";
-        overrides_ = services_.editor ? services_.editor->metadataOverrides(*idx, own.name, game->name)
+        overrides_ = services_.editor ? services_.editor->metadataOverrides(*idx, own.name, record->name)
                                       : std::map<std::string, std::string>();
     }
 
     if (key == "system") return own.title != own.name ? own.name + " (" + own.title + ")" : own.name;
     if (key == "from") return own.name;
-    if (key == "file") return game->missing || game->file.empty() ? "Missing: listed, but there's no file" : fileName(game->file);
-    if (key == "folder") return game->directory;
-    if (key == "size") return size_;
-    if (key == "played") return played_;
-    if (key == "timePlayed") return timePlayed_;
-    if (key == "year") return game->meta.year;
-    if (key == "manufacturer") return game->meta.manufacturer;
-    if (key == "developer") return game->meta.developer;
-    if (key == "genre") return game->meta.genre;
-    if (key == "players") return game->meta.players;
-    if (key == "favourite") {
-        if (globalFavourites(*idx)) return inGlobalFavourites(*idx, *game) ? "Yes (in the Favorites collection)" : "";
-        std::vector<std::string> names = favouritePages(*idx, g);
-        if (names.size() == 1 && names[0] == own.name) return "Yes";
-        return names.empty() ? "" : "In " + join(names);
-    }
-    if (key == "shownIn") {
-        std::vector<std::string> names;
-        for (int m : idx->mergedCollectionsShowing(g)) {
-            names.push_back(idx->collections[static_cast<size_t>(m)].name);
-        }
-        return join(names);
-    }
+    if (key == "folder") return record->directory;
+    if (key == "year") return record->meta.year;
+    if (key == "manufacturer") return record->meta.manufacturer;
+    if (key == "developer") return record->meta.developer;
+    if (key == "genre") return record->meta.genre;
+    if (key == "players") return record->meta.players;
     if (key == "image") {
         // The logo, else the front art: the game's own or a fallback by its
         // title or clone, but not the collection's "default" picture. Shown
@@ -1148,21 +1313,42 @@ std::string GameProvider::detail(const std::string& key, const Screen& screen)
     }
     if (key == "metadataStatus") {
         if (!overrides_.empty()) return "Changed here";
-        return game->hasMetadata ? "From " + own.metadataType : "None";
-    }
-    if (key == "launcherStatus") {
-        Library::LauncherResolution r = idx->resolveLauncher(game->collection, game->name);
-        if (r.launcher < 0) return "Won't start";
-        return r.name + (r.via == Library::LauncherVia::GameOverride ? " (its own)" : "");
+        return record->hasMetadata ? "From " + own.metadataType : "None";
     }
     if (key == "mediaStatus") return mediaSummary(screen);
-    if (key == "playlistsStatus") return playlistsSummary(*idx, g);
     if (key == "descriptionStatus") {
         const MediaSlot* story = slot(screen, "story");
         if (!story) return "Checking...";
         if (story->file.empty()) return "None";
         return story->own ? "Yes" : "From " + story->fallback;
     }
+    if (!game) {
+        return "";
+    }
+
+    if (key == "file") return game->missing || game->file.empty() ? "Missing: listed, but there's no file" : fileName(game->file);
+    if (key == "size") return size_;
+    if (key == "played") return played_;
+    if (key == "timePlayed") return timePlayed_;
+    if (key == "favourite") {
+        if (globalFavourites(*idx)) return inGlobalFavourites(*idx, *game) ? "Yes (in the Favorites collection)" : "";
+        std::vector<std::string> names = favouritePages(*idx, g);
+        if (names.size() == 1 && names[0] == own.name) return "Yes";
+        return names.empty() ? "" : "In " + join(names);
+    }
+    if (key == "shownIn") {
+        std::vector<std::string> names;
+        for (int m : idx->mergedCollectionsShowing(g)) {
+            names.push_back(idx->collections[static_cast<size_t>(m)].name);
+        }
+        return join(names);
+    }
+    if (key == "launcherStatus") {
+        Library::LauncherResolution r = idx->resolveLauncher(game->collection, game->name);
+        if (r.launcher < 0) return "Won't start";
+        return r.name + (r.via == Library::LauncherVia::GameOverride ? " (its own)" : "");
+    }
+    if (key == "playlistsStatus") return playlistsSummary(*idx, g);
     return "";
 }
 
@@ -1209,7 +1395,7 @@ void GameProvider::prepareMedia(const Index& index, const Screen& screen)
     }
     media_ = MediaCache();
     mediaEpoch_++;
-    const GameRecord* game = findGame(index, screen);
+    const GameRecord* game = findRecord(index, screen);
     if (!game) {
         return;
     }
@@ -1221,7 +1407,7 @@ void GameProvider::prepareMedia(const Index& index, const Screen& screen)
 const MediaSlot* GameProvider::slot(const Screen& screen, const std::string& type)
 {
     IndexPtr idx = index();
-    if (!idx || type.empty() || !findGame(*idx, screen)) {
+    if (!idx || type.empty() || !findRecord(*idx, screen)) {
         return nullptr;
     }
     prepareMedia(*idx, screen);
@@ -1282,11 +1468,8 @@ std::string GameProvider::slotValue(const std::string& key, const Screen& screen
     if (key == "mediaNote") {
         IndexPtr idx = index();
         if (!idx) return searchStatus();
-        return "Each kind of media, as RetroFE finds it for this game on its own system's page. A fallback is "
-               "another file RetroFE shows instead (by the game's title, its parent's name, or the collection's "
-               "default); replacing puts a file of the game's own in its place. A merged collection that shows the "
-               "game may have art of its own for it, which it shows first. A slot can also be a folder of files "
-               "(as OneSauce ships some videos), of which RetroFE shows one at random.";
+        return "What RetroFE shows for each kind of media on the game's own page. A fallback is another file "
+               "it shows instead (by title, parent or the default). Choose one to replace it.";
     }
     if (key == "slot:newFile") return newFile_;
     if (key == "slot:title") return mediaLabel(screen.param("type"));
@@ -1294,7 +1477,7 @@ std::string GameProvider::slotValue(const std::string& key, const Screen& screen
     if (!s) {
         if (key == "slot:status") {
             IndexPtr idx = index();
-            return idx && findGame(*idx, screen) ? lookingMessage : goneMessage;
+            return idx && findRecord(*idx, screen) ? lookingMessage : goneMessage;
         }
         return startsWith(key, "slot:is") || startsWith(key, "slot:can") || startsWith(key, "slot:has") ? "no" : "";
     }
@@ -1414,7 +1597,7 @@ void GameProvider::loadMetadata(const Index& index, const Screen& screen)
     if (metadata_.id() == key) {
         return;   // keeps unsaved edits when coming back to the same game
     }
-    const GameRecord* game = findGame(index, screen);
+    const GameRecord* game = findRecord(index, screen);
     if (!game) {
         return;
     }
@@ -1441,7 +1624,7 @@ const std::map<std::string, std::string>& GameProvider::shipped(const Index& ind
     // a game with changes, once per game
     static const std::map<std::string, std::string> none;
     known = false;
-    const GameRecord* game = findGame(index, screen);
+    const GameRecord* game = findRecord(index, screen);
     if (!game) {
         return none;
     }
@@ -1465,18 +1648,24 @@ const std::map<std::string, std::string>& GameProvider::shipped(const Index& ind
 std::string GameProvider::metadataValue(const std::string& key, const Screen& screen)
 {
     IndexPtr idx = index();
-    const GameRecord* game = idx ? findGame(*idx, screen) : nullptr;
+    const GameRecord* game = idx ? findRecord(*idx, screen) : nullptr;
     if (!game) {
-        return key == "isMetadataDirty" || key == "hasOverrides" || startsWith(key, "isChanged:") ? "no" : "";
+        return key == "isMetadataDirty" || key == "hasOverrides" || startsWith(key, "isChanged:")
+            || startsWith(key, "metaTyping:") ? "no" : "";
     }
     loadMetadata(*idx, screen);
     if (key == "isMetadataDirty") return yesNo(metadata_.isDirty());
     if (key == "hasOverrides") return yesNo(!overrides_.empty());
+    if (key == "metadataFile") return "manage/metadata/" + metadataType_ + ".xml";
     if (key == "metadataNote") {
-        std::string note = "Changes are kept in manage/metadata/" + metadataType_
-                         + ".xml, so content updates don't undo them. RetroFE shows them after it reloads.";
+        std::string note = "Content updates don't undo these changes. RetroFE shows them after it reloads, when you close Manage.";
         return game->hasMetadata ? note : "This game has no metadata yet; saving a field adds it. " + note;
     }
+    if (startsWith(key, "metaPick:")) {
+        std::string field = key.substr(9);
+        return typing_.count(field) ? otherChoice : metadata_.get(field);
+    }
+    if (startsWith(key, "metaTyping:")) return yesNo(typing_.count(key.substr(11)) > 0);
     if (startsWith(key, "meta:")) return metadata_.get(key.substr(5));
     if (startsWith(key, "isChanged:")) return yesNo(overrides_.count(key.substr(10)) > 0);
     if (startsWith(key, "metaStatus:")) {
@@ -1493,11 +1682,60 @@ std::string GameProvider::metadataValue(const std::string& key, const Screen& sc
     return "";
 }
 
+std::vector<std::pair<std::string, std::string>> GameProvider::metadataChoices(const std::string& field, const Screen& screen)
+{
+    std::vector<std::pair<std::string, std::string>> result;
+    IndexPtr idx = index();
+    const GameRecord* game = idx ? findRecord(*idx, screen) : nullptr;
+    if (!game || !isChoiceField(field)) {
+        return result;
+    }
+    loadMetadata(*idx, screen);
+    if (idx != choicesIndex_) {
+        choicesIndex_ = idx;
+        choices_.clear();
+    }
+    // The values the system's games (hidden ones too) have, once per index
+    std::string cacheKey = std::to_string(game->collection) + "\n" + field;
+    auto cached = choices_.find(cacheKey);
+    if (cached == choices_.end()) {
+        std::set<std::string> seen;
+        auto add = [&](const GameRecord& other) {
+            if (other.collection == game->collection) {
+                std::string value = Utils::trimEnds(currentValue(other, field));
+                if (!value.empty()) seen.insert(value);
+            }
+        };
+        const Library::CollectionRecord& own = idx->collections[static_cast<size_t>(game->collection)];
+        for (size_t g = own.gameBegin; g < own.gameBegin + own.gameCount && g < idx->games.size(); g++) {
+            add(idx->games[g]);
+        }
+        for (const GameRecord& hidden : idx->hiddenGames) {
+            add(hidden);
+        }
+        std::vector<std::string> values(seen.begin(), seen.end());
+        std::sort(values.begin(), values.end(), naturalLess);
+        cached = choices_.emplace(cacheKey, std::move(values)).first;
+    }
+    result.emplace_back("", "None");
+    for (const std::string& value : cached->second) {
+        result.emplace_back(value, value);
+    }
+    // A value typed (or saved) that no game of the system has yet
+    std::string current = metadata_.get(field);
+    bool listed = current.empty() || std::find(cached->second.begin(), cached->second.end(), current) != cached->second.end();
+    if (!listed) {
+        result.emplace_back(current, current);
+    }
+    result.emplace_back(otherChoice, "Other...");
+    return result;
+}
+
 Forms::Model::Result GameProvider::metadataAction(const std::string& action, const Screen& screen)
 {
     Forms::Model::Result result;
     IndexPtr idx = index();
-    const GameRecord* game = idx ? findGame(*idx, screen) : nullptr;
+    const GameRecord* game = idx ? findRecord(*idx, screen) : nullptr;
     if (!game) {
         result.message = goneMessage;
         return result;
@@ -1508,6 +1746,7 @@ Forms::Model::Result GameProvider::metadataAction(const std::string& action, con
 
     if (action == "resetMetadata") {
         metadata_.reset();
+        typing_.clear();
         result.ok = true;
         result.info = true;
         return result;
@@ -1587,6 +1826,9 @@ Forms::Model::Result GameProvider::metadataAction(const std::string& action, con
     }
     result.ok = true;
     result.message = done.size() == 1 ? lastMessage : "Saved " + std::to_string(done.size()) + " changes.";
+    for (const std::string& field : done) {
+        typing_.erase(field);   // the choice shows the saved value
+    }
     return result;
 }
 
@@ -1635,22 +1877,18 @@ std::string GameProvider::launcherValue(const std::string& key, const Screen& sc
         const Library::LauncherDef& def = idx->launchers[static_cast<size_t>(now.launcher)];
         return def.executable + (def.arguments.empty() ? "" : " " + def.arguments);
     }
-    if (key == "launcherProblem") return now.problem;
-    if (key == "unresolvedNote") {
-        // Names this game or its system asks for that no launcher file defines
-        std::vector<std::string> asked = { system.configured, now.overrideName };
-        asked.insert(asked.end(), system.alternatives.begin(), system.alternatives.end());
-        std::vector<std::string> missing;
-        for (const std::string& name : asked) {
-            bool unresolved = std::find(idx->unresolvedLaunchers.begin(), idx->unresolvedLaunchers.end(), name)
-                              != idx->unresolvedLaunchers.end();
-            if (!name.empty() && unresolved && std::find(missing.begin(), missing.end(), name) == missing.end()) {
-                missing.push_back(name);
-            }
+    if (key == "launcherProblem") {
+        // One line: why it won't start (the Add a launcher links follow it)
+        if (now.launcher < 0) {
+            return "It won't start. " + (now.problem.empty() ? std::string("No launcher is set for it or its system.") : now.problem);
         }
-        if (missing.empty()) return "";
-        return "Not installed: " + join(missing) + ". There's no launcher file with "
-            + (missing.size() == 1 ? "that name" : "those names") + "; pick an installed launcher.";
+        return now.problem;
+    }
+    if (key == "launcherFile") {
+        // The game's own launcher file: where Save writes the choice
+        if (!now.overrideFile.empty()) return shownPath(idx->options.root, now.overrideFile);
+        const Library::CollectionRecord& own = idx->collections[static_cast<size_t>(game->collection)];
+        return shownPath(idx->options.root, Utils::combinePath(own.folder, "launchers", game->name + ".conf"));
     }
     return "";
 }
@@ -1702,7 +1940,9 @@ std::string GameProvider::playlistValue(const std::string& key, const Screen& sc
     const std::string& pageName = idx->collections[static_cast<size_t>(page)].name;
     if (key == "favouritePage") return pageName;
     if (key == "hasSeveralPages") return yesNo(!global && pages(*idx, g).size() > 1);
-    if (key == "isFavourite") return yesNo(global ? inGlobalFavourites(*idx, *game) : isFavourite(*idx, g, page));
+    if (key == "isFavourite" || key == "favouriteToggle") {
+        return yesNo(global ? inGlobalFavourites(*idx, *game) : isFavourite(*idx, g, page));
+    }
     if (key == "canFavourite") return yesNo(!global);
     if (key == "favouriteText") {
         if (global) return inGlobalFavourites(*idx, *game) ? "Yes, in the Favorites collection" : "No";
@@ -1717,9 +1957,13 @@ std::string GameProvider::playlistValue(const std::string& key, const Screen& sc
             + "/playlists/favorites.txt). RetroFE also changes these lists when you add a favourite while playing.";
     }
 
-    if (key == "playlist" || key == "playlistStatus" || key == "isInPlaylist" || key == "hasPlaylists") {
+    if (key == "playlist" || key == "playlistStatus" || key == "isInPlaylist" || key == "hasPlaylists"
+        || key == "canAddToPlaylist") {
         std::vector<std::pair<std::string, std::string>> choices = options("playlists", screen);
         if (key == "hasPlaylists") return yesNo(!choices.empty());
+        if (key == "canAddToPlaylist") {
+            return yesNo(!choices.empty() && playlistValue("isInPlaylist", screen) != "yes");
+        }
         bool valid = std::any_of(choices.begin(), choices.end(), [&](const auto& c) { return c.first == playlist_; });
         std::string chosen = valid ? playlist_ : choices.empty() ? "" : choices.front().first;
         if (key == "playlist") return chosen;
@@ -1982,7 +2226,7 @@ std::string GameProvider::storyValue(const std::string& key, const Screen& scree
     if (!s) {
         if (key == "story:status") {
             IndexPtr idx = index();
-            return idx && findGame(*idx, screen) ? lookingMessage : "";
+            return idx && findRecord(*idx, screen) ? lookingMessage : "";
         }
         return startsWith(key, "is") || startsWith(key, "story:can") || startsWith(key, "story:has") ? "no" : "";
     }
@@ -1993,10 +2237,15 @@ std::string GameProvider::storyValue(const std::string& key, const Screen& scree
     if (key == "story:canClear") return yesNo(s->own);
     if (key == "story:hasOriginal") return yesNo(!originals(*s).empty());
     if (key == "story:status") {
-        if (s->own) return "Its own text: " + s->file;
-        if (!s->file.empty()) return "A fallback from the " + s->fallback + ": " + s->file
-            + ". Saving writes the game's own text instead.";
-        return "None yet. Saving writes " + Utils::combinePath(s->directory, s->basename) + ".txt.";
+        if (s->own) return "";
+        if (!s->file.empty()) return "Shows a fallback from the " + s->fallback + " (" + s->file
+            + "). Saving gives the game its own text.";
+        return "No story text yet.";
+    }
+    if (key == "story:file") {
+        // Where Save writes: its own file, or the one it would have
+        if (s->own) return s->file;
+        return s->directory.empty() ? "" : Utils::combinePath(s->directory, s->basename) + ".txt";
     }
     return "";
 }
@@ -2050,9 +2299,8 @@ Forms::Model::Result GameProvider::storyAction(const std::string& action, const 
         forgetSlot("story");
         story_.load("", {});
         IndexPtr idx = index();
-        int g = -1;
-        if (idx && findGame(*idx, screen, &g)) {
-            media_.slots["story"] = Library::gameMedia(*idx, g, "story", MediaKind::Text);
+        if (const GameRecord* record = idx ? findRecord(*idx, screen) : nullptr) {
+            media_.slots["story"] = Library::gameMedia(*idx, *record, "story", MediaKind::Text);
             loadStory(screen);
         }
         changed("game story");
@@ -2085,7 +2333,16 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
         if (game) return "It isn't hidden.";
         return findHidden(idx, screen) ? "" : goneMessage;
     }
-    if (!game) return goneMessage;
+    // A hidden game's metadata, media and story can be changed; the rest needs RetroFE to list it
+    static const std::vector<std::string> hiddenToo = {
+        "saveMetadata", "resetMetadata", "replaceMedia", "clearMedia", "restoreMedia", "addToFolder", "clearFolder",
+        "removeFolderFile", "keepFolderFile", "saveStory", "resetStory", "clearStory", "restoreStory", "replaceStory",
+    };
+    bool forHidden = isUnset || std::find(hiddenToo.begin(), hiddenToo.end(), action) != hiddenToo.end();
+    if (!game && !(forHidden && findRecord(*idx, screen))) {
+        if (action == "hide" && findHidden(idx, screen)) return "It's hidden already.";
+        return findHidden(idx, screen) ? "It's hidden: show this game again first." : goneMessage;
+    }
 
     if (action == "hide") {
         return "";   // listed now, so its exclude list doesn't name it (the editor checks the file)

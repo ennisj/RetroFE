@@ -124,6 +124,9 @@ OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
     This parses that type's hyperlist files, so call it when the screen opens, not every frame.
 - **Media:** `mediaTypes(index, collection)` lists the slot types.
   `gameMedia(index, game, type, defaultKind(type), pageCollection)` returns a `MediaSlot`, see [Media](#media).
+  The same call with a `GameRecord` instead of its position works for a record
+  outside `index.games`, such as one of `index.hiddenGames` (Games' screens
+  for a hidden game keep its media).
 
 ### Menus
 - **The tree:** `index->menuTree()` starts from `index->topMenu` (`firstCollection`, which is

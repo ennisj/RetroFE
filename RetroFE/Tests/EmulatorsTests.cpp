@@ -164,6 +164,29 @@ static Test::Suite emulators("emulators", [] {
               && unresolved.items[2].id == "nowhere", "a game's pick, a default and an alternative, by name");
         check(unresolved.items.size() == 3 && contains(unresolved.items[0].detail, "1 game")
               && contains(unresolved.items[1].detail, "1 system"), "with who asks for them");
+        // A few are listed on Emulators itself; more than ten get a link with their count
+        checkEqual(f.model->get("emulator:hasFewUnresolved"), "yes", "three: inline");
+        checkEqual(f.model->get("emulator:hasManyUnresolved"), "no", "no link");
+        checkEqual(f.model->get("emulator:unresolvedCount"), "3 names", "the count");
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("emulators"), error);
+        check(form && form->fields.size() > 1 && form->fields[1].open == "emulator-new", "Add a launcher comes first");
+        check(Forms::builtinForm("emulators-unresolved") != nullptr, "the screen the link opens");
+    });
+
+    run("emulators: many names used but not defined become one link", [] {
+        std::string root = makeInstall("emu-many-unresolved");
+        for (int i = 0; i < 9; i++) {
+            std::string system = "S" + std::to_string(i);
+            writeFile(root + "/collections/" + system + "/settings.conf", "list.extensions = bin\nlauncher = gone" + std::to_string(i) + "\n");
+        }
+        Fixture f(root);
+        f.model->setScreen("emulators", {});
+        checkEqual(f.model->get("emulator:unresolvedCount"), "12 names", "three and nine more");
+        checkEqual(f.model->get("emulator:hasManyUnresolved"), "yes", "a link");
+        checkEqual(f.model->get("emulator:hasFewUnresolved"), "no", "not listed inline");
+        f.model->setScreen("emulators-unresolved", {});
+        check(f.model->rows("emulator:unresolved", 500).items.size() == 12, "every one on the link's screen");
     });
 
     run("emulators: a launcher's facts, file and users", [] {

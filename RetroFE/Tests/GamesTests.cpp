@@ -329,8 +329,19 @@ static void runGamesTests()
         f.open("game-launcher", gameParams("Arcade", "c"));
         checkEqual(f.model.get("game:launcher"), "ghost", "the override's name");
         check(hasOption(f.model.options("game:launchers"), "ghost"), "listed so the choice shows it");
-        check(f.model.get("game:unresolvedNote").find("ghost") != std::string::npos, "unresolved name warned about");
-        check(!f.model.get("game:launcherProblem").empty(), "won't start");
+        std::string problem = f.model.get("game:launcherProblem");
+        check(problem.find("won't start") != std::string::npos && problem.find("ghost") != std::string::npos,
+              "one line says it won't start, and why: " + problem);
+        Forms::Rows add = f.model.rows("game:addLaunchers", 10);
+        check(add.items.size() == 1 && add.items[0].id == "ghost" && add.items[0].link
+              && add.items[0].label == "Add a launcher called ghost", "a link to add the launcher it asks for");
+        if (add.items.size() == 1) {
+            Forms::Field results;
+            results.type = Forms::FieldType::Results;
+            results.param = "name";
+            checkEqual(Forms::rowParams(results, add.items[0])["name"], "ghost", "opens Add a launcher with the name");
+        }
+        checkEqual(f.model.get("game:launcherFile"), "collections/Arcade/launchers/c.conf", "Saved in: the game's launcher file");
 
         // A local launcher of the system hides the global one of the same name: offered once
         Test::writeFile(root + "/collections/Arcade/launchers.local/fbneo.conf", "executable = fbneo-arcade.exe\n");
@@ -412,8 +423,16 @@ static void runGamesTests()
         f.open("game-media", gameParams("Arcade", "a"));
         Forms::Rows rows = f.model.rows("game:media", 100);
         auto video = std::find_if(rows.items.begin(), rows.items.end(), [](const Forms::Row& r) { return r.id == "video"; });
-        check(video != rows.items.end() && video->detail == "Own folder (2)", "the video row: "
+        check(video != rows.items.end() && video->detail == "Its own folder (2)", "the video row: "
               + (video != rows.items.end() ? video->detail : std::string()));
+        // Grouped: what shows, and what's missing
+        std::vector<std::string> shown = rowIds(f.model.rows("game:mediaShown", 100));
+        std::vector<std::string> missing = rowIds(f.model.rows("game:mediaMissing", 100));
+        check(std::find(shown.begin(), shown.end(), "video") != shown.end()
+              && std::find(shown.begin(), shown.end(), "logo") != shown.end(), "the video and logo show");
+        check(std::find(missing.begin(), missing.end(), "screenshot") != missing.end()
+              && std::find(missing.begin(), missing.end(), "video") == missing.end(), "a screenshot is missing");
+        check(shown.size() + missing.size() == rows.items.size(), "every slot in one of the two");
 
         f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "a" }, { "type", "video" } });
         checkEqual(f.model.get("game:slot:status"), "Its own folder: a folder of 2 files (one shown at random)", "status");
@@ -722,7 +741,9 @@ static void runGamesTests()
         check(f.model.get("game:hiddenNote").find("exclude.txt") != std::string::npos, "says which list hides it");
         checkEqual(f.model.get("game:system"), "Arcade", "its system");
         checkEqual(f.model.get("game:file"), "Dk.zip", "its file");
-        checkEqual(f.model.actionProblem("game.launch"), "This game isn't in the library any more.", "can't be started");
+        checkEqual(f.model.actionProblem("game.launch"), "It's hidden: show this game again first.", "can't be started");
+        checkEqual(f.model.actionProblem("game.hide"), "It's hidden already.", "nor hidden again");
+        checkEqual(f.model.get("game:isKnown"), "yes", "its metadata, media and story links stay");
 
         f.open("games", {});
         check(rowIds(f.model.rows("game:search", 100)).size() == 5, "the search leaves it out");
@@ -788,6 +809,34 @@ static void runGamesTests()
             checkEqual(hidden.items[0].label, "Beta", "listed by its title");
             check(hidden.items[0].detail.find("b.zip") != std::string::npos, "the file in the detail: " + hidden.items[0].detail);
         }
+        checkEqual(f.model.get("game:filterSummary"), "Hidden games", "the Filters link says so");
+        checkEqual(f.model.get("game:filterCount"), "1 game matching \"beta\"", "and how many match");
+        f.model.set("game:onlyHidden", "no");
+        f.model.set("game:query", "");
+
+        // Its metadata and media can be changed while it's hidden
+        Manager::Screen metadata{ "game-metadata", gameParams("Arcade", "b") };
+        f.open(metadata.form, metadata.params);
+        checkEqual(f.model.get("game:isKnown"), "yes", "the screen works");
+        checkEqual(f.model.get("game:notFound"), "", "not reported as gone");
+        checkEqual(f.model.get("game:meta:description"), "Beta", "its title in the field");
+        f.model.set("game:meta:year", "1990");
+        Forms::Model::Result saved = f.model.runAction("game.saveMetadata");
+        check(saved.ok, "saved while hidden: " + saved.message);
+        check(Test::readFile(Library::MetadataOverrides::fileFor(root, "Arcade")).find("<year>1990</year>") != std::string::npos,
+              "in the override layer");
+        checkEqual(f.model.actionProblem("game.saveLauncher"), "It's hidden: show this game again first.",
+                   "the launcher needs it listed");
+
+        f.open("game-media-slot", { { "collection", "Arcade" }, { "id", "b" }, { "type", "logo" } });
+        checkEqual(f.model.get("game:slot:status"), "Missing", "its logo slot is looked up");
+        f.model.set("game:slot:newFile", root + "/import/new.png");
+        Forms::Model::Result replaced = f.model.runAction("game.replaceMedia");
+        check(replaced.ok, "a logo given while hidden: " + replaced.message);
+        check(fs::exists(root + "/collections/Arcade/medium_artwork/logo/b.png"), "written under its name");
+        f.open("game-media", gameParams("Arcade", "b"));
+        std::vector<std::string> shownNow = rowIds(f.model.rows("game:mediaShown", 100));
+        check(std::find(shownNow.begin(), shownNow.end(), "logo") != shownNow.end(), "the logo shows now");
     });
 
     run("games: hiding a folder game (emuarc) and a listed game with no file", [] {
@@ -981,5 +1030,95 @@ static void runGamesTests()
         checkEqual(f.model.get("game:played"), "Not counted (set lastPlayedSkipCollection to count plays)", "the game screen");
         f.open("game", gameParams("Arcade", "a"));
         check(f.model.get("game:played").rfind("2 times", 0) == 0, "plays counted before still show: " + f.model.get("game:played"));
+    });
+
+    run("games: the Filters link sums up the search's filters", [] {
+        std::string root = makeInstall("games-filters");
+        Fixture f(root);
+        f.open("games", {});
+        checkEqual(f.model.get("game:filterSummary"), "All games", "no filter");
+        checkEqual(f.model.get("game:filterCount"), "5 games", "every game");
+        f.open("games-filters", {});
+        f.model.set("game:filter", "Arcade");
+        f.model.set("game:onlyNoMetadata", "yes");
+        checkEqual(f.model.get("game:filterSummary"), "Arcade, without metadata", "a system, without metadata");
+        checkEqual(f.model.get("game:filterCount"), "1 game", "only c");
+        f.open("games", {});
+        check(rowIds(f.model.rows("game:search", 100)) == std::vector<std::string>{ "c" }, "the search uses them");
+        // The form: results straight after Search, the filters behind one link
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("games"), error);
+        bool ordered = form && form->fields.size() >= 4 && form->fields[1].bind == "game:query"
+            && form->fields[2].type == Forms::FieldType::Link && form->fields[2].open == "games-filters"
+            && form->fields[3].type == Forms::FieldType::Results;
+        check(ordered, "Search, Filters, results");
+    });
+
+    run("games: genre, players and rating are chosen from the system's values", [] {
+        std::string root = makeInstall("games-choices");
+        Test::writeFile(root + "/meta/hyperlist/Arcade.xml",
+                        "<?xml version=\"1.0\"?>\n<menu>\n"
+                        "<game name=\"a\"><description>Alpha</description><genre>Maze</genre><players>2</players></game>\n"
+                        "<game name=\"b\"><description>Beta</description><genre>Shooter</genre><players>10</players></game>\n"
+                        "<game name=\"c\"><description>Gamma</description><genre>Maze</genre><players>1</players></game>\n"
+                        "</menu>\n");
+        {
+            // meta.db again, from this list
+            fs::remove(root + "/meta.db");
+            Configuration::absolutePath = root;
+            Configuration config;
+            DB db(root + "/meta.db");
+            db.initialize();
+            MetadataDatabase meta(db, config);
+            meta.initialize();
+        }
+        Fixture f(root);
+        f.open("game-metadata", gameParams("Arcade", "a"));
+        auto genres = f.model.options("game:metaChoices:genre");
+        check(genres.size() == 4 && genres[0].first.empty() && genres[1].first == "Maze" && genres[2].first == "Shooter"
+              && genres[3].second == "Other...", "None, each genre once, Other...");
+        auto players = f.model.options("game:metaChoices:players");
+        check(players.size() == 5 && players[1].first == "1" && players[2].first == "2" && players[3].first == "10",
+              "numbers in order");
+        checkEqual(f.model.get("game:metaPick:genre"), "Maze", "the game's genre is picked");
+        f.model.set("game:metaPick:genre", "Shooter");
+        checkEqual(f.model.get("game:meta:genre"), "Shooter", "picking edits the field");
+        checkEqual(f.model.get("game:metaStatus:genre"), "Not saved yet.", "not saved yet");
+
+        // Other... shows a text field to type one the system doesn't have
+        checkEqual(f.model.get("game:metaTyping:genre"), "no", "no text field");
+        f.model.set("game:metaPick:genre", genres.back().first);
+        checkEqual(f.model.get("game:metaTyping:genre"), "yes", "Other... types instead");
+        f.model.set("game:meta:genre", "Puzzle");
+        auto now = f.model.options("game:metaChoices:genre");
+        check(hasOption(now, "Puzzle"), "the typed genre is offered too");
+        check(f.model.runAction("game.saveMetadata").ok, "saved");
+        checkEqual(f.model.get("game:metaTyping:genre"), "no", "the choice shows it once saved");
+        checkEqual(f.model.get("game:metaPick:genre"), "Puzzle", "picked");
+        checkEqual(f.model.get("game:metadataFile"), "manage/metadata/Arcade.xml", "Saved in");
+    });
+
+    run("games: the favourite toggle, and a new playlist from the game", [] {
+        std::string root = makeInstall("games-favourite-toggle");
+        Fixture f(root);
+        f.open("game-playlists", gameParams("NES", "mario"));
+        checkEqual(f.model.get("game:favouriteToggle"), "no", "not a favourite");
+        f.model.set("game:favouriteToggle", "yes");
+        check(Test::readFile(root + "/collections/NES/playlists/favorites.txt").find("mario") != std::string::npos,
+              "switching it on adds it straight away");
+        check(f.model.get("game:favouriteStatus").find("Added mario") == 0, "and says so: " + f.model.get("game:favouriteStatus"));
+        f.settle();
+        checkEqual(f.model.get("game:favouriteToggle"), "yes", "on");
+        f.model.set("game:favouriteToggle", "no");
+        f.settle();
+        checkEqual(f.model.get("game:favouriteToggle"), "no", "off again");
+        check(Test::readFile(root + "/collections/NES/playlists/favorites.txt").find("mario") == std::string::npos, "removed");
+
+        // NES has no playlists: a link to make one on its Playlists screen
+        f.open("game-playlists", gameParams("NES", "zelda"));
+        checkEqual(f.model.get("game:hasPlaylists"), "no", "no playlists");
+        checkEqual(f.model.get("game:canAddToPlaylist"), "no", "nothing to add to");
+        Forms::Rows add = f.model.rows("game:newPlaylist", 10);
+        check(add.items.size() == 1 && add.items[0].id == "NES" && add.items[0].link, "New playlist... opens NES's playlists");
     });
 }

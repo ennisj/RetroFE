@@ -462,9 +462,18 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
         }
     }
 
-    // What the library noticed (fork-only keys, spellings), except what's said above
+    // What the library noticed (fork-only keys, spellings), except what's said
+    // above. Keys this fork honours are notes, not problems: nothing to fix.
     for (const std::string& note : r.notes) {
-        if (note.find("only ignoring case") == std::string::npos) {
+        if (note.find("only ignoring case") != std::string::npos) {
+            continue;
+        }
+        bool informational = note.find("this fork honours") != std::string::npos
+            || note.find("this fork uses") != std::string::npos || note.find("keeps it in step") != std::string::npos;
+        if (informational) {
+            check.notes.push_back(note);
+        }
+        else {
             add(note);
         }
     }
@@ -481,7 +490,7 @@ SystemCheck checkSystem(const Index& index, int collection, bool videos)
         where = isTop ? "the top menu" : "in no menu";
     }
     check.summary = r.name + ": "
-        + (check.findings.empty() ? "nothing to report" : count(check.findings.size(), "thing", "things") + " to look at")
+        + (check.findings.empty() ? "no problems" : count(check.findings.size(), "problem", "problems"))
         + ". " + count(r.gameCount, item, items) + ", " + where + ".";
     return check;
 }
@@ -836,6 +845,15 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
     }
     if (key == "title") return r->title;
     if (key == "name") return r->title != r->name ? r->name : "";
+    if (key == "settingsFile" || key == "infoFile" || key == "launcherFile") {
+        // Saved in: the file Save writes (the launcher setting stays in the file that has it)
+        std::string name = key == "infoFile" ? "info.conf"
+                         : key == "launcherFile" && !launcherSource_.empty() ? launcherSource_ : "settings.conf";
+        fs::path file = fs::path(Utils::combinePath(r->folder, name)).lexically_normal();
+        fs::path relative = file.lexically_relative(fs::path(root()).lexically_normal());
+        std::string text = relative.empty() || *relative.begin() == ".." ? file.string() : relative.generic_string();
+        return text;
+    }
     if (key == "menus") {
         std::vector<std::string> names;
         for (int parent : r->parents) {
@@ -868,8 +886,11 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
         if (videos_ && playsHere(*r)) {
             return "In RetroFE";
         }
-        return r->launcher.via == Library::LauncherVia::None ? "None"
-             : r->launcher.via == Library::LauncherVia::CollectionFile ? "Its own file" : r->launcher.name;
+        // The only Launcher row on the details screen, so it carries the warning
+        const Library::LauncherResolution& l = r->launcher;
+        if (l.via == Library::LauncherVia::None) return "None: its " + items_ + " can't start";
+        std::string name = l.via == Library::LauncherVia::CollectionFile ? "Its own file" : l.name;
+        return l.launcher < 0 ? name + ", which isn't installed" : name;
     }
     if (key == "infoStatus") {
         std::vector<std::string> parts;
@@ -884,7 +905,13 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
     if (key == "mediaStatus") return std::to_string(ownArt_) + " of " + std::to_string(slots_.size());
     if (key == "playlistsStatus") return count(r->playlists.size(), "playlist", "playlists");
     if (key == "checkStatus") {
-        return check_.findings.empty() ? "Nothing to report" : count(check_.findings.size(), "thing", "things") + " to look at";
+        return check_.findings.empty() ? "No problems" : count(check_.findings.size(), "problem", "problems");
+    }
+    if (key == "hasProblems") return yesNo(!check_.findings.empty());
+    if (key == "hasNotes") return yesNo(!check_.notes.empty());
+    if (key.compare(0, 4, "note") == 0 && key.size() > 4 && std::isdigit(static_cast<unsigned char>(key[4]))) {
+        size_t n = static_cast<size_t>(Utils::convertInt(key.substr(4)));
+        return n < check_.notes.size() ? "- " + check_.notes[n] : "";
     }
     if (key == "canDelete") return yesNo(deleteProblem_.empty());
     if (key == "image") return image_;
@@ -892,7 +919,7 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
     if (key.compare(0, 7, "finding") == 0) {
         size_t n = static_cast<size_t>(Utils::convertInt(key.substr(7)));
         if (n + 1 == maxFindings && check_.findings.size() > maxFindings) {
-            return "... and " + count(check_.findings.size() - maxFindings + 1, "more thing", "more things") + ".";
+            return "... and " + count(check_.findings.size() - maxFindings + 1, "more problem", "more problems") + ".";
         }
         return n < check_.findings.size() ? "- " + check_.findings[n] : "";
     }
@@ -1502,6 +1529,7 @@ Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Scr
         row.id = r->name;
         row.label = capitalised(items_);
         row.detail = count(r->gameCount, item_, items_);
+        row.link = true;   // drawn like the links below it: it opens a screen
         rows.items.push_back(std::move(row));
     }
     else if (key == "folderFiles") {
@@ -1969,7 +1997,7 @@ Forms::Model::Result SystemProvider::playlistAction(const std::string& action, c
             cycle.push_back(playlist);
             edit = services_.editor->setCollectionSetting(*idx, name, "cyclePlaylist", join(cycle, ","));
             if (edit.ok) {
-                edit.message = "Added " + playlist + " to " + name + "'s cyclePlaylist; RetroFE shows it after it reloads"
+                edit.message = "Added " + playlist + " to " + name + "'s cyclePlaylist; RetroFE shows it after it reloads, when you close Manage"
                              + (entries_.empty() ? ", once it has " + items_ + " in it." : ".");
             }
         }

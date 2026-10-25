@@ -32,6 +32,7 @@ const char* const themesForm = R"(
 
 const char* const themeForm = R"(
 <form id="theme" title="Theme" bind="theme:name">
+  <image bind="theme:preview" rows="5"/>
   <value label="In use" bind="theme:inUse"/>
   <value label="Made" bind="theme:kind"/>
   <value label="Size" bind="theme:size"/>
@@ -41,9 +42,11 @@ const char* const themeForm = R"(
   <note bind="theme:problem"/>
   <note bind="theme:editNote"/>
   <button label="Use this theme" action="theme.use" visibleWhen="!theme:isActive"/>
-  <button label="Edit" action="theme.edit" visibleWhen="theme:canOpen"/>
-  <button label="Duplicate" action="theme.duplicate" visibleWhen="theme:isEditor"/>
-  <button label="Delete" action="theme.delete" visibleWhen="theme:isEditor" confirm="Delete this theme and its files?"/>
+  <button label="Edit this theme" action="theme.edit" visibleWhen="theme:canOpen"/>
+  <button label="Duplicate this theme" action="theme.duplicate" visibleWhen="theme:isEditor"/>
+  <section label="Actions" visibleWhen="theme:isEditor">
+    <button label="Delete this theme" action="theme.delete" confirm="Delete this theme and its files?"/>
+  </section>
 </form>
 )";
 

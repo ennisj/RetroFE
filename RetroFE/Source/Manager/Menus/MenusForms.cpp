@@ -26,7 +26,7 @@ const char* const menusForm = R"form(
   <note bind="menu:status"/>
   <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
   <note bind="menu:browseNote"/>
-  <link label="Change what Browse opens" open="settings" visibleWhen="menu:isReady"/>
+  <link label="Change what Browse opens" open="settings" status="menu:settingsLink" visibleWhen="menu:isReady"/>
   <text label="Search" bind="menu:query" live="yes" hint="Name of a menu, merged collection or system"/>
   <results label="From Browse down" bind="menu:tree" open="menu" empty="No menus yet."/>
   <results label="Not in any menu under Browse" bind="menu:unlisted" open="menu" visibleWhen="menu:hasUnlisted"/>
@@ -117,11 +117,12 @@ const char* const menuInfoForm = R"form(
 <form id="menu-info" title="Info and artwork" bind="menu:title">
   <note bind="menu:status"/>
   <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
-  <section label="Info (info.conf)">
+  <section label="Info">
     <text label="Title" bind="menu:infoTitle" hint="The folder name"/>
     <text label="Manufacturer" bind="menu:infoManufacturer"/>
     <text label="Year" bind="menu:infoYear"/>
     <text label="Genre" bind="menu:infoGenre"/>
+    <value label="Saved in" bind="menu:infoFile"/>
   </section>
   <actions>
     <button label="Save" action="menu.save"/>
@@ -149,7 +150,7 @@ const char* const menuMediumForm = R"form(
   <note bind="menu:mediumText"/>
   <note bind="menu:mediumFallback"/>
   <note bind="menu:mediumWhere"/>
-  <value label="New files go to" bind="menu:mediumFolder"/>
+  <value label="Saved in" bind="menu:mediumFolder"/>
   <note bind="menu:mediumFolderNote"/>
   <results label="In the folder" bind="menu:folderFiles" open="menu-medium-file" param="file" empty="No files of this kind." visibleWhen="menu:hasMediaFolder"/>
   <section label="Replace">
