@@ -1,0 +1,27 @@
+<layout width="1920" height="1080" font="fonts/OpenSans.ttf" loadFontSize="40" fontColor="dedede">
+
+<!-- Aeon Nox: the file and folder browser a folder or file field opens. Like the other
+     screens, with a narrower label column (only For, Folder, Here and Search have labels)
+     and taller rows, so thumbnails of the pictures in a media folder can be told apart.
+     Image paths are relative to this page's folder. -->
+
+    <!-- Background -->
+    <image src="../../images/background.png" x="0" y="0" width="1920" height="1080" layer="0"/>
+
+    <!-- Top bar (no clock: a form page has no selected item, which reloadableText needs) -->
+    <image src="../../images/topbar.png" x="0" y="0" width="1920" height="50" layer="1"/>
+    <text value="BROWSE" x="24" y="25" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="46" loadFontSize="46" fontColor="75c8f7" layer="2"/>
+
+    <!-- Panel: the theme's info panel and its frame, stretched (seen at x 232-1688, y 70-1040) -->
+    <image src="../../images/system_info_bg.png" x="960" y="555" width="1500" height="1093" xOrigin="center" yOrigin="center" layer="2"/>
+    <image src="../../images/system_info_overlay.png" x="960" y="555" width="1500" height="1093" xOrigin="center" yOrigin="center" layer="4"/>
+
+    <form x="960" y="555" width="1400" height="930" xOrigin="center" yOrigin="center" labelWidth="260"
+          font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"
+          rowHeight="58" focusImage="../../images/form_focus.png" noteAlpha="0.75" disabledAlpha="0.35"
+          rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="75c8f7" headerAlpha="0.95"
+          separatorColor="75c8f7" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
+          statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"
+          backgroundColor="000000" backgroundAlpha="0" layer="3"/>
+
+</layout>

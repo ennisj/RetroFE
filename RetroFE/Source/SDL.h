@@ -33,6 +33,10 @@ public:
     // build pages without showing them (retrofe --theme-check). Before initialize().
     static void setHiddenWindows( bool hidden ) { hiddenWindows_ = hidden; }
     static bool deInitialize( );
+    // Hidden, or shown without taking focus (SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1,
+    // e.g. for checks while someone uses the machine): RetroFE leaves the
+    // pointer alone and doesn't bring its window to the front
+    static bool staysInBackground( ) { return leaveMouse_; }
     static SDL_Renderer *getRenderer( int index );
     static std::string getRendererBackend(int index);
     static SDL_mutex *getMutex( );

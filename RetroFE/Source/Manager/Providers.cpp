@@ -53,6 +53,9 @@
 // controls (Settings > Controls)
 #include "Controls/ControlsProvider.h"
 
+// browse (the file and folder browser behind <folder> and <file> fields)
+#include "Browser/BrowserProvider.h"
+
 void Manager::registerProviders(ManagerModel& model, const Services& services)
 {
     (void)model;
@@ -84,4 +87,7 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
 
     // controls
     model.addProvider(std::make_unique<Manager::ControlsProvider>(services));
+
+    // browse
+    model.addProvider(std::make_unique<Browser::BrowserProvider>(services));
 }

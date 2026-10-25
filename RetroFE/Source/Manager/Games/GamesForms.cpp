@@ -139,11 +139,11 @@ const char* const mediaSlotForm = R"(
   <results label="In the folder" bind="game:slot:folderFiles" open="game-media-folder-file" param="file"
            empty="No files of this kind." visibleWhen="game:slot:hasFolder"/>
   <note bind="game:slot:text"/>
-  <file label="Replace from a file" bind="game:slot:newFile" hint="Not chosen yet" visibleWhen="game:slot:isImage"
+  <file label="Replace from a file" bind="game:slot:newFile" start="game:slot:place" hint="Not chosen yet" visibleWhen="game:slot:isImage"
         filter="Images" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp"/>
-  <file label="Replace from a file" bind="game:slot:newFile" hint="Not chosen yet" visibleWhen="game:slot:isVideo"
+  <file label="Replace from a file" bind="game:slot:newFile" start="game:slot:place" hint="Not chosen yet" visibleWhen="game:slot:isVideo"
         filter="Videos" pattern="*.mp4;*.avi;*.mkv;*.mp3;*.wav;*.flac"/>
-  <file label="Replace from a file" bind="game:slot:newFile" hint="Not chosen yet" visibleWhen="game:slot:isText"
+  <file label="Replace from a file" bind="game:slot:newFile" start="game:slot:place" hint="Not chosen yet" visibleWhen="game:slot:isText"
         filter="Text" pattern="*.txt"/>
   <actions>
     <button label="Use this file" action="game.replaceMedia"/>

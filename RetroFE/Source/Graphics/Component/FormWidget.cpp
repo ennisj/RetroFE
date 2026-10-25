@@ -43,7 +43,7 @@ namespace
         }
     }
 
-    // A field whose Select opens a native file or folder picker
+    // A field whose Select opens the file browser
     bool isPathField(const Field* field)
     {
         return field && (field->type == FieldType::Folder || field->type == FieldType::File);
@@ -303,6 +303,7 @@ void FormWidget::addResults(const Field& field)
         row.text = std::move(item.label);
         row.detail = std::move(item.detail);
         row.image = std::move(item.image);
+        row.action = std::move(item.action);
         row.thumbnail = thumbnails;
         row.focusable = true;
         rows_.push_back(std::move(row));
@@ -649,7 +650,7 @@ bool FormWidget::navigate(Nav nav)
 
     const Row* row = focus_ >= 0 ? &rows_[focus_] : nullptr;
     const Field* field = row ? row->field : nullptr;
-    static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back" };
+    static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back", "Letter up", "Letter down" };
     LOG_DEBUG("Forms", std::string(names[static_cast<int>(nav)]) + " on " + (field ? field->label : "nothing"));
 
     // Anything but confirming disarms a button waiting for confirmation; Back only does that
@@ -675,7 +676,12 @@ bool FormWidget::navigate(Nav nav)
     case Nav::Left:
     case Nav::Right:
         if (row && row->kind == RowKind::Item) {
-            pageResults(nav == Nav::Right ? 1 : -1);
+            if (field && field->letterJump) {
+                jumpResults(nav == Nav::Right ? 1 : -1);
+            }
+            else {
+                pageResults(nav == Nav::Right ? 1 : -1);
+            }
         }
         else if (field) {
             if ((field->type == FieldType::Folder || field->type == FieldType::File) && nav == Nav::Right) {
@@ -691,10 +697,36 @@ bool FormWidget::navigate(Nav nav)
             activate(*row);
         }
         break;
+    case Nav::LetterUp:
+    case Nav::LetterDown:
+        if (row && row->kind == RowKind::Item) {
+            jumpResults(nav == Nav::LetterDown ? 1 : -1);
+        }
+        break;
     case Nav::Back:
         return false;
     }
     return true;
+}
+
+// In a results list: to the first row of the previous/next letter, staying in the list
+void FormWidget::jumpResults(int direction)
+{
+    if (focus_ < 0) {
+        return;
+    }
+    const Field* list = rows_[focus_].field;
+    int first = focus_;
+    while (first > 0 && rows_[first - 1].kind == RowKind::Item && rows_[first - 1].field == list) {
+        first--;
+    }
+    std::vector<std::string> labels;
+    for (int i = first; i < static_cast<int>(rows_.size()) && rows_[i].kind == RowKind::Item && rows_[i].field == list; i++) {
+        labels.push_back(rows_[i].text);
+    }
+    int target = first + static_cast<int>(Forms::letterJump(labels, static_cast<size_t>(focus_ - first), direction));
+    focus_ = target;
+    focusedItem_ = rows_[target].item;
 }
 
 void FormWidget::activate(const Row& row)
@@ -717,6 +749,8 @@ void FormWidget::activate(const Row& row)
             browse.title = field.label;
             browse.filterName = field.filterName;
             browse.pattern = field.pattern;
+            browse.start = field.start;
+            browse.matching = field.matching;
             browse_ = browse;
         }
         else {
@@ -735,7 +769,13 @@ void FormWidget::activate(const Row& row)
         break;
     case FieldType::Link:
     case FieldType::Results:
-        if (!field.open.empty()) {
+        if (!row.action.empty()) {
+            // A row that does something rather than open a screen (e.g. the file browser's files)
+            if (model_->actionProblem(row.action).empty()) {
+                result_ = model_->runAction(row.action);
+            }
+        }
+        else if (!field.open.empty()) {
             Forms::Model::Result open;
             open.ok = true;
             open.open = field.open;
@@ -976,7 +1016,8 @@ std::string FormWidget::hintText() const
     }
     std::string hint;
     if (row && row->kind == RowKind::Item) {
-        hint = field && !field->open.empty() ? "Select: open   Left/Right: page" : "Left/Right: page";
+        std::string leftRight = field && field->letterJump ? "Left/Right: letter" : "Left/Right: page";
+        hint = row->action.empty() && (!field || field->open.empty()) ? leftRight : "Select: open   " + leftRight;
     }
     else if (field) {
         switch (field->type) {

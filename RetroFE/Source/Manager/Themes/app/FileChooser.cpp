@@ -15,6 +15,7 @@
  */
 #include "FileChooser.h"
 #include "../../FileDialog.h"
+#include "../../Browser/PathBrowser.h"
 #include "../../../Utility/Utils.h"
 #include "imgui.h"
 #include <algorithm>
@@ -134,25 +135,11 @@ namespace Themes
             listed_ = true;
             entries_.clear();
             selected_.clear();
-            const std::vector<std::string> extensions = chooserExtensions(request_.filter);
-            for (fs::directory_iterator it(dir_, ec), end; !ec && it != end; it.increment(ec)) {
-                std::error_code fec;
-                const std::string entry = it->path().filename().string();
-                if (entry.empty() || entry[0] == '.') continue;
-                if (it->is_directory(fec)) {
-                    entries_.emplace_back(entry, true);
-                }
-                else if (it->is_regular_file(fec)) {
-                    const std::string ext = Utils::toLower(it->path().extension().string());
-                    if (extensions.empty() || std::find(extensions.begin(), extensions.end(), ext) != extensions.end()) {
-                        entries_.emplace_back(entry, false);
-                    }
-                }
+            // The file browser's listing: folders first, then the files of this kind, by name
+            const Browser::Listing listing = Browser::listFolder(dir_, Browser::parseExtensions(chooserPattern(request_.filter)), true);
+            for (const Browser::Entry& entry : listing.entries) {
+                entries_.emplace_back(entry.name, entry.folder);
             }
-            std::sort(entries_.begin(), entries_.end(), [](const auto& a, const auto& b) {
-                if (a.second != b.second) return a.second;
-                return Utils::toLower(a.first) < Utils::toLower(b.first);
-            });
         }
 
         const float buttonsH = ImGui::GetFrameHeightWithSpacing() * 1.6f;

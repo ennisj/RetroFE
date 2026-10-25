@@ -56,7 +56,7 @@ class Image;
 class FormWidget : public Component
 {
 public:
-    enum class Nav { Up, Down, Left, Right, Select, Back };
+    enum class Nav { Up, Down, Left, Right, Select, Back, LetterUp, LetterDown };
 
     struct Style
     {
@@ -92,7 +92,7 @@ public:
         Error     // errorColor: errors, and the question of a button to confirm
     };
 
-    // A request for a native file or folder picker
+    // Select on a folder or file field: the manager opens its file browser
     struct Browse
     {
         std::string bind;
@@ -100,6 +100,8 @@ public:
         std::string title;
         std::string filterName;
         std::string pattern;
+        std::string start;      // the field's start= key
+        std::string matching;   // the field's matching= key
     };
 
     FormWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor);
@@ -115,7 +117,7 @@ public:
     Forms::Focus focus() const;
     void restoreFocus(const Forms::Focus& focus);
 
-    // Whether Select on a folder or file field asks for a native picker
+    // Whether Select on a folder or file field asks for the file browser
     // (takeBrowse) rather than editing the path as text
     void setCanBrowse(bool canBrowse) { canBrowse_ = canBrowse; }
 
@@ -180,7 +182,8 @@ private:
         std::string detail;     // Item: shown on the right
         std::string image;      // Item: thumbnail; Image: the picture
         Forms::Params params;   // Item: what choosing it opens its form with
-        int span = 1;           // Image: rows it covers
+        std::string action;     // Item: what choosing it runs instead, when set
+        int span = 1;          // Image: rows it covers
         int line = 0;           // Field, TextLine of a multi-line text: which of its rows
         bool thumbnail = false; // Item: leave room for thumbnails in this list
         bool focusable = false;
@@ -203,6 +206,7 @@ private:
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
     void pageResults(int direction);
+    void jumpResults(int direction);   // to the previous/next first letter
     void activate(const Row& row);
     void change(const Forms::Field& field, int direction);
     void startEditing(const Forms::Field& field);

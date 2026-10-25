@@ -19,6 +19,7 @@
 #include "../Utility/Utils.h"
 #include <rapidxml.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -84,6 +85,9 @@ namespace
             field.empty = attribute(node, "empty");
             field.open = attribute(node, "open");
             field.param = attribute(node, "param");
+            field.start = attribute(node, "start");
+            field.matching = attribute(node, "matching");
+            field.letterJump = field.type == Forms::FieldType::Results && attribute(node, "jump") == "letter";
             field.live = Forms::isTruthy(attribute(node, "live"));
             field.multiline = field.type == Forms::FieldType::Text && Forms::isTruthy(attribute(node, "multiline"));
             field.min = Utils::convertInt(attribute(node, "min"));
@@ -251,6 +255,45 @@ std::string rowKey(const Row& row)
         key += '\x1f' + name + '=' + value;
     }
     return key;
+}
+
+size_t letterJump(const std::vector<std::string>& labels, size_t index, int direction)
+{
+    if (index >= labels.size()) {
+        return index;
+    }
+    // A label's group: its first character in upper case, or 0 for none
+    auto group = [&](size_t i) -> char {
+        unsigned char c = labels[i].empty() ? 0 : static_cast<unsigned char>(labels[i][0]);
+        return std::isalnum(c) ? static_cast<char>(std::toupper(c)) : 0;
+    };
+    const char here = group(index);
+    if (direction > 0) {
+        for (size_t i = index + 1; i < labels.size(); i++) {
+            if (group(i) != 0 && group(i) != here) {
+                return i;
+            }
+        }
+        return index;
+    }
+    // The start of a group, from one of its rows
+    auto groupStart = [&](size_t i) {
+        char g = group(i);
+        while (i > 0 && g != 0 && group(i - 1) == g) {
+            i--;
+        }
+        return i;
+    };
+    size_t start = groupStart(index);
+    if (start < index) {
+        return start;
+    }
+    for (size_t i = index; i > 0; i--) {
+        if (group(i - 1) != 0 && group(i - 1) != here) {
+            return groupStart(i - 1);
+        }
+    }
+    return index;
 }
 
 std::unique_ptr<Form> parse(const std::string& xml, std::string& error)

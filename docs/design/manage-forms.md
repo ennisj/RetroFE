@@ -245,7 +245,25 @@ Things to know:
   pressed): focus stays at the same place or moves up, and never lands on a
   file or folder field by itself when anything else can take it. If it has
   to, Select there does nothing until the user moves, so a second press
-  can't open a file picker.
+  doesn't open the file browser by surprise.
+- **Folder and file fields** open the file browser (`Manager/Browser/`, form
+  `file-browser`, prefix `browse`) on Select, never the system dialog. Its
+  pick comes back through your `set()` on your own screen, as if typed, so
+  nothing else is needed. Help it along with attributes on the field:
+  `pattern` (the files listed), `start="yourprefix:someFolder"` (a value
+  naming the folder it opens in while the field is empty; a slot's place
+  like `.../logo/Sonic.*` works) and, on a `<folder>`,
+  `matching="yourprefix:extensions"` (counted in every folder it lists). The
+  browser keeps a value relative to RetroFE's folder when it was relative
+  (`Browser::storedValue`); otherwise it gives an absolute path, as before.
+- **A row that runs an action**: set `Row::action` (e.g. `"browse.pick:..."`)
+  and choosing the row runs it instead of opening the field's form; put
+  whatever the action needs in its name. **Picking for another screen's
+  field**: `Result::pick` / `Result::pickFor` make the manager return past
+  every screen of the current form and `set()` that binding there.
+- **Letter jump**: `<results jump="letter">` makes Left/Right jump between
+  first letters instead of paging (`Forms::letterJump`); the letter up and
+  letter down controls do it in every results list.
 - **Navigating after an action**: `Result::open` pushes a screen and
   `Result::back` returns (asking `leaving()` like Back does), after success
   only. The message is shown on the screen you end up on. A form id that

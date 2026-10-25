@@ -87,6 +87,9 @@ namespace Forms
         std::string empty;        // List, Results: text shown when there's nothing in it
         std::string open;         // Link, Results: id of the form to open
         std::string param;        // Results: parameter the chosen row's id is passed as (default "id")
+        std::string start;        // Folder, File: model key of a folder the browser opens in when the field is empty, e.g. a slot's media folder
+        std::string matching;     // Folder: model key of the extensions ("zip,7z") the browser counts in each folder
+        bool letterJump = false;  // Results (jump="letter"): Left/Right jump to the previous/next first letter instead of a page
         bool live = false;        // Text: the model gets every change while editing, e.g. for a search box
         bool multiline = false;   // Text: several lines, rows high; the value keeps "\n" between them
         int min = 0;
@@ -115,6 +118,7 @@ namespace Forms
         std::string detail;   // shown on the right, e.g. a year or a status
         std::string image;    // optional thumbnail, an absolute path
         Params params;
+        std::string action;   // when set, choosing the row runs this action instead of opening the field's form
     };
 
     struct Rows
@@ -199,6 +203,14 @@ namespace Forms
             // can be captured, Back's included, so it can't be the way out).
             std::string capture;
             std::string captureAction;
+
+            // After success, a value picked for a field of the screen this
+            // one was opened from (the file browser): the manager returns
+            // past every screen of the current form and sets the binding
+            // pickFor to pick there, as typing it would (not saved). The
+            // message is shown there.
+            std::string pick;
+            std::string pickFor;
         };
         virtual Result runAction(const std::string& action) = 0;
     };
@@ -252,6 +264,13 @@ namespace Forms
 
     // Identifies a row within its list, for keeping it focused: its id and params
     std::string rowKey(const Row& row);
+
+    // Letter jump in a list sorted by label: from index, the first row of the
+    // next group of labels starting with another letter (direction +1), or
+    // the start of the current group, or of the previous one when already
+    // there (-1). Case doesn't matter; labels starting with anything but a
+    // letter or digit are skipped as group starts. index when there's nowhere to go.
+    size_t letterJump(const std::vector<std::string>& labels, size_t index, int direction);
 
     // The parameters of the screen result opens, from a screen with current ones
     Params openParams(const Params& current, const Model::Result& result);

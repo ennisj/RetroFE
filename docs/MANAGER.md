@@ -150,12 +150,59 @@ it, or raise it, so that development builds aren't offered older releases.
 
 Each screen is a **form**: fields bound to settings or other values. Up and
 Down move between fields; Left and Right change a switch, number or choice,
-or page through a list of results; Select edits text, picks a folder or file,
-presses a button, or opens a link or a result. While editing text, type and
+or page through a list of results; Select edits text, opens the
+[file browser](#choosing-a-folder-or-a-file) on a folder or file field,
+presses a button, or opens a link or a result. Right on a folder or file
+field types the path instead. While editing text, type and
 press Enter to keep it or Escape to cancel; Ctrl+V pastes. In a multi-line
 field (a game's story), Enter starts a new line and **Ctrl+Enter** keeps the
 text; the arrows, Home, End, Page Up and Page Down move the cursor, and
 Delete removes the character after it.
+
+### Choosing a folder or a file
+
+Select on a folder or file field (a system's games folder, an emulator
+program, a replacement logo or video...) opens RetroFE's own browser, a screen
+like the others, driven by the controller:
+
+- **The first screen lists places to start from**: where the field's value is
+  now, the field's own suggestion (a game's or system's media slot suggests
+  its media folder), RetroFE's folder, folders picked from before (since
+  RetroFE started), your Downloads and Desktop, then every drive with its
+  name and free space (removable ones say so; network and disc drives aren't
+  asked anything, so a lost share can't hold the screen up).
+- A field with a value, or with a suggestion, **opens straight in that
+  folder** (the media fields open in the slot's own folder, or the nearest
+  folder that's there); Back from it shows the places.
+- **Each folder is a screen**: `..` goes up a folder; folders end in `\` and
+  say what they hold ("212 files matching zip" for a system's games folder,
+  counted from the Extensions field; "3 folders", "Empty"), counted a few at
+  a time so a big folder opens at once. A file field lists only the files
+  its pattern allows, with their size and date, and **pictures as
+  thumbnails**; videos show their size and date.
+- **Select on a folder opens it.** A folder field has **Use this folder** at
+  the top; a file field takes the file Select is pressed on. Either way the
+  field gets it as if it were typed (nothing is saved until the screen's own
+  Save, Add or Use this file), and "Chose ..." says what it got.
+- **Back goes back up** the way you came, and from the places it cancels,
+  leaving the field as it was.
+- **Left and Right jump to the next or previous first letter**, as do the
+  letter up / letter down controls when they're mapped. A folder with more
+  than 200 entries shows the first 200 and a **Search** field (part of the
+  name) for the rest.
+- Paths are shown and given back **the way the field keeps them**: a
+  launcher's program written relative to RetroFE's folder (or with
+  `%RETROFE_PATH%`) stays that way when the new one is inside RetroFE's
+  folder too; everything else gets the full path, as Windows' dialog gave.
+- **Browse with Windows...**, the system's own file dialog, is offered at the
+  bottom only once a mouse has been moved or clicked in RetroFE's window since
+  it started (a cabinet without one never sees it). A controller press never
+  opens it otherwise.
+
+The browser is the form `file-browser` (bindings `browse:`), so a layout can
+style it with `forms/file-browser/layout.xml`; Aeon Nox has one for 16:9 and
+4:3 with taller rows for thumbnails. The theme editors' file chooser lists
+folders the same way.
 
 **Manage** links to a screen for each part of your setup: Games, Menus,
 Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
@@ -694,7 +741,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 |---------|-------|
 | `section` | A titled group of fields |
 | `actions` | Buttons |
-| `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. `multiline="yes"` makes `text` several lines, `rows` high (default 4), wrapped at spaces, with "..." when there's more than fits; the value keeps a `\n` between lines. |
+| `text`, `folder`, `file` | Text, a folder path, or a file path. Select on a `folder` or `file` opens the [file browser](#choosing-a-folder-or-a-file): `filter` names the kind of file ("Programs") and `pattern` (`*.exe;*.bat`) which files it lists; `start` is a value giving the folder it opens in when the field is empty (a folder, or a slot's place like `.../logo/Sonic.*`, e.g. `start="game:slot:place"`); `matching` on a `folder` is a value listing extensions (`zip,7z`) whose files each folder counts, e.g. `matching="system:addExtensions"`. `live="yes"` on `text` passes every change on while typing, e.g. for a search box. `multiline="yes"` makes `text` several lines, `rows` high (default 4), wrapped at spaces, with "..." when there's more than fits; the value keeps a `\n` between lines. |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
 | `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |
@@ -704,7 +751,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
 | `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
 | `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right |
-| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
+| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. Left/Right page through them, or with `jump="letter"` jump to the next or previous first letter (letter up / letter down do that in any list). |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
 under it), `status` (a value shown under it), `enabledWhen` (a value that must

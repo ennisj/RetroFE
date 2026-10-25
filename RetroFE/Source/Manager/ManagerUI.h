@@ -185,6 +185,10 @@ private:
     bool requestClose(Manager::Leave how = Manager::Leave::Close);
 
     void handleResult(const Forms::Model::Result& result);
+    // The file browser (Manager/Browser): opened by Select on a folder or file
+    // field; a pick returns past its screens and sets the field
+    void openBrowser(const FormWidget::Browse& browse);
+    void applyPick(const Forms::Model::Result& result);
     void setStatus(const std::string& message, Forms::StatusKind kind);
     bool buildPage();
     void destroyPage();
@@ -248,4 +252,9 @@ private:
     std::string captureBind_;
     std::string captureAction_;
     std::string capturePrompt_;
+
+    // The file browser's "Browse with Windows...", opened from update()
+    std::optional<Manager::Services::SystemPick> systemPick_;
+    // A mouse moved or clicked in RetroFE's window since it started (kept across reloads)
+    inline static bool mouseSeen_ = false;
 };

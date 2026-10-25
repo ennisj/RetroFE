@@ -153,9 +153,9 @@ const char* const menuMediumForm = R"form(
   <note bind="menu:mediumFolderNote"/>
   <results label="In the folder" bind="menu:folderFiles" open="menu-medium-file" param="file" empty="No files of this kind." visibleWhen="menu:hasMediaFolder"/>
   <section label="Replace">
-    <file label="Picture" bind="menu:newFile" hint="Not chosen yet" filter="Pictures" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="menu:isImageSlot"/>
-    <file label="Video" bind="menu:newFile" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.avi;*.mkv;*.mp3;*.wav;*.flac" visibleWhen="menu:isVideoSlot"/>
-    <file label="Text" bind="menu:newFile" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="menu:isTextSlot"/>
+    <file label="Picture" bind="menu:newFile" start="menu:mediumFolder" hint="Not chosen yet" filter="Pictures" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="menu:isImageSlot"/>
+    <file label="Video" bind="menu:newFile" start="menu:mediumFolder" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.avi;*.mkv;*.mp3;*.wav;*.flac" visibleWhen="menu:isVideoSlot"/>
+    <file label="Text" bind="menu:newFile" start="menu:mediumFolder" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="menu:isTextSlot"/>
     <button label="Use this file" action="menu.replaceMedium"/>
     <button label="Add it to the folder" action="menu.addToFolder" visibleWhen="menu:hasMediaFolder"/>
   </section>

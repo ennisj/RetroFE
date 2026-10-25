@@ -121,9 +121,9 @@ const char* const mediumForm = R"(
   <value label="New files go in" bind="{p}:mediumFolder"/>
   <note bind="{p}:mediumFolderNote"/>
   <results label="In the folder" bind="{p}:folderFiles" open="{p}-medium-file" param="file" empty="No files of this kind." visibleWhen="{p}:hasMediaFolder"/>
-  <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Images" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="{p}:isImageSlot"/>
-  <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.mkv;*.avi;*.mp3;*.wav;*.flac" visibleWhen="{p}:isVideoSlot"/>
-  <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="{p}:isTextSlot"/>
+  <file label="Replace with" bind="{p}:mediaFile" start="{p}:mediumFolder" hint="Not chosen yet" filter="Images" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="{p}:isImageSlot"/>
+  <file label="Replace with" bind="{p}:mediaFile" start="{p}:mediumFolder" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.mkv;*.avi;*.mp3;*.wav;*.flac" visibleWhen="{p}:isVideoSlot"/>
+  <file label="Replace with" bind="{p}:mediaFile" start="{p}:mediumFolder" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="{p}:isTextSlot"/>
   <!-- The buttons stay put (greyed out with a reason), so focus never lands on the file field above by itself -->
   <actions>
     <button label="Use this file" action="{p}.replaceMedia"/>
@@ -217,7 +217,7 @@ const char* const addForm = R"(
   <note value="{addIntro}"/>
   <text label="Name" bind="{p}:addName" hint="e.g. {nameHint}"/>
   <choice label="List it in" bind="{p}:addMenu" options="{p}:addMenus"/>
-  <folder label="{Items} folder" bind="{p}:addFolder" hint="Not chosen yet" status="{p}:addFolderCount"/>
+  <folder label="{Items} folder" bind="{p}:addFolder" matching="{p}:addExtensions" hint="Not chosen yet" status="{p}:addFolderCount"/>
   <text label="Extensions" bind="{p}:addExtensions" default="{exts}" hint="e.g. {exts}"/>
   {addPlayChoice}<choice label="{launcherLabel}" bind="{p}:addLauncher" options="{p}:addLaunchers" visibleWhen="{p}:addUsesLauncher"/>
   <file label="{programLabel}" bind="{p}:addProgram" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd" visibleWhen="{p}:addIsNewLauncher" help="{programHelp}"/>
