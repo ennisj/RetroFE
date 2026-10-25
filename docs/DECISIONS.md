@@ -11,8 +11,12 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 
 ## Needs your input
 
-Nothing right now. Behaviour that still needs a check on a real setup is
-tracked in [VERIFY.md](VERIFY.md).
+| Item | Question |
+|------|----------|
+| [M22](#m22-design-review-choices-round-12--decided-the-look-is-yours-to-judge) | Once round 12 lands: does the two-pane Manage look in Aeon Nox (list left, help/art/preview right) work for you, and do the other design-review choices feel right in use? |
+
+Behaviour that still needs a check on a real setup is tracked in
+[VERIFY.md](VERIFY.md).
 
 ---
 
@@ -461,6 +465,27 @@ OnesaUCE themes:
 - **A game literally named `default`** shares the collection-wide fallback
   folder: per-file edits are allowed, clearing it or keeping only one file
   is refused.
+
+### M22. Design review choices (round 12) — Decided, the look is yours to judge
+From [UX-REVIEW.md](UX-REVIEW.md) section 6; the recommended option each time.
+- **Paths: an in-RetroFE file and folder browser** driven by the controller
+  for every path field, with the Windows dialog as a secondary "Browse with
+  Windows…" row when a mouse is present [the Windows dialog plus typing,
+  unusable on a cabinet; the browser only, losing a desktop convenience].
+- **Save stays per screen (M5) but is pinned** at the bottom of the panel,
+  with a mapped button that jumps to it [saving when leaving a screen; live
+  writes like One Saucier].
+- **"Apply changes now" on the Manage hub**, plus a "changes waiting"
+  indicator on every Manage screen, besides applying when Manage closes
+  [only on close; a reload after every save].
+- **Manage gets a two-pane look in Aeon Nox:** the list on the left; help,
+  art and a preview of the focused row on the right, layout-driven [one
+  list panel, as before; tiles like One Saucier]. **This is a look you
+  should judge** once it's built (see "Needs your input").
+- **Home keeps its order** but lands on Browse after a reload when there's
+  content, and on Manage on first run [your original Catalog / Settings /
+  Manage / Browse order; Catalog as the default].
+- **"Theme" everywhere in the UI** (the setting key stays `layout`).
 
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
