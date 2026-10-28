@@ -537,6 +537,33 @@ Made while building the design review (M22); the option not taken in brackets.
   30 ms apart, on access or sharing errors [reads sharing delete access
   only, which wasn't enough; retries only]. Non-NTFS drives: VERIFY.md S1.
 
+### M24. Round 13 choices — Decided
+- **Letter up/down are built in** on the pad's left/right triggers and M/N
+  (upstream's keys); the shoulders stay Page Up/Down [no built-in input,
+  which made letter jump unreachable on a bare install; the shoulders].
+  Typing M or N in a field on a real keyboard still types.
+- **`primary="yes"` marks a form's main action** (Save, Add source, Add,
+  Create...); only a pinned primary button that can run lights the green
+  "Page down: ..." hint after an edit [the bar's first button, which on
+  Sources was Check for updates].
+- **Focus never lands on a guarded bar button by itself** (one that
+  confirms, or the undo that just appeared): it goes back to the list, or
+  to another bar button that isn't guarded; only when nothing else can
+  take focus does it go to the guarded one, held until the user moves.
+- **A full hint row drops navigation hints first** (letter jump, then
+  paging; Back before the primary hint); a help text or can't-run reason
+  is drawn last and cut to fit [dropping whole parts by priority].
+- **Back from a game** (UX F8): the screens and each section's searches
+  and filters are kept with the launch and put back, at once when no
+  reload happened (the library from before still validates them), else
+  once it's read again with "Getting your screens back..." meanwhile. A
+  press cancels only if that input was released after the game ended, so
+  a key or button still held from the game doesn't [cancelling on any
+  input; a fixed grace time like Browse's 0.3 s]. Typed-but-unsaved text
+  isn't kept.
+- **Settings wording:** fullscreen and screen size apply the next time
+  RetroFE starts (a reload keeps the window); Hide mouse applies on Save.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless

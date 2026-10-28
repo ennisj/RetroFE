@@ -4,6 +4,31 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 13 — fifth QA pass, back from a game (2026-10-28)
+
+Unit tests: 7,571 → 7,728 checks (Windows CI). Fixes from
+[QA-ROUND12.md](QA-ROUND12.md), the fifth QA pass (done by reading the
+code); choices in M24 of [DECISIONS.md](DECISIONS.md).
+
+- **Back from a game, the same screens.** After "Start this game", Manage
+  comes back where you were: the screens you came through and your Games
+  search. It falls back to the game's screen if something has gone. After
+  a reload it says "Getting your screens back..." while the library is
+  read; pressing something first keeps you where you are.
+- **Letter jump out of the box:** letter up/down are on the pad's triggers
+  and on M/N (as upstream), so every list can jump by first letter.
+- **Hints and focus:** the green "Page down: Save" hint only names a form's
+  main action (a new `primary="yes"` button attribute), so typing a source
+  name no longer offers "Check for updates". After Hide, focus goes back to
+  the list rather than onto "Show this game again". When the hint row is
+  full, the least useful hints go first, and a button's reason for not
+  running is cut to fit rather than dropped.
+- **Smaller fixes:** Page Up/Down page screens of notes; Settings says which
+  display changes apply on Save and which at the next start; Menus pins
+  its actions and says **Delete this menu**; the keyboard's hint mentions
+  Done; a captured input lights the Save hint; stale wording fixed in the
+  docs.
+
 ## Round 12 — the design review, built (2026-10-28)
 
 Unit tests: 6,749 → 7,571 checks (Windows CI, which also runs the
