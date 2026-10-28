@@ -1007,7 +1007,7 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     if (key == "infoFile") {
         fs::path file = fs::path(Utils::combinePath(r->folder, "info.conf")).lexically_normal();
         fs::path relative = file.lexically_relative(fs::path(idx->options.root).lexically_normal());
-        return relative.empty() || *relative.begin() == ".." ? Library::narrow(file) : Library::narrow(relative);
+        return relative.empty() || *relative.begin() == ".." ? Library::narrow(file) : Library::narrow(fs::path(relative.generic_wstring()));
     }
 
     // menu-actions

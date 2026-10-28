@@ -851,7 +851,7 @@ std::string SystemProvider::detailsValue(const std::string& key, const Screen& s
                          : key == "launcherFile" && !launcherSource_.empty() ? launcherSource_ : "settings.conf";
         fs::path file = fs::path(Utils::combinePath(r->folder, name)).lexically_normal();
         fs::path relative = file.lexically_relative(fs::path(root()).lexically_normal());
-        std::string text = relative.empty() || *relative.begin() == ".." ? Library::narrow(file) : Library::narrow(relative);
+        std::string text = relative.empty() || *relative.begin() == ".." ? Library::narrow(file) : Library::narrow(fs::path(relative.generic_wstring()));
         return text;
     }
     if (key == "menus") {
