@@ -60,6 +60,9 @@ KeyboardWidget::Result KeyboardWidget::navigate(FormWidget::Nav nav)
     // letterUp / letterDown move the cursor, whichever key is focused
     case FormWidget::Nav::LetterUp: text_->left(); return Result::None;
     case FormWidget::Nav::LetterDown: text_->right(); return Result::None;
+    case FormWidget::Nav::PageUp:
+    case FormWidget::Nav::PageDown:
+        return Result::None;
     }
     return keys_.navigate(k, *text_);
 }

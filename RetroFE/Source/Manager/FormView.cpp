@@ -31,6 +31,17 @@ namespace
     {
         return ImGui::CalcTextSize(text.c_str()).x;
     }
+
+    // Text the model gives a severity: in its color, else muted like other notes
+    void severityText(Forms::Severity severity, const std::string& text)
+    {
+        switch (severity) {
+        case Forms::Severity::Ok:      ImGui::TextColored(ImVec4(0.62f, 0.89f, 0.65f, 1.0f), "%s", text.c_str()); break;
+        case Forms::Severity::Warning: ImGui::TextColored(ImVec4(0.95f, 0.77f, 0.43f, 1.0f), "%s", text.c_str()); break;
+        case Forms::Severity::Error:   ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.54f, 1.0f), "%s", text.c_str()); break;
+        case Forms::Severity::None:    ImGui::TextDisabled("%s", text.c_str()); break;
+        }
+    }
 }
 
 void FormView::setRenderer(SDL_Renderer* renderer)
@@ -181,17 +192,17 @@ void FormView::label(const Field& field)
 
 void FormView::drawNotes(const Field& field, Forms::Model& model)
 {
-    auto note = [&](const std::string& text) {
+    auto note = [&](const std::string& text, Forms::Severity severity = Forms::Severity::None) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth());
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("%s", text.c_str());
+        severityText(severity, text);
         ImGui::PopTextWrapPos();
     };
 
     if (!field.status.empty()) {
         std::string status = model.get(field.status);
         if (!status.empty()) {
-            note(status);
+            note(status, model.severity(field.status));
         }
     }
     if (!field.help.empty()) {
@@ -331,7 +342,7 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         std::string text = Forms::noteText(field, model);
         if (!text.empty()) {
             ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextDisabled("%s", text.c_str());
+            severityText(Forms::noteSeverity(field, model), text);
             ImGui::PopTextWrapPos();
         }
         break;
@@ -357,7 +368,13 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         ImGui::TextUnformatted(Forms::ellipsize(field.label, labelWidth() - ImGui::GetStyle().ItemSpacing.x, textWidth).c_str());
         ImGui::SameLine(labelWidth());
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted(value.c_str());
+        Forms::Severity severity = model.severity(field.bind);
+        if (severity == Forms::Severity::None) {
+            ImGui::TextUnformatted(value.c_str());
+        }
+        else {
+            severityText(severity, value);
+        }
         ImGui::PopTextWrapPos();
         if (!field.help.empty()) {
             drawNotes(field, model);
@@ -423,7 +440,7 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
             if (split.detail > 0.0f) {
                 std::string detail = Forms::ellipsize(rowDetail, split.detail, textWidth);
                 ImGui::SameLine(ImGui::GetContentRegionMax().x - textWidth(detail));
-                ImGui::TextDisabled("%s", detail.c_str());
+                severityText(row.severity, detail);
             }
             ImGui::PopID();
         }
@@ -440,18 +457,16 @@ void FormView::drawLink(const Field& field, Forms::Model& model)
     if (ImGui::Selectable((label + "##link").c_str())) {
         open(field.open, {}, true);
     }
+    // A link's help is a tooltip, so a list of links stays a list
+    if (!field.help.empty() && (ImGui::IsItemHovered() || ImGui::IsItemFocused())) {
+        ImGui::SetTooltip("%s", field.help.c_str());
+    }
     if (!status.empty()) {
         ImGui::SameLine(labelWidth());
-        ImGui::TextDisabled("%s", Forms::ellipsize(status, right - labelWidth() - spacing, textWidth).c_str());
+        severityText(model.severity(field.status), Forms::ellipsize(status, right - labelWidth() - spacing, textWidth));
     }
     ImGui::SameLine(right);
     ImGui::TextDisabled(">");
-    if (!field.help.empty()) {
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth());
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("%s", field.help.c_str());
-        ImGui::PopTextWrapPos();
-    }
 }
 
 void FormView::drawImage(const Field& field, Forms::Model& model)

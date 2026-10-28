@@ -1,4 +1,4 @@
-<layout width="1920" height="1080" font="fonts/OpenSans.ttf" loadFontSize="40" fontColor="dedede">
+<layout width="1920" height="1080" font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontColor="e6e6e6">
 
 <!-- Aeon Nox: the on-screen keyboard, drawn over the screen being edited -->
 
@@ -6,8 +6,8 @@
     <image src="../../images/system_info_overlay.png" x="center" y="1101" width="1500" height="761" xOrigin="center" yOrigin="bottom" layer="2"/>
 
     <keyboard x="center" y="1050" width="1440" height="660" xOrigin="center" yOrigin="bottom"
-              font="fonts/OpenSans.ttf" loadFontSize="44" fontSize="38" fontColor="dedede" focusColor="ffffff"
+              font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontSize="38" fontColor="e6e6e6" focusColor="ffffff"
               keyColor="75c8f7" keyAlpha="0.09" focusKeyColor="75c8f7" focusKeyAlpha="0.55"
-              backgroundColor="070d12" backgroundAlpha="1" noteAlpha="0.65" layer="1"/>
+              backgroundColor="070d12" backgroundAlpha="1" noteAlpha="0.8" layer="1"/>
 
 </layout>

@@ -88,6 +88,10 @@ namespace
             field.start = attribute(node, "start");
             field.matching = attribute(node, "matching");
             field.letterJump = field.type == Forms::FieldType::Results && attribute(node, "jump") == "letter";
+            field.preview = attribute(node, "preview");
+            field.severity = Forms::parseSeverity(attribute(node, "severity"));
+            field.pin = !node->first_attribute("pin") || Forms::isTruthy(attribute(node, "pin"));
+            field.panel = Forms::isTruthy(attribute(node, "panel"));
             field.live = Forms::isTruthy(attribute(node, "live"));
             field.multiline = field.type == Forms::FieldType::Text && Forms::isTruthy(attribute(node, "multiline"));
             field.min = Utils::convertInt(attribute(node, "min"));
@@ -187,6 +191,41 @@ bool isVisible(const Field& field, Model& model)
 std::string noteText(const Field& field, Model& model)
 {
     return field.bind.empty() ? field.label : model.get(field.bind);
+}
+
+Severity parseSeverity(const std::string& text)
+{
+    std::string lower = Utils::toLower(Utils::trimEnds(text));
+    return lower == "ok" ? Severity::Ok
+         : lower == "warning" ? Severity::Warning
+         : lower == "error" ? Severity::Error
+         : Severity::None;
+}
+
+Severity noteSeverity(const Field& field, Model& model)
+{
+    Severity said = field.bind.empty() ? Severity::None : model.severity(field.bind);
+    return said != Severity::None ? said : field.severity;
+}
+
+std::vector<const Field*> pinnedActions(const Form& form)
+{
+    std::vector<const Field*> pinned;
+    for (const Field& field : form.fields) {
+        if (field.type == FieldType::Actions) {
+            if (pinned.empty() && !field.pin) {
+                break;
+            }
+            if (field.pin) {
+                pinned.push_back(&field);
+                continue;
+            }
+        }
+        if (!pinned.empty()) {
+            break;   // only the blocks straight after the first
+        }
+    }
+    return pinned;
 }
 
 std::string title(const Form& form, Model& model)
@@ -480,6 +519,189 @@ RowSplit splitRow(float labelNeeds, float detailNeeds, float width, float gap, f
     }
     split.label = room - split.detail;
     return split;
+}
+
+float scrollToShow(const std::vector<RowShape>& rows, int focus, float scroll, float rowHeight, float visibleHeight)
+{
+    const int count = static_cast<int>(rows.size());
+    const float total = count * rowHeight;
+    if (focus >= 0 && focus < count && rowHeight > 0.0f) {
+        // The section header above the focused row too
+        int top = focus;
+        while (top > 0 && rows[top - 1].header) {
+            top--;
+        }
+        float topY = top * rowHeight;
+        float bottomY = (focus + 1) * rowHeight;
+        // And what's attached under it
+        for (int below = focus + 1; below < count && rows[below].attached; below++) {
+            bottomY += rowHeight;
+        }
+        // At the last row that takes focus, everything below it (notes the user can't move to)
+        bool lastFocusable = std::none_of(rows.begin() + focus + 1, rows.end(), [](const RowShape& r) { return r.focusable; });
+        if (lastFocusable) {
+            bottomY = total;
+        }
+        if (topY < scroll) {
+            scroll = topY;
+        }
+        if (bottomY > scroll + visibleHeight) {
+            // Whole rows at the top when that still shows the focused one
+            float wanted = bottomY - visibleHeight;
+            float snapped = std::ceil(wanted / rowHeight - 0.01f) * rowHeight;
+            scroll = std::min(topY, snapped <= topY ? snapped : wanted);
+        }
+        // At the first, everything above it
+        bool firstFocusable = std::none_of(rows.begin(), rows.begin() + focus, [](const RowShape& r) { return r.focusable; });
+        if (firstFocusable && bottomY <= visibleHeight) {
+            scroll = 0.0f;
+        }
+    }
+    // Scrolled to the end, whole rows at the top too, and a gap under the last one
+    float maxScroll = std::max(0.0f, total - visibleHeight);
+    if (maxScroll > 0.0f && rowHeight > 0.0f) {
+        maxScroll = std::ceil(maxScroll / rowHeight - 0.01f) * rowHeight;
+    }
+    return std::clamp(scroll, 0.0f, maxScroll);
+}
+
+namespace
+{
+    int firstFocusable(const std::vector<bool>& focusable)
+    {
+        auto found = std::find(focusable.begin(), focusable.end(), true);
+        return found == focusable.end() ? -1 : static_cast<int>(found - focusable.begin());
+    }
+
+    int lastFocusable(const std::vector<bool>& focusable)
+    {
+        for (int i = static_cast<int>(focusable.size()) - 1; i >= 0; i--) {
+            if (focusable[i]) return i;
+        }
+        return -1;
+    }
+
+    bool canFocus(const std::vector<bool>& focusable, int row)
+    {
+        return row >= 0 && row < static_cast<int>(focusable.size()) && focusable[row];
+    }
+}
+
+FocusMove moveFocus(const std::vector<bool>& focusable, int current, bool inBar, int barSize, int direction, int returnRow)
+{
+    FocusMove move;
+    if (inBar && barSize > 0) {
+        move.row = direction < 0 ? (canFocus(focusable, returnRow) ? returnRow : lastFocusable(focusable))
+                                 : firstFocusable(focusable);
+        move.bar = move.row < 0;   // nothing else to go to: stay
+        return move;
+    }
+    if (current < 0) {
+        move.row = direction < 0 ? lastFocusable(focusable) : firstFocusable(focusable);
+        move.bar = move.row < 0 && barSize > 0;
+        return move;
+    }
+    for (int i = current + direction; i >= 0 && i < static_cast<int>(focusable.size()); i += direction) {
+        if (focusable[i]) {
+            move.row = i;
+            return move;
+        }
+    }
+    // Past the end: the bar, or round to the other end
+    if (barSize > 0) {
+        move.bar = true;
+        return move;
+    }
+    move.row = direction < 0 ? lastFocusable(focusable) : firstFocusable(focusable);
+    return move;
+}
+
+FocusMove jumpFocus(const std::vector<bool>& focusable, int current, bool inBar, int barSize, bool back, int pageRows, int returnRow)
+{
+    FocusMove move;
+    if (inBar && barSize > 0) {
+        if (!back) {
+            move.bar = true;   // already there
+            return move;
+        }
+        move.row = canFocus(focusable, returnRow) ? returnRow : lastFocusable(focusable);
+        move.bar = move.row < 0;
+        return move;
+    }
+    if (!back && barSize > 0) {
+        move.bar = true;
+        return move;
+    }
+    // A page up or down, at the nearest row that takes focus
+    int count = static_cast<int>(focusable.size());
+    if (current < 0) {
+        move.row = back ? firstFocusable(focusable) : lastFocusable(focusable);
+        return move;
+    }
+    int direction = back ? -1 : 1;
+    int target = std::clamp(current + direction * std::max(1, pageRows), 0, std::max(0, count - 1));
+    for (int i = target; i != current; i -= direction) {
+        if (canFocus(focusable, i)) {
+            move.row = i;
+            return move;
+        }
+    }
+    for (int i = target + direction; i >= 0 && i < count; i += direction) {
+        if (canFocus(focusable, i)) {
+            move.row = i;
+            return move;
+        }
+    }
+    move.row = current;
+    return move;
+}
+
+int barTarget(const std::vector<bool>& ready)
+{
+    if (ready.empty()) {
+        return -1;
+    }
+    int first = firstFocusable(ready);
+    return first >= 0 ? first : 0;
+}
+
+std::vector<BarSlot> layoutBar(const std::vector<float>& widths, float width, float gap)
+{
+    std::vector<BarSlot> slots;
+    slots.reserve(widths.size());
+    float x = 0.0f;
+    int line = 0;
+    for (float wanted : widths) {
+        BarSlot slot;
+        slot.width = std::min(std::max(0.0f, wanted), std::max(0.0f, width));
+        if (x > 0.0f && x + slot.width > width) {
+            line++;
+            x = 0.0f;
+        }
+        slot.x = x;
+        slot.line = line;
+        x += slot.width + gap;
+        slots.push_back(slot);
+    }
+    return slots;
+}
+
+bool matchesFormId(const std::vector<std::string>& patterns, const std::string& id)
+{
+    if (patterns.empty()) {
+        return true;
+    }
+    for (const std::string& pattern : patterns) {
+        if (!pattern.empty() && pattern.back() == '*') {
+            if (id.compare(0, pattern.size() - 1, pattern, 0, pattern.size() - 1) == 0) {
+                return true;
+            }
+        }
+        else if (pattern == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool parseColor(const std::string& text, unsigned char rgb[3])

@@ -40,7 +40,9 @@ class Image;
 //         rowDetailColor="9fb4d0" rowDetailAlpha="0.8" linkMarker=">"
 //         headerColor="75c8f7" separatorColor="75c8f7" separatorAlpha="0.2"
 //         imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
-//         statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"/>
+//         statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"
+//         warningColor="f2c46d" successColor="9fe3a6" buttonColor="75c8f7" buttonAlpha="0.1"
+//         pinActions="yes" titleStatus="info:titleStatus"/>
 //
 // Text too long for its column ends in "..." (see WidgetPainter).
 //
@@ -51,6 +53,25 @@ class Image;
 //
 // While a one-line text field is edited on a real keyboard, Left/Right, Home,
 // End and Delete move and delete in the text too.
+//
+// The form's first <actions> (Save / Reset and the like; Forms::pinnedActions)
+// is drawn as a bar of buttons pinned at the bottom, above the status line and
+// the hints, so it's always in view while the rows above it scroll. Down past
+// the last row, or Up past the first, goes into it; Left/Right move along it;
+// Up leaves it for the last row after entering with Up/Down. Page Down jumps
+// to it from anywhere (preferring a button that can run without confirming),
+// remembering the row for Page Up to return to;
+// without a bar they move a page. pinActions="no" keeps the actions in place.
+//
+// Statuses, values, notes and results' details the model gives a severity
+// (Forms::Severity) are drawn in successColor, warningColor or errorColor.
+// A button that can't run now is dimmed; why shows in the hints while it's
+// focused. The title row shows the model's titleStatus binding on its right
+// (e.g. changes waiting to apply), empty by default.
+//
+// With a <formHelp> on the same page (FormHelp.h), the focused field's help,
+// the form's pictures and a result's picture move to that panel, so the rows
+// stay compact (see help()).
 //
 // A multi-line text field (<text multiline="yes" rows="N">) shows N wrapped
 // lines. While it's edited on a real keyboard, Enter starts a new line,
@@ -63,7 +84,7 @@ public:
     // LetterUp / LetterDown (RetroFE's letterUp and letterDown controls) jump
     // through a results list to the first row starting with the previous or
     // next letter
-    enum class Nav { Up, Down, Left, Right, Select, Back, LetterUp, LetterDown };
+    enum class Nav { Up, Down, Left, Right, Select, Back, LetterUp, LetterDown, PageUp, PageDown };
 
     struct Style
     {
@@ -83,8 +104,12 @@ public:
         float imageBackgroundAlpha = 0.0f;  // behind pictures and thumbnails; 0: none
         SDL_Color confirmBackground{ 255, 255, 255, 255 };
         float confirmBackgroundAlpha = 0.0f; // over a button waiting for confirmation; 0: none
+        SDL_Color button{ 255, 255, 255, 255 };
+        float buttonAlpha = 0.06f;          // behind the pinned bar's buttons that aren't focused; 0: none
         std::string onText = "On";
         std::string offText = "Off";
+        std::string titleStatus = "info:titleStatus";   // binding shown at the right of the title; "": none
+        bool pinActions = true;             // the form's actions as a bar pinned at the bottom
         bool showTitle = true;
         bool showHints = true;
         // titleDetail="info:pendingChanges": a model binding drawn at the
@@ -100,7 +125,19 @@ public:
         Header,   // headerColor: section headers
         Status,   // statusColor: the status line after an action that did something
         Info,     // infoColor: the status line when nothing happened (cancelled, undone), and prompts
-        Error     // errorColor: errors, and the question of a button to confirm
+        Error,    // errorColor: errors, the question of a button to confirm, and Severity::Error
+        Warning,  // warningColor: Severity::Warning (else errorColor)
+        Success   // successColor: Severity::Ok (else statusColor)
+    };
+
+    // What a help panel shows for the focused row (see FormHelp)
+    struct Help
+    {
+        std::string heading;    // the row's label
+        std::string detail;     // a link's status, a result's detail, why a button can't run
+        Forms::Severity severity = Forms::Severity::None;   // of detail
+        std::string text;       // the field's help
+        std::string picture;    // absolute path: the row's own picture, else the form's <image>
     };
 
     // Select on a folder or file field: the manager opens its file browser
@@ -139,6 +176,12 @@ public:
     // Whether Back closes the manager or returns to the previous screen, for the hints
     void setBackCloses(bool closes) { backCloses_ = closes; }
 
+    // A help panel draws help() (PageBuilder sets this for a page with a
+    // <formHelp>): fields' help and the form's pictures go there, not in the rows
+    void setHelpPanel(bool panel) { helpPanel_ = panel; stale_ = true; }
+    const Help& help() const { return help_; }
+    std::string formId() const { return form_ ? form_->id : ""; }
+
     // Returns false when Back was pressed outside a text field, i.e. the screen should close
     bool navigate(Nav nav);
 
@@ -157,6 +200,9 @@ public:
     // A live field's model gets the text being edited; call after the
     // on-screen keyboard changed it (typed text does this itself)
     void sendLiveText();
+
+    // A value changed outside the widget, e.g. in a file picker
+    void markEdited() { edited_ = true; }
 
     // The screen is rebuilt from the model on input, when the model's
     // generation changes, and a few times a second; this rebuilds it on the
@@ -206,14 +252,35 @@ private:
         bool enabled = true;
         bool indent = false;    // notes under a field line up with its value
         bool isError = false;
+        std::string problem;    // Field of a button: why it can't run now ("" if it can)
+        Forms::Severity severity = Forms::Severity::None;   // Note, Value: the text; Item: the detail; Field: a link's status
+    };
+
+    // A button of the pinned action bar
+    struct BarButton
+    {
+        const Forms::Field* field = nullptr;
+        bool enabled = true;    // enabledWhen holds (else it's skipped over)
+        std::string problem;    // why it can't run now
+    };
+
+    // A piece of the hints line, in a font of its own
+    struct HintPart
+    {
+        std::string text;
+        FontManager* font = nullptr;   // null: the normal font, at noteAlpha
     };
 
     void buildRows();
+    void buildBar();
+    void resolveFocus(int previousFocus, int previousBar);
     void addFields(const std::vector<Forms::Field>& fields);
+    void addField(const Forms::Field& field);
     void addResults(const Forms::Field& field);
     void addValue(const Forms::Field& field);
     void addImage(const Forms::Field& field);
-    void addWrapped(RowKind kind, const std::string& text, bool indent, bool isError = false);
+    void addWrapped(RowKind kind, const std::string& text, bool indent, bool isError = false,
+                    Forms::Severity severity = Forms::Severity::None);
     const std::vector<std::string>& wrap(const std::string& text, float width);
     const std::vector<Forms::TextLine>& layout(const std::string& text, float width);
     bool editingMultiline() const;
@@ -221,13 +288,27 @@ private:
     void drawTextLine(const Row& row, float x, float textY, bool highlighted, float alpha);
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
+    void jump(bool back);
+    void moveInBar(int direction);
+    void focusRow(int row);
+    void focusBar(int index);
+    int rowOf(const Forms::Field* field, const std::string& item) const;
+    std::vector<bool> focusableRows() const;
+    bool barCanFocus() const;
+    int barTargetIndex() const;
     void pageResults(int direction);
     void jumpLetter(int direction);
     void activate(const Row& row);
+    void press(const Forms::Field& button);
     void change(const Forms::Field& field, int direction);
     void startEditing(const Forms::Field& field);
     std::string valueText(const Forms::Field& field);
-    std::string hintText() const;
+    std::vector<HintPart> hintParts() const;
+    void updateHelp();
+    void fillHelp();
+    float barHeight() const;
+    void drawBar(float barTop, float left, float width, float padding);
+    FontManager* severityFont(Forms::Severity severity, FontManager* plain) const;
     float contentWidth() const;
     float rowHeight() const;
     float labelWidth() const;
@@ -244,8 +325,23 @@ private:
     FontManager* statusFont_ = nullptr;
     FontManager* infoFont_ = nullptr;
     FontManager* errorFont_ = nullptr;
+    FontManager* warningFont_ = nullptr;
+    FontManager* successFont_ = nullptr;
     const Forms::Form* form_ = nullptr;
     Forms::Model* model_ = nullptr;
+
+    std::vector<const Forms::Field*> pinned_;   // the form's pinned <actions> (Forms::pinnedActions)
+    std::vector<BarButton> bar_;                // their buttons shown now
+    int barFocus_ = -1;                         // the focused one, or -1 when focus is in the rows
+    const Forms::Field* returnField_ = nullptr; // where focus was in the rows before going into the bar
+    std::string returnItem_;
+    bool edited_ = false;                       // a value was changed on this screen since it opened or an action ran
+    bool helpPanel_ = false;
+    std::string panelPicture_;                  // the form's first <image>, for the help panel
+    std::string panelNotes_;                    // its notes with panel="yes", for rows without help of their own
+    Help help_;
+    std::string titleStatus_;
+    Forms::Severity titleSeverity_ = Forms::Severity::None;
 
     std::vector<Row> rows_;
     std::vector<std::string> statusLines_;   // status_, wrapped; drawn above the hints

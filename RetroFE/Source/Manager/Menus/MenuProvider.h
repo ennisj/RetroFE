@@ -64,6 +64,8 @@ namespace Manager
         unsigned generation() const override;
 
         std::string get(const std::string& key, const Screen& screen) override;
+        // Warnings: an entry with a problem (no such folder, misspelt, a loop)
+        Forms::Severity severity(const std::string& key, const Screen& screen) override;
         void set(const std::string& key, const std::string& value, const Screen& screen) override;
         Forms::Rows rows(const std::string& key, size_t limit, const Screen& screen) override;
         std::vector<std::pair<std::string, std::string>> options(const std::string& key, const Screen& screen) override;

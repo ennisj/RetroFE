@@ -107,6 +107,7 @@ public:
     bool ensureSettingsFile(std::string& error) { return settings_.ensureExists(initialSettings(), error); }
 
     std::string get(const std::string& key) override;
+    Forms::Severity severity(const std::string& key) override;
     void set(const std::string& key, const std::string& value) override;
     void setDefault(const std::string& key, const std::string& value) override;
     std::vector<std::string> list(const std::string& key) override;

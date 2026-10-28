@@ -1039,6 +1039,15 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     return "";
 }
 
+Forms::Severity MenuProvider::severity(const std::string& key, const Screen& screen)
+{
+    if (key == "entryProblem") {
+        std::string problem = get(key, screen);
+        return problem.empty() || problem == "Updating..." ? Forms::Severity::None : Forms::Severity::Warning;
+    }
+    return Forms::Severity::None;
+}
+
 void MenuProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
     (void)screen;
@@ -1116,6 +1125,7 @@ Forms::Rows MenuProvider::rows(const std::string& key, size_t limit, const Scree
                 row.label = std::to_string(i + 1) + ". " + e.entry;
                 std::string problem = entryProblem(c, i, true);
                 row.detail = problem.empty() ? summary(e.collection) : problem;
+                row.severity = problem.empty() ? Forms::Severity::None : Forms::Severity::Warning;
                 row.params["id"] = r.name;
                 row.params["position"] = std::to_string(i);
                 entryRows_.push_back(std::move(row));

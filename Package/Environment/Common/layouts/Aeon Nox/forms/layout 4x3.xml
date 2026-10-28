@@ -1,7 +1,8 @@
-<layout width="1600" height="1200" font="fonts/OpenSans.ttf" loadFontSize="40" fontColor="dedede">
+<layout width="1600" height="1200" font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontColor="e6e6e6">
 
 <!-- Aeon Nox: Settings, Manage, Sources and the other screens, drawn over the page behind.
-     Image paths are relative to this page's folder. -->
+     Two panels, as on Home: the screen's rows on the left, and on the right the focused
+     row's picture, status and help (<formHelp>). Image paths are relative to this page's folder. -->
 
     <!-- Background -->
     <image src="../images/background.png" x="0" y="0" width="1600" height="1200" layer="0"/>
@@ -10,16 +11,32 @@
     <image src="../images/topbar.png" x="0" y="0" width="1600" height="50" layer="1"/>
     <text value="RETROFE" x="24" y="25" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="46" loadFontSize="46" fontColor="75c8f7" layer="2"/>
 
-    <!-- Panel: the theme's info panel and its frame, stretched (seen at x 100-1500, y 70-1160) -->
-    <image src="../images/system_info_bg.png" x="800" y="615" width="1443" height="1228" xOrigin="center" yOrigin="center" layer="2"/>
-    <image src="../images/system_info_overlay.png" x="800" y="615" width="1443" height="1228" xOrigin="center" yOrigin="center" layer="4"/>
+    <!-- The rows' panel: the theme's info panel and its frame, stretched (seen at x 30-1080, y 70-1160) -->
+    <image src="../images/system_info_bg.png" x="555" y="615" width="1082" height="1228" xOrigin="center" yOrigin="center" layer="2"/>
+    <image src="../images/system_info_overlay.png" x="555" y="615" width="1082" height="1228" xOrigin="center" yOrigin="center" layer="4"/>
 
-    <form x="800" y="615" width="1320" height="1050" xOrigin="center" yOrigin="center" labelWidth="420"
-          font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"
-          rowHeight="50" focusImage="../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35"
-          rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="75c8f7" headerAlpha="0.95"
+    <!-- The help panel (seen at x 1098-1570, y 70-1160) -->
+    <image src="../images/system_info_bg.png" x="1334" y="615" width="486" height="1228" xOrigin="center" yOrigin="center" layer="2"/>
+    <image src="../images/system_info_overlay.png" x="1334" y="615" width="486" height="1228" xOrigin="center" yOrigin="center" layer="4"/>
+
+    <form x="46" y="84" width="1020" height="1062" labelWidth="400"
+          font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontSize="38" fontColor="e6e6e6" focusColor="ffffff"
+          rowHeight="56" focusImage="../images/form_focus.png" noteAlpha="0.8" disabledAlpha="0.4"
+          rowDetailColor="a9d8f5" rowDetailAlpha="0.9" headerColor="75c8f7" headerAlpha="1"
           separatorColor="75c8f7" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
-          statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"
+          statusColor="9fe3a6" infoColor="c4d0dc" errorColor="ff9a8a" warningColor="f2c46d" successColor="9fe3a6"
+          confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3" buttonColor="75c8f7" buttonAlpha="0.1"
           backgroundColor="000000" backgroundAlpha="0" titleDetail="info:pendingChanges" layer="3"/>
+
+    <formHelp x="1110" y="90" width="448" height="1050"
+              font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontSize="32" fontColor="e6e6e6"
+              headingColor="ffffff" detailColor="a9d8f5" warningColor="f2c46d" errorColor="ff9a8a" successColor="9fe3a6"
+              noteAlpha="0.85" headingFont="fonts/Oswald-Bold.ttf" headingScale="1.5" pictureHeight="240"
+              imageBackgroundColor="000000" imageBackgroundAlpha="0.35" layer="3"
+              defaultImage="../collections/Home/medium_artwork/icon/Manage.png">
+        <!-- Rows without a picture of their own show Home's icon for the part of RetroFE they're in -->
+        <defaultImage forms="settings control*" src="../collections/Home/medium_artwork/icon/Settings.png"/>
+        <defaultImage forms="sources package" src="../collections/Home/medium_artwork/icon/Catalog.png"/>
+    </formHelp>
 
 </layout>

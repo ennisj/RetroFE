@@ -99,7 +99,7 @@ const char* const emulatorUsersForm = R"(
 // A new launcher: param:name prefills the name, param:from copies a launcher
 const char* const emulatorNewForm = R"(
 <form id="emulator-new" title="Add a launcher">
-  <note bind="emulator:newIntro"/>
+  <note bind="emulator:newIntro" panel="yes"/>
   <text label="Name" bind="emulator:newName" hint="e.g. RetroArch SNES"
         help="Systems and games ask for it by this name, spelt exactly."/>
   <file label="Program" bind="emulator:newExecutable" hint="Not chosen yet"/>
@@ -119,7 +119,7 @@ const char* const emulatorNewForm = R"(
 const char* const emulatorEditForm = R"(
 <form id="emulator-edit" title="Edit launcher" bind="emulator:title">
   <note bind="emulator:problem"/>
-  <note bind="emulator:editIntro"/>
+  <note bind="emulator:editIntro" panel="yes"/>
   <section label="Launcher" visibleWhen="emulator:editIsReady">
     <file label="Program" bind="emulator:editExecutable" hint="Not chosen yet"/>
     <choice label="Arguments" bind="emulator:editPreset" options="emulator:presets"/>
@@ -148,7 +148,7 @@ const char* const emulatorEditForm = R"(
 const char* const emulatorRenameForm = R"(
 <form id="emulator-rename" title="Rename launcher" bind="emulator:title">
   <note bind="emulator:problem"/>
-  <note bind="emulator:renameIntro"/>
+  <note bind="emulator:renameIntro" panel="yes"/>
   <text label="New name" bind="emulator:renameTo" hint="Not typed yet"
         help="Systems and games ask for it by this name, spelt exactly."/>
   <note bind="emulator:renameProblem"/>

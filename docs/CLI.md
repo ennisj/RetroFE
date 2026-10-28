@@ -12,6 +12,11 @@ All settings available in `settings.conf` can also be passed via the command lin
 
 **CLI options always take highest priority**, overriding values in `settingsX.conf` files.
 
+Set the environment variable `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1` before
+starting RetroFE to keep it from raising or grabbing its window, including when
+returning from a game. This lets checks run beside someone using the desktop
+without RetroFE taking focus.
+
 ## 🧰 Available Options
 | Option         | Alias                | Description                                                                        |
 | -------------- | -------------------- | ---------------------------------------------------------------------------------- |

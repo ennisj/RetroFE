@@ -68,6 +68,15 @@ namespace Forms
         Image      // an image file whose path comes from the model
     };
 
+    // How a status, value or result's detail is drawn: plain, or as good news
+    // (successColor), something to look at (warningColor) or something broken
+    // (errorColor). Providers say which with Model::severity and Row::severity;
+    // a form can fix one for a note with severity="warning".
+    enum class Severity { None, Ok, Warning, Error };
+
+    // "ok", "warning" and "error" in any case; None for anything else
+    Severity parseSeverity(const std::string& text);
+
     struct Field
     {
         FieldType type = FieldType::Note;
@@ -90,8 +99,12 @@ namespace Forms
         std::string start;        // Folder, File: model key of a folder the browser opens in when the field is empty, e.g. a slot's media folder
         std::string matching;     // Folder: model key of the extensions ("zip,7z") the browser counts in each folder
         bool letterJump = false;  // Results (jump="letter"): Left/Right jump to the previous/next first letter instead of a page
+        std::string preview;      // model key of a picture (absolute path) shown in a help panel while the field is focused
+        Severity severity = Severity::None;  // Note: how it's drawn when the model doesn't say (severity="warning")
         bool live = false;        // Text: the model gets every change while editing, e.g. for a search box
         bool multiline = false;   // Text: several lines, rows high; the value keeps "\n" between them
+        bool pin = true;          // Actions: may be pinned at the bottom of the screen (pin="no": stays in place; see pinnedActions)
+        bool panel = false;       // Note: on a page with a help panel, shown there (for rows with no help of their own) rather than in the rows
         int min = 0;
         int max = 0;
         int limit = 200;          // Results: at most this many rows
@@ -116,13 +129,14 @@ namespace Forms
         std::string id;
         std::string label;
         std::string detail;   // shown on the right, e.g. a year or a status
-        std::string image;    // optional thumbnail, an absolute path
+        std::string image;    // optional thumbnail, an absolute path; also shown large in a help panel
         Params params;
         // Drawn like a link (with the layout's link marker at the right), for a
         // row that stands for a screen to go to rather than a record, e.g.
         // "Add a launcher called lr-stella2014", or a system's "Games: 622 games"
         bool link = false;
         std::string action;   // when set, choosing the row runs this action instead of opening the field's form
+        Severity severity = Severity::None;   // how detail is drawn, e.g. Warning for "Won't start"
     };
 
     struct Rows
@@ -147,6 +161,11 @@ namespace Forms
 
         virtual std::string get(const std::string& key) = 0;
         virtual void set(const std::string& key, const std::string& value) = 0;
+
+        // How get(key)'s text should be drawn when it's shown as a status, a
+        // value or a note: e.g. Warning for a link status "Won't start". Asked
+        // whenever the screen is rebuilt, so keep it as cheap as get().
+        virtual Severity severity(const std::string& key) { (void)key; return Severity::None; }
 
         // A field's default attribute; what it means depends on the binding
         virtual void setDefault(const std::string& key, const std::string& value) = 0;
@@ -305,6 +324,16 @@ namespace Forms
     // with nothing to say ("") isn't shown.
     std::string noteText(const Field& field, Model& model);
 
+    // How a note is drawn: what the model says for its bind, else its severity attribute
+    Severity noteSeverity(const Field& field, Model& model);
+
+    // The <actions> blocks a renderer may pin at the bottom of the screen, so
+    // Save and the like stay in view however long the form is: the form's
+    // first top-level <actions> and any that follow it straight after, in
+    // order (e.g. Save / Reset, then Put back the original). None when the
+    // first one says pin="no". Blocks inside sections are never pinned.
+    std::vector<const Field*> pinnedActions(const Form& form);
+
     // The form's title: the model's value for its bind attribute, if any, or its title
     std::string title(const Form& form, Model& model);
 
@@ -373,6 +402,66 @@ namespace Forms
     // ignore case; digits and other characters count as one group. Stays at
     // current when there's no group that way.
     int letterJump(const std::vector<std::string>& labels, int current, int direction);
+
+    // --- Rows, scrolling and the pinned action bar ---------------------------
+
+    // What scrolling needs to know about a row of a drawn form
+    struct RowShape
+    {
+        bool focusable = false;
+        bool header = false;     // a section header: kept in view with the row under it
+        bool attached = false;   // part of the row above: a note under a field, a multi-line field's further lines
+    };
+
+    // The scroll (from the top) that keeps rows[focus] in view in a list
+    // visibleHeight high, starting from scroll: with the headers above it and
+    // the rows attached under it; at the first focusable row everything above
+    // it, at the last everything below it. Whole rows at the top when that
+    // still shows the focused one; never past the end (rounded up to a whole
+    // row, leaving a gap under the last). focus -1 (e.g. focus is in a pinned
+    // action bar, which isn't part of the list) only keeps scroll in range.
+    float scrollToShow(const std::vector<RowShape>& rows, int focus, float scroll, float rowHeight, float visibleHeight);
+
+    // Focus moving among a form's rows and its pinned action bar of barSize
+    // buttons, with Up / Down (direction -1 / +1). current is the focused row,
+    // or -1 when the bar has focus (inBar) or nothing has. From the rows,
+    // focus goes to the next row that can take it, then on into the bar (Down
+    // past the last row, Up past the first), then round. From the bar, Up
+    // goes back to returnRow (where it came from) or else the last row, and
+    // Down to the first row.
+    struct FocusMove
+    {
+        int row = -1;        // the row now focused, or -1
+        bool bar = false;    // the bar has focus
+    };
+    FocusMove moveFocus(const std::vector<bool>& focusable, int current, bool inBar, int barSize, int direction, int returnRow = -1);
+
+    // The jump control (pageDown) from the rows: into the bar if there's one,
+    // else a page further down (pageRows rows) at the nearest row that can
+    // take focus. back (pageUp) from the bar: to returnRow, else the last
+    // row; from the rows, a page up.
+    FocusMove jumpFocus(const std::vector<bool>& focusable, int current, bool inBar, int barSize, bool back, int pageRows, int returnRow = -1);
+
+    // Which of the bar's buttons a jump lands on: the first that's ready (can
+    // run now, and doesn't ask to confirm, so a jump never lands on Delete),
+    // else the first. -1 when there are none.
+    int barTarget(const std::vector<bool>& ready);
+
+    // Where a bar's buttons go: left to right, gap apart, each as wide as it
+    // asks, starting a new line when the next one doesn't fit in width (one
+    // wider than width gets a line to itself, cut to width).
+    struct BarSlot
+    {
+        float x = 0.0f;
+        float width = 0.0f;
+        int line = 0;
+    };
+    std::vector<BarSlot> layoutBar(const std::vector<float>& widths, float width, float gap);
+
+    // Whether a form id is one of patterns (a layout's forms="settings control*"):
+    // the same id, or one starting with what comes before a trailing *. No
+    // patterns match every id.
+    bool matchesFormId(const std::vector<std::string>& patterns, const std::string& id);
 
     // A layout attribute's color, "rrggbb" or "#rrggbb" in hex: false (rgb
     // untouched) for anything else, e.g. "red" or "fff"

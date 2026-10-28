@@ -114,7 +114,7 @@ const char* const metadataForm = R"(
     <button label="Put back the original clone of" action="game.unset.cloneof" visibleWhen="game:isChanged:cloneof"/>
   </section>
   <value label="Saved in" bind="game:metadataFile"/>
-  <note bind="game:metadataNote"/>
+  <note bind="game:metadataNote" panel="yes"/>
 </form>
 )";
 
@@ -142,7 +142,7 @@ const char* const launcherForm = R"(
 const char* const mediaForm = R"(
 <form id="game-media" title="Media" bind="game:screenTitle">
   <note bind="game:notFound"/>
-  <note bind="game:mediaNote"/>
+  <note bind="game:mediaNote" panel="yes"/>
   <results label="Shown" bind="game:mediaShown" open="game-media-slot" param="type" empty="Nothing shows yet."/>
   <results label="Missing" bind="game:mediaMissing" open="game-media-slot" param="type" empty="Nothing is missing."/>
 </form>
@@ -226,7 +226,7 @@ const char* const playlistsForm = R"(
 const char* const descriptionForm = R"(
 <form id="game-description" title="Description" bind="game:screenTitle">
   <note bind="game:notFound"/>
-  <note bind="game:story:status"/>
+  <note bind="game:story:status" panel="yes"/>
   <text label="Story" bind="game:story:text" multiline="yes" rows="8" visibleWhen="game:story:canEdit"
         hint="No story text yet"/>
   <value label="Saved in" bind="game:story:file"/>

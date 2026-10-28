@@ -60,3 +60,15 @@ launcher runs it.
 | B3 | The Windows dialog from "Browse with Windows..." opens, returns its pick to the field, and gives the controls back afterwards | Click it with the mouse, pick a file, check the field; then press keys/buttons | To check | Not pressed in the GUI checks (it would open on the desktop) |
 | B4 | Drives list without delay or system pop-ups: an empty card reader, a disc drive, a disconnected network share, a USB stick plugged in while RetroFE runs | Open the browser's first screen in each case | To check | Drive letters appear first; unanswered removable drives disappear; details are cached for 30 s; repeated visits share in-flight fetches; closing must not wait |
 | B5 | Letter up / letter down jump in results lists when mapped (e.g. OneSauce's `letterUp = M,joyRightShoulder`) | A big folder in the browser, or the Games results | To check | |
+
+## Manage look (round 12)
+
+Owner checks on Windows: repeat each row at 16:9 (1920x1080 and 1280x720)
+and 4:3 (1024x768, `layout 4x3`).
+
+| # | What to check | How | Status | Notes |
+|---|---------------|-----|--------|-------|
+| M12.1 | Aeon Nox's two-pane look reads well | Open Manage section forms: list on the left, help and art on the right. Check text size, wrapping and room for the rows. | To check | |
+| M12.2 | Pinned actions and the jump | Scroll a long form; Save stays in view. Right shoulder / Page Down jumps to the bar; left shoulder / Page Up returns to the row. Edit and check the Save hint. | To check | |
+| M12.3 | Bare install's built-in layout and automatic window size | Start without settings or a theme forms page. Check the window fits the desktop and focused links show readable help. | To check | |
+| M12.4 | Severity colours | Find “Won't start”, “isn't installed” and “Missing” statuses. Check warnings and errors are distinct and readable. | To check | |

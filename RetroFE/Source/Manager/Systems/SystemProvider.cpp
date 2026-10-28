@@ -1299,6 +1299,7 @@ Forms::Rows SystemProvider::listRows(size_t limit)
                                  : r.launcher.via == Library::LauncherVia::None ? "no launcher"
                                  : r.launcher.via == Library::LauncherVia::CollectionFile ? "own launcher" : r.launcher.name;
             row.detail = count(r.gameCount, item_, items_) + "  -  " + launcher;
+            row.severity = !(videos_ && playsHere(r)) && r.launcher.launcher < 0 ? Forms::Severity::Warning : Forms::Severity::None;
             listRows_.push_back(std::move(row));
         }
     }
@@ -2064,6 +2065,25 @@ bool SystemProvider::addIsNewLauncher() const
     }
     IndexPtr idx = index();
     return !(videos_ && idx && idx->findLauncher(videoPlayerLauncher) >= 0);
+}
+
+Forms::Severity SystemProvider::severity(const std::string& key, const Screen& screen)
+{
+    using Forms::Severity;
+    if (key == "launcherInEffect" || key == "launcherStatus") {
+        // A launcher that isn't installed: its games can't start
+        IndexPtr idx = index();
+        const CollectionRecord* r = idx ? record(*idx, screen) : nullptr;
+        if (!r || (videos_ && playsHere(*r))) return Severity::None;
+        return r->launcher.launcher < 0 ? Severity::Warning : Severity::None;
+    }
+    if (key == "addFolderCount") {
+        std::string text = addFolderCount();
+        return text == "Folder not found" ? Severity::Error
+             : text.rfind("No matching files", 0) == 0 ? Severity::Warning
+             : Severity::None;
+    }
+    return Severity::None;
 }
 
 std::string SystemProvider::addFolderCount()

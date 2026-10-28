@@ -22,7 +22,7 @@ namespace
 // Every control by group, with its inputs; Save writes them all
 const char* const controlsForm = R"xml(
 <form id="controls" title="Controls">
-  <note bind="control:intro"/>
+  <note bind="control:intro" panel="yes"/>
   <note bind="control:problems"/>
   <section label="Essential">
     <results bind="control:group:Essential" open="control"/>

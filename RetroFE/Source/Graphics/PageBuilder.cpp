@@ -23,6 +23,7 @@
 #include "ViewInfo.h"
 #include "Component/Container.h"
 #include "Component/FormWidget.h"
+#include "Component/FormHelp.h"
 #include "Component/KeyboardWidget.h"
 #include "Component/Image.h"
 #include "Component/Text.h"
@@ -1203,6 +1204,10 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		style.imageBackgroundAlpha = number(componentXml, "imageBackgroundAlpha", style.imageBackgroundAlpha);
 		style.confirmBackground = color(componentXml, "confirmBackgroundColor", style.confirmBackground);
 		style.confirmBackgroundAlpha = number(componentXml, "confirmBackgroundAlpha", style.confirmBackgroundAlpha);
+		style.button = color(componentXml, "buttonColor", style.button);
+		style.buttonAlpha = number(componentXml, "buttonAlpha", style.buttonAlpha);
+		style.titleStatus = text(componentXml, "titleStatus", style.titleStatus);
+		style.pinActions = flag(componentXml, "pinActions", style.pinActions);
 		style.showTitle = flag(componentXml, "title", style.showTitle);
 		style.showHints = flag(componentXml, "hints", style.showHints);
 		style.titleDetail = text(componentXml, "titleDetail", style.titleDetail);
@@ -1219,6 +1224,8 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 			{ "statusColor", FormWidget::FontRole::Status },
 			{ "infoColor", FormWidget::FontRole::Info },
 			{ "errorColor", FormWidget::FontRole::Error },
+			{ "warningColor", FormWidget::FontRole::Warning },
+			{ "successColor", FormWidget::FontRole::Success },
 		};
 		for (const auto& [attribute, role] : colorFonts) {
 			bool valid = false;
@@ -1232,6 +1239,91 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 		page->addComponent(form);
 		trace(form, nullptr, componentXml);
 		formWidgets_.push_back(form);
+	}
+
+	// <formHelp>: the focused row's picture and help, beside the page's first <form>
+	for (xml_node<>* componentXml = layout->first_node("formHelp"); componentXml; componentXml = componentXml->next_sibling("formHelp")) {
+		if (formWidgets_.empty()) {
+			LOG_WARNING("Layout", "Skipping <formHelp>: the page has no <form>");
+			break;
+		}
+		const xml_attribute<>* monitorXml = componentXml->first_attribute("monitor");
+		int helpMonitor = monitorXml ? Utils::convertInt(monitorXml->value()) : monitor;
+		if (helpMonitor + 1 > SDL::getScreenCount()) {
+			LOG_WARNING("Layout", "Skipping formHelp due to non-existent monitor index: " + std::to_string(helpMonitor));
+			continue;
+		}
+		FormHelp::Style style;
+		style.pictureHeight = number(componentXml, "pictureHeight", style.pictureHeight);
+		style.pictureWidth = number(componentXml, "pictureWidth", style.pictureWidth);
+		style.imageBackground = color(componentXml, "imageBackgroundColor", style.imageBackground);
+		style.imageBackgroundAlpha = number(componentXml, "imageBackgroundAlpha", style.imageBackgroundAlpha);
+		style.noteAlpha = number(componentXml, "noteAlpha", style.noteAlpha);
+		style.detailAlpha = number(componentXml, "detailAlpha", style.detailAlpha);
+		style.headingScale = number(componentXml, "headingScale", style.headingScale);
+		// Pictures for rows without one: <defaultImage forms="..." src="..."/> for some screens, then defaultImage=""
+		for (xml_node<>* imageXml = componentXml->first_node("defaultImage"); imageXml; imageXml = imageXml->next_sibling("defaultImage")) {
+			const xml_attribute<>* src = imageXml->first_attribute("src");
+			if (!src) {
+				LOG_WARNING("Layout", "<defaultImage> without src=\"\" is ignored");
+				continue;
+			}
+			FormHelp::DefaultImage image;
+			image.path = Configuration::convertToAbsolutePath(layoutPath, src->value());
+			std::istringstream forms(text(imageXml, "forms", ""));
+			for (std::string id; forms >> id;) {
+				image.forms.push_back(id);
+			}
+			if (image.forms.empty()) {
+				LOG_WARNING("Layout", "<defaultImage> without forms=\"\" is ignored; use defaultImage=\"\" on <formHelp> for every screen");
+				continue;
+			}
+			style.defaultImages.push_back(image);
+		}
+		if (const xml_attribute<>* image = componentXml->first_attribute("defaultImage")) {
+			style.defaultImages.push_back(FormHelp::DefaultImage{ {}, Configuration::convertToAbsolutePath(layoutPath, image->value()) });
+		}
+
+		auto* help = new FormHelp(*page, addFont(componentXml, nullptr, helpMonitor), helpMonitor);
+		help->setStyle(style);
+		const std::pair<const char*, FormHelp::FontRole> colorFonts[] = {
+			{ "headingColor", FormHelp::FontRole::Heading },
+			{ "detailColor", FormHelp::FontRole::Detail },
+			{ "warningColor", FormHelp::FontRole::Warning },
+			{ "errorColor", FormHelp::FontRole::Error },
+			{ "successColor", FormHelp::FontRole::Success },
+		};
+		for (const auto& [attribute, role] : colorFonts) {
+			bool valid = false;
+			SDL_Color fontColor = color(componentXml, attribute, SDL_Color{ 255, 255, 255, 255 }, &valid);
+			if (valid) {
+				help->setFont(role, addFont(componentXml, nullptr, helpMonitor, &fontColor));
+			}
+		}
+		// headingFont="": the heading in another face (e.g. the theme's title font), in headingColor
+		if (const xml_attribute<>* headingFont = componentXml->first_attribute("headingFont")) {
+			bool valid = false;
+			SDL_Color headingColor = color(componentXml, "headingColor", fontColor_, &valid);
+			if (!valid) {
+				headingColor = color(componentXml, "fontColor", fontColor_);
+			}
+			std::string fontPath = Configuration::convertToAbsolutePath(
+				Utils::combinePath(Configuration::layoutsPath(), layoutKey, ""), headingFont->value());
+			int loadSize = static_cast<int>(number(componentXml, "loadFontSize", static_cast<float>(fontSize_)));
+			if (fontCache_->loadFont(fontPath, loadSize, headingColor, helpMonitor)) {
+				help->setFont(FormHelp::FontRole::Heading, fontCache_->getFont(fontPath, loadSize, headingColor, helpMonitor));
+			}
+			else {
+				LOG_WARNING("Layout", "<formHelp> headingFont=\"" + std::string(headingFont->value()) + "\" can't be loaded");
+			}
+		}
+		FormWidget* form = formWidgets_.front();
+		help->attach(form);
+		form->setHelpPanel(true);
+		buildViewInfo(componentXml, help->baseViewInfo);
+		loadTweens(help, componentXml);
+		page->addComponent(help);
+		trace(help, nullptr, componentXml);
 	}
 }
 

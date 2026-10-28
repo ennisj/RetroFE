@@ -1056,6 +1056,21 @@ Forms::Model::Result ManagerModel::runAction(const std::string& action)
     return runCatalogAction(action);
 }
 
+Forms::Severity ManagerModel::severity(const std::string& key)
+{
+    std::string name;
+    if (Manager::Provider* p = provider(key, ':', name)) {
+        return p->severity(name, screen_);
+    }
+    if (key == "info:romCount") {
+        std::string count = romCount();
+        return count == "Folder not found" ? Forms::Severity::Error
+             : count == "0 matching files" ? Forms::Severity::Warning
+             : Forms::Severity::None;
+    }
+    return Forms::Severity::None;
+}
+
 std::string ManagerModel::romCount()
 {
     const std::string& path = drafts_["romPath"];

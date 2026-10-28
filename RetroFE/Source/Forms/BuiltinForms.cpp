@@ -41,8 +41,8 @@ const char* const settingsForm = R"(
   <section label="Display">
     <toggle label="Fullscreen" bind="settings:fullscreen"/>
     <choice label="Screen size" bind="settings:screenSize" options="screenSizes" enabledWhen="!settings:fullscreen"/>
-    <text label="Width" bind="settings:horizontal" hint="pixels, or stretch" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
-    <text label="Height" bind="settings:vertical" hint="pixels, or stretch" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
+    <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
+    <text label="Height" bind="settings:vertical" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <toggle label="Hide mouse" bind="settings:hideMouse" default="no"/>
     <note value="Display changes take effect the next time RetroFE starts."/>
   </section>
@@ -66,18 +66,21 @@ const char* const settingsForm = R"(
 // installed from the Catalog opens its own screen, which can remove it.
 const char* const manageForm = R"(
 <form id="manage" title="Manage">
-  <note visibleWhen="!info:hasCollections"
+  <note visibleWhen="!info:hasCollections" panel="yes"
         value="Welcome! Nothing is set up yet. Add your first system: point RetroFE at a folder of games and the emulator that runs them. Or install one from the Catalog: add a source under Sources."/>
   <link label="Add your first system" open="system-add" visibleWhen="!info:hasCollections"/>
   <button label="Apply changes now" action="changes.apply" visibleWhen="info:hasPendingChanges"/>
-  <link label="Games" open="games"/>
-  <link label="Menus" open="menus"/>
-  <link label="Systems" open="systems"/>
-  <link label="Videos" open="videos"/>
-  <link label="Emulators" open="emulators"/>
-  <link label="Themes" open="themes"/>
+  <link label="Games" open="games"
+        help="Find a game to change its title and details, art and video, how it starts, its saves and playlists, or to start or hide it."/>
+  <link label="Menus" open="menus" help="The menus Browse shows: what each one lists, in what order, and their art."/>
+  <link label="Systems" open="systems"
+        help="Add a system (a folder of games and the emulator that runs them), or change one's settings, launcher and art."/>
+  <link label="Videos" open="videos" help="Collections of videos RetroFE plays, and how each one plays."/>
+  <link label="Emulators" open="emulators"
+        help="The launchers that start games: the program, its arguments, and which systems and games use each one."/>
+  <link label="Themes" open="themes" help="How RetroFE looks: choose a theme, or change one with the theme and layout editors."/>
   <section label="Catalog">
-    <link label="Sources" open="sources"/>
+    <link label="Sources" open="sources" help="Where the Catalog finds packages: an index file on the web or on disk, or a folder of package archives."/>
   </section>
   <results label="Installed from the Catalog" bind="info:installed" open="package"
            empty="Nothing has been installed from the Catalog yet."/>

@@ -44,6 +44,7 @@
 #include <fstream>
 #include <gst/gst.h>
 #include <sstream>
+#include <cstdlib>
 #include <string>
 #include <tuple>
 #include <vector>

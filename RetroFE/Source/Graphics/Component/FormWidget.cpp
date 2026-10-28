@@ -88,6 +88,13 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
 {
     form_ = form;
     model_ = model;
+    pinned_ = form && style_.pinActions ? Forms::pinnedActions(*form) : std::vector<const Field*>{};
+    bar_.clear();
+    barFocus_ = -1;
+    returnField_ = nullptr;
+    returnItem_.clear();
+    edited_ = false;
+    help_ = Help{};
     focus_ = -1;
     focusGuarded_ = false;
     shownFields_.clear();
@@ -123,6 +130,7 @@ void FormWidget::restoreFocus(const Forms::Focus& focus)
     focusedItem_ = focus.item;
     scroll_ = focus.scroll;
     focus_ = -1;
+    barFocus_ = -1;
     focusGuarded_ = false;
     shownFields_.clear();
     rows_.clear();
@@ -141,12 +149,25 @@ void FormWidget::focusOn(const std::string& key)
 void FormWidget::setFont(FontRole role, FontManager* font)
 {
     switch (role) {
-    case FontRole::Detail: detailFont_ = font; break;
-    case FontRole::Header: headerFont_ = font; break;
-    case FontRole::Status: statusFont_ = font; break;
-    case FontRole::Info:   infoFont_ = font; break;
-    case FontRole::Error:  errorFont_ = font; break;
+    case FontRole::Detail:  detailFont_ = font; break;
+    case FontRole::Header:  headerFont_ = font; break;
+    case FontRole::Status:  statusFont_ = font; break;
+    case FontRole::Info:    infoFont_ = font; break;
+    case FontRole::Error:   errorFont_ = font; break;
+    case FontRole::Warning: warningFont_ = font; break;
+    case FontRole::Success: successFont_ = font; break;
     }
+}
+
+FontManager* FormWidget::severityFont(Forms::Severity severity, FontManager* plain) const
+{
+    switch (severity) {
+    case Forms::Severity::Ok:      return successFont_ ? successFont_ : statusFont_ ? statusFont_ : plain;
+    case Forms::Severity::Warning: return warningFont_ ? warningFont_ : errorFont_ ? errorFont_ : plain;
+    case Forms::Severity::Error:   return errorFont_ ? errorFont_ : plain;
+    case Forms::Severity::None:    break;
+    }
+    return plain;
 }
 
 void FormWidget::allocateGraphicsMemory()
@@ -268,7 +289,7 @@ float FormWidget::multilineWidth(const Field& field) const
     return field.label.empty() ? contentWidth() : contentWidth() - labelWidth();
 }
 
-void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, bool isError)
+void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, bool isError, Forms::Severity severity)
 {
     float width = indent ? contentWidth() - labelWidth() : contentWidth();
     if (kind == RowKind::Note) {
@@ -281,6 +302,7 @@ void FormWidget::addWrapped(RowKind kind, const std::string& text, bool indent, 
         row.text = line;
         row.indent = indent;
         row.isError = isError;
+        row.severity = severity;
         rows_.push_back(row);
     }
 }
@@ -318,6 +340,7 @@ void FormWidget::addResults(const Field& field)
         row.image = std::move(item.image);
         row.link = item.link;
         row.action = std::move(item.action);
+        row.severity = item.severity;
         row.thumbnail = thumbnails;
         row.focusable = true;
         rows_.push_back(std::move(row));
@@ -331,6 +354,7 @@ void FormWidget::addValue(const Field& field)
         return;
     }
     // The first line goes next to the label, the rest under it
+    Forms::Severity severity = model_->severity(field.bind);
     bool first = true;
     for (const std::string& line : wrap(value, contentWidth() - labelWidth())) {
         Row row;
@@ -338,6 +362,7 @@ void FormWidget::addValue(const Field& field)
         row.field = first ? &field : nullptr;
         row.text = line;
         row.indent = true;
+        row.severity = severity;
         rows_.push_back(row);
         first = false;
     }
@@ -350,6 +375,13 @@ void FormWidget::addImage(const Field& field)
 {
     std::string path = model_->get(field.bind);
     if (path.empty()) {
+        return;
+    }
+    // With a help panel, the form's picture is shown there instead
+    if (helpPanel_) {
+        if (panelPicture_.empty()) {
+            panelPicture_ = path;
+        }
         return;
     }
     // Loaded at the size it's drawn at; hidden when it can't be loaded (it's tried again later)
@@ -376,8 +408,15 @@ void FormWidget::addImage(const Field& field)
 void FormWidget::addFields(const std::vector<Field>& fields)
 {
     for (const Field& field : fields) {
+        addField(field);
+    }
+}
+
+void FormWidget::addField(const Field& field)
+{
+    {
         if (!Forms::isVisible(field, *model_)) {
-            continue;
+            return;
         }
         switch (field.type) {
         case FieldType::Section: {
@@ -389,14 +428,29 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             break;
         }
         case FieldType::Actions:
+            if (std::find(pinned_.begin(), pinned_.end(), &field) != pinned_.end()) {
+                // In the bar (buildBar); anything there but buttons stays here
+                for (const Field& child : field.children) {
+                    if (child.type != FieldType::Button) {
+                        addField(child);
+                    }
+                }
+                break;
+            }
             addFields(field.children);
             break;
 
         case FieldType::Note: {
             std::string text = Forms::noteText(field, *model_);
-            if (!text.empty()) {
-                addWrapped(RowKind::Note, text, false);
+            if (text.empty()) {
+                break;
             }
+            // panel="yes": the screen's explanation goes to the help panel when there is one
+            if (helpPanel_ && field.panel) {
+                panelNotes_ += (panelNotes_.empty() ? "" : "\n") + text;
+                break;
+            }
+            addWrapped(RowKind::Note, text, false, false, Forms::noteSeverity(field, *model_));
             break;
         }
 
@@ -441,6 +495,12 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             row.value = valueText(field);
             row.enabled = Forms::isEnabled(field, *model_);
             row.focusable = isInteractive(field.type) && row.enabled;
+            if (field.type == FieldType::Link && !field.status.empty()) {
+                row.severity = model_->severity(field.status);
+            }
+            if (field.type == FieldType::Button) {
+                row.problem = model_->actionProblem(field.action);
+            }
             rows_.push_back(row);
             if (isMultiline(&field)) {
                 // Its further lines, each a row of its own so scrolling works as for any row
@@ -456,13 +516,9 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             }
 
             if (field.type == FieldType::Button) {
+                // Why it can't run shows in the hints (and a help panel) while it's focused
                 if (confirm_.armed() == &field) {
                     addWrapped(RowKind::Note, field.confirm + " Select again to confirm.", true, true);
-                    break;
-                }
-                std::string problem = model_->actionProblem(field.action);
-                if (!problem.empty()) {
-                    addWrapped(RowKind::Note, problem, true);
                 }
                 break;
             }
@@ -470,10 +526,15 @@ void FormWidget::addFields(const std::vector<Field>& fields)
             if (!field.status.empty() && field.type != FieldType::Link) {
                 std::string status = model_->get(field.status);
                 if (!status.empty()) {
-                    addWrapped(RowKind::Note, status, true);
+                    addWrapped(RowKind::Note, status, true, false, model_->severity(field.status));
                 }
             }
-            if (!field.help.empty()) {
+            // With a help panel, help and where a setting comes from go there
+            if (helpPanel_) {
+                break;
+            }
+            // A link's help goes in the panel or hints: a list of links stays a list
+            if (!field.help.empty() && field.type != FieldType::Link) {
                 addWrapped(RowKind::Note, field.help, true);
             }
             if (!field.bind.empty()) {
@@ -488,19 +549,45 @@ void FormWidget::addFields(const std::vector<Field>& fields)
     }
 }
 
+void FormWidget::buildBar()
+{
+    bar_.clear();
+    for (const Field* block : pinned_) {
+        if (!Forms::isVisible(*block, *model_)) {
+            continue;
+        }
+        for (const Field& child : block->children) {
+            if (child.type != FieldType::Button || !Forms::isVisible(child, *model_)) {
+                continue;
+            }
+            BarButton button;
+            button.field = &child;
+            button.enabled = Forms::isEnabled(child, *model_);
+            button.problem = model_->actionProblem(child.action);
+            bar_.push_back(button);
+        }
+    }
+}
+
 void FormWidget::buildRows()
 {
     stale_ = false;
     builtAt_ = SDL_GetTicks();
     const int previousFocus = focus_;
+    const int previousBar = barFocus_;
     rows_.clear();
+    bar_.clear();
     statusLines_.clear();
+    panelPicture_.clear();
+    panelNotes_.clear();
     if (!form_ || !model_) {
         return;
     }
     generation_ = model_->generation();
     std::string titleText = Forms::title(*form_, *model_);
-    if (style_.showTitle && !titleText.empty()) {
+    titleStatus_ = style_.titleStatus.empty() ? "" : model_->get(style_.titleStatus);
+    titleSeverity_ = titleStatus_.empty() ? Forms::Severity::None : model_->severity(style_.titleStatus);
+    if (style_.showTitle && (!titleText.empty() || !titleStatus_.empty())) {
         Row title;
         title.kind = RowKind::Title;
         title.text = titleText;
@@ -510,26 +597,155 @@ void FormWidget::buildRows()
         rows_.push_back(title);
     }
     addFields(form_->fields);
+    buildBar();
     if (!status_.empty()) {
         statusLines_ = wrap((statusKind_ == Forms::StatusKind::Error ? "! " : "") + status_, contentWidth());
     }
+    resolveFocus(previousFocus, previousBar);
+    shownFields_.clear();
+    for (const Row& r : rows_) {
+        if (r.focusable && r.field && (shownFields_.empty() || shownFields_.back() != r.field)) {
+            shownFields_.push_back(r.field);
+        }
+    }
+    for (const BarButton& button : bar_) {
+        if (button.enabled) {
+            shownFields_.push_back(button.field);
+        }
+    }
+    updateHelp();
+}
 
+int FormWidget::rowOf(const Field* field, const std::string& item) const
+{
+    if (!field) {
+        return -1;
+    }
+    for (size_t i = 0; i < rows_.size(); i++) {
+        if (rows_[i].focusable && rows_[i].field == field && rows_[i].item == item) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+std::vector<bool> FormWidget::focusableRows() const
+{
+    std::vector<bool> focusable;
+    focusable.reserve(rows_.size());
+    for (const Row& r : rows_) {
+        focusable.push_back(r.focusable);
+    }
+    return focusable;
+}
+
+bool FormWidget::barCanFocus() const
+{
+    return std::any_of(bar_.begin(), bar_.end(), [](const BarButton& b) { return b.enabled; });
+}
+
+int FormWidget::barTargetIndex() const
+{
+    // The first button that can run now, among those that can take focus; not
+    // one that asks to confirm (Hide, Delete), when there is one
+    std::vector<int> enabled;
+    std::vector<bool> ready;
+    for (size_t i = 0; i < bar_.size(); i++) {
+        if (bar_[i].enabled) {
+            enabled.push_back(static_cast<int>(i));
+            ready.push_back(bar_[i].problem.empty() && bar_[i].field->confirm.empty());
+        }
+    }
+    int target = Forms::barTarget(ready);
+    return target < 0 ? -1 : enabled[static_cast<size_t>(target)];
+}
+
+void FormWidget::focusRow(int row)
+{
+    if (row < 0 || row >= static_cast<int>(rows_.size())) {
+        return;
+    }
+    manualScroll_ = false;
+    focus_ = row;
+    barFocus_ = -1;
+    focusedField_ = rows_[row].field;
+    focusedItem_ = rows_[row].item;
+}
+
+void FormWidget::focusBar(int index)
+{
+    if (index < 0 || index >= static_cast<int>(bar_.size())) {
+        return;
+    }
+    // Remember where it came from in the rows, to go back there
+    if (barFocus_ < 0 && focus_ >= 0) {
+        returnField_ = rows_[focus_].field;
+        returnItem_ = rows_[focus_].item;
+    }
+    barFocus_ = index;
+    focus_ = -1;
+    focusedField_ = bar_[index].field;
+    focusedItem_.clear();
+}
+
+void FormWidget::resolveFocus(int previousFocus, int previousBar)
+{
     // A field an action asked for (Result::focus) takes focus once it's shown
     if (!wantedFocus_.empty()) {
+        for (size_t i = 0; i < bar_.size(); i++) {
+            if (bar_[i].enabled && Forms::fieldMatches(*bar_[i].field, wantedFocus_)) {
+                focusedField_ = bar_[i].field;
+                focusedItem_.clear();
+                focusGuarded_ = false;
+                wantedFocus_.clear();
+                manualScroll_ = false;
+                break;
+            }
+        }
         for (const Row& r : rows_) {
             if (r.focusable && r.field && Forms::fieldMatches(*r.field, wantedFocus_)) {
                 focusedField_ = r.field;
                 focusedItem_ = r.item;
+                previousBar = -1;   // an action requested a row instead of the bar
                 focusGuarded_ = false;
                 wantedFocus_.clear();
+                manualScroll_ = false;
                 break;
             }
         }
     }
 
+    // The focused button is in the bar
+    focus_ = -1;
+    barFocus_ = -1;
+    for (size_t i = 0; i < bar_.size(); i++) {
+        if (bar_[i].enabled && bar_[i].field == focusedField_) {
+            barFocus_ = static_cast<int>(i);
+            return;
+        }
+    }
+    // A bar button that went away (e.g. Reset, once pressed): the first
+    // button that can run now, else back to the rows, never an undo or
+    // destructive one just because it moved into its place
+    if (previousBar >= 0 && focusedField_) {
+        int target = barTargetIndex();
+        if (target >= 0 && bar_[target].problem.empty()) {
+            bool wasShown = std::find(shownFields_.begin(), shownFields_.end(), bar_[target].field) != shownFields_.end();
+            focusGuarded_ = Forms::refocusTarget(bar_[target].field, true, wasShown) == Forms::FocusTarget::Guarded;
+            barFocus_ = target;
+            focusedField_ = bar_[target].field;
+            focusedItem_.clear();
+            return;
+        }
+        int back = rowOf(returnField_, returnItem_);
+        if (back >= 0) {
+            focusRow(back);
+            return;
+        }
+    }
+
     // Keep the same field, and result, focused while rows come and go around it.
     // When the focused result goes away (e.g. the search changed), stay in its list.
-    focus_ = -1;
     int sameList = -1;
     for (size_t i = 0; i < rows_.size(); i++) {
         if (!rows_[i].focusable || rows_[i].field != focusedField_) {
@@ -574,57 +790,29 @@ void FormWidget::buildRows()
         focusedField_ = rows_[focus_].field;
         focusedItem_ = rows_[focus_].item;
     }
-    shownFields_.clear();
-    for (const Row& r : rows_) {
-        if (r.focusable && r.field && (shownFields_.empty() || shownFields_.back() != r.field)) {
-            shownFields_.push_back(r.field);
-        }
+    else if (barCanFocus()) {
+        // Nothing in the rows takes focus: the bar does
+        int target = barTargetIndex();
+        barFocus_ = target;
+        focusedField_ = bar_[target].field;
+        focusedItem_.clear();
     }
+
 }
 
 void FormWidget::keepFocusVisible(float visibleHeight)
 {
-    float total = rows_.size() * rowHeight();
-    if (focus_ >= 0 && !manualScroll_) {
-        // Show the section header above the focused field too
-        int top = focus_;
-        while (top > 0 && rows_[top - 1].kind == RowKind::Header) {
-            top--;
-        }
-        float topY = top * rowHeight();
-        float bottomY = (focus_ + 1) * rowHeight();
-        // And a multi-line field's further lines, and a confirm question or a problem under it
-        for (size_t below = static_cast<size_t>(focus_) + 1;
-             below < rows_.size() && ((rows_[below].kind == RowKind::Note && rows_[below].indent) || rows_[below].kind == RowKind::TextLine);
-             below++) {
-            bottomY += rowHeight();
-        }
-        // At the last field, everything below it too (notes the user can't move to)
-        bool lastFocusable = std::none_of(rows_.begin() + focus_ + 1, rows_.end(), [](const Row& r) { return r.focusable; });
-        if (lastFocusable) {
-            bottomY = total;
-        }
-        if (topY < scroll_) {
-            scroll_ = topY;
-        }
-        if (bottomY > scroll_ + visibleHeight) {
-            // Whole rows at the top when that still shows the focused one
-            float wanted = bottomY - visibleHeight;
-            float snapped = std::ceil(wanted / rowHeight() - 0.01f) * rowHeight();
-            scroll_ = std::min(topY, snapped <= topY ? snapped : wanted);
-        }
-        // At the first field, show everything above it
-        bool firstFocusable = std::none_of(rows_.begin(), rows_.begin() + focus_, [](const Row& r) { return r.focusable; });
-        if (firstFocusable && bottomY <= visibleHeight) {
-            scroll_ = 0.0f;
-        }
+    std::vector<Forms::RowShape> shapes;
+    shapes.reserve(rows_.size());
+    for (const Row& r : rows_) {
+        Forms::RowShape shape;
+        shape.focusable = r.focusable;
+        shape.header = r.kind == RowKind::Header;
+        // A multi-line field's further lines, and a confirm question under a button
+        shape.attached = (r.kind == RowKind::Note && r.indent) || r.kind == RowKind::TextLine;
+        shapes.push_back(shape);
     }
-    // Scrolled to the end, whole rows at the top too, and a gap under the last one
-    float maxScroll = std::max(0.0f, total - visibleHeight);
-    if (maxScroll > 0.0f) {
-        maxScroll = std::ceil(maxScroll / rowHeight() - 0.01f) * rowHeight();
-    }
-    scroll_ = std::clamp(scroll_, 0.0f, maxScroll);
+    scroll_ = Forms::scrollToShow(shapes, manualScroll_ ? -1 : focus_, scroll_, rowHeight(), visibleHeight);
 }
 
 // --- Input ---------------------------------------------------------------------
@@ -632,23 +820,58 @@ void FormWidget::keepFocusVisible(float visibleHeight)
 void FormWidget::moveFocus(int direction)
 {
     focusGuarded_ = false;
-    if (rows_.empty()) {
+    if (std::none_of(rows_.begin(), rows_.end(), [](const Row& r) { return r.focusable; })) {
+        manualScroll_ = true;
+        scroll_ = Forms::scrollRows(scroll_, direction, static_cast<int>(rows_.size()), rowHeight(), pageRows_ * rowHeight());
         return;
     }
-    int count = static_cast<int>(rows_.size());
-    int start = focus_ < 0 ? (direction > 0 ? -1 : count) : focus_;
-    for (int step = 1; step <= count; step++) {
-        int index = ((start + direction * step) % count + count) % count;
-        if (rows_[index].focusable && index != focus_) {
-            manualScroll_ = false;
-            focus_ = index;
-            focusedField_ = rows_[index].field;
-            focusedItem_ = rows_[index].item;
+    Forms::FocusMove move = Forms::moveFocus(focusableRows(), focus_, barFocus_ >= 0, barCanFocus() ? static_cast<int>(bar_.size()) : 0,
+                                             direction, rowOf(returnField_, returnItem_));
+    if (move.bar) {
+        if (barFocus_ < 0) {
+            // In from the rows: its first button that takes focus. Up and Down
+            // go on round the screen, so Up from the bar is the last row again
+            // (only the jump goes back to where it came from)
+            for (size_t i = 0; i < bar_.size(); i++) {
+                if (bar_[i].enabled) {
+                    focusBar(static_cast<int>(i));
+                    returnField_ = nullptr;
+                    returnItem_.clear();
+                    break;
+                }
+            }
+        }
+    }
+    else if (move.row >= 0) {
+        focusRow(move.row);
+    }
+}
+
+// The jump control: Page Down to the bar's first button that can run, Page Up back
+void FormWidget::jump(bool back)
+{
+    focusGuarded_ = false;
+    Forms::FocusMove move = Forms::jumpFocus(focusableRows(), focus_, barFocus_ >= 0, barCanFocus() ? static_cast<int>(bar_.size()) : 0,
+                                             back, pageRows_, rowOf(returnField_, returnItem_));
+    if (move.bar) {
+        if (barFocus_ < 0) {
+            focusBar(barTargetIndex());
+        }
+    }
+    else if (move.row >= 0) {
+        focusRow(move.row);
+    }
+}
+
+// Left/Right along the bar, to the next button that takes focus
+void FormWidget::moveInBar(int direction)
+{
+    for (int i = barFocus_ + direction; i >= 0 && i < static_cast<int>(bar_.size()); i += direction) {
+        if (bar_[i].enabled) {
+            focusBar(i);
             return;
         }
     }
-    manualScroll_ = true;
-    scroll_ = Forms::scrollRows(scroll_, direction, count, rowHeight(), pageRows_ * rowHeight());
 }
 
 // Left/Right in a results list: a page at a time, staying in the list
@@ -666,6 +889,7 @@ void FormWidget::pageResults(int direction)
         }
         target = next;
     }
+    manualScroll_ = false;
     focus_ = target;
     focusedItem_ = rows_[target].item;
 }
@@ -686,6 +910,7 @@ void FormWidget::jumpLetter(int direction)
         labels.push_back(rows_[i].text);
     }
     int target = first + Forms::letterJump(labels, focus_ - first, direction);
+    manualScroll_ = false;
     focus_ = target;
     focusedItem_ = rows_[target].item;
 }
@@ -710,9 +935,10 @@ bool FormWidget::navigate(Nav nav)
     wantedFocus_.clear();   // the user is moving on: an action's focus request is dropped
 
     const Row* row = focus_ >= 0 ? &rows_[focus_] : nullptr;
-    const Field* field = row ? row->field : nullptr;
-    static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back", "LetterUp", "LetterDown" };
-    LOG_DEBUG("Forms", std::string(names[static_cast<int>(nav)]) + " on " + (field ? field->label : "nothing"));
+    const bool inBar = barFocus_ >= 0;
+    const Field* field = row ? row->field : inBar ? bar_[barFocus_].field : nullptr;
+    static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back", "LetterUp", "LetterDown", "PageUp", "PageDown" };
+    LOG_DEBUG("Forms", std::string(names[static_cast<int>(nav)]) + " on " + (field ? field->label : "nothing") + (inBar ? " (bar)" : ""));
 
     // Anything but confirming disarms a button waiting for confirmation; Back only does that
     if (confirm_.armed() && !(nav == Nav::Select && field == confirm_.armed())) {
@@ -736,7 +962,10 @@ bool FormWidget::navigate(Nav nav)
         break;
     case Nav::Left:
     case Nav::Right:
-        if (row && row->kind == RowKind::Item) {
+        if (inBar) {
+            moveInBar(nav == Nav::Right ? 1 : -1);
+        }
+        else if (row && row->kind == RowKind::Item) {
             if (field && field->letterJump) {
                 jumpLetter(nav == Nav::Right ? 1 : -1);
             }
@@ -758,8 +987,17 @@ bool FormWidget::navigate(Nav nav)
             }
         }
         break;
+    case Nav::PageUp:
+    case Nav::PageDown:
+        jump(nav == Nav::PageUp);
+        break;
     case Nav::Select:
-        if (row && field) {
+        if (inBar) {
+            if (!focusGuarded_) {
+                press(*field);
+            }
+        }
+        else if (row && field) {
             activate(*row);
         }
         break;
@@ -773,7 +1011,15 @@ bool FormWidget::navigate(Nav nav)
     return true;
 }
 
-// In a results list: to the first row of the previous/next letter, staying in the list
+void FormWidget::press(const Field& button)
+{
+    if (model_->actionProblem(button.action).empty() && confirm_.select(button)) {
+        result_ = model_->runAction(button.action);
+        edited_ = false;       // what was changed has been dealt with (saved, reset...)
+        pictures_.recheck();   // it may have written artwork
+    }
+}
+
 void FormWidget::activate(const Row& row)
 {
     const Field& field = *row.field;
@@ -808,12 +1054,9 @@ void FormWidget::activate(const Row& row)
         break;
     case FieldType::Button:
         if (focusGuarded_) {
-            break;   // focus only got here because the pressed button went away; the user moves first
+            break;   // move before activating a newly focused action
         }
-        if (model_->actionProblem(field.action).empty() && confirm_.select(field)) {
-            result_ = model_->runAction(field.action);
-            pictures_.recheck();   // it may have written artwork
-        }
+        press(field);
         break;
     case FieldType::Link:
     case FieldType::Results:
@@ -843,6 +1086,7 @@ void FormWidget::activate(const Row& row)
 
 void FormWidget::change(const Field& field, int direction)
 {
+    const std::string before = model_->get(field.bind);
     switch (field.type) {
     case FieldType::Toggle:
         model_->set(field.bind, Forms::isTruthy(model_->get(field.bind)) ? "no" : "yes");
@@ -874,6 +1118,9 @@ void FormWidget::change(const Field& field, int direction)
     }
     default:
         break;
+    }
+    if (model_->get(field.bind) != before) {
+        markEdited();
     }
 }
 
@@ -935,6 +1182,9 @@ void FormWidget::finishEditing(bool keep)
         }
         model_->set(focusedField_->bind, edit_.text);
         LOG_DEBUG("Forms", focusedField_->label + " set to \"" + edit_.text + "\"");
+        if (edit_.text != editOriginal_ && !focusedField_->live) {
+            edited_ = true;   // the hints point at Save (when there's a bar and it can run now)
+        }
     }
     else if (focusedField_->live && liveSent_ != editOriginal_) {
         model_->set(focusedField_->bind, editOriginal_);
@@ -1062,42 +1312,139 @@ std::string FormWidget::valueText(const Field& field)
     }
 }
 
-std::string FormWidget::hintText() const
+std::vector<FormWidget::HintPart> FormWidget::hintParts() const
 {
+    std::vector<HintPart> parts;
+    auto add = [&](const std::string& text, FontManager* font = nullptr) {
+        if (!text.empty()) {
+            parts.push_back(HintPart{ text, font });
+        }
+    };
     if (editing_) {
-        return editingMultiline() ? "Enter: new line   Ctrl+Enter: keep   Esc: cancel   Ctrl+V: paste"
-                                  : "Type, then Enter to keep or Esc to cancel. Ctrl+V pastes.";
+        add(editingMultiline() ? "Enter: new line   Ctrl+Enter: keep   Esc: cancel   Ctrl+V: paste"
+                               : "Type, then Enter to keep or Esc to cancel. Ctrl+V pastes.");
+        return parts;
     }
+    const bool inBar = barFocus_ >= 0 && barFocus_ < static_cast<int>(bar_.size());
     const Row* row = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) ? &rows_[focus_] : nullptr;
-    const Field* field = row ? row->field : nullptr;
+    const Field* field = row ? row->field : inBar ? bar_[barFocus_].field : nullptr;
     if (field && confirm_.armed() == field) {
-        return "Select: " + field->label + "   Anything else: cancel";
+        add("Select: " + field->label + "   Anything else: cancel");
+        return parts;
     }
-    std::string hint;
     if (row && row->kind == RowKind::Item) {
-        std::string leftRight = field && field->letterJump ? "Left/Right: letter" : "Left/Right: page   LetterUp/Down: letter";
-        hint = row->action.empty() && (!field || field->open.empty()) ? leftRight : "Select: open   " + leftRight;
+        add(row->action.empty() && (!field || field->open.empty()) ? "" : "Select: open");
+        add(field && field->letterJump ? "Left/Right: letter" : "Left/Right: page");
+        add("LetterUp/Down: letter");
     }
     else if (field) {
+        const std::string& problem = inBar ? bar_[barFocus_].problem : row->problem;
         switch (field->type) {
-        case FieldType::Text:   hint = "Select: edit"; break;
-        case FieldType::Number: hint = "Left/Right: change   Select: type"; break;
-        case FieldType::Toggle: hint = "Select: change"; break;
-        case FieldType::Choice: hint = "Left/Right: change"; break;
+        case FieldType::Text:   add("Select: edit"); break;
+        case FieldType::Number: add("Left/Right: change   Select: type"); break;
+        case FieldType::Toggle: add("Select: change"); break;
+        case FieldType::Choice: add("Left/Right: change"); break;
         case FieldType::Button:
-            hint = focusGuarded_ ? "Any direction, then Select: " + field->label : "Select: " + field->label;
+            // A button that can't run says why while it's focused, rather than on a row of its own
+            if (problem.empty()) {
+                add(focusGuarded_ ? "Move, then Select: " + field->label : "Select: " + field->label);
+            }
+            else if (!helpPanel_) {
+                add(problem, infoFont_ ? infoFont_ : detailFont_);   // a help panel says why instead
+            }
             break;
-        case FieldType::Link:   hint = "Select: open"; break;
+        case FieldType::Link:   add("Select: open"); break;
         case FieldType::Folder:
         case FieldType::File:
-            hint = !canBrowse_ ? "Select: edit"
+            add(!canBrowse_ ? "Select: edit"
                 : focusGuarded_ ? "Any direction, then Select: browse   Right: type"
-                : "Select: browse   Right: type";
+                : "Select: browse   Right: type");
             break;
         default: break;
         }
     }
-    return (hint.empty() ? "" : hint + "   ") + (backCloses_ ? "Back: close" : "Back: return");
+    if (std::none_of(rows_.begin(), rows_.end(), [](const Row& r) { return r.focusable; })) {
+        add(inBar ? "Up/Down: scroll" : "Up/Down: scroll   Left/Right: page");
+    }
+    // The jump to the pinned bar; after a change that can be saved, in the success color
+    if (barCanFocus()) {
+        if (inBar) {
+            add("Left/Right: choose");
+            add("Page up: back");
+        }
+        else {
+            int target = barTargetIndex();
+            const BarButton& button = bar_[target];
+            bool ready = edited_ && button.problem.empty();
+            add("Page down: " + button.field->label, ready ? severityFont(Forms::Severity::Ok, nullptr) : nullptr);
+        }
+    }
+    add(backCloses_ ? "Back: close" : "Back: return");
+    if (!helpPanel_ && field && field->type == FieldType::Link) {
+        add(field->help);
+    }
+    return parts;
+}
+
+void FormWidget::updateHelp()
+{
+    fillHelp();
+    // A row with nothing to say about itself: the screen's explanation (notes with panel="yes")
+    if (help_.text.empty()) {
+        help_.text = panelNotes_;
+    }
+}
+
+void FormWidget::fillHelp()
+{
+    help_ = Help{};
+    auto pictureOf = [&](const Field* field) {
+        std::string picture = field && !field->preview.empty() ? model_->get(field->preview) : "";
+        return picture.empty() ? panelPicture_ : picture;
+    };
+    if (barFocus_ >= 0 && barFocus_ < static_cast<int>(bar_.size())) {
+        const BarButton& button = bar_[barFocus_];
+        help_.heading = button.field->label;
+        help_.detail = button.problem;
+        help_.severity = button.problem.empty() ? Forms::Severity::None : Forms::Severity::Warning;
+        help_.text = button.field->help;
+        help_.picture = pictureOf(button.field);
+        return;
+    }
+    if (focus_ < 0 || focus_ >= static_cast<int>(rows_.size())) {
+        help_.picture = panelPicture_;
+        return;
+    }
+    const Row& row = rows_[focus_];
+    const Field* field = row.field;
+    if (row.kind == RowKind::Item) {
+        help_.heading = row.text;
+        help_.detail = row.detail;
+        help_.severity = row.severity;
+        help_.text = field ? field->help : "";
+        help_.picture = row.image.empty() ? pictureOf(field) : row.image;
+        return;
+    }
+    if (!field) {
+        return;
+    }
+    help_.heading = field->label;
+    if (field->type == FieldType::Link) {
+        help_.detail = row.value;
+        help_.severity = row.severity;
+    }
+    else if (field->type == FieldType::Button) {
+        help_.detail = row.problem;
+        help_.severity = row.problem.empty() ? Forms::Severity::None : Forms::Severity::Warning;
+    }
+    help_.text = field->help;
+    if (!field->bind.empty()) {
+        std::string source = model_->get("info:source:" + field->bind);
+        if (!source.empty()) {
+            help_.text += (help_.text.empty() ? "" : "\n") + std::string("Set in ") + source;
+        }
+    }
+    help_.picture = pictureOf(field);
 }
 
 // One row of a multi-line text field: line row.line of what's shown (while
@@ -1181,6 +1528,94 @@ void FormWidget::drawPicture(SDL_Texture* picture, float x, float y, float maxWi
     painter_.texture(picture, x, shownTop, drawnWidth, source.h * scale, 1.0f, &source);
 }
 
+namespace
+{
+    // The pinned bar: room above its buttons (for the line over it), and buttons' padding, in font sizes
+    constexpr float barGapAbove = 0.45f;
+    constexpr float buttonPadding = 0.8f;
+    constexpr float buttonGap = 0.5f;
+}
+
+float FormWidget::barHeight() const
+{
+    if (bar_.empty()) {
+        return 0.0f;
+    }
+    const float size = fontSize();
+    std::vector<float> widths;
+    for (const BarButton& button : bar_) {
+        widths.push_back(painter_.textWidth(button.field->label, size) + size * buttonPadding * 2.0f);
+    }
+    std::vector<Forms::BarSlot> slots = Forms::layoutBar(widths, contentWidth(), size * buttonGap);
+    int lines = slots.empty() ? 0 : slots.back().line + 1;
+    bool asking = barFocus_ >= 0 && confirm_.armed() == bar_[barFocus_].field;
+    return size * barGapAbove + (lines + (asking ? 1 : 0)) * rowHeight();
+}
+
+void FormWidget::drawBar(float barTop, float left, float width, float padding)
+{
+    if (bar_.empty()) {
+        return;
+    }
+    const float size = fontSize();
+    const float row = rowHeight();
+    const float line = std::max(1.0f, size * 0.04f);
+    // A line between the rows and the bar
+    if (style_.separatorAlpha > 0.0f) {
+        painter_.rect(left - padding / 2.0f, barTop + size * barGapAbove * 0.35f, width + padding, line, style_.separator,
+                      style_.separatorAlpha);
+    }
+    float y = barTop + size * barGapAbove;
+    // The question of a button waiting for confirmation, over the bar
+    const Field* armed = confirm_.armed();
+    if (barFocus_ >= 0 && armed == bar_[barFocus_].field) {
+        float noteSize = size * noteScale;
+        painter_.textWith(errorFont_, "! " + armed->confirm + " Select again to confirm.", left, y + (row - noteSize) / 2.0f,
+                          width, noteSize, 1.0f);
+        y += row;
+    }
+    std::vector<float> widths;
+    for (const BarButton& button : bar_) {
+        widths.push_back(painter_.textWidth(button.field->label, size) + size * buttonPadding * 2.0f);
+    }
+    std::vector<Forms::BarSlot> slots = Forms::layoutBar(widths, width, size * buttonGap);
+    for (size_t i = 0; i < bar_.size(); i++) {
+        const BarButton& button = bar_[i];
+        const Forms::BarSlot& slot = slots[i];
+        float x = left + slot.x;
+        float boxY = y + slot.line * row + row * 0.08f;
+        float boxH = row * 0.84f;
+        bool focused = static_cast<int>(i) == barFocus_;
+        if (focused) {
+            if (focusImage_) {
+                ViewInfo& view = focusImage_->baseViewInfo;
+                view.X = x;
+                view.Y = boxY;
+                view.Width = slot.width;
+                view.Height = boxH;
+                view.Alpha = baseViewInfo.Alpha;
+                view.Monitor = baseViewInfo.Monitor;
+                view.Layout = baseViewInfo.Layout;
+                focusImage_->draw();
+            }
+            else {
+                painter_.rect(x, boxY, slot.width, boxH, style_.focusBackground, style_.focusBackgroundAlpha);
+            }
+            if (armed == button.field && style_.confirmBackgroundAlpha > 0.0f) {
+                painter_.rect(x, boxY, slot.width, boxH, style_.confirmBackground, style_.confirmBackgroundAlpha);
+            }
+        }
+        else if (style_.buttonAlpha > 0.0f) {
+            painter_.rect(x, boxY, slot.width, boxH, style_.button, style_.buttonAlpha);
+        }
+        // Dimmed when it can't run now (why shows in the hints while it's focused)
+        float alpha = button.enabled && button.problem.empty() ? 1.0f : style_.disabledAlpha;
+        float textWidth = painter_.textWidth(button.field->label, size);
+        float textX = x + std::max(0.0f, (slot.width - textWidth) / 2.0f);
+        painter_.text(button.field->label, textX, boxY + (boxH - size) / 2.0f, slot.width, size, focused, focused ? std::max(alpha, 0.6f) : alpha);
+    }
+}
+
 void FormWidget::draw()
 {
     Component::draw();
@@ -1210,7 +1645,8 @@ void FormWidget::draw()
     const float row = rowHeight();
     const float hintsHeight = style_.showHints ? row : 0.0f;
     const float statusHeight = statusLines_.size() * row;
-    const float visible = height - hintsHeight - statusHeight;
+    const float pinnedHeight = barHeight();
+    const float visible = height - hintsHeight - statusHeight - pinnedHeight;
     const float textOffset = (row - size) / 2.0f;
     const float valueX = left + labelWidth();
     const float valueWidth = width - labelWidth();
@@ -1304,14 +1740,16 @@ void FormWidget::draw()
 
         switch (r.kind) {
         case RowKind::Title: {
+            const std::string detail = r.detail.empty() ? titleStatus_ : r.detail;
+            FontManager* titleFont = severityFont(titleSeverity_, infoFont_);
             const float titleSize = size * 1.3f;
             float titleWidth = width;
-            if (!r.detail.empty()) {
+            if (!detail.empty()) {
                 // The title's detail on the right, smaller, as much as the title leaves
                 const float detailSize = size * noteScale;
-                float detailNeeds = painter_.textWidthWith(infoFont_, r.detail, detailSize);
+                float detailNeeds = painter_.textWidthWith(titleFont, detail, detailSize);
                 Forms::RowSplit split = Forms::splitRow(painter_.textWidth(r.text, titleSize), detailNeeds, width, gap, 0.6f);
-                painter_.textWith(infoFont_, r.detail, left + width - std::min(detailNeeds, split.detail),
+                painter_.textWith(titleFont, detail, left + width - std::min(detailNeeds, split.detail),
                                   y + (row - detailSize) / 2.0f, split.detail, detailSize, 1.0f);
                 titleWidth = split.label;
             }
@@ -1335,6 +1773,10 @@ void FormWidget::draw()
             if (r.isError) {
                 painter_.textWith(errorFont_, r.text, noteX, noteY, noteWidth, noteSize, 1.0f);
             }
+            else if (r.severity != Forms::Severity::None) {
+                // A warning, a problem or good news reads at full strength in its color
+                painter_.textWith(severityFont(r.severity, nullptr), r.text, noteX, noteY, noteWidth, noteSize, 1.0f);
+            }
             else {
                 painter_.text(r.text, noteX, noteY, noteWidth, noteSize, false, style_.noteAlpha);
             }
@@ -1344,7 +1786,7 @@ void FormWidget::draw()
             if (r.field) {
                 painter_.text(r.field->label, left, textY, labelWidth() - gap, size, false, 1.0f);
             }
-            painter_.text(r.text, valueX, textY, valueWidth, size, false, 1.0f);
+            painter_.textWith(severityFont(r.severity, nullptr), r.text, valueX, textY, valueWidth, size, 1.0f);
             break;
         case RowKind::Item: {
             float x = left;
@@ -1378,11 +1820,13 @@ void FormWidget::draw()
             // The detail on the right, as wide as it needs up to about half the row
             // when the label needs the room; whichever doesn't fit ends in "..."
             float available = right - x;
-            float detailNeeds = r.detail.empty() ? 0.0f : painter_.textWidthWith(detailFont_, r.detail, size);
+            FontManager* detailFont = severityFont(r.severity, detailFont_);
+            float detailAlpha = r.severity == Forms::Severity::None ? style_.rowDetailAlpha : 1.0f;
+            float detailNeeds = r.detail.empty() ? 0.0f : painter_.textWidthWith(detailFont, r.detail, size);
             Forms::RowSplit split = Forms::splitRow(painter_.textWidthWith(nullptr, r.text, size), detailNeeds, available, gap);
             if (split.detail > 0.0f) {
                 float detailX = right - std::min(detailNeeds, split.detail);
-                painter_.textWith(detailFont_, r.detail, detailX, textY, split.detail, size, style_.rowDetailAlpha);
+                painter_.textWith(detailFont, r.detail, detailX, textY, split.detail, size, detailAlpha);
             }
             painter_.text(r.text, x, textY, split.label, size, focused, 1.0f);
             // A line between this and the next row of the list
@@ -1412,7 +1856,11 @@ void FormWidget::draw()
             break;
         case RowKind::Field: {
             const Field& field = *r.field;
-            float alpha = r.enabled ? 1.0f : style_.disabledAlpha;
+            // A button that can't run now is dimmed too; why shows in the hints while it's focused
+            float alpha = r.enabled && r.problem.empty() ? 1.0f : style_.disabledAlpha;
+            if (focused && !r.problem.empty()) {
+                alpha = std::max(alpha, 0.6f);
+            }
             painter_.text(field.label, left, textY, labelWidth() - gap, size, focused, alpha);
             if (isMultiline(&field)) {
                 drawTextLine(r, field.label.empty() ? left : valueX, textY, focused, alpha);
@@ -1450,6 +1898,10 @@ void FormWidget::draw()
             if (value.empty() && !field.hint.empty() && !editingThis) {
                 painter_.text(field.hint, valueX, textY, fieldValueWidth, size, false, style_.noteAlpha * alpha);
             }
+            else if (isLink && r.severity != Forms::Severity::None) {
+                // A warning about what the link opens keeps its color, focused or not
+                painter_.textWith(severityFont(r.severity, detailFont_), value, valueX, textY, fieldValueWidth, size, alpha);
+            }
             else if (isLink && !focused) {
                 // A link's status reads like a result's detail
                 painter_.textWith(detailFont_, value, valueX, textY, fieldValueWidth, size, style_.rowDetailAlpha * alpha);
@@ -1462,9 +1914,12 @@ void FormWidget::draw()
         }
     }
 
+    // The pinned action bar under the rows, always in view
+    drawBar(top + visible, left, width, padding);
+
     // The last result or warning stays in view above the hints; the rows'
     // visible height leaves room for it, so it never covers the focused row
-    float statusY = top + visible;
+    float statusY = top + visible + pinnedHeight;
     // infoColor when nothing happened; without one, the normal text colour (a null font)
     FontManager* statusFont = statusKind_ == Forms::StatusKind::Error ? errorFont_
                             : statusKind_ == Forms::StatusKind::Info  ? infoFont_
@@ -1474,7 +1929,20 @@ void FormWidget::draw()
         statusY += row;
     }
     if (style_.showHints) {
+        // One line, piece by piece: a piece in a font of its own (a reason, the
+        // jump to Save after a change) reads at full strength
         const float hintSize = size * noteScale;
-        painter_.text(hintText(), left, top + height - hintsHeight + (row - hintSize) / 2.0f, width, hintSize, false, style_.noteAlpha);
+        const float hintY = top + height - hintsHeight + (row - hintSize) / 2.0f;
+        const float spacing = painter_.textWidth("   ", hintSize);
+        float x = left;
+        for (const HintPart& part : hintParts()) {
+            float room = left + width - x;
+            if (room <= 0.0f) {
+                break;
+            }
+            float alpha = part.font ? 1.0f : style_.noteAlpha;
+            painter_.textWith(part.font, part.text, x, hintY, room, hintSize, alpha);
+            x += painter_.textWidthWith(part.font, part.text, hintSize) + spacing;
+        }
     }
 }

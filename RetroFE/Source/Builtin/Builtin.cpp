@@ -23,8 +23,8 @@ const char* const settings = R"(
 log = ERROR,WARNING,NOTICE
 numScreens = 1
 fullscreen = no
-horizontal = 1280
-vertical = 720
+horizontal = auto
+vertical = auto
 windowBorder = true
 windowResize = true
 hideMouse = no
@@ -38,14 +38,15 @@ homeMenu = yes
 // no mapping for (arcade encoders such as a Zero Delay): on some mapped pads
 // (a DualShock through DirectInput) joyButton1 is A, and would cross Select and
 // Back. Directions also keep the first hat and stick, which are the same
-// direction on mapped pads and work on unmapped joysticks.
+// direction on mapped pads and work on unmapped joysticks. The shoulder
+// buttons page (and on a Manage screen jump to Save and back).
 const char* const controls = R"(
 up = Up,joyDPUp,joyLeftY-,joyHat0Up,joyAxis1-
 down = Down,joyDPDown,joyLeftY+,joyHat0Down,joyAxis1+
 left = Left,joyDPLeft,joyLeftX-,joyHat0Left,joyAxis0-
 right = Right,joyDPRight,joyLeftX+,joyHat0Right,joyAxis0+
-pageUp = PageUp
-pageDown = PageDown
+pageUp = PageUp,joyLeftShoulder
+pageDown = PageDown,joyRightShoulder
 select = Return,joyA,joyUnmappedButton0
 back = Escape,joyB,joyUnmappedButton1
 quit = Q
@@ -171,7 +172,8 @@ static const char* const formLayout = R"(
         fontSize="22" fontColor="c8c8c8" focusColor="ffffff" rowHeight="34" labelWidth="260"
         rowDetailColor="8fa9c9" headerColor="8fa9c9" headerAlpha="1"
         separatorColor="ffffff" separatorAlpha="0.08" imageBackgroundColor="000000" imageBackgroundAlpha="0.3"
-        statusColor="9fd8a4" infoColor="b4bcc6" errorColor="ff8f80" confirmBackgroundColor="c0392b" confirmBackgroundAlpha="0.45"
+        statusColor="9fd8a4" infoColor="b4bcc6" errorColor="ff8f80" warningColor="f0c070" successColor="9fd8a4"
+        confirmBackgroundColor="c0392b" confirmBackgroundAlpha="0.45" noteAlpha="0.7" buttonColor="ffffff" buttonAlpha="0.07"
         backgroundColor="14181e" backgroundAlpha="1" titleDetail="info:pendingChanges"
         focusBackgroundColor="3d6fb6" focusBackgroundAlpha="0.55" layer="1"/>
 </layout>

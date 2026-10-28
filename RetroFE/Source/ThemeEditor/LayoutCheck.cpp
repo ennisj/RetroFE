@@ -142,7 +142,7 @@ namespace ThemeEditor
 
         // Built by PageBuilder::buildForms; the editor never writes them, so
         // their attributes aren't checked
-        const char* const UNCHECKED[] = { "form", "keyboard", nullptr };
+        const char* const UNCHECKED[] = { "form", "formHelp", "keyboard", nullptr };
 
         const char* const MEDIA_MODES[] = { "system", "systemlayout", "layout", "commonlayout", "common", "menu", "layout_preferred", nullptr };
         const char* const MENU_MODES[] = { "layout", "common", "commonlayout", nullptr };

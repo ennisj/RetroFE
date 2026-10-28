@@ -45,7 +45,9 @@ RetroFE always has these, unless you leave one empty on purpose:
 The built-in defaults are
 `up = Up,joyDPUp,joyLeftY-,joyHat0Up,joyAxis1-` (and the same for the other
 directions), `select = Return,joyA,joyUnmappedButton0`,
-`back = Escape,joyB,joyUnmappedButton1` and `quit = Q`. A pad SDL has a
+`back = Escape,joyB,joyUnmappedButton1`, `quit = Q`,
+`pageUp = PageUp,joyLeftShoulder` and
+`pageDown = PageDown,joyRightShoulder`. A pad SDL has a
 mapping for selects with A and goes back with B; a joystick it has no mapping
 for (an arcade encoder such as a Zero Delay) selects with button 0 and goes
 back with button 1, as RetroFE always did. Buttons 0 and 1 are written
@@ -88,8 +90,8 @@ Most users will want to use these keys to move around a build
 | `collectionDown` | Scrolls menu next collection in vertical layouts. Will enter that collection based if enterOnCollection is true. |
 | `collectionLeft` | Scrolls to the previous collection in horizontal layouts. Will enter that collection if enterOnCollection is true. |
 | `collectionRight` | Scrolls menu next collection in horizontal layouts. Will enter that collection based if enterOnCollection is true. |
-| `pageUp` | Scrolls menu back by a page |
-| `pageDown` | Scrolls menu forward by a page |
+| `pageUp` | Scrolls menu back by a page. On a Manage screen, returns from the pinned bar to the row you came from; otherwise moves a page up. |
+| `pageDown` | Scrolls menu forward by a page. On a Manage screen, jumps to the pinned action bar; without a bar, moves a page down. |
 | `prevPlaylist` | Switches to the previous playlist. |
 | `nextPlaylist` | Switches to the next playlist. |
 | `cyclePlaylist` | Switches to the next playlist in the cyclePlaylist set. Still functional, but has been replaced by nextCyclePlaylist. |

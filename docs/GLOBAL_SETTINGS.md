@@ -24,8 +24,8 @@ For all `BOOLEAN` types, the following values are accepted: `yes`, `no`, `true`,
 |--------|---------|------|-------------|-----------------------|
 | `numScreens` | `1` | `INTEGER` | Defines the number of monitors used | |
 | `fullscreen` | `true` | `BOOLEAN` | Run the frontend in fullscreen | |
-| `horizontal` | `stretch` | `STRING` | Pixel width INT or STRETCH | |
-| `vertical` | `stretch` | `STRING` | Pixel height INT or STRETCH | |
+| `horizontal` | `stretch` | `STRING` | Pixel width INT or STRETCH. Fork: `auto`, a 16:9 window as large as fits comfortably on the display (90% of the area beside the taskbar); a bare install's built-in settings use it | |
+| `vertical` | `stretch` | `STRING` | Pixel height INT or STRETCH, or `auto` (see `horizontal`) | |
 | `fullscreenX` | `true` | `BOOLEAN` | Run the frontend in fullscreen for monitor x | |
 | `horizontalX` | `""` | `INTEGER` | Pixel width for monitor x | |
 | `verticalX` | `""` | `INTEGER` | Pixel height for monitor x | |

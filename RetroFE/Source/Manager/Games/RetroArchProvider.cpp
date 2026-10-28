@@ -446,6 +446,21 @@ std::string RetroArchProvider::get(const std::string& key, const Screen& screen)
     return "";
 }
 
+Forms::Severity RetroArchProvider::severity(const std::string& key, const Screen& screen)
+{
+    if (key != "status" || kindOf(screen.form) == Kind::None) {
+        return Forms::Severity::None;
+    }
+    sync(screen);
+    if (!context_.found) {
+        return Forms::Severity::None;
+    }
+    RA::State state = context_.setup.state;
+    bool broken = state == RA::State::NotFound || state == RA::State::CoreUnknown
+               || (state == RA::State::Ready && !context_.target.problem.empty());
+    return broken ? Forms::Severity::Warning : Forms::Severity::None;
+}
+
 void RetroArchProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
     Tile t = Tile::Settings;

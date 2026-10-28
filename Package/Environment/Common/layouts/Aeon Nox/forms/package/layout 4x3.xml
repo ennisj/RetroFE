@@ -1,4 +1,4 @@
-<layout width="1600" height="1200" font="fonts/OpenSans.ttf" loadFontSize="40" fontColor="dedede">
+<layout width="1600" height="1200" font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontColor="e6e6e6">
 
 <!-- Aeon Nox: a package from the Catalog. The form takes the top of the screen, so the
      Catalog page behind it keeps showing the package's logo, kind, source and version in
@@ -17,11 +17,12 @@
     <image src="../../images/system_info_overlay.png" x="800" y="412" width="1525" height="772" xOrigin="center" yOrigin="center" layer="4"/>
 
     <form x="800" y="88" width="1420" height="655" xOrigin="center" yOrigin="top" labelWidth="400"
-          font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"
-          rowHeight="50" focusImage="../../images/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35"
-          rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="75c8f7" headerAlpha="0.95"
+          font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontSize="36" fontColor="e6e6e6" focusColor="ffffff"
+          rowHeight="54" focusImage="../../images/form_focus.png" noteAlpha="0.8" disabledAlpha="0.4"
+          rowDetailColor="a9d8f5" rowDetailAlpha="0.9" headerColor="75c8f7" headerAlpha="1"
           separatorColor="75c8f7" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
-          statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"
+          statusColor="9fe3a6" infoColor="c4d0dc" errorColor="ff9a8a" warningColor="f2c46d" successColor="9fe3a6"
+          confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3" buttonColor="75c8f7" buttonAlpha="0.1"
           backgroundColor="000000" backgroundAlpha="0" titleDetail="info:pendingChanges" layer="3"/>
 
 </layout>
