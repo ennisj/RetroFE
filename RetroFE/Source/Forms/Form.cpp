@@ -73,6 +73,7 @@ namespace
             field.bind = attribute(node, "bind");
             field.action = attribute(node, "action");
             field.confirm = attribute(node, "confirm");
+            field.primary = Forms::isTruthy(attribute(node, "primary"));
             field.hint = attribute(node, "hint");
             field.help = attribute(node, "help");
             field.status = attribute(node, "status");
@@ -656,6 +657,27 @@ FocusMove jumpFocus(const std::vector<bool>& focusable, int current, bool inBar,
     return move;
 }
 
+bool primaryHint(const Field& button, bool edited, bool ready)
+{
+    return button.primary && edited && ready;
+}
+
+std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<int>& priorities, float width, float gap)
+{
+    std::vector<int> kept;
+    float total = 0.0f;
+    for (size_t i = 0; i < widths.size(); i++) {
+        kept.push_back(static_cast<int>(i));
+        total += widths[i] + (i ? gap : 0.0f);
+    }
+    while (total > width && kept.size() > 1) {
+        auto drop = std::min_element(kept.begin(), kept.end(), [&](int a, int b) { return priorities[a] < priorities[b]; });
+        total -= widths[*drop] + gap;
+        kept.erase(drop);
+    }
+    return kept;
+}
+
 int barTarget(const std::vector<bool>& ready)
 {
     if (ready.empty()) {
@@ -731,6 +753,18 @@ bool parseNumber(const std::string& text, float& value)
     }
     value = parsed;
     return true;
+}
+
+FocusMove refocusBar(const std::vector<FocusTarget>& rows, int returnRow, FocusTarget replacement)
+{
+    FocusMove move;
+    if (replacement == FocusTarget::Free) {
+        move.bar = true;
+    }
+    else {
+        move.row = refocusIndex(rows, returnRow);
+    }
+    return move;
 }
 
 int refocusIndex(const std::vector<FocusTarget>& targets, int previous)

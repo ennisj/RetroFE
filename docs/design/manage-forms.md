@@ -244,13 +244,13 @@ Things to know:
   again; for a window close "leave again to " in the warning becomes "close
   the window again to quit and ", so word warnings "... Save them, or leave
   again to discard them.".
-- **Saving**: the convention for Save/Reset screens is in
+- **Saving**: the convention for Save/Undo changes screens is in
   `Manager/EditBuffer.h`: `load()` in `enter()`, `get`/`set` through it,
   `isDirty` for `visibleWhen`/`enabledWhen`, `save` writes `changes()` and
   `commit()`s, `reset`/`discard()` call `reset()`, and `leaving()` warns
   while `isDirty()`.
 - **Messages**: `Result::message` shows green when `ok`, red when not. Set
-  `Result::info` when nothing happened (Undo/Reset, a cancel, "X is already
+  `Result::info` when nothing happened (Undo changes, a cancel, "X is already
   in Y", an edit that wrote no files): it's shown plain (`infoColor`), not
   as a success or an error, whatever `ok` says (`Forms::statusKind`).
 - **Confirming**: put `confirm="Delete this game?"` on the button; the action
@@ -388,7 +388,7 @@ Things to know:
 
 Details screens are mostly `value`s (hidden when empty) and `link`s, one per
 "tile", each opening a deeper screen with the same parameters. Editing
-screens use the usual fields bound to the provider, with Save and Reset.
+screens use the usual fields bound to the provider, with Save and Undo changes.
 
 ## Testing
 

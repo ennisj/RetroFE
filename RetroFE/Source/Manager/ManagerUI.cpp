@@ -623,6 +623,10 @@ bool ManagerUI::buildPage()
 
     widget_ = builder.formWidgets().front();
     widget_->bind(shown, &model_);
+    std::string letterUp, letterDown;
+    config_.getProperty("controls.letterUp", letterUp);
+    config_.getProperty("controls.letterDown", letterDown);
+    widget_->setLetterControls(!letterUp.empty() && !letterDown.empty());
     widget_->setCanBrowse(true);   // the file browser, on every platform
     widget_->setBackCloses(nav_.depth() <= 1);
     page_ = page;
@@ -678,6 +682,10 @@ bool ManagerUI::openKeyboard()
 
     const Forms::Field* field = widget_->editingField();
     keyboard_ = builder.keyboardWidgets().front();
+    std::string letterUp, letterDown;
+    config_.getProperty("controls.letterUp", letterUp);
+    config_.getProperty("controls.letterDown", letterDown);
+    keyboard_->setLetterControls(!letterUp.empty() && !letterDown.empty());
     keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number,
                       field && field->multiline);
     keyboardPage_ = page;
@@ -759,10 +767,14 @@ void ManagerUI::updateCapture()
         endCapture();
         LOG_INFO("Manager", "Captured input " + token);
         model_.set(bind, token);
+        bool changed = false;
         if (!action.empty()) {
-            handleResult(model_.runAction(action));
+            auto result = model_.runAction(action);
+            changed = result.ok && !result.info;
+            handleResult(result);
         }
         if (widget_) {
+            if (changed) widget_->markEdited();
             widget_->invalidate();
         }
         break;

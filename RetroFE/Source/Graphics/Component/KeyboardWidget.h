@@ -44,6 +44,8 @@ class Image;
 class KeyboardWidget : public Component
 {
 public:
+    void setLetterControls(bool bound) { letterControls_ = bound; }
+
     // LineUp / LineDown: the owner moves the cursor a line as the field draws it
     using Result = Forms::KeyboardKeys::Result;
     using Action = Forms::KeyboardKeys::Action;
@@ -79,6 +81,8 @@ public:
     void draw() override;
 
 private:
+    bool letterControls_ = false;
+
     float fontSize() const;
 
     WidgetPainter painter_;

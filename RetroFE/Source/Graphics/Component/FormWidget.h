@@ -81,6 +81,8 @@ class Image;
 class FormWidget : public Component
 {
 public:
+    void setLetterControls(bool bound) { letterControls_ = bound; }
+
     // LetterUp / LetterDown (RetroFE's letterUp and letterDown controls) jump
     // through a results list to the first row starting with the previous or
     // next letter
@@ -224,6 +226,8 @@ public:
     void draw() override;
 
 private:
+    bool letterControls_ = false;
+
     enum class RowKind
     {
         Title, Header, Field, Note,
@@ -269,6 +273,7 @@ private:
     {
         std::string text;
         FontManager* font = nullptr;   // null: the normal font, at noteAlpha
+        int priority = 2;              // smaller: dropped first when the line is full
     };
 
     void buildRows();

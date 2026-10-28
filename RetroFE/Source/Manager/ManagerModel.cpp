@@ -1105,7 +1105,7 @@ Forms::Model::Result ManagerModel::saveSettings()
 
     result.ok = true;
     result.reload = true;
-    result.message = "Saved. Display changes apply the next time RetroFE starts.";
+    result.message = "Saved. RetroFE reloads now. Fullscreen and screen size apply the next time RetroFE starts.";
     return result;
 }
 

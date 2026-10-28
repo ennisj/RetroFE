@@ -116,7 +116,7 @@ public:
     // RetroFE's up, down, left, right, select, back, page up, page down,
     // letter up and letter down controls, as currently held (Controls'
     // order). Presses act once; directions, page and letter up/down repeat
-    // while held. Layout-drawn screens use the first six; an ImGui screen
+    // while held. Layout-drawn screens use all ten; an ImGui screen
     // gets them all (ImGuiScreen::control).
     using Controls = Manager::ImGuiScreen::ControlsHeld;
     void navigate(const Controls& held, float now);

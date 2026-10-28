@@ -56,7 +56,7 @@ const char* const themeNewForm = R"(
   <text label="Name" bind="theme:newName"/>
   <choice label="Orientation" bind="theme:newOrientation" options="theme:orientations"/>
   <note value="The new theme starts with an empty page. Edit it to place widgets: titles, art, videos and the game wheel." panel="yes"/>
-  <button label="Create" action="theme.create"/>
+  <button label="Create" action="theme.create" primary="yes"/>
 </form>
 )";
 

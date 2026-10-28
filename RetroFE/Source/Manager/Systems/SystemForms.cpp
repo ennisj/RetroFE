@@ -68,7 +68,7 @@ const char* const settingsForm = R"(
   <choice label="Metadata" bind="{p}:metadataType" options="{p}:metadataTypes" help="The meta/hyperlist file titles and years come from."/>
   <value label="Saved in" bind="{p}:settingsFile"/>
   <actions>
-    <button label="Save" action="{p}.saveSettings"/>
+    <button label="Save" action="{p}.saveSettings" primary="yes"/>
     <button label="Undo changes" action="{p}.resetSettings" visibleWhen="{p}:settingsDirty"/>
   </actions>
 </form>
@@ -85,7 +85,7 @@ const char* const launcherForm = R"(
   <note bind="{p}:launcherProblem"/>
   <value label="Saved in" bind="{p}:launcherFile"/>
   <actions>
-    <button label="Save" action="{p}.saveLauncher"/>
+    <button label="Save" action="{p}.saveLauncher" primary="yes"/>
     <button label="Undo changes" action="{p}.resetLauncher" visibleWhen="{p}:launcherDirty"/>
   </actions>
 </form>
@@ -101,7 +101,7 @@ const char* const infoForm = R"(
   <toggle label="This is a video collection" bind="{p}:isVideo" help="Writes type = videos: it's then listed under Videos instead of Systems."/>
   <value label="Saved in" bind="{p}:infoFile" help="Leave a field empty to take it out."/>
   <actions>
-    <button label="Save" action="{p}.saveInfo"/>
+    <button label="Save" action="{p}.saveInfo" primary="yes"/>
     <button label="Undo changes" action="{p}.resetInfo" visibleWhen="{p}:infoDirty"/>
   </actions>
 </form>
@@ -129,7 +129,7 @@ const char* const mediumForm = R"(
   <file label="Replace with" bind="{p}:mediaFile" start="{p}:mediumFolder" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="{p}:isTextSlot"/>
   <!-- The buttons stay put (greyed out with a reason), so focus never lands on the file field above by itself -->
   <actions>
-    <button label="Use this file" action="{p}.replaceMedia"/>
+    <button label="Use this file" action="{p}.replaceMedia" primary="yes"/>
     <button label="Add it to the folder" action="{p}.addToFolder" visibleWhen="{p}:hasMediaFolder"/>
     <button label="Clear" action="{p}.clearMedia" confirm="Clear this art? The file is kept in manage/backups."/>
     <button label="Clear the folder" action="{p}.clearFolder" visibleWhen="{p}:hasMediaFolder" confirm="Clear the whole folder? Its files are kept in manage/backups."/>
@@ -158,7 +158,7 @@ const char* const playlistsForm = R"(
   <results bind="{p}:playlists" open="{p}-playlist" param="playlist" empty="No playlists yet."/>
   <section label="New playlist">
     <text label="Name" bind="{p}:newPlaylist" hint="e.g. Party {items}"/>
-    <button label="Create playlist" action="{p}.createPlaylist"/>
+    <button label="Create playlist" action="{p}.createPlaylist" primary="yes"/>
   </section>
 </form>
 )";
@@ -189,7 +189,7 @@ const char* const entryForm = R"(
   <value label="Playlist" bind="{p}:entryPlaylist"/>
   <note bind="{p}:entryNote"/>
   <actions>
-    <button label="Add to the playlist" action="{p}.addEntry" visibleWhen="!{p}:isInPlaylist"/>
+    <button label="Add to the playlist" action="{p}.addEntry" primary="yes" visibleWhen="!{p}:isInPlaylist"/>
     <button label="Take out of the playlist" action="{p}.removeEntry" visibleWhen="{p}:isInPlaylist" confirm="Take it out of the playlist?"/>
   </actions>
 </form>
@@ -236,7 +236,7 @@ const char* const addForm = R"(
   {addPlayChoice}<choice label="{launcherLabel}" bind="{p}:addLauncher" options="{p}:addLaunchers" visibleWhen="{p}:addUsesLauncher"/>
   <file label="{programLabel}" bind="{p}:addProgram" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd" visibleWhen="{p}:addIsNewLauncher" help="{programHelp}"/>
   <text label="Arguments" bind="{p}:addArguments" default="&quot;%ITEM_FILEPATH%&quot;" visibleWhen="{p}:addIsNewLauncher" help="%ITEM_FILEPATH% is replaced with the {item}'s file"/>
-  <button label="Add {noun}" action="{p}.create"/>
+  <button label="Add {noun}" action="{p}.create" primary="yes"/>
 </form>
 )";
 

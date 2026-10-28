@@ -195,14 +195,13 @@ void KeyboardWidget::draw()
     }
 
     if (style_.showHints) {
-        std::string hint = "Select: type   Back: cancel";
-        if (keys_.multiline()) {
-            hint = "Select: type   Done: keep   Back: cancel";
-        }
+        std::string hint = "Select: type   Done: keep   Back: cancel";
         if (!keys_.numeric()) {
             hint += "   Shift: symbols";
         }
-        hint += "   LetterUp/Down: cursor";
+        if (letterControls_) {
+            hint += "   Letter up/down: cursor";
+        }
         painter_.text(hint, left, top + height - hintsHeight + (hintsHeight - size * 0.85f) / 2.0f, width, size * 0.85f, false, style_.noteAlpha);
     }
 }

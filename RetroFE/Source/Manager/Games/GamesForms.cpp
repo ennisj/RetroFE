@@ -99,7 +99,7 @@ const char* const metadataForm = R"(
     <text label="Clone of" bind="game:meta:cloneof" hint="the parent game's name" status="game:metaStatus:cloneof"/>
   </section>
   <actions>
-    <button label="Save" action="game.saveMetadata"/>
+    <button label="Save" action="game.saveMetadata" primary="yes"/>
     <button label="Undo changes" action="game.resetMetadata" visibleWhen="game:isMetadataDirty"/>
   </actions>
   <section label="Changed here" visibleWhen="game:hasOverrides">
@@ -131,7 +131,7 @@ const char* const launcherForm = R"(
           help="Another launcher for this game only. Choosing the system's launcher takes it away again."/>
   <value label="Saved in" bind="game:launcherFile"/>
   <actions>
-    <button label="Save" action="game.saveLauncher"/>
+    <button label="Save" action="game.saveLauncher" primary="yes"/>
     <button label="Undo changes" action="game.resetLauncher" visibleWhen="game:isLauncherDirty"/>
     <button label="Use the system's launcher" action="game.useSystemLauncher" visibleWhen="game:hasLauncherOverride"/>
   </actions>
@@ -166,7 +166,7 @@ const char* const mediaSlotForm = R"(
   <file label="Replace from a file" bind="game:slot:newFile" start="game:slot:place" hint="Not chosen yet" visibleWhen="game:slot:isText"
         filter="Text" pattern="*.txt"/>
   <actions>
-    <button label="Use this file" action="game.replaceMedia"/>
+    <button label="Use this file" action="game.replaceMedia" primary="yes"/>
     <button label="Add it to the folder" action="game.addToFolder" visibleWhen="game:slot:hasFolder"/>
     <button label="Clear" action="game.clearMedia" confirm="Clear it? The file is kept in manage/backups."/>
     <button label="Clear the folder" action="game.clearFolder" visibleWhen="game:slot:hasFolder"
@@ -205,7 +205,7 @@ const char* const playlistsForm = R"(
     <list label="In" bind="game:playlistsListing" empty="It isn't in any playlist."/>
     <choice label="Playlist" bind="game:playlist" options="game:playlists" visibleWhen="game:hasPlaylists"/>
     <note bind="game:playlistStatus"/>
-    <button label="Add to this playlist" action="game.addToPlaylist" visibleWhen="game:canAddToPlaylist"/>
+    <button label="Add to this playlist" action="game.addToPlaylist" primary="yes" visibleWhen="game:canAddToPlaylist"/>
     <button label="Remove from this playlist" action="game.removeFromPlaylist" visibleWhen="game:isInPlaylist"
             confirm="Remove it from this playlist?"/>
     <results bind="game:newPlaylist" open="system-playlists" visibleWhen="!game:hasPlaylists"/>
@@ -231,7 +231,7 @@ const char* const descriptionForm = R"(
         hint="No story text yet"/>
   <value label="Saved in" bind="game:story:file"/>
   <actions>
-    <button label="Save" action="game.saveStory"/>
+    <button label="Save" action="game.saveStory" primary="yes"/>
     <button label="Undo changes" action="game.resetStory" visibleWhen="game:isStoryDirty"/>
   </actions>
   <actions>

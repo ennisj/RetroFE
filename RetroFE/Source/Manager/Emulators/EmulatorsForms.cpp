@@ -111,7 +111,7 @@ const char* const emulatorNewForm = R"(
   <folder label="Working folder" bind="emulator:newWorkingFolder" hint="The program's folder"/>
   <toggle label="Restarts RetroFE" bind="emulator:newReboot" help="RetroFE restarts once the program exits, e.g. after one that switches the theme."/>
   <value label="Runs" bind="emulator:newCommand"/>
-  <button label="Create launcher" action="emulator.create"/>
+  <button label="Create launcher" action="emulator.create" primary="yes"/>
 </form>
 )";
 
@@ -134,7 +134,7 @@ const char* const emulatorEditForm = R"(
     <value label="Saved in" bind="emulator:editFile"/>
   </section>
   <actions>
-    <button label="Save" action="emulator.save"/>
+    <button label="Save" action="emulator.save" primary="yes"/>
     <button label="Undo changes" action="emulator.resetEdit" visibleWhen="emulator:editIsDirty"/>
   </actions>
   <actions>

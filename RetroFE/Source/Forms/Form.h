@@ -103,6 +103,7 @@ namespace Forms
         Severity severity = Severity::None;  // Note: how it's drawn when the model doesn't say (severity="warning")
         bool live = false;        // Text: the model gets every change while editing, e.g. for a search box
         bool multiline = false;   // Text: several lines, rows high; the value keeps "\n" between them
+        bool primary = false;     // Button: saves the values held by this form
         bool pin = true;          // Actions: may be pinned at the bottom of the screen (pin="no": stays in place; see pinnedActions)
         bool panel = false;       // Note: on a page with a help panel, shown there (for rows with no help of their own) rather than in the rows
         int min = 0;
@@ -111,6 +112,9 @@ namespace Forms
         int rows = 4;             // Image, multi-line Text: height in rows
         std::vector<Field> children;
     };
+
+    bool primaryHint(const Field& button, bool edited, bool ready);
+    std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<int>& priorities, float width, float gap);
 
     struct Form
     {
@@ -434,6 +438,10 @@ namespace Forms
         int row = -1;        // the row now focused, or -1
         bool bar = false;    // the bar has focus
     };
+    // A vanished bar button may hand focus only to a previously shown, safe
+    // button; otherwise return to the rows, preferring the previous link.
+    FocusMove refocusBar(const std::vector<FocusTarget>& rows, int returnRow, FocusTarget replacement);
+
     FocusMove moveFocus(const std::vector<bool>& focusable, int current, bool inBar, int barSize, int direction, int returnRow = -1);
 
     // The jump control (pageDown) from the rows: into the bar if there's one,

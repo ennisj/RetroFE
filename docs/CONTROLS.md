@@ -64,11 +64,13 @@ DirectInput) button 1 is A, which would make one button both Select and Back.
 | `quit` | Exits the frontend. Closing the window (title-bar X, Alt+F4) does the same, asking Manage's screens about unsaved changes first if one is open (closing again leaves, dropping them; a close after a warning about Back or F10 warns again first); it does nothing in kiosk mode or when `quit` is bound to nothing. A close while a game runs is left to the game. On the splash page, quitting (either way) waits until RetroFE has finished starting (a first run imports the metadata) while the splash keeps playing. |
 | `manager` | Opens Settings (default F10). Keyboard keys only: the first one listed is used, and F10 when it lists none. |
 
-The Manage screens use `up`, `down`, `left`, `right`, `select` and `back`
-too, and the theme editor (Manage > Themes > Edit) adds `pageUp` / `pageDown`
-(the previous / next region of its screen) and `letterUp` / `letterDown` (the
-previous / next widget on the canvas). See
-[THEME_EDITOR.md](THEME_EDITOR.md#with-a-controller).
+The Manage screens use `up`, `down`, `left`, `right`, `select`, `back`,
+`pageUp` / `pageDown` and `letterUp` / `letterDown`. Page controls jump to
+and from the action bar, or page through rows without one. Letter controls
+jump by letter in results; on a bare install they use M / left trigger and
+N / right trigger. Games keeps Left/Right paging, so both are available.
+In the theme editor, page controls move between regions and letter controls
+move between widgets. See [THEME_EDITOR.md](THEME_EDITOR.md#with-a-controller).
 
 ### Basic Navigation
 Most users will want to use these keys to move around a build

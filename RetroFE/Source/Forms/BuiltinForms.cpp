@@ -44,7 +44,7 @@ const char* const settingsForm = R"(
     <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <text label="Height" bind="settings:vertical" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <toggle label="Hide mouse" bind="settings:hideMouse" default="no"/>
-    <note value="Display changes take effect the next time RetroFE starts."/>
+    <note value="Fullscreen and screen size apply the next time RetroFE starts. Hide mouse applies when you save; RetroFE reloads."/>
   </section>
   <section label="Menus">
     <choice label="Theme" bind="settings:layout" options="layouts"/>
@@ -56,7 +56,7 @@ const char* const settingsForm = R"(
     <number label="Attract mode after" bind="settings:attractModeTime" min="0" max="3600" default="0" help="Seconds without input. 0 turns attract mode off."/>
   </section>
   <actions>
-    <button label="Save" action="settings.save"/>
+    <button label="Save" action="settings.save" primary="yes"/>
   </actions>
 </form>
 )";
@@ -108,9 +108,9 @@ const char* const sourcesForm = R"(
     <folder label="Folder" bind="draft:sourcePath" hint="Not chosen yet" visibleWhen="info:sourceIsFolder"/>
     <toggle label="I trust this source" bind="draft:sourceTrusted" default="no"
             help="RetroFE doesn't check what sources offer. Only add sources you trust."/>
-    <button label="Add source" action="source.add"/>
   </section>
   <actions>
+    <button label="Add source" action="source.add" primary="yes"/>
     <button label="Check for updates" action="catalog.refresh"/>
   </actions>
 </form>

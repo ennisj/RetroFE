@@ -182,7 +182,7 @@ static Test::Suite controlsSuite("controls", [] {
         checkEqual(ControlList::builtinDefault("select"), "Return,joyA,joyUnmappedButton0", "from Builtin::controls: pads by controller name, encoders by button");
         checkEqual(ControlList::builtinDefault("back"), "Escape,joyB,joyUnmappedButton1", "the same for Back");
         checkEqual(ControlList::builtinDefault("manager"), "F10", "the Settings key");
-        checkEqual(ControlList::builtinDefault("letterUp"), "", "none");
+        checkEqual(ControlList::builtinDefault("letterUp"), "M,joyLeftTrigger", "previous letter on keyboard and pad");
         int required = 0;
         for (const ControlList::Control& control : ControlList::all()) {
             required += control.required ? 1 : 0;
@@ -390,7 +390,8 @@ static Test::Suite controlsSuite("controls", [] {
         check(select && select->detail == "Key Return, Pad A, Joy button 0 (unmapped)",
               "built-in select: " + (select ? select->detail : ""));
         const Forms::Row* letter = f.row("Navigation", "letterUp");
-        check(letter && letter->detail == "No input", "nothing built in");
+        check(letter && letter->detail == "Key M, Pad left trigger",
+              "built-in letter jump: " + (letter ? letter->detail : ""));
         checkEqual(f.model->get("control:deadZone"), "30", "built-in dead zone");
         f.model->setScreen("control", { { "id", "select" } });
         check(contains(f.model->get("control:notes"), "no controls.conf"), "says so");
