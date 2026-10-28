@@ -19,6 +19,23 @@ OnesaUCE copy at 1080p, `c*` = 4:3). The names below are files in that folder.
 
 ---
 
+## Status after round 12 (2026-10-28)
+
+Parcels A–J were built in round 12 ([FORK-CHANGELOG.md](FORK-CHANGELOG.md),
+choices in [DECISIONS.md](DECISIONS.md) M22–M23). The fifth QA pass,
+[QA-ROUND12.md](QA-ROUND12.md), recounted section 2's tasks from the forms
+as built (by reading the code, not on screen): presses fall on nine of the
+ten tasks and no path has to be typed any more; adding the first system goes
+from ~350–550 presses to about 70, starting a game from Manage from ~17 to 9,
+fixing a title from ~22 to 11, remapping Select from ~26 to 16.
+
+Of the 42 items in section 4: 33 done; partly done: A2 (no video duration),
+C3 (intro notes stay rows on the built-in page), E2 (Settings wording, Menus'
+Delete, docs), E3 (focus after Hide), F1 (letter jump not reachable on a bare
+install's pad), F4 (no video preview); not done: B5 ("Delete this menu") and
+F8 (Start this game doesn't restore the search). QA-ROUND12.md section 3 has
+the item-by-item list, and its findings are what round 13 picks up.
+
 ## 1. Summary
 
 The management screens are **functionally deep and honest**: almost every
