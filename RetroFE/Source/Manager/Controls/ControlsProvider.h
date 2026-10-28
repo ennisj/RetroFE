@@ -17,6 +17,7 @@
 
 #include "../EditBuffer.h"
 #include "../Provider.h"
+#include "../../Control/InputToken.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -55,6 +56,10 @@ namespace Manager
 
         // The inputs of a value, described for the screen ("No input" when none)
         static std::string describeValue(const std::string& value);
+        // The same in short words, for the Controls list where several share a
+        // row: "Key Return, Pad A, Joy button 0 (unmapped)"
+        static std::string describeValueShort(const std::string& value);
+        static std::string describeShort(const InputToken::Input& input);
 
     private:
         struct Source

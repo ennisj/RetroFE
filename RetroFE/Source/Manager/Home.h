@@ -15,6 +15,8 @@
  */
 #pragma once
 
+#include <cstddef>
+
 // The Home menu: RetroFE's top level when homeMenu is enabled. It's built in
 // memory rather than read from collections/, but layouts style it like any
 // collection, e.g. layouts/<layout>/collections/Home/layout/layout.xml and
@@ -30,6 +32,20 @@ namespace Home
     constexpr const char* browse = "Browse";   // goes to firstCollection
 
     constexpr const char* items[] = { catalog, settings, manage, browse };
+
+    // The item Home starts on, as a position in items: Browse once there's
+    // something to browse (collections), Manage on a bare install, where the
+    // first system is added. Never the Catalog, whatever the order.
+    inline size_t landing(bool hasContent)
+    {
+        const char* wanted = hasContent ? browse : manage;
+        for (size_t i = 0; i < sizeof(items) / sizeof(items[0]); i++) {
+            if (items[i] == wanted) {
+                return i;
+            }
+        }
+        return 0;
+    }
 
     // The Catalog list, opened from Home's Catalog item: also built in memory,
     // one item per package, named by package id, so artwork is <id>.png.

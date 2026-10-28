@@ -213,6 +213,32 @@ const Field* fieldAt(const Form& form, int index)
     return walk(form.fields, index, nullptr);
 }
 
+bool fieldMatches(const Field& field, const std::string& key)
+{
+    return !key.empty() && (field.action == key || field.bind == key || field.open == key);
+}
+
+namespace
+{
+    const Field* findIn(const std::vector<Field>& fields, const std::string& key)
+    {
+        for (const Field& field : fields) {
+            if (fieldMatches(field, key)) {
+                return &field;
+            }
+            if (const Field* found = findIn(field.children, key)) {
+                return found;
+            }
+        }
+        return nullptr;
+    }
+}
+
+const Field* findField(const Form& form, const std::string& key)
+{
+    return key.empty() ? nullptr : findIn(form.fields, key);
+}
+
 std::string rowsNote(const Rows& rows)
 {
     if (rows.total <= rows.items.size()) {
@@ -499,6 +525,20 @@ int refocusIndex(const std::vector<FocusTarget>& targets, int previous)
     };
     int found = search(FocusTarget::Free);
     return found >= 0 ? found : search(FocusTarget::Guarded);
+}
+
+FocusTarget refocusTarget(const Field* field, bool focusable, bool wasShown)
+{
+    if (!field || !focusable) {
+        return FocusTarget::None;
+    }
+    if (field->type == FieldType::Folder || field->type == FieldType::File) {
+        return FocusTarget::Guarded;
+    }
+    if (field->type == FieldType::Button && (!field->confirm.empty() || !wasShown)) {
+        return FocusTarget::Guarded;
+    }
+    return FocusTarget::Free;
 }
 
 // --- Editing text ------------------------------------------------------------

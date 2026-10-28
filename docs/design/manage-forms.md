@@ -16,8 +16,8 @@ form element and the built-in bindings are in [../MANAGER.md](../MANAGER.md).
   it and puts the focus back where it was. Back on the first screen closes
   the manager. Past 32 screens the oldest but the first is dropped.
 - `ManagerModel` answers every binding. Built-in prefixes (`settings`,
-  `draft`, `info`, `param`, `package`, and the actions `collection.*`,
-  `source.*`, `catalog.*`, `open.*`, `back`) are its own; any other prefix
+  `draft`, `info`, `param`, `package`, `source`, and the actions `collection.*`,
+  `source.*`, `catalog.*`, `changes.*`, `open.*`, `back`) are its own; any other prefix
   goes to the **provider** registered for it.
 - Forms are drawn by `FormWidget` (layout pages, driven by RetroFE's controls)
   or `FormView` (Dear ImGui, `formsRenderer = imgui`, for development).
@@ -242,10 +242,21 @@ Things to know:
 - **Confirming**: put `confirm="Delete this game?"` on the button; the action
   only runs on the second Select, so `runAction` doesn't need to ask.
 - **Buttons that hide themselves** (`visibleWhen` that turns off once
-  pressed): focus stays at the same place or moves up, and never lands on a
-  file or folder field by itself when anything else can take it. If it has
-  to, Select there does nothing until the user moves, so a second press
-  can't open a file picker.
+  pressed): focus stays at the same place or moves up, and never lands by
+  itself on a file or folder field, a button with `confirm=`, or a button
+  that wasn't shown before the press (usually the undo of what was pressed:
+  "Show this game again" after Hide, Remove after Install), when anything
+  else can take it (`Forms::refocusTarget`, `FormWidget::buildRows`). If it
+  has to, Select there does nothing until the user moves, so a second press
+  can't open a file picker or undo the action. So give a screen a harmless
+  row near its action (the package screen's "Back to the Catalog") rather
+  than special-casing focus.
+- **Focus after an action**: set `Result::focus` to the field to focus
+  afterwards, named by its `action`, `bind` or `open` (`Forms::findField`),
+  e.g. `"package.showInBrowse"`. If it isn't shown yet (it appears when an
+  install finishes) it's focused when it appears, unless the user has moved
+  by then. `ManagerUI::returnFromLaunch` uses the same to put focus back on
+  "Start this game".
 - **Navigating after an action**: `Result::open` pushes a screen and
   `Result::back` returns (asking `leaving()` like Back does), after success
   only. The message is shown on the screen you end up on. A form id that
@@ -273,6 +284,16 @@ Things to know:
   user closes the manager, so they can keep working. `Result::reload`
   instead closes the manager and reloads straight away; Settings' Save and
   Add a system use that, because the user expects to see the result at once.
+  With `Result::open` too, Manage opens on that screen again once RetroFE is
+  back, showing the message (the hub's `changes.apply`); with
+  `Result::browse`, RetroFE shows that collection (`package.showInBrowse`).
+  `Result::browse` without `reload` just closes the screens and shows it
+  (`catalog.open`). Both outlive the reload in `Manager::AfterReload`
+  (SDL-free, tested). Every Manage screen shows how many changes wait for a
+  reload (`info:pendingChanges`, `Manager/PendingChanges.h`): the distinct
+  descriptions given to `library->changed(what)`, a `requestReload()`, and
+  finished Catalog installs, so give `changed()` a short description of what
+  changed ("game metadata", "added Arcade").
 - **Starting a game**: `services.requestLaunch(system, game)` from an action
   (Games' `game.launch`); check `services.launchProblem()` in
   `actionProblem` first: it refuses while a reload is due and a Catalog

@@ -755,11 +755,28 @@ bool RetroFE::run()
 					bool launchedFromManager = false;
 					if (currentPage_->isIdle())
 					{
-						// Manage asked to start a game (after any reload it needed)
+						// Manage asked to start a game (after any reload it needed),
+						// or to show a collection
 						ManagerUI::LaunchRequest launch;
+						std::string browse;
 						launchedFromManager = !player_.isOpen() && manager_.takeLaunchRequest(launch);
-						state = launchedFromManager ? launchFromManager(launch)
-							: player_.isOpen() ? processPlayerInput() : processUserInput(currentPage_);
+						if (launchedFromManager)
+						{
+							state = launchFromManager(launch);
+						}
+						else if (!player_.isOpen() && !browseAfterBack_.empty())
+						{
+							browse.swap(browseAfterBack_);
+							state = browseFromManager(browse);
+						}
+						else if (!player_.isOpen() && manager_.takeBrowseRequest(browse))
+						{
+							state = browseFromManager(browse);
+						}
+						else
+						{
+							state = player_.isOpen() ? processPlayerInput() : processUserInput(currentPage_);
+						}
 					}
 					// launchExit() set it after a game from Manage: keep that pause for held keys
 					if (!launchedFromManager)
@@ -901,6 +918,13 @@ bool RetroFE::run()
 					currentPage_->selectPlaylist("all");
 				}
 
+				// Home lands on Browse once there's something to browse, and on
+				// Manage until then (the order stays: Catalog, Settings, Manage, Browse)
+				if (homeMenu_ && currentPage_->getCollectionName() == Home::collectionName)
+				{
+					currentPage_->setScrollOffsetIndex(Home::landing(!Setup::listCollections().empty()));
+				}
+
 				// Handle screensaver/random start settings
 				bool randomStart = false;
 				bool screensaver = false;
@@ -916,8 +940,12 @@ bool RetroFE::run()
 				currentPage_->onNewItemSelected();
 				currentPage_->reallocateMenuSpritePoints();  // Update playlist menu
 
-				// Nothing set up yet: start in the manager
-				if (!Setup::hasSettingsFile() || Setup::listCollections().empty())
+				// Back from "Apply changes now": Manage again, where it was;
+				// nothing set up yet: start in the manager
+				if (manager_.reopenAfterReload())
+				{
+				}
+				else if (!Setup::hasSettingsFile() || Setup::listCollections().empty())
 				{
 					manager_.open("manage");
 				}
@@ -2587,7 +2615,7 @@ bool RetroFE::run()
 				reboot_ = false;
 				state = RETROFE_QUIT_REQUEST;
 			}
-			else if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
+			else if (manager_.takeReloadRequest(backHome))
 			{
 				// Reload everything so the changes show up
 				reboot_ = true;
@@ -3677,6 +3705,49 @@ CollectionInfo* RetroFE::getCatalogCollection()
 bool RetroFE::isHomeMenuPage(const std::string& collectionName) const
 {
 	return homeMenu_ && (collectionName == Home::collectionName || collectionName == Home::catalogCollectionName);
+}
+
+// A collection Manage asked for (Result::browse): opened as Browse opens one,
+// over the current page, so Back returns there
+RetroFE::RETROFE_STATE RetroFE::browseFromManager(const std::string& collection)
+{
+	if (!currentPage_)
+	{
+		return RETROFE_IDLE;
+	}
+	bool catalogList = collection == Home::catalogCollectionName;
+	if (catalogList && !homeMenu_)
+	{
+		return RETROFE_IDLE;   // the Catalog list is one of Home's pages
+	}
+	if (catalogList && (!manager_.catalog() || manager_.catalog()->entries().empty()))
+	{
+		manager_.open("sources");
+		return RETROFE_IDLE;
+	}
+	if (currentPage_->getCollectionName() == collection)
+	{
+		// Already there, but the list may have changed (a source was just added):
+		// back out of it first, then in again, which builds it afresh
+		if (catalogList && (currentPage_->getMenuDepth() > 1 || !pages_.empty()))
+		{
+			browseAfterBack_ = collection;
+			return RETROFE_BACK_REQUEST;
+		}
+		return RETROFE_IDLE;
+	}
+	if (!catalogList)
+	{
+		std::vector<std::string> collections = Setup::listCollections();
+		if (std::find(collections.begin(), collections.end(), collection) == collections.end())
+		{
+			LOG_WARNING("RetroFE", "Manage asked to show " + collection + ", which isn't a collection");
+			return RETROFE_IDLE;
+		}
+	}
+	LOG_INFO("RetroFE", "Showing " + collection + " for Manage");
+	nextPageName_ = collection;
+	return RETROFE_NEXT_PAGE_REQUEST;
 }
 
 // Manage's "Start this game": the game is launched as RETROFE_LAUNCH_REQUEST

@@ -41,3 +41,18 @@ inline size_t itemAtOffset(size_t index, int offset, size_t size)
     // -offset without overflow for INT_MIN
     return loopDecrement(index, static_cast<size_t>(-(static_cast<long long>(offset))), size);
 }
+
+// <menu repeatItems="no">: whether position `slot` of a menu with `slots`
+// positions, `selected` the selected one, is drawn when it holds `size`
+// items. With fewer items than positions, a window of `size` positions
+// around the selected one shows each item once (the extra one of an even
+// count goes after it); otherwise every position is drawn.
+inline bool showsMenuSlot(size_t slot, size_t selected, size_t slots, size_t size)
+{
+    if (size == 0) return false;
+    if (size >= slots) return true;
+    size_t before = (size - 1) / 2;
+    size_t first = selected > before ? selected - before : 0;
+    if (first > slots - size) first = slots - size;
+    return slot >= first && slot - first < size;
+}

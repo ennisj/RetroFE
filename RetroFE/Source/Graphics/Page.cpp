@@ -1457,9 +1457,11 @@ void Page::draw() {
                     continue;
                 }
 
-                for (Component* c : menu->getComponents()) {
-                    // Empty slots are normal, e.g. a menu with fewer items than positions
-                    if (!c) {
+                for (size_t slot = 0; slot < menu->slotCount(); slot++) {
+                    Component* c = menu->slotComponent(slot);
+                    // Empty slots are normal, e.g. a menu with fewer items than positions;
+                    // with repeatItems="no" a short list leaves the rest empty too
+                    if (!c || !menu->showsSlot(slot)) {
                         continue;
                     }
                     if (c->baseViewInfo.Layer == i) {

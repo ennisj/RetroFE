@@ -173,8 +173,24 @@ namespace Forms
 
             // RetroFE has to reload to show the change: the manager closes and
             // RetroFE reloads now. To reload once the user closes the manager
-            // instead, providers call Services::requestReload.
+            // instead, providers call Services::requestReload. With open set,
+            // Manage opens again on that form (with params) once RetroFE is
+            // back, showing the message there (the hub's "Apply changes now").
             bool reload = false;
+
+            // After success, the manager closes and RetroFE shows this
+            // collection, as Browse would (after the reload, with reload),
+            // e.g. a collection just installed, or the Catalog list
+            std::string browse;
+
+            // After success, the field to focus: a field whose action, bind
+            // or open is this (see findField). If it isn't shown yet (e.g. a
+            // button that appears once an install has finished), it's focused
+            // when it appears, unless the user has moved by then. Without
+            // it, focus stays where it was; if that field went away, it never
+            // lands on a button that wasn't there before the action or that
+            // asks for confirmation (see refocusTarget).
+            std::string focus;
 
             // After success, go to another screen: open pushes that form with
             // params, plus the current screen's when keepParams (params win);
@@ -240,6 +256,12 @@ namespace Forms
     // so a focus can be remembered without pointers. -1 / nullptr when not found.
     int fieldIndex(const Form& form, const Field* field);
     const Field* fieldAt(const Form& form, int index);
+
+    // Whether field is the one key names: its action, bind or open is key
+    // (e.g. "game.launch", "settings:layout", "controls"). findField is the
+    // first such field in document order, or nullptr.
+    bool fieldMatches(const Field& field, const std::string& key);
+    const Field* findField(const Form& form, const std::string& key);
 
     // What a Results field says when it isn't showing every row, e.g.
     // "Showing 200 of 5,312. Refine the search to see the rest.", or ""
@@ -316,6 +338,14 @@ namespace Forms
     // other. -1 when nothing can take focus.
     enum class FocusTarget { None, Free, Guarded };
     int refocusIndex(const std::vector<FocusTarget>& targets, int previous);
+
+    // What a row can be when focus has to move because the focused field went
+    // away (e.g. after an action). Guarded: a file or folder field (Select opens
+    // a picker); a button that asks for confirmation (destructive); a button
+    // that wasn't shown before (wasShown false), which after an action is
+    // usually its undo ("Show this game again" after Hide, "Remove" after
+    // Install), so a second Select from someone still pressing it does nothing.
+    FocusTarget refocusTarget(const Field* field, bool focusable, bool wasShown);
 
     // A layout attribute's color, "rrggbb" or "#rrggbb" in hex: false (rgb
     // untouched) for anything else, e.g. "red" or "fff"

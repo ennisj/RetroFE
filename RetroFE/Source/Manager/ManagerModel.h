@@ -15,9 +15,11 @@
  */
 #pragma once
 
+#include "PendingChanges.h"
 #include "Provider.h"
 #include "../Forms/Form.h"
 #include "../Forms/SettingsFile.h"
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -47,11 +49,26 @@ namespace Catalog { class Service; }
 //   draft:source*          the Sources form's input
 //   info:hasRetroFESource, info:retrofeSourceNote, draft:retrofeTrusted
 //                          adding this fork's GitHub releases in one step
+//   info:pendingChanges    "2 changes apply when you close Manage", or "" (see
+//                          PendingChanges.h); info:hasPendingChanges for visibleWhen
+//   rows info:sources      a row per source, opening the "source" screen (id = its name)
+//   rows info:installed    a row per installed package, opening "package" (id)
+//   source:<key>           the source param:id names: name, type, location,
+//                          status (when it was read and how it went), and
+//                          the list source:problems and rows source:packages
+//   info:canOpenCatalog    the Catalog list has packages and Home is on, for catalog.open
+//   package:isInstalled, package:canShow (a collection that can be shown in Browse)
+//   settings:screenSize    horizontal and vertical as one choice (options
+//                          "screenSizes": "stretch", "1920x1080"..., "custom");
+//                          info:customScreenSize while "custom" shows Width and Height
 //   <prefix>:<key>         a registered provider's (see Provider.h)
 // Actions: settings.save, collection.create, package.install, package.remove,
-// package.cancel, package.removeInstalled (draft:removePackage), source.add,
-// source.addRetroFE (draft:retrofeTrusted), source.remove, catalog.refresh,
-// open.<form> (opens that form), back, and <prefix>.<name> for providers.
+// package.cancel, package.removeInstalled (draft:removePackage),
+// package.showInBrowse (reloads, then shows its collection), source.add,
+// source.addRetroFE (draft:retrofeTrusted), source.remove, source.removeThis
+// (the source screen's), catalog.refresh, catalog.open (shows the Catalog
+// list), changes.apply (reloads now, then opens Manage again), open.<form>
+// (opens that form), back, and <prefix>.<name> for providers.
 class ManagerModel : public Forms::Model
 {
 public:
@@ -63,6 +80,9 @@ public:
 
     // The Catalog the package:, source and catalog bindings use; may be null
     void setCatalog(Catalog::Service* catalog) { catalog_ = catalog; }
+
+    // What's waiting for a reload, for info:pendingChanges and changes.apply
+    void setPendingChanges(std::function<Manager::PendingChanges()> pending) { pending_ = std::move(pending); }
 
     // The screen being shown; param: bindings and providers read its parameters
     void setScreen(const std::string& form, const Forms::Params& params);
@@ -105,12 +125,20 @@ private:
     Result saveSettings();
     Result createCollection();
     std::string packageValue(const std::string& key);
+    std::string sourceValue(const std::string& key);
     std::string catalogStatus();
     std::string catalogProblem(const std::string& action);
+    std::string sourceAddProblem();
     Result runCatalogAction(const std::string& action);
+    std::string screenSize();
+    void setScreenSize(const std::string& value);
+    Manager::PendingChanges pendingChanges() const { return pending_ ? pending_() : Manager::PendingChanges{}; }
 
     Configuration& config_;
     Catalog::Service* catalog_ = nullptr;
+    std::function<Manager::PendingChanges()> pending_;
+    bool customScreenSize_ = false;   // "Custom" chosen for settings:screenSize
+    bool sourceJustAdded_ = false;    // the Sources form was just cleared by source.add
     Manager::Screen screen_;
     std::map<std::string, std::unique_ptr<Manager::Provider>> providers_;   // by prefix
     std::string removedPackage_;   // the last package.removeInstalled, for info:removalStatus

@@ -1014,7 +1014,7 @@ void runCatalogTests()
         check(model.runAction("package.install").ok, "install started");
         service.waitUntilIdle();
         checkEqual(model.get("package:progress"), "Installed Base 1.0.", "outcome shown");
-        checkEqual(model.get("package:installedStatus"), "Installed.", "installed");
+        checkEqual(model.get("package:installedStatus"), "", "installed, which the outcome already says");
         checkEqual(model.actionProblem("package.install"), "Installed, and up to date.", "nothing to do");
         checkEqual(model.get("package:canRemove"), "yes", "can remove");
         check(model.list("info:installed") == std::vector<std::string>({ "Base 1.0" }), "installed list");

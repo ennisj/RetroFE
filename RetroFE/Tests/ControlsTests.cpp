@@ -300,11 +300,11 @@ static Test::Suite controlsSuite("controls", [] {
 
         f.model->setScreen("controls", {});
         const Forms::Row* select = f.row("Essential", "select");
-        check(select && select->detail == "Keyboard 1, Keyboard Return, Controller A, Controller Start", "inputs described");
+        check(select && select->detail == "Key 1, Key Return, Pad A, Pad Start", "inputs described");
         const Forms::Row* letter = f.row("Navigation", "letterUp");
-        check(letter && contains(letter->detail, "Joystick button 5"), "the override in controls1.conf wins");
+        check(letter && contains(letter->detail, "Joy button 5"), "the override in controls1.conf wins");
         const Forms::Row* manager = f.row("Essential", "manager");
-        check(manager && manager->detail == "Keyboard F10", "Open Settings defaults to F10");
+        check(manager && manager->detail == "Key F10", "Open Settings defaults to F10");
         checkEqual(f.model->get("control:problems"), "", "nothing unrecognised in OneSauce's file");
         checkEqual(f.model->get("control:deadZone"), "30", "dead zone");
 
@@ -387,7 +387,7 @@ static Test::Suite controlsSuite("controls", [] {
         Fixture f(root);
         f.model->setScreen("controls", {});
         const Forms::Row* select = f.row("Essential", "select");
-        check(select && select->detail == "Keyboard Return, Controller A, Joystick button 0 (joysticks with no controller mapping)",
+        check(select && select->detail == "Key Return, Pad A, Joy button 0 (unmapped)",
               "built-in select: " + (select ? select->detail : ""));
         const Forms::Row* letter = f.row("Navigation", "letterUp");
         check(letter && letter->detail == "No input", "nothing built in");

@@ -458,10 +458,17 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
   Home. Themes style it as the `Catalog` collection, and package artwork
   shows like collection artwork. Selecting a package opens its **details
   form**: description, size, version (installed and available), what it
-  requires, and Install / Update / Remove buttons.
-- **Manage → Installed** lists installed packages, with updates available
-  first.
-- **Manage → Sources** is the sources form above.
+  requires, and Install / Update / Remove buttons, Back to the Catalog, and
+  Show it in Browse once a collection is installed (it reloads, then opens
+  the collection).
+- **Manage** lists installed packages; each opens its details form, also
+  one no source offers any more (it can only be removed).
+- **Manage → Sources** is the sources form above: a row per source (what it
+  offers, or what's wrong) opening the source's own screen (type, address,
+  when it was last read and how, its problems, its packages, Check for
+  updates, Remove this source). Once a new source has been read, "Open the
+  Catalog" shows the Catalog list. `Service::sourceStatus` keeps how each
+  source's last reading went.
 - **Downloads** (from either) shows the queue with progress, pause and cancel.
 
 ## Trust and safety

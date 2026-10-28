@@ -172,6 +172,15 @@ public:
     void freeGraphicsMemory() override;
     bool update(float dt) override;
     const std::vector<Component*>& getComponents() const;
+    // Positions in order (scroll points), and the component at each, for drawing
+    size_t slotCount() const { return components_.size(); }
+    Component* slotComponent(size_t slot) const { return components_[slot]; }
+    // <menu repeatItems="no">: with fewer items than positions, each item is
+    // drawn once, around the selected position (the first item after it gets
+    // the extra one), rather than the list repeating to fill the menu. The
+    // default (yes) is RetroFE's usual looping list.
+    void setRepeatItems(bool repeat) { repeatItems_ = repeat; }
+    bool showsSlot(size_t slot) const;
     void setScrollAcceleration(float value);
     void setStartScrollTime(float value);
     void setMinScrollTime(float value);
@@ -211,6 +220,7 @@ private:
     bool playlistType_;
     bool selectedImage_;
     bool textFallback_{ false };
+    bool repeatItems_{ true };
 
     std::vector<Component*>* spriteList_{ nullptr };
     std::vector<ViewInfo*>* scrollPoints_{ nullptr };

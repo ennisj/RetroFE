@@ -22,6 +22,6 @@
           rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="75c8f7" headerAlpha="0.95"
           separatorColor="75c8f7" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"
           statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"
-          backgroundColor="000000" backgroundAlpha="0" layer="3"/>
+          backgroundColor="000000" backgroundAlpha="0" titleDetail="info:pendingChanges" layer="3"/>
 
 </layout>

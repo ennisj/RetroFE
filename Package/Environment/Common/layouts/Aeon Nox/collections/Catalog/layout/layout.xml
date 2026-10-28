@@ -220,7 +220,7 @@
 
 
     <!-- Logo Menu -->
-    <menu type="custom" imageType="logo" scrollTime=".2" scrollAcceleration=".02" minScrollTime="0.1" orientation="horizontal" textFallback="true" x="0" width="center" y="910">
+    <menu type="custom" imageType="logo" scrollTime=".2" scrollAcceleration=".02" minScrollTime="0.1" orientation="horizontal" textFallback="true" repeatItems="no" x="0" width="center" y="910">
         <itemDefaults alpha="0.2" x="center" y="center" maxWidth="460" height="90" xOrigin="center" yOrigin="center" yOffset="-5" font="fonts/BebasNeue.ttf" fontColor="ffffff" loadFontSize="48" fontSize="48" layer="12"/>
         <item xOffset="-1440" alpha="0"/>
         <item xOffset="-1440">

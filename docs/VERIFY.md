@@ -39,6 +39,7 @@ launcher runs it.
 | L1 | Closing the window works after a game when `unloadSDL = true` | Set `unloadSDL = true`, start and quit a game, then click the window's close button | To check | Fixed in code only; testing it needed a real game launch |
 | L2 | A window close clicked while a game runs doesn't quit RetroFE afterwards | Start a game, close the game's window, return | To check | Fixed in code only |
 | L3 | Play counts and time played update after playing (with `lastPlayedSkipCollection` set) | Play a game for a minute, look at its Manage screen | To check | |
+| L4 | After Manage's "Start this game", Manage comes back with focus on Start this game | Manage → Games → a game → Start this game; quit the game | To check | Not launched in the GUI check (a launch raises RetroFE's window over the desktop); the focus request is the same one tested for other actions |
 
 ## OnesaUCE themes
 

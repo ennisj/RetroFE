@@ -50,6 +50,9 @@ namespace Catalog
         bool updateAvailable = false;   // a newer version, from the same source
     };
 
+    // The collections/ folders an installed package put files in
+    std::set<std::string> collectionsOf(const Manifest& manifest);
+
     class Service
     {
     public:
@@ -113,6 +116,18 @@ namespace Catalog
         // True once after packages were installed or removed, when nothing
         // else is queued: RetroFE should reload to show them
         bool takeChanges(Changes& changes);
+        // Whether there are such changes, without taking them
+        bool hasChanges() const;
+
+        // How the last reading of a source went
+        struct SourceStatus
+        {
+            int64_t checked = 0;      // when, in seconds since 1970; 0 if it hasn't been read yet
+            bool fromCache = false;   // it couldn't be reached: its packages are the last copy
+            std::string error;        // nothing could be read
+        };
+        // False if the source hasn't been read since RetroFE started (or is off)
+        bool sourceStatus(const std::string& name, SourceStatus& status) const;
 
         // True once after RetroFE updated itself (or an unfinished update was
         // undone), when nothing else is queued: RetroFE should start the
@@ -168,6 +183,7 @@ namespace Catalog
         bool active_ = false;
         bool changed_ = false;
         Changes changes_;
+        std::map<std::string, SourceStatus> sourceStatus_;   // by source name
         std::atomic<bool> cancelRequested_{ false };
         AppInstall app_;
         bool restartRequested_ = false;

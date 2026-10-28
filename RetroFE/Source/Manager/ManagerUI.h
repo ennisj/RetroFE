@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "AfterReload.h"
 #include "FormView.h"
 #include "ImGuiScreen.h"
 #include "LaunchQueue.h"
@@ -131,7 +132,7 @@ public:
     // True once after changes were saved that RetroFE has to reload to show:
     // straight away for Result::reload, after the manager closes for
     // Services::requestReload. Waits while a Catalog install is running.
-    bool takeReloadRequest();
+    bool takeReloadRequest(bool backHome = false);
 
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);
@@ -146,6 +147,16 @@ public:
     // After the game: Manage opens again on its screen (Manage > Games > the
     // game), saying it's back, or problem when it couldn't be started
     void returnFromLaunch(const LaunchRequest& request, const std::string& problem);
+
+    // Once RetroFE is back up after a reload an action asked for with
+    // Result::open ("Apply changes now"): opens Manage on that screen with
+    // the action's message. False (nothing opened) otherwise.
+    bool reopenAfterReload();
+
+    // A collection an action asked RetroFE to show (Result::browse: one just
+    // installed, the Catalog list): true once, when the manager has closed
+    // and any reload it needed is done
+    bool takeBrowseRequest(std::string& collection);
 
     // The page RetroFE draws collections with ("layout", or a randomLayout one
     // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
@@ -185,6 +196,7 @@ private:
     bool requestClose(Manager::Leave how = Manager::Leave::Close);
 
     void handleResult(const Forms::Model::Result& result);
+    Manager::PendingChanges pendingChanges() const;
     void setStatus(const std::string& message, Forms::StatusKind kind);
     bool buildPage();
     void destroyPage();
@@ -232,6 +244,7 @@ private:
     int cursorWasShown_ = SDL_ENABLE;
     // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
     inline static Manager::LaunchQueue launches_;
+    inline static Manager::AfterReload afterReload_;   // likewise: where to go once it's back
 
     std::string status_;
     Forms::StatusKind statusKind_ = Forms::StatusKind::Success;
