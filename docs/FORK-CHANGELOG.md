@@ -4,6 +4,29 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 11 — leaving warnings, neutral messages, design review (2026-10-24)
+
+Unit tests: 6,718 → 6,749 checks.
+
+- **A warning per way of leaving.** With unsaved changes, the warning
+  remembers how you tried to leave (Back, closing Manage with F10/Close or
+  a game launch, closing the window). Leaving the same way again drops the
+  changes; another way warns again first, so closing the window after a
+  Back warning no longer quits at once. Moving on, or any action or link,
+  starts the warning over.
+- **Neutral messages for "nothing happened".** Cancel, undo, "already
+  there" and edits that wrote nothing are drawn in a plain colour (the new
+  `infoColor` form attribute) instead of the success colour; the theme and
+  layout editors do the same.
+- **Fixes:** saving a launcher with the same settings, or adding a playlist
+  a cyclePlaylist already lists, writes nothing and no longer marks the
+  library changed (no reload when Manage closes); a favourite that's
+  already there says so.
+- **Design review** of Home, Catalog, Settings and Manage:
+  [UX-REVIEW.md](UX-REVIEW.md), with press counts for ten common tasks and
+  ten parcels of changes (A–J). Its decisions are M22 in
+  [DECISIONS.md](DECISIONS.md); round 12 builds them.
+
 ## After round 10 — your answers (2026-10-24)
 
 - The upstream-style package's `settings.conf` now uses Aeon Nox (L7).
