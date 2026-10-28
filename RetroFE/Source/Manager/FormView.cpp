@@ -411,7 +411,14 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
             Forms::RowSplit split = Forms::splitRow(textWidth(row.label), detailNeeds, available, gap);
             std::string label = Forms::ellipsize(row.label, split.label, textWidth);
             if (ImGui::Selectable((label + "##row").c_str())) {
-                open(field.open, Forms::rowParams(field, row), false);
+                if (!row.action.empty()) {
+                    if (model.actionProblem(row.action).empty()) {
+                        result_ = model.runAction(row.action);
+                    }
+                }
+                else {
+                    open(field.open, Forms::rowParams(field, row), false);
+                }
             }
             if (split.detail > 0.0f) {
                 std::string detail = Forms::ellipsize(rowDetail, split.detail, textWidth);

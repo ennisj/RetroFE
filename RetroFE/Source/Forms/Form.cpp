@@ -85,6 +85,9 @@ namespace
             field.empty = attribute(node, "empty");
             field.open = attribute(node, "open");
             field.param = attribute(node, "param");
+            field.start = attribute(node, "start");
+            field.matching = attribute(node, "matching");
+            field.letterJump = field.type == Forms::FieldType::Results && attribute(node, "jump") == "letter";
             field.live = Forms::isTruthy(attribute(node, "live"));
             field.multiline = field.type == Forms::FieldType::Text && Forms::isTruthy(attribute(node, "multiline"));
             field.min = Utils::convertInt(attribute(node, "min"));

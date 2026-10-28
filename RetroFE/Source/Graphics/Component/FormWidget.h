@@ -103,7 +103,7 @@ public:
         Error     // errorColor: errors, and the question of a button to confirm
     };
 
-    // A request for a native file or folder picker
+    // Select on a folder or file field: the manager opens its file browser
     struct Browse
     {
         std::string bind;
@@ -111,6 +111,8 @@ public:
         std::string title;
         std::string filterName;
         std::string pattern;
+        std::string start;      // the field's start= key
+        std::string matching;   // the field's matching= key
     };
 
     FormWidget(Page& p, FontManager* font, FontManager* focusFont, int monitor);
@@ -130,7 +132,7 @@ public:
     // shown, unless the user moves first (Result::focus)
     void focusOn(const std::string& key);
 
-    // Whether Select on a folder or file field asks for a native picker
+    // Whether Select on a folder or file field asks for the file browser
     // (takeBrowse) rather than editing the path as text
     void setCanBrowse(bool canBrowse) { canBrowse_ = canBrowse; }
 
@@ -195,7 +197,8 @@ private:
         std::string detail;     // Item: shown on the right
         std::string image;      // Item: thumbnail; Image: the picture
         Forms::Params params;   // Item: what choosing it opens its form with
-        int span = 1;           // Image: rows it covers
+        std::string action;     // Item: what choosing it runs instead, when set
+        int span = 1;          // Image: rows it covers
         int line = 0;           // Field, TextLine of a multi-line text: which of its rows
         bool thumbnail = false; // Item: leave room for thumbnails in this list
         bool link = false;      // Item: drawn with the link marker (Forms::Row::link)

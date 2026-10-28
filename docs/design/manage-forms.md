@@ -262,7 +262,7 @@ Things to know:
   "Show this game again" after Hide, Remove after Install), when anything
   else can take it (`Forms::refocusTarget`, `FormWidget::buildRows`). If it
   has to, Select there does nothing until the user moves, so a second press
-  can't open a file picker or undo the action. So give a screen a harmless
+  can't open the file browser or undo the action. So give a screen a harmless
   row near its action (the package screen's "Back to the Catalog") rather
   than special-casing focus.
 - **Focus after an action**: set `Result::focus` to the field to focus
@@ -271,6 +271,33 @@ Things to know:
   install finishes) it's focused when it appears, unless the user has moved
   by then. `ManagerUI::returnFromLaunch` uses the same to put focus back on
   "Start this game".
+- **Folder and file fields** open the file browser (`Manager/Browser/`, form
+  `file-browser`, prefix `browse`) on Select, never the system dialog. Its
+  pick comes back through your `set()` on your own screen, as if typed, so
+  nothing else is needed. Help it along with attributes on the field:
+  `pattern` (the files listed), `start="yourprefix:someFolder"` (a value
+  naming the folder it opens in while the field is empty; a slot's place
+  like `.../logo/Sonic.*` works) and, on a `<folder>`,
+  `matching="yourprefix:extensions"` (counted for the first 50 folders in list order). The
+  browser keeps a value relative to RetroFE's folder when it was relative
+  (`Browser::storedValue`); otherwise it gives an absolute path, as before.
+  Filesystem listing and capped counts run on workers, publishing results
+  through mutex-protected storage consumed by the UI thread. Workers own
+  that storage and never access the provider or forms; shutdown does not wait
+  for a drive. Drive details arrive independently. Search reuses lowercase
+  listing keys and caches an unchanged query. Pictures above 8 MB have no
+  browser thumbnail. The Windows dialog requires a real mouse press in Manage
+  and use within 15 seconds; touch and motion after pointer warps are ignored.
+- **A row that runs an action**: set `Row::action` (e.g. `"browse.pick:..."`)
+  and choosing the row runs it instead of opening the field's form; put
+  whatever the action needs in its name. **Picking for another screen's
+  field**: `Result::pick` / `Result::pickFor` make the manager return past
+  every screen of the current form and `set()` that binding there.
+- **Letter jump**: the letterUp and letterDown controls jump to the first
+  row of the previous or next letter in every results list
+  (`Forms::letterJump`: ASCII letters, case aside, everything else one `#`
+  group); `<results jump="letter">` makes Left/Right do the same instead of
+  paging.
 - **Navigating after an action**: `Result::open` pushes a screen and
   `Result::back` returns (asking `leaving()` like Back does), after success
   only. The message is shown on the screen you end up on. A form id that

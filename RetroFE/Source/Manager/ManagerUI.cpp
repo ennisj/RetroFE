@@ -14,8 +14,11 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ManagerUI.h"
+#include "../SDL.h"
+#include <thread>
 #include "FileDialog.h"
 #include "Setup.h"
+#include "Browser/BrowserProvider.h"
 #include "Controls/app/PadInputs.h"
 #include "Themes/ThemeProvider.h"
 #include "Themes/app/ThemeEditorScreen.h"
@@ -136,6 +139,11 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
             return Manager::LaunchQueue::problem(reloadDue, catalog_ && catalog_->isBusy());
         };
         services.sameInputs = Manager::padSameInputs;
+        if (FileDialog::isSupported()) {
+            // Not now: the press that asked is still being handled; update() opens it
+            services.pickWithSystem = [this](const Manager::Services::SystemPick& pick) { systemPick_ = pick; };
+        }
+        services.mousePresent = [this] { return mouseUse_.present(SDL_GetTicks()); };
         services.reloadControls = [this] {
             if (reloadControls_) {
                 reloadControls_();
@@ -308,6 +316,7 @@ void ManagerUI::deInitialize()
 
 void ManagerUI::open(const std::string& form, const Forms::Params& params)
 {
+    browserOpening_.reset();
     if (!context_) {
         return;
     }
@@ -321,6 +330,7 @@ void ManagerUI::open(const std::string& form, const Forms::Params& params)
 
 bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 {
+    browserOpening_.reset();
     if (!context_) {
         return false;
     }
@@ -337,6 +347,7 @@ bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 
 void ManagerUI::back()
 {
+    browserOpening_.reset();
     if (nav_.back()) {
         show();
     }
@@ -457,6 +468,7 @@ bool ManagerUI::takeBrowseRequest(std::string& collection)
 
 void ManagerUI::show()
 {
+    browserOpening_.reset();
     const Navigator::Frame* frame = nav_.current();
     if (!frame) {
         close();
@@ -511,6 +523,9 @@ void ManagerUI::show()
 
 void ManagerUI::close()
 {
+    systemPick_.reset();
+    browserOpening_.reset();
+    mouseUse_.reset();
     nav_.clear();
     leave_.reset();
     capture_.clear();
@@ -608,7 +623,7 @@ bool ManagerUI::buildPage()
 
     widget_ = builder.formWidgets().front();
     widget_->bind(shown, &model_);
-    widget_->setCanBrowse(FileDialog::isSupported());
+    widget_->setCanBrowse(true);   // the file browser, on every platform
     widget_->setBackCloses(nav_.depth() <= 1);
     page_ = page;
     page_->allocateGraphicsMemory();
@@ -777,6 +792,13 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
     if (!context_) {
         return false;
     }
+    if (open_) {
+        if (SDL::hasWarped()) mouseUse_.warped(SDL::lastWarp());
+        if (e.type == SDL_MOUSEMOTION) {
+            mouseUse_.motion(SDL_GetTicks(), e.motion.xrel, e.motion.yrel, e.motion.which == SDL_TOUCH_MOUSEID);
+        }
+        if (e.type == SDL_MOUSEBUTTONDOWN) mouseUse_.press(SDL_GetTicks(), e.button.which == SDL_TOUCH_MOUSEID);
+    }
     // Press it now takes every input first, the Settings key and Escape included
     if (open_ && capture_.active()) {
         return captureEvent(e);
@@ -855,10 +877,13 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 void ManagerUI::navigate(const Controls& held, float now)
 {
     using Control = Manager::ImGuiScreen::Control;
+    // Controls' order; page up/down (6, 7) aren't used by layout-drawn screens
     static constexpr FormWidget::Nav navs[] = {
         FormWidget::Nav::Up, FormWidget::Nav::Down, FormWidget::Nav::Left,
-        FormWidget::Nav::Right, FormWidget::Nav::Select, FormWidget::Nav::Back
+        FormWidget::Nav::Right, FormWidget::Nav::Select, FormWidget::Nav::Back,
+        FormWidget::Nav::Back, FormWidget::Nav::Back, FormWidget::Nav::LetterUp, FormWidget::Nav::LetterDown
     };
+    static_assert(sizeof(navs) / sizeof(navs[0]) == std::tuple_size<Controls>::value, "a Nav per control");
     const float repeatDelay = 0.4f;
     const float repeatInterval = 0.09f;
 
@@ -918,7 +943,6 @@ void ManagerUI::navigate(const Controls& held, float now)
         if (!acts(i, repeat)) {
             continue;
         }
-
         // While a field is edited the controls type on the on-screen keyboard
         if (keyboard_) {
             KeyboardWidget::Result result = keyboard_->navigate(nav);
@@ -958,7 +982,31 @@ void ManagerUI::update(float dt)
     if (!open_) {
         return;
     }
+    if (browserOpening_) {
+        auto opening = browserOpening_;
+        std::lock_guard<std::mutex> lock(opening->mutex);
+        if (opening->ready) {
+            if (form(Browser::formId)) {
+                nav_.push(Browser::formId, opening->places, widget_ ? widget_->focus() : Forms::Focus{});
+                if (!opening->folder.empty()) nav_.push(Browser::formId, opening->folder, {});
+                show();
+            }
+            browserOpening_.reset();
+        }
+    }
     updateCapture();
+    if (systemPick_) {
+        // The file browser's "Browse with Windows...": it blocks until closed
+        Manager::Services::SystemPick pick = std::move(*systemPick_);
+        systemPick_.reset();
+        std::string path = pick.path;
+        bool chosen = pick.folder ? FileDialog::pickFolder(window_, pick.title, path)
+                                  : FileDialog::pickFile(window_, pick.title, pick.filterName, pick.pattern, path);
+        navHeld_.fill(true);   // whatever was pressed meanwhile was the dialog's
+        if (chosen && pick.chosen && open_) {
+            handleResult(pick.chosen(path));
+        }
+    }
     model_.update(dt);
     if (screen_) {
         screen_->update(dt);
@@ -984,18 +1032,59 @@ void ManagerUI::update(float dt)
 void ManagerUI::handleWidgetResults()
 {
     if (auto browse = widget_->takeBrowse()) {
-        std::string path = model_.get(browse->bind);
-        bool chosen = browse->folder
-            ? FileDialog::pickFolder(window_, browse->title, path)
-            : FileDialog::pickFile(window_, browse->title, browse->filterName, browse->pattern, path);
-        if (chosen) {
-            model_.set(browse->bind, path);
-            widget_->invalidate();
+        openBrowser(*browse);
+    }
+    if (widget_) {
+        if (auto result = widget_->takeResult()) {
+            handleResult(*result);
         }
     }
-    if (auto result = widget_->takeResult()) {
-        handleResult(*result);
+}
+
+void ManagerUI::openBrowser(const FormWidget::Browse& browse)
+{
+    if (browserOpening_) return;
+    // Never the system's dialog from a press: the browser is a screen like the others
+    Browser::Request request;
+    request.bind = browse.bind;
+    request.folder = browse.folder;
+    request.label = browse.title;
+    request.filterName = browse.filterName;
+    request.pattern = browse.pattern;
+    request.value = model_.get(browse.bind);
+    request.start = browse.start.empty() ? "" : model_.get(browse.start);
+    request.matching = browse.matching.empty() ? "" : model_.get(browse.matching);
+    auto opening = std::make_shared<BrowserOpening>();
+    opening->places = Browser::screenParams(request);
+    browserOpening_ = opening;
+    auto root = std::filesystem::path(Configuration::absolutePath);
+    std::thread([opening, root] {
+        Forms::Params folder;
+        try { Browser::openingParams(opening->places, root, folder); }
+        catch (const std::exception&) {}
+        std::lock_guard<std::mutex> lock(opening->mutex);
+        opening->folder = std::move(folder);
+        opening->ready = true;
+    }).detach();
+}
+
+void ManagerUI::applyPick(const Forms::Model::Result& result)
+{
+    // Back past the browser's screens to the field's, without asking (the
+    // browser has nothing to lose), and give the field its value there
+    bool moved = false;
+    while (nav_.depth() > 1 && nav_.current() && nav_.current()->form == Browser::formId) {
+        nav_.back();
+        moved = true;
     }
+    if (moved) {
+        show();
+    }
+    model_.set(result.pickFor, result.pick);
+    if (widget_) {
+        widget_->invalidate();
+    }
+    setStatus(result.message, Forms::statusKind(result));
 }
 
 void ManagerUI::handleResult(const Forms::Model::Result& result)
@@ -1034,6 +1123,11 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         }
         return;
     }
+
+    if (result.ok && !result.pickFor.empty()) {
+        applyPick(result);
+        return;
+    }
     // After success an action can move to another screen, which then shows its message
     if (result.ok && result.back) {
         if (!requestBack()) {
@@ -1044,7 +1138,9 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         // The screen the action ran on is done with (e.g. an add form): the
         // result takes its place, so Back goes to the screen before it
         const Navigator::Frame* frame = nav_.current();
-        nav_.replace(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result));
+        Forms::Params params = Forms::openParams(frame ? frame->params : Forms::Params{}, result);
+        if (result.open == Browser::formId) Browser::replaceFolder(nav_, params);
+        else nav_.replace(result.open, params);
         show();
     }
     else if (result.ok && !result.open.empty()) {

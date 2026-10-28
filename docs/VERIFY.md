@@ -50,3 +50,13 @@ launcher runs it.
 | T1 | OnesaUCE themes look as they do in OneSauce's own frontend | Compare a few (Renee, Aeon Nox, Amiga Memories, Cafe80s) side by side; note anything missing or out of place | To check | Features implemented from the data only ([ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md)) |
 | T2 | Menu videos stored as a folder behave as OneSauce does (random pick; B for another) | Renee → ARCADE | To check | The behaviour was inferred from the data (M20) |
 | T3 | Cafe80s's handheld page text: does OneSauce show the three texts from `collections/_common/text`? | Compare 1 HANDHELDS in both frontends | To check | Open question from QA-ROUND10 |
+
+## File and folder browser
+
+| # | What to check | How | Status | Notes |
+|---|---------------|-----|--------|-------|
+| B1 | The browser works from a real controller: Select opens folders and picks, Back goes back up, Left/Right jump by letter | Manage → Systems → Add a system → Games folder, with a pad or an arcade encoder only | To check | Checked with posted keys only |
+| B2 | "Browse with Windows..." requires a mouse click in Manage and recent use | On a cabinet with a trackball/spinner/light gun and no desktop mouse, move the controls in Manage: the row must stay absent. Click with a real mouse: it must appear. Wait 15 seconds or close/reopen Manage: it must disappear | To check | A device mouse-button press can also qualify |
+| B3 | The Windows dialog from "Browse with Windows..." opens, returns its pick to the field, and gives the controls back afterwards | Click it with the mouse, pick a file, check the field; then press keys/buttons | To check | Not pressed in the GUI checks (it would open on the desktop) |
+| B4 | Drives list without delay or system pop-ups: an empty card reader, a disc drive, a disconnected network share, a USB stick plugged in while RetroFE runs | Open the browser's first screen in each case | To check | Drive letters appear first; unanswered removable drives disappear; details are cached for 30 s; repeated visits share in-flight fetches; closing must not wait |
+| B5 | Letter up / letter down jump in results lists when mapped (e.g. OneSauce's `letterUp = M,joyRightShoulder`) | A big folder in the browser, or the Games results | To check | |

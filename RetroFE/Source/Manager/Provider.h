@@ -182,6 +182,25 @@ namespace Manager
         // joyButton1 for joyA on a pad whose A is button 1, and back (SDL's
         // controller mappings). Empty in tests and with no pad.
         std::function<std::vector<std::string>(const std::string& token)> sameInputs{};
+
+        // The file browser's "Browse with Windows...": the system's file
+        // dialog, opened by the manager once the current input is handled
+        // (it blocks). chosen turns the path picked into the result to
+        // handle; nothing happens when it's cancelled. Null where there's no
+        // such dialog (tests, Linux). mousePresent: whether a mouse has been
+        // used in RetroFE's window since it started, so the dialog (which
+        // needs one) is only offered then.
+        struct SystemPick
+        {
+            bool folder = false;
+            std::string title;
+            std::string filterName;
+            std::string pattern;
+            std::string path;   // where it starts
+            std::function<Forms::Model::Result(const std::string& path)> chosen;
+        };
+        std::function<void(const SystemPick& pick)> pickWithSystem{};
+        std::function<bool()> mousePresent{};
     };
 
     // Adds every provider to the model (Providers.cpp)

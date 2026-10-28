@@ -17,6 +17,7 @@
 
 #include "AfterReload.h"
 #include "FormView.h"
+#include "Browser/MouseUse.h"
 #include "ImGuiScreen.h"
 #include "LaunchQueue.h"
 #include "LeaveWarning.h"
@@ -36,6 +37,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <mutex>
 #include <string>
 
 class CollectionInfo;
@@ -197,6 +199,10 @@ private:
 
     void handleResult(const Forms::Model::Result& result);
     Manager::PendingChanges pendingChanges() const;
+    // The file browser (Manager/Browser): opened by Select on a folder or file
+    // field; a pick returns past its screens and sets the field
+    void openBrowser(const FormWidget::Browse& browse);
+    void applyPick(const Forms::Model::Result& result);
     void setStatus(const std::string& message, Forms::StatusKind kind);
     bool buildPage();
     void destroyPage();
@@ -261,4 +267,16 @@ private:
     std::string captureBind_;
     std::string captureAction_;
     std::string capturePrompt_;
+
+    // The file browser's "Browse with Windows...", opened from update()
+    std::optional<Manager::Services::SystemPick> systemPick_;
+    Browser::MouseUse mouseUse_;
+    struct BrowserOpening
+    {
+        std::mutex mutex;
+        Forms::Params places;
+        Forms::Params folder;
+        bool ready = false;
+    };
+    std::shared_ptr<BrowserOpening> browserOpening_;
 };

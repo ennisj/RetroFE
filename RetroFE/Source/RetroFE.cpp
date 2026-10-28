@@ -265,8 +265,10 @@ void RetroFE::launchExit()
 
 	// Restore the SDL settings
 	SDL_RestoreWindow(SDL::getWindow(0));
-	SDL_RaiseWindow(SDL::getWindow(0));
-	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	if (!SDL::staysInBackground()) {
+		SDL_RaiseWindow(SDL::getWindow(0));
+		SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	}
 
 	// Empty event queue, but handle joystick add/remove events
 	SDL_Event e;
@@ -292,7 +294,7 @@ void RetroFE::launchExit()
 
 #ifndef __APPLE__
 	// If not MacOS, warp cursor top right. game/program may warp elsewhere
-	SDL_WarpMouseInWindow(SDL::getWindow(0), SDL::getWindowWidth(0), 0);
+	SDL::warpMouse(SDL::getWindow(0), SDL::getWindowWidth(0), 0);
 #endif
 
 #ifdef WIN32
@@ -453,8 +455,10 @@ bool RetroFE::run()
 		[this](const std::string& name) { return getCollection(name, true); },
 		[this]() { return currentPage_ ? currentPage_->getCollectionName() : std::string(); });
 	SDL_RestoreWindow(SDL::getWindow(0));
-	SDL_RaiseWindow(SDL::getWindow(0));
-	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	if (!SDL::staysInBackground()) {
+		SDL_RaiseWindow(SDL::getWindow(0));
+		SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	}
 #ifdef WIN32
 	if (!PacInitialize()) {  //attempt to enable ServoStik
 		config_.setProperty(OPTION_SERVOSTIKENABLED, false);
