@@ -518,7 +518,7 @@ void FormWidget::addField(const Field& field)
             if (helpPanel_) {
                 break;
             }
-            // A link's help only shows in a help panel: a list of links stays a list
+            // A link's help goes in the panel or hints: a list of links stays a list
             if (!field.help.empty() && field.type != FieldType::Link) {
                 addWrapped(RowKind::Note, field.help, true);
             }
@@ -618,7 +618,7 @@ bool FormWidget::barCanFocus() const
 int FormWidget::barTargetIndex() const
 {
     // The first button that can run now, among those that can take focus; not
-    // one that asks to confirm (Hide, Delete): a jump never lands on those by itself
+    // one that asks to confirm (Hide, Delete), when there is one
     std::vector<int> enabled;
     std::vector<bool> ready;
     for (size_t i = 0; i < bar_.size(); i++) {
@@ -972,9 +972,7 @@ void FormWidget::activate(const Row& row)
 
 void FormWidget::change(const Field& field, int direction)
 {
-    if (field.type == FieldType::Toggle || field.type == FieldType::Number || field.type == FieldType::Choice) {
-        edited_ = true;
-    }
+    const std::string before = model_->get(field.bind);
     switch (field.type) {
     case FieldType::Toggle:
         model_->set(field.bind, Forms::isTruthy(model_->get(field.bind)) ? "no" : "yes");
@@ -1006,6 +1004,9 @@ void FormWidget::change(const Field& field, int direction)
     }
     default:
         break;
+    }
+    if (model_->get(field.bind) != before) {
+        markEdited();
     }
 }
 
@@ -1249,6 +1250,9 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
         }
     }
     add(backCloses_ ? "Back: close" : "Back: return");
+    if (!helpPanel_ && field && field->type == FieldType::Link) {
+        add(field->help);
+    }
     return parts;
 }
 

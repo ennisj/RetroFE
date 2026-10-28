@@ -955,7 +955,11 @@ void ManagerUI::handleWidgetResults()
             ? FileDialog::pickFolder(window_, browse->title, path)
             : FileDialog::pickFile(window_, browse->title, browse->filterName, browse->pattern, path);
         if (chosen) {
+            const std::string before = model_.get(browse->bind);
             model_.set(browse->bind, path);
+            if (model_.get(browse->bind) != before) {
+                widget_->markEdited();
+            }
             widget_->invalidate();
         }
     }

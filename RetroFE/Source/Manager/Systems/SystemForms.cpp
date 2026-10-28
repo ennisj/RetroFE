@@ -28,7 +28,7 @@ namespace
 const char* const listForm = R"(
 <form id="{p}s" title="{List}">
   <note bind="{p}:status"/>
-  <note value="{intro}"/>
+  <note value="{intro}" panel="yes"/>
   <link label="Add a {noun}" open="{p}-add"/>
   <text label="Search" bind="{p}:query" live="yes" hint="Name or title"/>
   <choice label="In menu" bind="{p}:menu" options="{p}:menus"/>
@@ -107,7 +107,7 @@ const char* const infoForm = R"(
 const char* const mediaForm = R"(
 <form id="{p}-media" title="Media" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <note value="The {noun}'s own art, from its system_artwork folder. Choose one to replace or clear it."/>
+  <note value="The {noun}'s own art, from its system_artwork folder. Choose one to replace or clear it." panel="yes"/>
   <results bind="{p}:media" open="{p}-medium" param="slot" empty="Nothing to show yet."/>
 </form>
 )";
@@ -214,7 +214,7 @@ const char* const checkForm = R"(
 const char* const addForm = R"(
 <form id="{p}-add" title="Add a {noun}">
   <note bind="{p}:status"/>
-  <note value="{addIntro}"/>
+  <note value="{addIntro}" panel="yes"/>
   <text label="Name" bind="{p}:addName" hint="e.g. {nameHint}"/>
   <choice label="List it in" bind="{p}:addMenu" options="{p}:addMenus"/>
   <folder label="{Items} folder" bind="{p}:addFolder" hint="Not chosen yet" status="{p}:addFolderCount"/>

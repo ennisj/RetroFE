@@ -47,3 +47,15 @@ launcher runs it.
 | T1 | OnesaUCE themes look as they do in OneSauce's own frontend | Compare a few (Renee, Aeon Nox, Amiga Memories, Cafe80s) side by side; note anything missing or out of place | To check | Features implemented from the data only ([ONESAUCE-COMPAT.md](ONESAUCE-COMPAT.md)) |
 | T2 | Menu videos stored as a folder behave as OneSauce does (random pick; B for another) | Renee → ARCADE | To check | The behaviour was inferred from the data (M20) |
 | T3 | Cafe80s's handheld page text: does OneSauce show the three texts from `collections/_common/text`? | Compare 1 HANDHELDS in both frontends | To check | Open question from QA-ROUND10 |
+
+## Manage look (round 12)
+
+Owner checks on Windows: repeat each row at 16:9 (1920x1080 and 1280x720)
+and 4:3 (1024x768, `layout 4x3`).
+
+| # | What to check | How | Status | Notes |
+|---|---------------|-----|--------|-------|
+| M12.1 | Aeon Nox's two-pane look reads well | Open Manage section forms: list on the left, help and art on the right. Check text size, wrapping and room for the rows. | To check | |
+| M12.2 | Pinned actions and the jump | Scroll a long form; Save stays in view. Right shoulder / Page Down jumps to the bar; left shoulder / Page Up returns to the row. Edit and check the Save hint. | To check | |
+| M12.3 | Bare install's built-in layout and automatic window size | Start without settings or a theme forms page. Check the window fits the desktop and focused links show readable help. | To check | |
+| M12.4 | Severity colours | Find “Won't start”, “isn't installed” and “Missing” statuses. Check warnings and errors are distinct and readable. | To check | |

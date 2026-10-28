@@ -257,6 +257,62 @@ static Test::Suite formLookSuite("form look", [] {
         check(Forms::barTarget({ false, false }) == 0, "none can: the first, to say why");
     });
 
+    run("form look: a parsed form and model supply the bar's navigation", [] {
+        Configuration config;
+        ManagerModel model(config);
+        model.set("draft:show", "yes");
+        model.set("draft:enabled", "yes");
+        auto form = parsed(R"(<form id="t">
+              <text label="First" bind="draft:a"/>
+              <text label="Last" bind="draft:b"/>
+              <actions>
+                <button label="Save" action="s" visibleWhen="draft:show" enabledWhen="draft:enabled"/>
+                <button label="Other" action="o"/>
+              </actions>
+            </form>)");
+        if (!form) return;
+        auto pinned = Forms::pinnedActions(*form);
+        auto buttons = [&] {
+            std::vector<const Forms::Field*> found;
+            for (const Forms::Field* block : pinned) {
+                for (const Forms::Field& button : block->children) {
+                    if (Forms::isVisible(button, model) && Forms::isEnabled(button, model)) {
+                        found.push_back(&button);
+                    }
+                }
+            }
+            return found;
+        };
+        std::vector<bool> rows;
+        for (const Forms::Field& field : form->fields) {
+            if (field.type == Forms::FieldType::Text) {
+                rows.push_back(Forms::isVisible(field, model) && Forms::isEnabled(field, model));
+            }
+        }
+        auto bar = buttons();
+        FocusMove m = Forms::moveFocus(rows, 1, false, static_cast<int>(bar.size()), 1);
+        check(m.bar, "Down past the last field enters the bar");
+        m = Forms::jumpFocus(rows, m.row, m.bar, static_cast<int>(bar.size()), false, 10);
+        check(m.bar, "Page Down in the bar stays there");
+        m = Forms::moveFocus(rows, m.row, m.bar, static_cast<int>(bar.size()), -1);
+        check(!m.bar && m.row == 1, "Up after entering with Down returns to the last field");
+        model.set("draft:show", "no");
+        bar = buttons();
+        check(bar.size() == 1 && bar[Forms::barTarget({ true })]->label == "Other", "hidden Save leaves Other as the jump target");
+        model.set("draft:show", "yes");
+        model.set("draft:enabled", "no");
+        bar = buttons();
+        check(bar.size() == 1 && bar[Forms::barTarget({ true })]->label == "Other", "disabled Save leaves Other as the jump target");
+
+        auto onlyBar = parsed(R"(<form id="bar"><note value="No fields"/><actions><button label="Go" action="g"/></actions></form>)");
+        if (!onlyBar) return;
+        int count = static_cast<int>(Forms::pinnedActions(*onlyBar)[0]->children.size());
+        m = Forms::moveFocus({ false }, -1, false, count, 1);
+        check(m.bar, "no focusable rows: Down reaches the bar");
+        m = Forms::moveFocus({ false }, -1, m.bar, count, -1);
+        check(m.bar, "Up stays in the only place that takes focus");
+    });
+
     run("form look: the bar's buttons go left to right and wrap", [] {
         std::vector<Forms::BarSlot> slots = Forms::layoutBar({ 100.0f, 200.0f, 300.0f }, 400.0f, 10.0f);
         check(slots.size() == 3, "three slots");
@@ -289,6 +345,12 @@ static Test::Suite formLookSuite("form look", [] {
         check(size.width * 9 == size.height * 16 && size.width <= 3456, "4K: 16:9, within the share");
         size = WindowSize::automatic(1366, 728);
         check(size.width <= 1366 && size.height + 32 <= 728 && size.width * 9 == size.height * 16, "a small laptop");
+        size = WindowSize::automatic(1080, 1920);
+        check(size.width <= 1080 && size.height + 32 <= 1920 && size.width * 9 == size.height * 16, "portrait desktop");
+        size = WindowSize::automatic(320, 240);
+        check(size.width > 0 && size.height > 0 && size.width <= 320 && size.height <= 240, "tiny desktop stays usable and within bounds");
+        size = WindowSize::automatic(800, 20);
+        check(size.width > 0 && size.height > 0 && size.width <= 800 && size.height <= 20, "less height than a title bar stays positive and bounded");
         size = WindowSize::automatic(0, 0);
         check(size.width == 1280 && size.height == 720, "no display size: the old default");
         size = WindowSize::automatic(500, 400);

@@ -98,7 +98,7 @@ const char* const metadataForm = R"(
     <button label="Put back the shipped score" action="game.unset.score" visibleWhen="game:isChanged:score"/>
     <button label="Put back the shipped clone of" action="game.unset.cloneof" visibleWhen="game:isChanged:cloneof"/>
   </section>
-  <note bind="game:metadataNote"/>
+  <note bind="game:metadataNote" panel="yes"/>
 </form>
 )";
 
@@ -206,7 +206,7 @@ const char* const playlistsForm = R"(
 const char* const descriptionForm = R"(
 <form id="game-description" title="Description" bind="game:screenTitle">
   <note bind="game:notFound"/>
-  <note bind="game:story:status"/>
+  <note bind="game:story:status" panel="yes"/>
   <text label="Story" bind="game:story:text" multiline="yes" rows="8" visibleWhen="game:story:canEdit"
         hint="No story text yet"/>
   <actions>

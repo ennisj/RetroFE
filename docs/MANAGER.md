@@ -161,10 +161,10 @@ A screen's buttons (Save, Undo changes, Start this game...) sit in a **bar
 pinned at the bottom**, always in view while the rows above scroll. **Page
 Down** (the `pageDown` control: the keyboard's Page Down, or the right shoulder
 button on a pad with RetroFE's built-in controls) jumps to the bar's first
-button that can run now, never one that asks to confirm; **Page Up** goes back
-to where you were. Down past the last row, or Up past the first, also goes into
-the bar, and Left/Right move along it. The hints say where the jump goes
-("Page down: Save"), in green once something you changed can be saved; without
+button that can run now without asking to confirm, when there is one;
+**Page Up** goes back to where you were. Down past the last row, or Up past the
+first, also goes into the bar, and Left/Right move along it. The hints say where
+the jump goes ("Page down: Save"), in green once something you changed can be saved; without
 a bar, Page Up and Page Down move a page. A button that can't run now is
 dimmed, and says why while it's focused (in the hints, or the help panel).
 Statuses that need a look are colored: amber for a warning ("Won't start",
@@ -741,7 +741,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 <form id="settings" title="Settings">
   <section label="Display">
     <toggle label="Fullscreen" bind="settings:fullscreen"/>
-    <text label="Width" bind="settings:horizontal" hint="pixels, or stretch" enabledWhen="!settings:fullscreen"/>
+    <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen"/>
   </section>
   <actions>
     <button label="Save" action="settings.save"/>

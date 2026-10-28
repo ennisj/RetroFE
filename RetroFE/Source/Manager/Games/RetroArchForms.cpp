@@ -34,7 +34,7 @@ const char* const hubForm = R"XML(
   <link label="Core options" open="{p}-core-options" status="retroarch:optionsStatus" visibleWhen="retroarch:isReady"/>
   <link label="Controls" open="{p}-controls" status="retroarch:controlsStatus" visibleWhen="retroarch:isReady"/>
   <section label="RetroArch settings" visibleWhen="retroarch:isReady">
-    <note bind="retroarch:intro"/>
+    <note bind="retroarch:intro" panel="yes"/>
     <choice label="Aspect ratio" bind="retroarch:row:aspect" options="retroarch:choices:aspect"/>
     <choice label="Smooth picture" bind="retroarch:row:smooth" options="retroarch:choices:smooth"/>
     <choice label="Shader" bind="retroarch:row:shader" options="retroarch:choices:shader"/>
@@ -61,7 +61,7 @@ const char* const hubForm = R"XML(
 const char* const optionsForm = R"XML(
 <form id="{p}-core-options" title="Core options" bind="retroarch:screenTitle">
   <note bind="retroarch:why"/>
-  <note bind="retroarch:intro"/>
+  <note bind="retroarch:intro" panel="yes"/>
   <results bind="retroarch:coreOptions" open="{p}-core-option" param="key" visibleWhen="retroarch:isReady"
            empty="Manage has no options for this core yet. RetroArch's own menu has them all (Quick Menu, Core Options)."/>
   <note bind="retroarch:disabledNote"/>
@@ -90,7 +90,7 @@ const char* const controlsForm = R"XML(
 <form id="{p}-controls" title="Controls" bind="retroarch:screenTitle">
   <note bind="retroarch:why"/>
   <section label="Player 1" visibleWhen="retroarch:isReady">
-    <note bind="retroarch:intro"/>
+    <note bind="retroarch:intro" panel="yes"/>
     <choice label="Stick moves the D-pad" bind="retroarch:row:dpad" options="retroarch:choices:dpad"/>
     <choice label="A button sends" bind="retroarch:row:btn_a" options="retroarch:choices:btn_a"/>
     <choice label="B button sends" bind="retroarch:row:btn_b" options="retroarch:choices:btn_b"/>

@@ -37,8 +37,8 @@ const char* const settingsForm = R"(
 <form id="settings" title="Settings">
   <section label="Display">
     <toggle label="Fullscreen" bind="settings:fullscreen"/>
-    <text label="Width" bind="settings:horizontal" hint="pixels, or stretch" enabledWhen="!settings:fullscreen"/>
-    <text label="Height" bind="settings:vertical" hint="pixels, or stretch" enabledWhen="!settings:fullscreen"/>
+    <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen"/>
+    <text label="Height" bind="settings:vertical" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen"/>
     <toggle label="Hide mouse" bind="settings:hideMouse" default="no"/>
     <note value="Display changes take effect the next time RetroFE starts."/>
   </section>

@@ -57,6 +57,9 @@ KeyboardWidget::Result KeyboardWidget::navigate(FormWidget::Nav nav)
     case FormWidget::Nav::Right: k = KNav::Right; break;
     case FormWidget::Nav::Select: k = KNav::Select; break;
     case FormWidget::Nav::Back: k = KNav::Back; break;
+    case FormWidget::Nav::PageUp:
+    case FormWidget::Nav::PageDown:
+        return Result::None;
     }
     return keys_.navigate(k, *text_);
 }

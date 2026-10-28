@@ -39,7 +39,8 @@ const char* const themeForm = R"(
   <value label="Widgets" bind="theme:widgets"/>
   <value label="Folder" bind="theme:folder"/>
   <note bind="theme:problem"/>
-  <note bind="theme:editNote"/>
+  <note bind="theme:editNote" visibleWhen="theme:isEditor"/>
+  <note bind="theme:editNote" visibleWhen="theme:isHandMade" panel="yes"/>
   <button label="Use this theme" action="theme.use" visibleWhen="!theme:isActive"/>
   <button label="Edit" action="theme.edit" visibleWhen="theme:canOpen"/>
   <button label="Duplicate" action="theme.duplicate" visibleWhen="theme:isEditor"/>
@@ -51,7 +52,7 @@ const char* const themeNewForm = R"(
 <form id="theme-new" title="New theme">
   <text label="Name" bind="theme:newName"/>
   <choice label="Orientation" bind="theme:newOrientation" options="theme:orientations"/>
-  <note value="The new theme starts with an empty page. Edit it to place widgets: titles, art, videos and the game wheel."/>
+  <note value="The new theme starts with an empty page. Edit it to place widgets: titles, art, videos and the game wheel." panel="yes"/>
   <button label="Create" action="theme.create"/>
 </form>
 )";

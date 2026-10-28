@@ -54,8 +54,9 @@ class Image;
 // is drawn as a bar of buttons pinned at the bottom, above the status line and
 // the hints, so it's always in view while the rows above it scroll. Down past
 // the last row, or Up past the first, goes into it; Left/Right move along it;
-// Up leaves it for the row focus came from. Page Down jumps to it from
-// anywhere (to the first button that can run now) and Page Up goes back;
+// Up leaves it for the last row after entering with Up/Down. Page Down jumps
+// to it from anywhere (preferring a button that can run without confirming),
+// remembering the row for Page Up to return to;
 // without a bar they move a page. pinActions="no" keeps the actions in place.
 //
 // Statuses, values, notes and results' details the model gives a severity
@@ -182,6 +183,9 @@ public:
     // A live field's model gets the text being edited; call after the
     // on-screen keyboard changed it (typed text does this itself)
     void sendLiveText();
+
+    // A value changed outside the widget, e.g. in a file picker
+    void markEdited() { edited_ = true; }
 
     // The screen is rebuilt from the model on input, when the model's
     // generation changes, and a few times a second; this rebuilds it on the

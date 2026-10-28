@@ -25,7 +25,7 @@ const char* const menusForm = R"form(
 <form id="menus" title="Menus">
   <note bind="menu:status"/>
   <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
-  <note bind="menu:browseNote"/>
+  <note bind="menu:browseNote" panel="yes"/>
   <link label="Change what Browse opens" open="settings" visibleWhen="menu:isReady"/>
   <text label="Search" bind="menu:query" live="yes" hint="Name of a menu, merged collection or system"/>
   <results label="From Browse down" bind="menu:tree" open="menu" empty="No menus yet."/>
@@ -61,7 +61,7 @@ const char* const menuEntriesForm = R"form(
 <form id="menu-entries" title="Entries" bind="menu:title">
   <note bind="menu:status"/>
   <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
-  <note bind="menu:entriesNote"/>
+  <note bind="menu:entriesNote" panel="yes"/>
   <results label="Entries, in order" bind="menu:entries" open="menu-entry" param="entry" empty="No entries yet. Add one below."/>
   <section label="Add an entry">
     <choice label="Collection" bind="menu:addEntry" options="menu:addable"/>
@@ -91,13 +91,13 @@ const char* const menuSourcesForm = R"form(
 <form id="menu-sources" title="Sources" bind="menu:title">
   <note bind="menu:status"/>
   <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
-  <note value="A merged collection shows games of other systems, one .sub file per system. An empty .sub shows all of that system's games."/>
+  <note value="A merged collection shows games of other systems, one .sub file per system. An empty .sub shows all of that system's games." panel="yes"/>
   <results label="Sources" bind="menu:sources" open="menu-source" param="source" empty="No sources: it shows no games."/>
   <section label="Add a source">
     <choice label="System" bind="menu:addSource" options="menu:addableSources"/>
     <button label="Add, showing all its games" action="menu.addSource"/>
   </section>
-  <note value="To show only some of a system's games, take games out in Games: each game's Playlists and collections screen."/>
+  <note value="To show only some of a system's games, take games out in Games: each game's Playlists and collections screen." panel="yes"/>
 </form>
 )form";
 
@@ -135,7 +135,7 @@ const char* const menuMediaForm = R"form(
 <form id="menu-media" title="Artwork" bind="menu:title">
   <note bind="menu:status"/>
   <button label="Read the collections again" action="menu.retry" visibleWhen="menu:isFailed"/>
-  <note value="The collection's own artwork, in system_artwork. Menus show it for this entry unless they have their own."/>
+  <note value="The collection's own artwork, in system_artwork. Menus show it for this entry unless they have their own." panel="yes"/>
   <results bind="menu:media" open="menu-medium" param="type" empty="No artwork slots."/>
 </form>
 )form";
