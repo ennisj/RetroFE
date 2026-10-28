@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <system_error>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -38,12 +39,37 @@ namespace Library
 
 bool readFile(const std::string& path, std::string& content)
 {
+#ifdef _WIN32
+    // Index builds read the same files that Manage edits replace by rename.
+    // MSVC's ifstream doesn't share delete access, so an overlapping read
+    // would make MoveFileEx fail even though the old contents stay valid.
+    HANDLE handle = CreateFileW(fs::path(path).wstring().c_str(), GENERIC_READ,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    std::unique_ptr<void, decltype(&CloseHandle)> file(handle, CloseHandle);
+    content.clear();
+    char buffer[64 * 1024];
+    DWORD bytes = 0;
+    for (;;) {
+        if (!ReadFile(file.get(), buffer, sizeof(buffer), &bytes, nullptr)) {
+            return false;
+        }
+        if (bytes == 0) {
+            return true;
+        }
+        content.append(buffer, bytes);
+    }
+#else
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         return false;
     }
     content.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     return true;
+#endif
 }
 
 bool flushToDisk(const std::string& path)

@@ -696,7 +696,8 @@ static void runSystemsTests()
         f.model.setScreen("system-playlists", { { "id", "Arcade" } });   // no waiting for the index
         check(has(f.ids("system:playlists"), "Quick"), "listed at once");
         f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
-        check(f.model.runAction("system.addEntry").ok, "added");
+        Forms::Model::Result added = f.model.runAction("system.addEntry");
+        check(added.ok, "added: " + added.message);
         f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
         Forms::Model::Result removed = f.model.runAction("system.removeEntry");
         check(removed.ok, "removed: " + removed.message);
@@ -706,6 +707,41 @@ static void runSystemsTests()
         f.model.setScreen("system-playlists", { { "id", "Arcade" } });
         std::vector<std::string> names = f.ids("system:playlists");
         check(has(names, "Quicker") && !has(names, "Quick"), "the new name at once");
+    });
+
+    run("systems: playlist edits survive index publication", [] {
+        for (int publish = 0; publish < 3; publish++) {
+            Fixture f("sys-publish-" + std::to_string(publish));
+            auto stale = f.indexer.index();
+            // Leave the snapshot stale until the chosen publication point.
+            check(f.editor.createPlaylist(*stale, "Arcade", "Quick").ok, "created on disk");
+            if (publish == 1) {
+                f.rescan();
+            }
+            f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
+            checkEqual(f.model.get("system:isInPlaylist"), "no", "empty playlist cached");
+            check(f.model.actionProblem("system.addEntry").empty(), "add allowed");
+            if (publish == 2) {
+                f.rescan();   // publish after the cache check, without entering again
+            }
+            auto current = f.indexer.index();
+            check((current == stale) == (publish == 0), "the intended snapshot is in use");
+            const auto& oldRecord = stale->collections[static_cast<size_t>(stale->findCollection("Arcade"))];
+            const auto& newRecord = current->collections[static_cast<size_t>(current->findCollection("Arcade"))];
+            check(oldRecord.playlists.empty() && (newRecord.playlists.empty() == (publish == 0)), "stale and fresh playlist records");
+            check(oldRecord.name == newRecord.name && oldRecord.folder == newRecord.folder, "collection identity survives publication");
+            Forms::Model::Result added = f.model.runAction("system.addEntry");
+            check(added.ok, "added: " + added.message);
+            checkEqual(f.model.get("system:isInPlaylist"), "yes", "edit invalidated the empty cache");
+            f.rescan();
+            checkEqual(f.model.get("system:isInPlaylist"), "yes", "still listed after publication");
+            Forms::Model::Result removed = f.model.runAction("system.removeEntry");
+            check(removed.ok, "removed: " + removed.message);
+            checkEqual(f.model.get("system:isInPlaylist"), "no", "edit invalidated the populated cache");
+            f.rescan();
+            checkEqual(f.model.get("system:isInPlaylist"), "no", "still absent after publication");
+            check(readFile(f.root + "/collections/Arcade/playlists/Quick.txt").empty(), "empty on disk");
+        }
     });
 
     run("systems: cyclePlaylist decides which playlists RetroFE shows", [] {

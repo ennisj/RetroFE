@@ -37,6 +37,7 @@
 #include "../Source/Manager/Setup.h"
 #include "../Source/Utility/Utils.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -184,6 +185,42 @@ static void runLibraryTests()
         checkEqual(programFolder("sh", root), root, "on PATH elsewhere (/bin/sh): root");
 #endif
     });
+    run("library: reads allow concurrent atomic replacement", [&] {
+        std::string path = makeRoot("lib-read-replace") + "/playlist.txt";
+        const std::string original(1024 * 1024, 'a');
+        const std::string replacement(1024 * 1024, 'b');
+        writeFile(path, original);
+        std::atomic<bool> started{ false };
+        std::atomic<bool> stop{ false };
+        bool readsOk = true;
+        size_t reads = 0;
+        std::thread reader([&] {
+            started = true;
+            do {
+                std::string content;
+                readsOk &= Library::readFile(path, content) && (content == original || content == replacement);
+                reads++;
+            } while (!stop);
+        });
+        while (!started) {
+            std::this_thread::yield();
+        }
+        bool writesOk = true;
+        std::string writeError;
+        for (int i = 0; i < 32; i++) {
+            // On Windows an ifstream reader denies the delete access needed
+            // by MoveFileEx, even when it permits other readers and writers.
+            if (!writeFileAtomic(path, i % 2 == 0 ? replacement : original, writeError)) {
+                writesOk = false;
+                break;
+            }
+        }
+        stop = true;
+        reader.join();
+        check(writesOk, "replaced while being read: " + writeError);
+        check(reads > 0 && readsOk, "each read sees one complete version");
+    });
+
     run("library: conf edits keep comments, spacing and CRLF", [&] {
         std::string root = makeRoot("lib-conf");
         std::string path = root + "/info.conf";
