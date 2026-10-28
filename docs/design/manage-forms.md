@@ -400,3 +400,17 @@ screens use the usual fields bound to the provider, with Save and Undo changes.
 - In RetroFE: results, links, values and images all draw in the built-in
   form page, driven by the arrow keys, Enter and Escape. The ImGui renderer
   is for development; test logic through the model rather than through it.
+
+Providers can keep view state outside screen parameters, such as a search or
+filter. Implement `Provider::saveView()` and `restoreView()` for that state:
+Start this game stores it with every Navigator frame (form, params and focus)
+in `LaunchQueue::Request::returning`. The static queue keeps the request across
+a reload, even though ManagerUI and its providers are recreated. Restore runs
+after `refresh()` and before showing the saved screen; subsequent `enter()`
+calls must keep the restored choices. Save values and any parameter sentinel
+needed to preserve them on Back, rather than caches or unsaved edit buffers.
+Games, Systems/Videos, Menus and Emulators implement these hooks for their
+searches, filters and list choices. `LaunchReturn` validates the frames against
+the refreshed library and available forms before replacing the stack; a missing
+record or form keeps the usual Manage > Games > game return path. New routes to
+a game with other record parameters should extend that validation.

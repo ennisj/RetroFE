@@ -276,6 +276,48 @@ const GameRecord* GameProvider::findRecord(const Index& index, const Screen& scr
     return hidden < 0 ? nullptr : &index.hiddenGames[static_cast<size_t>(hidden)];
 }
 
+Forms::Params GameProvider::saveView() const
+{
+    return {
+        { "query", query_ },
+        { "filter", filter_ },
+        { "filterParam", filterParam_ },
+        { "onlyNoMetadata", (onlyNoMetadata_ ? "yes" : "no") },
+        { "onlyHidden", (onlyHidden_ ? "yes" : "no") },
+        { "playlist", playlist_ },
+        { "merged", merged_ },
+        { "favouritePage", favouritePage_ }
+    };
+}
+
+void GameProvider::restoreView(const Forms::Params& state)
+{
+    if (auto found = state.find("query"); found != state.end()) {
+        query_ = found->second;
+    }
+    if (auto found = state.find("filter"); found != state.end()) {
+        filter_ = found->second;
+    }
+    if (auto found = state.find("filterParam"); found != state.end()) {
+        filterParam_ = found->second;
+    }
+    if (auto found = state.find("onlyNoMetadata"); found != state.end()) {
+        onlyNoMetadata_ = Forms::isTruthy(found->second);
+    }
+    if (auto found = state.find("onlyHidden"); found != state.end()) {
+        onlyHidden_ = Forms::isTruthy(found->second);
+    }
+    if (auto found = state.find("playlist"); found != state.end()) {
+        playlist_ = found->second;
+    }
+    if (auto found = state.find("merged"); found != state.end()) {
+        merged_ = found->second;
+    }
+    if (auto found = state.find("favouritePage"); found != state.end()) {
+        favouritePage_ = found->second;
+    }
+}
+
 void GameProvider::refresh()
 {
     // The manager is opening: files may have changed while it was closed, and

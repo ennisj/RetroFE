@@ -16,6 +16,7 @@
 #pragma once
 
 #include "../Forms/Form.h"
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,9 @@ public:
 
     // Returns to the previous screen. False when there's none, i.e. the manager closes.
     bool back();
+
+    // Validate everything before replacing the stack; failure leaves it alone.
+    bool restore(const std::vector<Frame>& frames, const std::function<bool(const Frame&)>& available);
 
     void clear() { frames_.clear(); }
 

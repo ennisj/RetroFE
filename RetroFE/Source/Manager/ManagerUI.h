@@ -250,6 +250,8 @@ private:
     int cursorWasShown_ = SDL_ENABLE;
     // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
     inline static Manager::LaunchQueue launches_;
+    std::optional<std::pair<LaunchRequest, std::string>> launchReturn_;
+    void finishLaunchReturn(const LaunchRequest& request, const std::string& problem);
     inline static Manager::AfterReload afterReload_;   // likewise: where to go once it's back
 
     std::string status_;

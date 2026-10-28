@@ -132,7 +132,13 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
         services.requestLaunch = [this](const std::string& collection, const std::string& game) {
-            launches_.want({ collection, game, gameTitle(collection, game) });   // handleResult closes the manager for it
+            LaunchRequest request{ collection, game, gameTitle(collection, game) };
+            request.returning.frames = nav_.frames();
+            if (!request.returning.frames.empty() && widget_) {
+                request.returning.frames.back().focus = widget_->focus();
+            }
+            request.returning.providers = model_.saveView();
+            launches_.want(request);   // handleResult closes the manager for it
         };
         services.launchProblem = [this] {
             bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
@@ -330,6 +336,7 @@ void ManagerUI::open(const std::string& form, const Forms::Params& params)
 
 bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 {
+    launchReturn_.reset();
     browserOpening_.reset();
     if (!context_) {
         return false;
@@ -347,6 +354,7 @@ bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 
 void ManagerUI::back()
 {
+    launchReturn_.reset();
     browserOpening_.reset();
     if (nav_.back()) {
         show();
@@ -523,6 +531,7 @@ void ManagerUI::show()
 
 void ManagerUI::close()
 {
+    launchReturn_.reset();
     systemPick_.reset();
     browserOpening_.reset();
     mouseUse_.reset();
@@ -801,6 +810,12 @@ void ManagerUI::endCapture()
 
 bool ManagerUI::handleEvent(const SDL_Event& e)
 {
+    // Back from a game, the screens it was started from come back once the
+    // library is read again, unless the user does something first
+    if (launchReturn_ && ((e.type == SDL_KEYDOWN && !e.key.repeat) || e.type == SDL_TEXTINPUT
+        || e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEWHEEL)) {
+        launchReturn_.reset();
+    }
     if (!context_) {
         return false;
     }
@@ -888,6 +903,13 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
 void ManagerUI::navigate(const Controls& held, float now)
 {
+    // A press before the screens a game was started from come back keeps the
+    // user where they are (controls held since Manage opened don't count)
+    for (size_t i = 0; launchReturn_ && i < held.size(); i++) {
+        if (held[i] && !navHeld_[i]) {
+            launchReturn_.reset();
+        }
+    }
     using Control = Manager::ImGuiScreen::Control;
     // Controls' order; page up/down jump to a form's pinned action bar and back
     static constexpr FormWidget::Nav navs[] = {
@@ -995,6 +1017,11 @@ void ManagerUI::update(float dt)
     retired_.clear();
     if (!open_) {
         return;
+    }
+    if (launchReturn_ && (!library_ || library_->status().state != Library::Indexer::State::Building)) {
+        auto returning = std::move(*launchReturn_);
+        launchReturn_.reset();
+        finishLaunchReturn(returning.first, returning.second);
     }
     if (browserOpening_) {
         auto opening = browserOpening_;
@@ -1267,15 +1294,33 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string
     if (!context_ || locked_) {
         return;
     }
+    // Opening refreshes providers and starts a fresh library build. Keep the
+    // usual return screen visible until that build can validate the old stack.
+    launchReturn_.reset();
     // Where the user was, as far as the screens go: Manage > Games > the game
     open("manage");
     if (!open_ || !push("games", { { "collection", request.collection } })
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
     }
+    launchReturn_ = std::make_pair(request, problem);
     // Back on the button that started it, so it can be started again
     if (widget_) {
         widget_->focusOn("game.launch");
+    }
+    setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem,
+              problem.empty() ? Forms::StatusKind::Info : Forms::StatusKind::Error);
+}
+
+void ManagerUI::finishLaunchReturn(const LaunchRequest& request, const std::string& problem)
+{
+    auto index = library_ && library_->status().state == Library::Indexer::State::Ready ? library_->index() : nullptr;
+    if (index && request.returning.restore(nav_, *index, [this](const std::string& id) { return form(id) != nullptr; })) {
+        model_.restoreView(request.returning.providers);
+        show();
+        if (widget_) {
+            widget_->focusOn("game.launch");
+        }
     }
     setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem,
               problem.empty() ? Forms::StatusKind::Info : Forms::StatusKind::Error);

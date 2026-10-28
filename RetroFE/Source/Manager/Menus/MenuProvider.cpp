@@ -117,6 +117,28 @@ const std::string& MenuProvider::deleteProblem(const std::string& name)
     return deleteProblem_;
 }
 
+Forms::Params MenuProvider::saveView() const
+{
+    return {
+        { "query", query_ },
+        { "addEntry", addEntry_ },
+        { "addSource", addSource_ }
+    };
+}
+
+void MenuProvider::restoreView(const Forms::Params& state)
+{
+    if (auto found = state.find("query"); found != state.end()) {
+        query_ = found->second;
+    }
+    if (auto found = state.find("addEntry"); found != state.end()) {
+        addEntry_ = found->second;
+    }
+    if (auto found = state.find("addSource"); found != state.end()) {
+        addSource_ = found->second;
+    }
+}
+
 void MenuProvider::refresh()
 {
     index_.reset();

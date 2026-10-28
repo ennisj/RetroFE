@@ -30,6 +30,9 @@
 #include "../Source/Library/MetadataOverrides.h"
 #include "../Source/Manager/Games/GameProvider.h"
 #include "../Source/Manager/LaunchQueue.h"
+#include "../Source/Manager/Systems/SystemProvider.h"
+#include "../Source/Manager/Menus/MenuProvider.h"
+#include "../Source/Manager/Emulators/EmulatorProvider.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Utility/Utils.h"
 #include <algorithm>
@@ -885,6 +888,114 @@ static void runGamesTests()
         f.settle();
         f.open("game", gameParams("NES", "zelda"));
         checkEqual(f.model.get("game:isHidden"), "no", "not a hidden game");
+    });
+
+    run("games: launch returns to the saved stack and searches", [] {
+        std::string root = makeInstall("games-launch-return");
+        for (bool reload : { false, true }) {
+            Fixture before(root);
+            Manager::Services services{ before.config, nullptr };
+            before.model.addProvider(std::make_unique<Manager::SystemProvider>(services, false));
+            before.model.addProvider(std::make_unique<Manager::MenuProvider>(services));
+            before.model.addProvider(std::make_unique<EmulatorProvider>(services));
+            before.open("games", { { "collection", "All" } });
+            before.model.set("game:query", "Alpha");
+            before.model.set("game:filter", "Arcade");
+            before.model.set("game:onlyNoMetadata", reload ? "yes" : "no");
+            before.model.set("game:onlyHidden", reload ? "yes" : "no");
+            auto matches = before.model.rows("game:search", 300);
+            if (!reload) check(matches.total == 1, "ordinary search has a result before launch");
+            before.model.set("system:query", "Arc");
+            before.model.set("system:menu", "Main");
+            before.model.set("system:playlistQuery", "Beta");
+            before.model.set("menu:query", "Consoles");
+            before.model.set("emulator:query", "mame");
+            Navigator original;
+            original.open("manage");
+            original.push("menus", {}, {});
+            original.push("menu", { { "id", "Main" } }, {});
+            original.push("systems", {}, {});
+            original.push("system", { { "id", "Arcade" } }, {});
+            original.push("games", { { "collection", "All" } }, {});
+            Forms::Focus results;
+            results.field = 4;
+            results.item = "Arcade/a";
+            results.scroll = 123.0f;
+            original.push("game", gameParams("Arcade", "a"), results);
+            Manager::LaunchQueue::Request wanted{ "Arcade", "a", "Alpha" };
+            wanted.returning.frames = original.frames();
+            wanted.returning.providers = before.model.saveView();
+            Manager::LaunchQueue queue;
+            queue.want(wanted);
+            queue.handle(true, [](bool) { return true; });
+            if (reload) {
+                check(queue.take(false, true, false, wanted) == Manager::LaunchQueue::Take::None, "reload delays launch");
+                queue.reloading();
+                queue.shutdown();
+            }
+            Manager::LaunchQueue::Request launched;
+            check(queue.take(false, false, false, launched) == Manager::LaunchQueue::Take::Start, "launch takes the snapshot");
+            // A fresh model represents the ManagerUI destroyed by a reload;
+            // refresh on the existing one is the ordinary return path.
+            Fixture after(root);
+            ManagerModel& model = reload ? after.model : before.model;
+            Manager::Services restoredServices{ after.config, nullptr };
+            if (reload) {
+                model.addProvider(std::make_unique<Manager::SystemProvider>(restoredServices, false));
+                model.addProvider(std::make_unique<Manager::MenuProvider>(restoredServices));
+                model.addProvider(std::make_unique<EmulatorProvider>(restoredServices));
+            }
+            model.refresh();
+            Navigator restored;
+            restored.open("manage");
+            auto forms = [](const std::string&) { return true; };
+            check(launched.returning.restore(restored, *after.indexer.index(), forms), "saved frames restore");
+            model.restoreView(launched.returning.providers);
+            check(restored.depth() == original.depth(), "every frame restored");
+            check(launched.returning.restore(restored, *after.indexer.index(), forms) && restored.depth() == original.depth(), "restoring twice replaces rather than appends");
+            for (size_t n = 0; n < original.depth(); ++n) {
+                check(restored.frames()[n].form == original.frames()[n].form
+                      && restored.frames()[n].params == original.frames()[n].params
+                      && restored.frames()[n].focus.field == original.frames()[n].focus.field
+                      && restored.frames()[n].focus.item == original.frames()[n].focus.item
+                      && restored.frames()[n].focus.scroll == original.frames()[n].focus.scroll, "form, params and focus survive");
+            }
+            restored.back();
+            model.setScreen(restored.current()->form, restored.current()->params);
+            checkEqual(model.get("game:query"), "Alpha", "Back keeps search");
+            checkEqual(model.get("game:filter"), "Arcade", "Back keeps chosen filter rather than initial collection");
+            check(Forms::isTruthy(model.get("game:onlyNoMetadata")) == reload && Forms::isTruthy(model.get("game:onlyHidden")) == reload, "both search toggles survive");
+            auto returnedMatches = model.rows("game:search", 300);
+            check(returnedMatches.total == matches.total && returnedMatches.items.size() == matches.items.size(), "Back shows the same search results");
+            if (!matches.items.empty() && !returnedMatches.items.empty()) {
+                checkEqual(returnedMatches.items.front().id, matches.items.front().id, "same result row");
+            }
+            checkEqual(model.get("system:query"), "Arc", "Systems search survives");
+            checkEqual(model.get("system:menu"), "Main", "Systems menu filter survives");
+            checkEqual(model.get("system:playlistQuery"), "Beta", "playlist search survives");
+            checkEqual(model.get("menu:query"), "Consoles", "Menus search survives");
+            checkEqual(model.get("emulator:query"), "mame", "Emulators search survives");
+            check(Manager::LaunchReturn::available({ "emulator", { { "scope", "global" }, { "id", "mame" } }, {} }, *after.indexer.index()), "Emulators route exists");
+            check(!Manager::LaunchReturn::available({ "emulator", { { "scope", "global" }, { "id", "removed" } }, {} }, *after.indexer.index()), "removed launcher cannot restore");
+            check(Manager::LaunchReturn::available({ "menu-entry", { { "id", "Main" }, { "entry", "Arcade" } }, {} }, *after.indexer.index()), "menu entry route exists");
+            check(!Manager::LaunchReturn::available({ "menu-entry", { { "id", "Main" }, { "entry", "removed" } }, {} }, *after.indexer.index()), "removed menu entry cannot restore");
+            check(!Manager::LaunchReturn::available({ "system-playlist", { { "id", "Arcade" }, { "playlist", "removed" } }, {} }, *after.indexer.index()), "removed playlist cannot restore");
+            Navigator fallback;
+            fallback.open("manage");
+            fallback.push("games", { { "collection", "Arcade" } }, {});
+            fallback.push("game", gameParams("Arcade", "a"), {});
+            auto broken = launched.returning;
+            broken.frames[2].params["id"] = "Renamed";
+            check(!broken.restore(fallback, *after.indexer.index(), forms) && fallback.depth() == 3, "renamed collection keeps fallback stack");
+            broken = launched.returning;
+            broken.providers["game"]["filter"] = "Renamed";
+            check(!broken.restore(fallback, *after.indexer.index(), forms) && fallback.depth() == 3, "removed search filter keeps fallback stack");
+            broken = launched.returning;
+            broken.frames.back().params["id"] = "removed";
+            check(!broken.restore(fallback, *after.indexer.index(), forms) && fallback.depth() == 3, "removed game keeps fallback stack");
+            check(!launched.returning.restore(fallback, *after.indexer.index(), [](const std::string& id) { return id != "menus"; })
+                  && fallback.depth() == 3, "missing form keeps fallback stack");
+        }
     });
 
     run("games: the launch request between Manage and RetroFE", [] {

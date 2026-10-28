@@ -355,8 +355,12 @@ The game's screen also has:
   launch. When changes made in Manage are waiting, RetroFE reloads first, so
   the game starts with them; while a Catalog install is running it can't
   reload, so the button says to wait. A missing program is pointed out
-  before starting. When the game exits, Manage opens again on the game,
-  saying why if it couldn't start. With unsaved changes on an open screen,
+  before starting. When the game exits, Manage returns to the game with focus
+  on **Start this game**, keeping the screens you came through, their focus,
+  searches and filters, even when RetroFE reloaded first. Back shows your
+  previous results. If a saved screen is no longer available (for example, a
+  collection was renamed), it opens Manage > Games (that collection) > the
+  game instead. It says why if the game couldn't start. With unsaved changes on an open screen,
   the first press says so and the second leaves them and starts the game.
 - **Hide this game**: adds it to its system's exclude list (`exclude.txt`,
   or the file `list.excludeFile` names), so RetroFE stops listing it. Hidden

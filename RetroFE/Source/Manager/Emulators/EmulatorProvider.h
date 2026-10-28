@@ -50,6 +50,8 @@ public:
     explicit EmulatorProvider(const Manager::Services& services);
 
     std::string prefix() const override { return "emulator"; }
+    Forms::Params saveView() const override;
+    void restoreView(const Forms::Params& state) override;
     void refresh() override;
     void enter(const Manager::Screen& screen) override;
     std::string leaving(const Manager::Screen& screen) override;

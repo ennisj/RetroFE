@@ -552,6 +552,32 @@ unsigned SystemProvider::generation() const
     return (services_.library ? services_.library->status().generation : 0) + changes_;
 }
 
+Forms::Params SystemProvider::saveView() const
+{
+    return {
+        { "query", query_ },
+        { "menu", menu_ },
+        { "playlistQuery", playlistQuery_ },
+        { "newPlaylist", newPlaylist_ }
+    };
+}
+
+void SystemProvider::restoreView(const Forms::Params& state)
+{
+    if (auto found = state.find("query"); found != state.end()) {
+        query_ = found->second;
+    }
+    if (auto found = state.find("menu"); found != state.end()) {
+        menu_ = found->second;
+    }
+    if (auto found = state.find("playlistQuery"); found != state.end()) {
+        playlistQuery_ = found->second;
+    }
+    if (auto found = state.find("newPlaylist"); found != state.end()) {
+        newPlaylist_ = found->second;
+    }
+}
+
 void SystemProvider::refresh()
 {
     listIndex_.reset();
