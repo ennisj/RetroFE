@@ -64,6 +64,12 @@ namespace Manager
         // info, param, package, collection, source, catalog, open, back, changes) can't be used.
         virtual std::string prefix() const = 0;
 
+        // View state that parameters don't describe (searches, filters, choices).
+        // Saved with a launch, restored after refresh(), before showing a screen.
+        // Keep edit buffers and caches out: closing still discards unsaved changes.
+        virtual Forms::Params saveView() const { return {}; }
+        virtual void restoreView(const Forms::Params& state) { (void)state; }
+
         // The manager is opening: re-read anything cached, it may have changed while closed
         virtual void refresh() {}
 

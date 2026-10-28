@@ -48,7 +48,7 @@ const char* const hubForm = R"XML(
     <value label="Saved in" bind="retroarch:file"/>
   </section>
   <actions>
-    <button label="Save" action="retroarch.save" visibleWhen="retroarch:isReady"/>
+    <button label="Save" action="retroarch.save" primary="yes" visibleWhen="retroarch:isReady"/>
     <button label="Undo changes" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
   </actions>
   <actions>
@@ -80,7 +80,7 @@ const char* const optionForm = R"XML(
   <note bind="retroarch:optionNote"/>
   <value label="Saved in" bind="retroarch:file"/>
   <actions>
-    <button label="Save" action="retroarch.save" visibleWhen="retroarch:isReady"/>
+    <button label="Save" action="retroarch.save" primary="yes" visibleWhen="retroarch:isReady"/>
     <button label="Undo changes" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
   </actions>
 </form>
@@ -106,7 +106,7 @@ const char* const controlsForm = R"XML(
     <value label="Saved in" bind="retroarch:file"/>
   </section>
   <actions>
-    <button label="Save" action="retroarch.save" visibleWhen="retroarch:isReady"/>
+    <button label="Save" action="retroarch.save" primary="yes" visibleWhen="retroarch:isReady"/>
     <button label="Undo changes" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
   </actions>
   <actions>

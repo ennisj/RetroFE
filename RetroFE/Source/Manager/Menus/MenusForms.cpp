@@ -65,7 +65,7 @@ const char* const menuEntriesForm = R"form(
   <results label="Entries, in order" bind="menu:entries" open="menu-entry" param="entry" empty="No entries yet. Add one below."/>
   <section label="Add an entry">
     <choice label="Collection" bind="menu:addEntry" options="menu:addable"/>
-    <button label="Add to the end" action="menu.addEntry"/>
+    <button label="Add to the end" action="menu.addEntry" primary="yes"/>
   </section>
 </form>
 )form";
@@ -81,9 +81,11 @@ const char* const menuEntryForm = R"form(
     <button label="Move up" action="menu.moveUp"/>
     <button label="Move down" action="menu.moveDown"/>
   </actions>
-  <button label="Spell it as the folder is" action="menu.respell" visibleWhen="menu:entryMisspelt"/>
-  <button label="Open this collection" action="menu.openEntry" visibleWhen="menu:entryExists"/>
-  <button label="Remove from this menu" action="menu.removeEntry" confirm="Remove this entry? The collection itself stays."/>
+  <actions>
+    <button label="Spell it as the folder is" action="menu.respell" visibleWhen="menu:entryMisspelt"/>
+    <button label="Open this collection" action="menu.openEntry" visibleWhen="menu:entryExists"/>
+    <button label="Remove from this menu" action="menu.removeEntry" confirm="Remove this entry? The collection itself stays."/>
+  </actions>
 </form>
 )form";
 
@@ -95,7 +97,7 @@ const char* const menuSourcesForm = R"form(
   <results label="Sources" bind="menu:sources" open="menu-source" param="source" empty="No sources: it shows no games."/>
   <section label="Add a source">
     <choice label="System" bind="menu:addSource" options="menu:addableSources"/>
-    <button label="Add, showing all its games" action="menu.addSource"/>
+    <button label="Add, showing all its games" action="menu.addSource" primary="yes"/>
   </section>
   <note value="To show only some of a system's games, take games out in Games: each game's Playlists and collections screen." panel="yes"/>
 </form>
@@ -108,8 +110,10 @@ const char* const menuSourceForm = R"form(
   <note bind="menu:sourceProblem"/>
   <value label="Shows" bind="menu:sourceShows"/>
   <value label="File" bind="menu:sourceFile"/>
-  <button label="Spell it as the system is" action="menu.respellSource" visibleWhen="menu:sourceMisspelt"/>
-  <button label="Remove this source" action="menu.removeSource" confirm="Remove this source? Its games stay in their system."/>
+  <actions>
+    <button label="Spell it as the system is" action="menu.respellSource" visibleWhen="menu:sourceMisspelt"/>
+    <button label="Remove this source" action="menu.removeSource" confirm="Remove this source? Its games stay in their system."/>
+  </actions>
 </form>
 )form";
 
@@ -125,7 +129,7 @@ const char* const menuInfoForm = R"form(
     <value label="Saved in" bind="menu:infoFile"/>
   </section>
   <actions>
-    <button label="Save" action="menu.save"/>
+    <button label="Save" action="menu.save" primary="yes"/>
     <button label="Undo changes" action="menu.reset" visibleWhen="menu:isDirty"/>
   </actions>
   <link label="Artwork" open="menu-media"/>
@@ -157,12 +161,14 @@ const char* const menuMediumForm = R"form(
     <file label="Picture" bind="menu:newFile" start="menu:mediumFolder" hint="Not chosen yet" filter="Pictures" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="menu:isImageSlot"/>
     <file label="Video" bind="menu:newFile" start="menu:mediumFolder" hint="Not chosen yet" filter="Videos" pattern="*.mp4;*.avi;*.mkv;*.mp3;*.wav;*.flac" visibleWhen="menu:isVideoSlot"/>
     <file label="Text" bind="menu:newFile" start="menu:mediumFolder" hint="Not chosen yet" filter="Text" pattern="*.txt" visibleWhen="menu:isTextSlot"/>
-    <button label="Use this file" action="menu.replaceMedium"/>
-    <button label="Add it to the folder" action="menu.addToFolder" visibleWhen="menu:hasMediaFolder"/>
   </section>
-  <button label="Clear" action="menu.clearMedium" visibleWhen="menu:canClear" confirm="Clear it? The file is kept in manage/backups."/>
-  <button label="Clear the folder" action="menu.clearFolder" visibleWhen="menu:hasMediaFolder" confirm="Clear the whole folder? Its files are kept in manage/backups."/>
-  <button label="Put back the original" action="menu.restoreMedium" visibleWhen="menu:canRestore"/>
+  <actions>
+    <button label="Use this file" action="menu.replaceMedium" primary="yes"/>
+    <button label="Add it to the folder" action="menu.addToFolder" visibleWhen="menu:hasMediaFolder"/>
+    <button label="Clear" action="menu.clearMedium" visibleWhen="menu:canClear" confirm="Clear it? The file is kept in manage/backups."/>
+    <button label="Clear the folder" action="menu.clearFolder" visibleWhen="menu:hasMediaFolder" confirm="Clear the whole folder? Its files are kept in manage/backups."/>
+    <button label="Put back the original" action="menu.restoreMedium" visibleWhen="menu:canRestore"/>
+  </actions>
 </form>
 )form";
 
@@ -173,8 +179,10 @@ const char* const menuMediumFileForm = R"form(
   <value label="File" bind="menu:folderFileName"/>
   <value label="In the folder" bind="menu:folderFileFolder"/>
   <note bind="menu:folderFileNote"/>
-  <button label="Keep only this file" action="menu.keepFolderFile" confirm="Make this the only file? It's copied beside the folder, which wins; the folder's files are kept in manage/backups."/>
-  <button label="Take it out of the folder" action="menu.removeFolderFile" confirm="Take this file out of the folder? It's kept in manage/backups."/>
+  <actions>
+    <button label="Keep only this file" action="menu.keepFolderFile" confirm="Make this the only file? It's copied beside the folder, which wins; the folder's files are kept in manage/backups."/>
+    <button label="Take it out of the folder" action="menu.removeFolderFile" confirm="Take this file out of the folder? It's kept in manage/backups."/>
+  </actions>
 </form>
 )form";
 
@@ -185,7 +193,7 @@ const char* const menuActionsForm = R"form(
   <link label="New menu or merged collection in this one" open="menu-new" visibleWhen="menu:canHaveChildren"/>
   <section label="Delete">
     <note bind="menu:deleteNote"/>
-    <button label="Delete" action="menu.delete" confirm="Delete it? Select again to confirm."/>
+    <button label="Delete this menu" action="menu.delete" confirm="Delete this menu? Its games stay in their systems."/>
   </section>
 </form>
 )form";
@@ -199,7 +207,7 @@ const char* const menuNewForm = R"form(
   <choice label="In menu" bind="menu:newParent" options="menu:parentMenus"/>
   <note bind="menu:newParentProblem"/>
   <choice label="Shows games of" bind="menu:newSource" options="menu:systems" visibleWhen="menu:isNewMerged" help="All of that system's games; add more sources afterwards."/>
-  <button label="Create" action="menu.create"/>
+  <button label="Create" action="menu.create" primary="yes"/>
 </form>
 )form";
 

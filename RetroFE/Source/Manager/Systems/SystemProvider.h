@@ -76,6 +76,8 @@ namespace Manager
         SystemProvider(const Services& services, bool videos);
 
         std::string prefix() const override { return base_; }
+        Forms::Params saveView() const override;
+        void restoreView(const Forms::Params& state) override;
         void refresh() override;
         void enter(const Screen& screen) override;
         std::string leaving(const Screen& screen) override;

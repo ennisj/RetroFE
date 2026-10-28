@@ -724,22 +724,33 @@ void FormWidget::resolveFocus(int previousFocus, int previousBar)
             return;
         }
     }
-    // A bar button that went away (e.g. Reset, once pressed): the first
+    // A bar button that went away (e.g. Undo changes, once pressed): the first
     // button that can run now, else back to the rows, never an undo or
     // destructive one just because it moved into its place
     if (previousBar >= 0 && focusedField_) {
         int target = barTargetIndex();
+        Forms::FocusTarget replacement = Forms::FocusTarget::None;
         if (target >= 0 && bar_[target].problem.empty()) {
             bool wasShown = std::find(shownFields_.begin(), shownFields_.end(), bar_[target].field) != shownFields_.end();
-            focusGuarded_ = Forms::refocusTarget(bar_[target].field, true, wasShown) == Forms::FocusTarget::Guarded;
+            replacement = Forms::refocusTarget(bar_[target].field, true, wasShown);
+        }
+        std::vector<Forms::FocusTarget> targets;
+        for (const Row& r : rows_) {
+            bool wasShown = std::find(shownFields_.begin(), shownFields_.end(), r.field) != shownFields_.end();
+            targets.push_back(Forms::refocusTarget(r.field, r.focusable, wasShown));
+        }
+        Forms::FocusMove move = Forms::refocusBar(targets, rowOf(returnField_, returnItem_), replacement);
+        if (move.bar) {
+            focusGuarded_ = false;
             barFocus_ = target;
             focusedField_ = bar_[target].field;
             focusedItem_.clear();
             return;
         }
-        int back = rowOf(returnField_, returnItem_);
+        int back = move.row;
         if (back >= 0) {
             focusRow(back);
+            focusGuarded_ = targets[back] == Forms::FocusTarget::Guarded;
             return;
         }
     }
@@ -762,7 +773,7 @@ void FormWidget::resolveFocus(int previousFocus, int previousBar)
     if (focus_ < 0) {
         focus_ = sameList;
     }
-    if (focus_ < 0 && focusedField_ && previousFocus >= 0) {
+    if (focus_ < 0 && focusedField_ && (previousFocus >= 0 || previousBar >= 0)) {
         // The focused field went away (e.g. a button that hides itself once
         // pressed): stay where it was, or go up. Not onto a file or folder
         // field, a button that asks for confirmation, or a button that has
@@ -791,8 +802,17 @@ void FormWidget::resolveFocus(int previousFocus, int previousBar)
         focusedItem_ = rows_[focus_].item;
     }
     else if (barCanFocus()) {
-        // Nothing in the rows takes focus: the bar does
+        // Nothing in the rows takes focus: prefer a safe bar button.
         int target = barTargetIndex();
+        if (previousBar >= 0) {
+            std::vector<Forms::FocusTarget> buttons;
+            for (const BarButton& button : bar_) {
+                bool wasShown = std::find(shownFields_.begin(), shownFields_.end(), button.field) != shownFields_.end();
+                buttons.push_back(Forms::refocusTarget(button.field, button.enabled, wasShown));
+            }
+            target = Forms::refocusBarFallback(buttons, target);
+            focusGuarded_ = buttons[target] != Forms::FocusTarget::Free;
+        }
         barFocus_ = target;
         focusedField_ = bar_[target].field;
         focusedItem_.clear();
@@ -851,6 +871,11 @@ void FormWidget::moveFocus(int direction)
 void FormWidget::jump(bool back)
 {
     focusGuarded_ = false;
+    if (std::none_of(rows_.begin(), rows_.end(), [](const Row& r) { return r.focusable; })) {
+        scroll_ = Forms::scrollRows(scroll_, back ? -pageRows_ : pageRows_, static_cast<int>(rows_.size()), rowHeight(), pageRows_ * rowHeight());
+        manualScroll_ = true;
+        return;
+    }
     Forms::FocusMove move = Forms::jumpFocus(focusableRows(), focus_, barFocus_ >= 0, barCanFocus() ? static_cast<int>(bar_.size()) : 0,
                                              back, pageRows_, rowOf(returnField_, returnItem_));
     if (move.bar) {
@@ -1315,9 +1340,9 @@ std::string FormWidget::valueText(const Field& field)
 std::vector<FormWidget::HintPart> FormWidget::hintParts() const
 {
     std::vector<HintPart> parts;
-    auto add = [&](const std::string& text, FontManager* font = nullptr) {
+    auto add = [&](const std::string& text, FontManager* font = nullptr, int priority = 2) {
         if (!text.empty()) {
-            parts.push_back(HintPart{ text, font });
+            parts.push_back(HintPart{ text, font, priority });
         }
     };
     if (editing_) {
@@ -1333,9 +1358,11 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
         return parts;
     }
     if (row && row->kind == RowKind::Item) {
-        add(row->action.empty() && (!field || field->open.empty()) ? "" : "Select: open");
-        add(field && field->letterJump ? "Left/Right: letter" : "Left/Right: page");
-        add("LetterUp/Down: letter");
+        add(row->action.empty() && (!field || field->open.empty()) ? "" : row->action.compare(0, 12, "browse.pick:") == 0 ? "Select: choose" : "Select: open");
+        add(field && field->letterJump ? "Left/Right: letter" : "Left/Right: page", nullptr, field && field->letterJump ? 0 : 1);
+        if (letterControls_) {
+            add("Letter up/down: letter", nullptr, 0);
+        }
     }
     else if (field) {
         const std::string& problem = inBar ? bar_[barFocus_].problem : row->problem;
@@ -1350,7 +1377,7 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
                 add(focusGuarded_ ? "Move, then Select: " + field->label : "Select: " + field->label);
             }
             else if (!helpPanel_) {
-                add(problem, infoFont_ ? infoFont_ : detailFont_);   // a help panel says why instead
+                add(problem, infoFont_ ? infoFont_ : detailFont_, -2);   // a help panel says why instead
             }
             break;
         case FieldType::Link:   add("Select: open"); break;
@@ -1364,25 +1391,37 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
         }
     }
     if (std::none_of(rows_.begin(), rows_.end(), [](const Row& r) { return r.focusable; })) {
-        add(inBar ? "Up/Down: scroll" : "Up/Down: scroll   Left/Right: page");
+        add(inBar ? "Up/Down: scroll   Page up/down: page" : "Up/Down: scroll   Left/Right: page   Page up/down: page");
     }
     // The jump to the pinned bar; after a change that can be saved, in the success color
     if (barCanFocus()) {
         if (inBar) {
             add("Left/Right: choose");
-            add("Page up: back");
+            if (std::any_of(rows_.begin(), rows_.end(), [](const Row& r) { return r.focusable; })) {
+                add("Page up: back");
+            }
         }
         else {
             int target = barTargetIndex();
             const BarButton& button = bar_[target];
-            bool ready = edited_ && button.problem.empty();
-            add("Page down: " + button.field->label, ready ? severityFont(Forms::Severity::Ok, nullptr) : nullptr);
+            bool ready = Forms::primaryHint(*button.field, edited_, button.enabled && button.problem.empty());
+            add("Page down: " + button.field->label, ready ? severityFont(Forms::Severity::Ok, nullptr) : nullptr, button.field->primary ? 4 : 3);
         }
     }
-    add(backCloses_ ? "Back: close" : "Back: return");
-    if (!helpPanel_ && field && field->type == FieldType::Link) {
-        add(field->help);
+    // Informational text is drawn last, in the room navigation leaves.
+    HintPart information;
+    bool hasInformation = false;
+    auto informational = std::find_if(parts.begin(), parts.end(), [](const HintPart& part) { return part.priority < 0; });
+    if (informational != parts.end()) {
+        information = *informational;
+        parts.erase(informational);
+        hasInformation = true;
     }
+    add(backCloses_ ? "Back: close" : "Back: return", nullptr, 3);
+    if (!helpPanel_ && field && field->type == FieldType::Link) {
+        add(field->help, nullptr, -1);
+    }
+    if (hasInformation) parts.push_back(information);
     return parts;
 }
 
@@ -1740,7 +1779,13 @@ void FormWidget::draw()
 
         switch (r.kind) {
         case RowKind::Title: {
-            const std::string detail = r.detail.empty() ? titleStatus_ : r.detail;
+            std::string detail = r.detail.empty() ? titleStatus_ : r.detail;
+            if (painter_.textWidth(r.text, size * 1.3f) + painter_.textWidth(detail, size * noteScale) + gap > width) {
+                const std::string suffix = " changes apply when you close Manage";
+                size_t at = detail.find(suffix);
+                if (at != std::string::npos) detail.replace(at, suffix.size(), " changes waiting");
+                else if (detail == "1 change applies when you close Manage") detail = "1 change waiting";
+            }
             FontManager* titleFont = severityFont(titleSeverity_, infoFont_);
             const float titleSize = size * 1.3f;
             float titleWidth = width;
@@ -1935,7 +1980,24 @@ void FormWidget::draw()
         const float hintY = top + height - hintsHeight + (row - hintSize) / 2.0f;
         const float spacing = painter_.textWidth("   ", hintSize);
         float x = left;
-        for (const HintPart& part : hintParts()) {
+        auto parts = hintParts();
+        HintPart information;
+        bool hasInformation = !parts.empty() && parts.back().priority < 0;
+        if (hasInformation) {
+            information = parts.back();
+            parts.pop_back();
+        }
+        std::vector<float> widths;
+        std::vector<int> priorities;
+        for (const HintPart& part : parts) {
+            widths.push_back(painter_.textWidthWith(part.font, part.text, hintSize));
+            priorities.push_back(part.priority);
+        }
+        for (int index : Forms::fitHints(widths, priorities, width, spacing,
+            hasInformation && information.priority == -2
+                ? std::min(width, std::min(painter_.textWidthWith(information.font, information.text, hintSize),
+                    painter_.textWidthWith(information.font, "Reason: unavailable...", hintSize)) + spacing) : 0.0f)) {
+            const HintPart& part = parts[index];
             float room = left + width - x;
             if (room <= 0.0f) {
                 break;
@@ -1943,6 +2005,10 @@ void FormWidget::draw()
             float alpha = part.font ? 1.0f : style_.noteAlpha;
             painter_.textWith(part.font, part.text, x, hintY, room, hintSize, alpha);
             x += painter_.textWidthWith(part.font, part.text, hintSize) + spacing;
+        }
+        if (hasInformation && x < left + width) {
+            painter_.textWith(information.font, information.text, x, hintY, left + width - x,
+                              hintSize, information.font ? 1.0f : style_.noteAlpha);
         }
     }
 }

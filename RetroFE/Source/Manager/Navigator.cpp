@@ -15,6 +15,20 @@
  */
 #include "Navigator.h"
 
+bool Navigator::restore(const std::vector<Frame>& frames, const std::function<bool(const Frame&)>& available)
+{
+    if (frames.empty() || frames.size() > maxDepth) {
+        return false;
+    }
+    for (const auto& frame : frames) {
+        if (!available(frame)) {
+            return false;
+        }
+    }
+    frames_ = frames;
+    return true;
+}
+
 void Navigator::open(const std::string& form, const Forms::Params& params)
 {
     frames_.clear();

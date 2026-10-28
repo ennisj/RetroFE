@@ -92,6 +92,10 @@ public:
     // not added, if the prefix is built in or taken.
     bool addProvider(std::unique_ptr<Manager::Provider> provider);
 
+    using ViewState = std::map<std::string, Forms::Params>;
+    ViewState saveView() const;
+    void restoreView(const ViewState& state);
+
     // Leaving a screen: a provider's warning, or "" (see Provider::leaving)
     std::string leaving(const Manager::Screen& screen);
     // The user left anyway: providers drop their unsaved changes

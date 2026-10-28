@@ -132,7 +132,13 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
         services.requestLaunch = [this](const std::string& collection, const std::string& game) {
-            launches_.want({ collection, game, gameTitle(collection, game) });   // handleResult closes the manager for it
+            LaunchRequest request{ collection, game, gameTitle(collection, game) };
+            request.returning.frames = nav_.frames();
+            if (!request.returning.frames.empty() && widget_) {
+                request.returning.frames.back().focus = widget_->focus();
+            }
+            request.returning.providers = model_.saveView();
+            launches_.want(request);   // handleResult closes the manager for it
         };
         services.launchProblem = [this] {
             bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
@@ -330,6 +336,7 @@ void ManagerUI::open(const std::string& form, const Forms::Params& params)
 
 bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 {
+    launchReturn_.reset();
     browserOpening_.reset();
     if (!context_) {
         return false;
@@ -347,6 +354,7 @@ bool ManagerUI::push(const std::string& form, const Forms::Params& params)
 
 void ManagerUI::back()
 {
+    launchReturn_.reset();
     browserOpening_.reset();
     if (nav_.back()) {
         show();
@@ -523,6 +531,7 @@ void ManagerUI::show()
 
 void ManagerUI::close()
 {
+    launchReturn_.reset();
     systemPick_.reset();
     browserOpening_.reset();
     mouseUse_.reset();
@@ -623,6 +632,10 @@ bool ManagerUI::buildPage()
 
     widget_ = builder.formWidgets().front();
     widget_->bind(shown, &model_);
+    std::string letterUp, letterDown;
+    config_.getProperty("controls.letterUp", letterUp);
+    config_.getProperty("controls.letterDown", letterDown);
+    widget_->setLetterControls(!letterUp.empty() && !letterDown.empty());
     widget_->setCanBrowse(true);   // the file browser, on every platform
     widget_->setBackCloses(nav_.depth() <= 1);
     page_ = page;
@@ -678,6 +691,10 @@ bool ManagerUI::openKeyboard()
 
     const Forms::Field* field = widget_->editingField();
     keyboard_ = builder.keyboardWidgets().front();
+    std::string letterUp, letterDown;
+    config_.getProperty("controls.letterUp", letterUp);
+    config_.getProperty("controls.letterDown", letterDown);
+    keyboard_->setLetterControls(!letterUp.empty() && !letterDown.empty());
     keyboard_->attach(&widget_->editText(), field ? field->label : "", field && field->type == Forms::FieldType::Number,
                       field && field->multiline);
     keyboardPage_ = page;
@@ -759,10 +776,14 @@ void ManagerUI::updateCapture()
         endCapture();
         LOG_INFO("Manager", "Captured input " + token);
         model_.set(bind, token);
+        bool changed = false;
         if (!action.empty()) {
-            handleResult(model_.runAction(action));
+            auto result = model_.runAction(action);
+            changed = result.ok && !result.info;
+            handleResult(result);
         }
         if (widget_) {
+            if (changed) widget_->markEdited();
             widget_->invalidate();
         }
         break;
@@ -789,6 +810,32 @@ void ManagerUI::endCapture()
 
 bool ManagerUI::handleEvent(const SDL_Event& e)
 {
+    // Back from a game, the screens it was started from come back once the
+    // library is read again, unless the user does something first
+    if (launchReturn_) {
+        bool cancel = false;
+        if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+            cancel = launchReturnWait_.input(0, e.key.keysym.scancode, e.type == SDL_KEYDOWN, e.key.repeat != 0);
+        }
+        else if (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP) {
+            int64_t id = static_cast<int64_t>(e.cbutton.which) * 256 + e.cbutton.button;
+            cancel = launchReturnWait_.input(1, id, e.type == SDL_CONTROLLERBUTTONDOWN);
+        }
+        else if (e.type == SDL_JOYBUTTONDOWN || e.type == SDL_JOYBUTTONUP) {
+            int64_t id = static_cast<int64_t>(e.jbutton.which) * 256 + e.jbutton.button;
+            cancel = launchReturnWait_.input(2, id, e.type == SDL_JOYBUTTONDOWN);
+        }
+        else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEWHEEL) {
+            cancel = true;
+        }
+        if (cancel) {
+            cancelLaunchReturn();
+        }
+        else if (e.type == SDL_KEYDOWN || e.type == SDL_TEXTINPUT || e.type == SDL_CONTROLLERBUTTONDOWN
+                 || e.type == SDL_JOYBUTTONDOWN) {
+            return true;   // a held input mustn't leave the waiting screen either
+        }
+    }
     if (!context_) {
         return false;
     }
@@ -876,6 +923,17 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 
 void ManagerUI::navigate(const Controls& held, float now)
 {
+    // A press before the screens a game was started from come back keeps the
+    // user where they are (controls held since Manage opened don't count)
+    for (size_t i = 0; launchReturn_ && i < held.size(); i++) {
+        if (launchReturnWait_.input(3, static_cast<int64_t>(i), held[i])) {
+            cancelLaunchReturn();
+        }
+    }
+    if (launchReturn_) {
+        navHeld_ = held;
+        return;
+    }
     using Control = Manager::ImGuiScreen::Control;
     // Controls' order; page up/down jump to a form's pinned action bar and back
     static constexpr FormWidget::Nav navs[] = {
@@ -983,6 +1041,12 @@ void ManagerUI::update(float dt)
     retired_.clear();
     if (!open_) {
         return;
+    }
+    if (launchReturn_ && Manager::LaunchReturnWait::ready(library_ && library_->index(),
+        library_ && library_->status().state == Library::Indexer::State::Building)) {
+        auto returning = std::move(*launchReturn_);
+        launchReturn_.reset();
+        finishLaunchReturn(returning.first, returning.second);
     }
     if (browserOpening_) {
         auto opening = browserOpening_;
@@ -1255,16 +1319,53 @@ void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string
     if (!context_ || locked_) {
         return;
     }
+    // A published index can validate the old stack while its refresh builds.
+    launchReturn_.reset();
     // Where the user was, as far as the screens go: Manage > Games > the game
     open("manage");
     if (!open_ || !push("games", { { "collection", request.collection } })
         || !push("game", { { "collection", request.collection }, { "id", request.game } })) {
         return;
     }
+    launchReturnWait_ = {};
+    if (Manager::LaunchReturnWait::ready(library_ && library_->index(),
+        library_ && library_->status().state == Library::Indexer::State::Building)) {
+        finishLaunchReturn(request, problem);
+        return;
+    }
+    launchReturn_ = std::make_pair(request, problem);
     // Back on the button that started it, so it can be started again
     if (widget_) {
         widget_->focusOn("game.launch");
     }
+    setStatus("Getting your screens back...", Forms::StatusKind::Info);
+}
+
+void ManagerUI::finishLaunchReturn(const LaunchRequest& request, const std::string& problem)
+{
+    auto index = library_ ? library_->index() : nullptr;
+    if (index && request.returning.restore(nav_, *index, [this](const std::string& id) { return form(id) != nullptr; })) {
+        model_.restoreView(request.returning.providers);
+        show();
+    }
+    // Back on the button that started it, so it can be started again
+    if (widget_) {
+        widget_->focusOn("game.launch");
+    }
+    setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem,
+              problem.empty() ? Forms::StatusKind::Info : Forms::StatusKind::Error);
+}
+
+void ManagerUI::cancelLaunchReturn()
+{
+    // The user moved first: they stay on the usual screens, with the message
+    // they'd have had anyway
+    if (!launchReturn_) {
+        return;
+    }
+    LaunchRequest request = launchReturn_->first;
+    std::string problem = launchReturn_->second;
+    launchReturn_.reset();
     setStatus(problem.empty() ? "Back from " + (request.title.empty() ? request.game : request.title) + "." : problem,
               problem.empty() ? Forms::StatusKind::Info : Forms::StatusKind::Error);
 }

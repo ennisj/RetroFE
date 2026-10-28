@@ -197,6 +197,8 @@ Display (Fullscreen; **Screen size**: the screen's size, 1920 x 1080,
 1280 x 720 and other common sizes, or Custom, which shows Width and Height;
 Hide mouse), Menus (**Theme**, which sets `layout`; Start on Home; Browse
 opens) and Video, then Save. A size that isn't in the list shows as Custom.
+Save reloads RetroFE. Hide mouse applies then; fullscreen and screen size
+apply the next time RetroFE starts.
 
 ### Choosing a folder or a file
 
@@ -353,8 +355,12 @@ The game's screen also has:
   launch. When changes made in Manage are waiting, RetroFE reloads first, so
   the game starts with them; while a Catalog install is running it can't
   reload, so the button says to wait. A missing program is pointed out
-  before starting. When the game exits, Manage opens again on the game,
-  saying why if it couldn't start. With unsaved changes on an open screen,
+  before starting. When the game exits, Manage returns to the game with focus
+  on **Start this game**, keeping the screens you came through, their focus,
+  searches and filters, even when RetroFE reloaded first. Back shows your
+  previous results. If a saved screen is no longer available (for example, a
+  collection was renamed), it opens Manage > Games (that collection) > the
+  game instead. It says why if the game couldn't start. With unsaved changes on an open screen,
   the first press says so and the second leaves them and starts the game.
 - **Hide this game**: adds it to its system's exclude list (`exclude.txt`,
   or the file `list.excludeFile` names), so RetroFE stops listing it. Hidden
@@ -786,7 +792,6 @@ The page places the form with a `<form>` element:
 | `successColor` | The same marked as good news (default `statusColor`); `errorColor` is used for ones marked broken |
 | `buttonColor`, `buttonAlpha` | Behind the pinned bar's buttons that aren't focused (default white at 0.06; alpha 0: none). The focused one gets `focusImage` or the focus background. |
 | `pinActions` | `no` leaves a screen's buttons where the form puts them instead of in a bar pinned at the bottom |
-| `titleStatus` | A value shown at the right of the title, e.g. changes waiting to apply (default the binding `info:titleStatus`; empty for none) |
 | `title` | `no` hides the screen's title |
 | `titleDetail` | A value drawn at the right of the title row, smaller, in `infoColor`; nothing when it's empty. `titleDetail="info:pendingChanges"` shows the changes waiting for a reload ("2 changes apply when you close Manage"), as the built-in page and Aeon Nox do. Default: none. |
 | `hints` | `no` hides the controls hint at the bottom |
@@ -798,10 +803,15 @@ notes and values wrap, breaking long paths where they reach the edge.
 From the bottom up, the form has the hints, the status line after an action,
 then the **pinned bar**: the form's first `<actions>` and any straight after it
 (see `pin` below), with a line over it (`separatorColor`). The rows scroll
-above it. Hints use up to two lines so the letter and bar jumps remain readable
-at 1280x720. On note-only screens, Up/Down scroll the notes and Left/Right
-page them; when there is a bar, Page Down jumps to it and Left/Right chooses
-its buttons.
+above it. Hints use one line. Letter jump is dropped first when space is
+short, then paging; the primary action and Back have priority. On note-only
+screens, Up/Down scroll the notes. Page Up/Down scroll a page when no row
+takes focus, including when focus is in a bar. Left/Right chooses the bar
+buttons, or pages the notes when there is no bar.
+
+On a bare install, M / left trigger and N / right trigger jump to the
+previous and next letter in results lists. Games keeps Left/Right paging,
+so both page and letter jumps are available.
 
 #### The help panel
 
@@ -901,7 +911,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
     <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen"/>
   </section>
   <actions>
-    <button label="Save" action="settings.save"/>
+    <button label="Save" action="settings.save" primary="yes"/>
   </actions>
 </form>
 ```
@@ -918,7 +928,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty. `severity="warning"` (or `error`, `ok`) colors it when RetroFE doesn't say; `panel="yes"` puts it in a help panel instead of the rows when the page has one. |
 | `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
-| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
+| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. `primary="yes"` applies to a button in the pinned `<actions>` bar. It marks the button that saves the fields; its Page down hint turns green after an edit when it can run. |
 | `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right; help appears in the help panel, or on the hint line when there is no panel (ImGui: a tooltip) |
 | `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. Left/Right page through them, or with `jump="letter"` jump to the previous or next letter; letterUp/letterDown do that in any list. A row that stands for a screen to go to rather than a record ("Add a launcher called lr-stella2014", a system's "Games  622 games") is drawn with the link marker, like a `link`. |
 
@@ -929,6 +939,11 @@ under it), `enabledWhen` (a value that must
 be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
 (the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
 a value to use as the title when it has one, e.g. `bind="package:name"`.
+
+Buttons in the pinned `<actions>` bar that save the fields use `primary="yes"` (Save, Add source, Create,
+or Use this file). After an edit, the Page down hint is green only when its
+target is a primary button that can run. Without a primary button there is
+no green hint.
 
 #### Screens and parameters
 
@@ -951,7 +966,7 @@ screen in between starts over.
 
 The message an action leaves is green when it did something, red (with a
 `!`) for an error or a warning, and plain when nothing happened: a capture
-cancelled or timed out, Undo changes, Reset, "is already ..." (the layout's
+cancelled or timed out, Undo changes, "is already ..." (the layout's
 `infoColor`, below).
 Removing a package or a source asks you to confirm first.
 

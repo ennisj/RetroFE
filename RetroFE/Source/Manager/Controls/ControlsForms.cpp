@@ -50,7 +50,7 @@ const char* const controlsForm = R"xml(
             help="How far, in percent, a stick or trigger must move before it counts."/>
   </section>
   <actions>
-    <button label="Save" action="control.save"/>
+    <button label="Save" action="control.save" primary="yes"/>
     <button label="Undo changes" action="control.reset" visibleWhen="control:isDirty"/>
   </actions>
 </form>
@@ -71,7 +71,7 @@ const char* const controlForm = R"xml(
     <button label="Put back the default" action="control.default"/>
   </section>
   <actions>
-    <button label="Save" action="control.save"/>
+    <button label="Save" action="control.save" primary="yes"/>
     <button label="Undo changes" action="control.reset" visibleWhen="control:isDirty"/>
   </actions>
 </form>

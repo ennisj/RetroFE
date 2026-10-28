@@ -83,6 +83,20 @@ EmulatorProvider::EmulatorProvider(const Manager::Services& services)
 {
 }
 
+Forms::Params EmulatorProvider::saveView() const
+{
+    return {
+        { "query", query_ }
+    };
+}
+
+void EmulatorProvider::restoreView(const Forms::Params& state)
+{
+    if (auto found = state.find("query"); found != state.end()) {
+        query_ = found->second;
+    }
+}
+
 void EmulatorProvider::refresh()
 {
     snapshot_.reset();

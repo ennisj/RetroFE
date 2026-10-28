@@ -57,6 +57,8 @@ namespace Manager
 
         std::string prefix() const override { return "game"; }
 
+        Forms::Params saveView() const override;
+        void restoreView(const Forms::Params& state) override;
         void refresh() override;
         void enter(const Screen& screen) override;
         std::string leaving(const Screen& screen) override;

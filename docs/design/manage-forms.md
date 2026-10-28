@@ -244,13 +244,13 @@ Things to know:
   again; for a window close "leave again to " in the warning becomes "close
   the window again to quit and ", so word warnings "... Save them, or leave
   again to discard them.".
-- **Saving**: the convention for Save/Reset screens is in
+- **Saving**: the convention for Save/Undo changes screens is in
   `Manager/EditBuffer.h`: `load()` in `enter()`, `get`/`set` through it,
   `isDirty` for `visibleWhen`/`enabledWhen`, `save` writes `changes()` and
   `commit()`s, `reset`/`discard()` call `reset()`, and `leaving()` warns
   while `isDirty()`.
 - **Messages**: `Result::message` shows green when `ok`, red when not. Set
-  `Result::info` when nothing happened (Undo/Reset, a cancel, "X is already
+  `Result::info` when nothing happened (Undo changes, a cancel, "X is already
   in Y", an edit that wrote no files): it's shown plain (`infoColor`), not
   as a success or an error, whatever `ok` says (`Forms::statusKind`).
 - **Confirming**: put `confirm="Delete this game?"` on the button; the action
@@ -388,7 +388,7 @@ Things to know:
 
 Details screens are mostly `value`s (hidden when empty) and `link`s, one per
 "tile", each opening a deeper screen with the same parameters. Editing
-screens use the usual fields bound to the provider, with Save and Reset.
+screens use the usual fields bound to the provider, with Save and Undo changes.
 
 ## Testing
 
@@ -400,3 +400,17 @@ screens use the usual fields bound to the provider, with Save and Reset.
 - In RetroFE: results, links, values and images all draw in the built-in
   form page, driven by the arrow keys, Enter and Escape. The ImGui renderer
   is for development; test logic through the model rather than through it.
+
+Providers can keep view state outside screen parameters, such as a search or
+filter. Implement `Provider::saveView()` and `restoreView()` for that state:
+Start this game stores it with every Navigator frame (form, params and focus)
+in `LaunchQueue::Request::returning`. The static queue keeps the request across
+a reload, even though ManagerUI and its providers are recreated. Restore runs
+after `refresh()` and before showing the saved screen; subsequent `enter()`
+calls must keep the restored choices. Save values and any parameter sentinel
+needed to preserve them on Back, rather than caches or unsaved edit buffers.
+Games, Systems/Videos, Menus and Emulators implement these hooks for their
+searches, filters and list choices. `LaunchReturn` validates the frames against
+the refreshed library and available forms before replacing the stack; a missing
+record or form keeps the usual Manage > Games > game return path. New routes to
+a game with other record parameters should extend that validation.

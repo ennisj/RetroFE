@@ -209,6 +209,25 @@ void ManagerModel::refresh()
     }
 }
 
+ManagerModel::ViewState ManagerModel::saveView() const
+{
+    ViewState state;
+    for (const auto& [prefix, provider] : providers_) {
+        state[prefix] = provider->saveView();
+    }
+    return state;
+}
+
+void ManagerModel::restoreView(const ViewState& state)
+{
+    for (const auto& [prefix, values] : state) {
+        auto found = providers_.find(prefix);
+        if (found != providers_.end()) {
+            found->second->restoreView(values);
+        }
+    }
+}
+
 void ManagerModel::setScreen(const std::string& form, const Forms::Params& params)
 {
     screen_.form = form;
@@ -1105,7 +1124,7 @@ Forms::Model::Result ManagerModel::saveSettings()
 
     result.ok = true;
     result.reload = true;
-    result.message = "Saved. Display changes apply the next time RetroFE starts.";
+    result.message = "Saved. RetroFE reloads now. Fullscreen and screen size apply the next time RetroFE starts.";
     return result;
 }
 

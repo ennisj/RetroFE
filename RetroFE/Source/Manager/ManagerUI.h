@@ -116,7 +116,7 @@ public:
     // RetroFE's up, down, left, right, select, back, page up, page down,
     // letter up and letter down controls, as currently held (Controls'
     // order). Presses act once; directions, page and letter up/down repeat
-    // while held. Layout-drawn screens use the first six; an ImGui screen
+    // while held. Layout-drawn screens use all ten; an ImGui screen
     // gets them all (ImGuiScreen::control).
     using Controls = Manager::ImGuiScreen::ControlsHeld;
     void navigate(const Controls& held, float now);
@@ -250,6 +250,10 @@ private:
     int cursorWasShown_ = SDL_ENABLE;
     // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
     inline static Manager::LaunchQueue launches_;
+    std::optional<std::pair<LaunchRequest, std::string>> launchReturn_;
+    Manager::LaunchReturnWait launchReturnWait_;
+    void finishLaunchReturn(const LaunchRequest& request, const std::string& problem);
+    void cancelLaunchReturn();
     inline static Manager::AfterReload afterReload_;   // likewise: where to go once it's back
 
     std::string status_;
