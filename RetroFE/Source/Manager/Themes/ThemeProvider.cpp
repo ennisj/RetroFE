@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ThemeProvider.h"
+#include "../../Library/Files.h"
 #include "../../Builtin/Builtin.h"
 #include "../../Database/Configuration.h"
 #include "../../Database/GlobalOpts.h"
@@ -162,7 +163,7 @@ namespace Themes
         std::error_code ec;
         const fs::path folder(dir);
         for (const char* name : { "preview.png", "preview.jpg", "preview.jpeg", "preview.webp", "screenshot.png", "thumbnail.png" }) {
-            if (fs::is_regular_file(folder / name, ec)) return (folder / name).string();
+            if (fs::is_regular_file(folder / name, ec)) return Library::narrow(folder / name);
         }
         // The first <image src="..."> a page shows whose file is there (paths are the theme folder's)
         auto firstImage = [&](const fs::path& page) -> std::string {
@@ -182,7 +183,7 @@ namespace Themes
                 std::string path = tag.substr(start, close - start);
                 if (path.empty() || path.find('%') != std::string::npos) continue;   // a placeholder, not a file
                 fs::path file = (folder / fs::path(path)).lexically_normal();
-                if (fs::is_regular_file(file, ec)) return file.string();
+                if (fs::is_regular_file(file, ec)) return Library::narrow(file);
             }
             return "";
         };
@@ -248,7 +249,7 @@ namespace Themes
                 }
                 if (hasPage) facts.collectionPages.push_back(collection);
             }
-            facts.preview = themePreview(dir.string());
+            facts.preview = themePreview(Library::narrow(dir));
             auto byName = [](const std::string& a, const std::string& b) { return lower(a) < lower(b); };
             std::sort(facts.collectionPages.begin(), facts.collectionPages.end(), byName);
             std::sort(facts.variants.begin(), facts.variants.end(), byName);

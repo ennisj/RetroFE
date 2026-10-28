@@ -150,7 +150,8 @@ it, or raise it, so that development builds aren't offered older releases.
 
 Each screen is a **form**: fields bound to settings or other values. Up and
 Down move between fields; Left and Right change a switch, number or choice,
-or page through a list of results; RetroFE's **letterUp** and **letterDown**
+or page through a list of results; on note-only screens Up/Down scroll a row
+and Left/Right scroll a page; RetroFE's **letterUp** and **letterDown**
 controls jump through a list of results to the first row of the previous or
 next letter; Select edits text, picks a folder or file, presses a button, or
 opens a link or a result. While editing text, type and press Enter to keep it
@@ -186,7 +187,7 @@ with a screen for each thing you can change:
 
 - **Metadata**: title, year, manufacturer, developer, genre, players, rating,
   score and clone of. Genre, players and rating are choices of the values the
-  system's games already have (numbers in order), with **Other...** to type
+  system's games already have (numbers in order), with **None** then **Other...** first to type
   one it doesn't. Changes are saved in `manage/metadata/<type>.xml` (the
   **Saved in** row), so a content update doesn't undo them; each changed field
   has **Put back the original title** (year, genre...), which returns it to
@@ -690,7 +691,7 @@ is. A multi-line field adds a **New line** key and a row of cursor keys (`<-`,
 top shows the line the cursor is on. RetroFE's letterUp and letterDown
 controls move the cursor left and right on any keyboard. Each keyboard starts
 on the key you last typed with on one of its kind (letters, lines, numbers),
-not Done or Shift, until RetroFE quits. Typing on a real keyboard puts the
+only letters, digits, symbols and Space, until RetroFE quits. Typing on a real keyboard puts the
 on-screen one away for that edit; finish with Enter (Ctrl+Enter in a
 multi-line field) or cancel with Escape. Set `onScreenKeyboard = no` to never
 show it. The theme editor draws its own keyboard with the same keys (it isn't

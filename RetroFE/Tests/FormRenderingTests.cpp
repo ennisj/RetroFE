@@ -151,6 +151,22 @@ static Test::Suite renderingSuite("rendering", [] {
         check(Forms::refocusIndex(rows, 0) == 1, "the file field when it's all there is");
     });
 
+    run("note-only forms scroll by rows and pages", [] {
+        check(Forms::scrollRows(0, 1, 24, 20, 100) == 20, "Down a row");
+        check(Forms::scrollRows(20, 5, 24, 20, 100) == 120, "Right a page");
+        check(Forms::scrollRows(380, 1, 24, 20, 100) == 380, "last page");
+        check(Forms::scrollRows(20, -5, 24, 20, 100) == 0, "first page");
+        check(Forms::scrollRows(0, 1, 3, 20, 100) == 0, "short form");
+    });
+
+    run("letterJump ignores indentation and uses ASCII groups", [] {
+        std::vector<std::string> labels = { "  Alpha", "\tasteroids", " Beta", "\xc3\x89", "\xc3\x81", " 1942", " \t", "Zed" };
+        check(Forms::letterJump(labels, 0, 1) == 2, "indented A to B");
+        check(Forms::letterJump(labels, 2, 1) == 3, "non-ASCII is #");
+        check(Forms::letterJump(labels, 3, 1) == 7, "accents, digits and whitespace share #");
+        check(Forms::letterJump(labels, 7, -1) == 3, "back to first #");
+    });
+
     run("letterJump goes to the next or previous letter's first row", [] {
         std::vector<std::string> labels = { "1942", "Alpha", "asteroids", "Beta", "Bomb", "bravo", "Zed" };
         check(Forms::letterJump(labels, 0, 1) == 1, "from the numbers to A");

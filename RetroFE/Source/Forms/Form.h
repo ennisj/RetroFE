@@ -305,6 +305,9 @@ namespace Forms
     // when they fit; otherwise the detail gets what the label leaves, but at
     // most what it needs and at least maxDetailShare of the row, and the label
     // the rest (to be ellipsized).
+    // Scroll by whole rows, clamped to the last page.
+    float scrollRows(float scroll, int direction, int rows, float rowHeight, float visibleHeight);
+
     struct RowSplit
     {
         float label = 0.0f;

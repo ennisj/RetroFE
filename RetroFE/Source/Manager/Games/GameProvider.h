@@ -207,6 +207,8 @@ namespace Manager
         // While an action is checked and run, every lookup uses this one
         // snapshot, so a new index published meanwhile can't pull the game away
         IndexPtr pinned_;
+        IndexPtr favouritesIndex_;
+        std::map<std::string, bool> pendingFavourites_;
         Screen current_;
         unsigned generation_ = 0;
         unsigned indexGeneration_ = 0;

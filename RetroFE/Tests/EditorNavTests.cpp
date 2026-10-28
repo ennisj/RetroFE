@@ -226,6 +226,20 @@ static Test::Suite editorNav("editor controller", [] {
         Keys third;
         third.reset(false, false);
         check(third.row() == 1 && third.column() == 2, "Done isn't remembered");
+        for (Keys::Action action : { Keys::Action::Insert, Keys::Action::Space }) {
+            check(Keys::remembers(action), "character keys are remembered");
+        }
+        for (Keys::Action action : { Keys::Action::Delete, Keys::Action::CursorLeft, Keys::Action::CursorRight,
+                                    Keys::Action::Home, Keys::Action::End, Keys::Action::LineUp,
+                                    Keys::Action::LineDown, Keys::Action::NewLine, Keys::Action::Done, Keys::Action::Shift }) {
+            check(!Keys::remembers(action), "editing and movement keys aren't remembered");
+        }
+        again.navigate(Keys::Nav::Left, text);   // Del, then Done
+        again.navigate(Keys::Nav::Select, text);
+        again.navigate(Keys::Nav::Right, text);
+        again.navigate(Keys::Nav::Select, text);
+        third.reset(false, false);
+        check(third.row() == 1 && third.column() == 2, "deleting before Done still remembers e");
         Keys numbers;
         numbers.reset(true, false);
         check(numbers.row() == 0 && numbers.column() == 0, "a number pad remembers its own keys");

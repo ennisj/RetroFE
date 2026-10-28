@@ -209,6 +209,7 @@ const char* const playlistsForm = R"(
     <button label="Remove from this playlist" action="game.removeFromPlaylist" visibleWhen="game:isInPlaylist"
             confirm="Remove it from this playlist?"/>
     <results bind="game:newPlaylist" open="system-playlists" visibleWhen="!game:hasPlaylists"/>
+    <results bind="game:newVideoPlaylist" open="video-playlists" visibleWhen="!game:hasPlaylists"/>
   </section>
   <section label="Merged collections" visibleWhen="game:isFound">
     <value label="Comes from" bind="game:from"/>

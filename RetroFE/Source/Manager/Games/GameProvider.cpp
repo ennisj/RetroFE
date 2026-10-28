@@ -15,6 +15,7 @@
  */
 #include "GameProvider.h"
 #include "../Emulators/Launchers.h"
+#include "../Systems/SystemProvider.h"
 #include "../../Library/Edits.h"
 #include "../../Library/Files.h"
 #include "../../Library/Indexer.h"
@@ -901,6 +902,7 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
         }
         Library::LauncherResolution system = idx->resolveLauncher(game->collection);
         Library::LauncherResolution now = idx->resolveLauncher(game->collection, game->name);
+        if (now.launcher >= 0) return rows;
         std::vector<std::string> asked = { now.overrideName, system.configured };
         asked.insert(asked.end(), system.alternatives.begin(), system.alternatives.end());
         for (const std::string& name : asked) {
@@ -919,7 +921,7 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
         rows.total = rows.items.size();
         return rows;
     }
-    if (key == "newPlaylist") {
+    if (key == "newPlaylist" || key == "newVideoPlaylist") {
         // Playlists are made on the system's Playlists screen
         const GameRecord* game = idx ? findGame(*idx, screen) : nullptr;
         if (!game) {
@@ -928,6 +930,7 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
         const std::string& own = idx->collections[static_cast<size_t>(game->collection)].name;
         Forms::Row row;
         row.id = own;
+        if (isVideoCollection(idx->collections[static_cast<size_t>(game->collection)]) != (key == "newVideoPlaylist")) return rows;
         row.label = "New playlist...";
         row.detail = "on " + own + "'s page";
         row.link = true;
@@ -1718,6 +1721,7 @@ std::vector<std::pair<std::string, std::string>> GameProvider::metadataChoices(c
         cached = choices_.emplace(cacheKey, std::move(values)).first;
     }
     result.emplace_back("", "None");
+    result.emplace_back(otherChoice, "Other...");
     for (const std::string& value : cached->second) {
         result.emplace_back(value, value);
     }
@@ -1727,7 +1731,6 @@ std::vector<std::pair<std::string, std::string>> GameProvider::metadataChoices(c
     if (!listed) {
         result.emplace_back(current, current);
     }
-    result.emplace_back(otherChoice, "Other...");
     return result;
 }
 
@@ -1935,12 +1938,18 @@ std::string GameProvider::playlistValue(const std::string& key, const Screen& sc
             || key == "favouriteNote" || key == "favouritePage" || key == "favouriteText" ? "" : "no";
     }
     const std::string& own = idx->collections[static_cast<size_t>(game->collection)].name;
+    if (favouritesIndex_ != idx) {
+        favouritesIndex_ = idx;
+        pendingFavourites_.clear();
+    }
     bool global = globalFavourites(*idx);
     int page = chosenPage(*idx, g);
     const std::string& pageName = idx->collections[static_cast<size_t>(page)].name;
     if (key == "favouritePage") return pageName;
     if (key == "hasSeveralPages") return yesNo(!global && pages(*idx, g).size() > 1);
     if (key == "isFavourite" || key == "favouriteToggle") {
+        auto pending = pendingFavourites_.find(gameKey(screen) + "\n" + pageName);
+        if (pending != pendingFavourites_.end()) return yesNo(pending->second);
         return yesNo(global ? inGlobalFavourites(*idx, *game) : isFavourite(*idx, g, page));
     }
     if (key == "canFavourite") return yesNo(!global);
@@ -2019,6 +2028,13 @@ Forms::Model::Result GameProvider::playlistAction(const std::string& action, con
         bool adding = action == "addFavourite";
         edit = adding ? services_.editor->addToPlaylist(*idx, page, "favorites", own, name)
                       : services_.editor->removeFromPlaylist(*idx, page, "favorites", own, name);
+        if (edit.ok) {
+            if (favouritesIndex_ != idx) {
+                favouritesIndex_ = idx;
+                pendingFavourites_.clear();
+            }
+            pendingFavourites_[gameKey(screen) + "\n" + page] = adding;
+        }
         // Only when something changed: "... is already in favorites." is kept as it is
         if (edit.ok && !edit.files.empty()) {
             edit.message = (adding ? "Added " + name + " to the favourites of " : "Removed " + name + " from the favourites of ")

@@ -248,6 +248,7 @@ private:
                                   // Select there waits for the user to move first (it opens a picker)
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key
+    bool manualScroll_ = false;
     float scroll_ = 0.0f;
     int pageRows_ = 10;           // rows that fit, for paging through results
     Forms::Confirm confirm_;

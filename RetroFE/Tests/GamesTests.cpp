@@ -1075,10 +1075,10 @@ static void runGamesTests()
         Fixture f(root);
         f.open("game-metadata", gameParams("Arcade", "a"));
         auto genres = f.model.options("game:metaChoices:genre");
-        check(genres.size() == 4 && genres[0].first.empty() && genres[1].first == "Maze" && genres[2].first == "Shooter"
-              && genres[3].second == "Other...", "None, each genre once, Other...");
+        check(genres.size() == 4 && genres[0].first.empty() && genres[2].first == "Maze" && genres[3].first == "Shooter"
+              && genres[1].second == "Other...", "None, Other..., each genre once");
         auto players = f.model.options("game:metaChoices:players");
-        check(players.size() == 5 && players[1].first == "1" && players[2].first == "2" && players[3].first == "10",
+        check(players.size() == 5 && players[2].first == "1" && players[3].first == "2" && players[4].first == "10",
               "numbers in order");
         checkEqual(f.model.get("game:metaPick:genre"), "Maze", "the game's genre is picked");
         f.model.set("game:metaPick:genre", "Shooter");
@@ -1087,7 +1087,7 @@ static void runGamesTests()
 
         // Other... shows a text field to type one the system doesn't have
         checkEqual(f.model.get("game:metaTyping:genre"), "no", "no text field");
-        f.model.set("game:metaPick:genre", genres.back().first);
+        f.model.set("game:metaPick:genre", genres[1].first);
         checkEqual(f.model.get("game:metaTyping:genre"), "yes", "Other... types instead");
         f.model.set("game:meta:genre", "Puzzle");
         auto now = f.model.options("game:metaChoices:genre");

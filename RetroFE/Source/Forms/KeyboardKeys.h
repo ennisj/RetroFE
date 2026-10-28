@@ -170,9 +170,8 @@ namespace Forms
             }
             case Nav::Select: {
                 const Key& key = all[row_][column_];
-                // Remembered for the next edit: a key that types or moves, not
-                // Done or Shift (starting there, one Select would end the edit)
-                if (key.action != Action::Done && key.action != Action::Shift) {
+                // Remember only keys that type characters for the next edit
+                if (remembers(key.action)) {
                     lastKey(mode()) = Position{ row_, column_ };
                 }
                 return press(key, text);
@@ -201,6 +200,11 @@ namespace Forms
             case Action::LineDown: return Result::LineDown;
             }
             return Result::None;
+        }
+
+        static bool remembers(Action action)
+        {
+            return action == Action::Insert || action == Action::Space;
         }
 
         static int unitsOf(const std::vector<Key>& row)

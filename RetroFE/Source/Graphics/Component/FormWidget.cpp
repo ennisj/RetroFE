@@ -92,6 +92,7 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     focusGuarded_ = false;
     focusedField_ = nullptr;
     focusedItem_.clear();
+    manualScroll_ = false;
     scroll_ = 0.0f;
     status_.clear();
     confirm_.cancel();
@@ -548,7 +549,7 @@ void FormWidget::buildRows()
 void FormWidget::keepFocusVisible(float visibleHeight)
 {
     float total = rows_.size() * rowHeight();
-    if (focus_ >= 0) {
+    if (focus_ >= 0 && !manualScroll_) {
         // Show the section header above the focused field too
         int top = focus_;
         while (top > 0 && rows_[top - 1].kind == RowKind::Header) {
@@ -602,13 +603,16 @@ void FormWidget::moveFocus(int direction)
     int start = focus_ < 0 ? (direction > 0 ? -1 : count) : focus_;
     for (int step = 1; step <= count; step++) {
         int index = ((start + direction * step) % count + count) % count;
-        if (rows_[index].focusable) {
+        if (rows_[index].focusable && index != focus_) {
+            manualScroll_ = false;
             focus_ = index;
             focusedField_ = rows_[index].field;
             focusedItem_ = rows_[index].item;
             return;
         }
     }
+    manualScroll_ = true;
+    scroll_ = Forms::scrollRows(scroll_, direction, count, rowHeight(), pageRows_ * rowHeight());
 }
 
 // Left/Right in a results list: a page at a time, staying in the list
@@ -697,6 +701,11 @@ bool FormWidget::navigate(Nav nav)
     case Nav::Right:
         if (row && row->kind == RowKind::Item) {
             pageResults(nav == Nav::Right ? 1 : -1);
+        }
+        else if (!field) {
+            manualScroll_ = true;
+            scroll_ = Forms::scrollRows(scroll_, (nav == Nav::Right ? 1 : -1) * pageRows_,
+                                        static_cast<int>(rows_.size()), rowHeight(), pageRows_ * rowHeight());
         }
         else if (field) {
             if ((field->type == FieldType::Folder || field->type == FieldType::File) && nav == Nav::Right) {
@@ -1012,7 +1021,7 @@ std::string FormWidget::hintText() const
     }
     std::string hint;
     if (row && row->kind == RowKind::Item) {
-        hint = field && !field->open.empty() ? "Select: open   Left/Right: page" : "Left/Right: page";
+        hint = field && !field->open.empty() ? "Select: open   Left/Right: page   LetterUp/Down: letter" : "Left/Right: page   LetterUp/Down: letter";
     }
     else if (field) {
         switch (field->type) {

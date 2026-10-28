@@ -197,8 +197,9 @@ void KeyboardWidget::draw()
             hint = "Select: type   Done: keep   Back: cancel";
         }
         if (!keys_.numeric()) {
-            hint += "   Shift: capitals and symbols";
+            hint += "   Shift: symbols";
         }
+        hint += "   LetterUp/Down: cursor";
         painter_.text(hint, left, top + height - hintsHeight + (hintsHeight - size * 0.85f) / 2.0f, width, size * 0.85f, false, style_.noteAlpha);
     }
 }
