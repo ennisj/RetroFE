@@ -37,6 +37,11 @@ public:
     // e.g. for checks while someone uses the machine): RetroFE leaves the
     // pointer alone and doesn't bring its window to the front
     static bool staysInBackground( ) { return leaveMouse_; }
+    // Moves the pointer as SDL_WarpMouseInWindow does, remembering when (SDL
+    // ticks), so the motion it causes isn't taken for someone using a mouse
+    static void warpMouse( SDL_Window *window, int x, int y );
+    static Uint32 lastWarp( ) { return lastWarp_; }
+    static bool hasWarped( ) { return hasWarped_; }
     static SDL_Renderer *getRenderer( int index );
     static std::string getRendererBackend(int index);
     static SDL_mutex *getMutex( );
@@ -94,4 +99,6 @@ private:
     static std::vector<SDL_Texture*>   renderTargets_;
     static bool                        hiddenWindows_;
     static bool                        leaveMouse_;   // hidden, or shown without activation: never warp the pointer
+    static Uint32                      lastWarp_;
+    static bool                        hasWarped_;
 };
