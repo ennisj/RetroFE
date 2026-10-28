@@ -43,6 +43,12 @@ launcher runs it.
 | L3 | Play counts and time played update after playing (with `lastPlayedSkipCollection` set) | Play a game for a minute, look at its Manage screen | To check | |
 | L4 | After Manage's "Start this game", Manage comes back with focus on Start this game | Manage → Games → a game → Start this game; quit the game | To check | Not launched in the GUI check (a launch raises RetroFE's window over the desktop); the focus request is the same one tested for other actions |
 
+## Saving
+
+| # | What to check | How | Status | Notes |
+|---|---------------|-----|--------|-------|
+| S1 | Manage saves work on an install kept on a FAT32/exFAT USB drive or a network share | Put a copy of an install on one, edit a game's title and a playlist in Manage, Save, close Manage and check the change shows | To check | Windows replaces files with a POSIX rename where the drive supports it (NTFS) and falls back to MoveFileEx with retries elsewhere; only NTFS is covered by CI |
+
 ## OnesaUCE themes
 
 | # | What to check | How | Status | Notes |

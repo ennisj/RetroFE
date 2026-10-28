@@ -13,7 +13,8 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 
 | Item | Question |
 |------|----------|
-| [M22](#m22-design-review-choices-round-12--decided-the-look-is-yours-to-judge) | Once round 12 lands: does the two-pane Manage look in Aeon Nox (list left, help/art/preview right) work for you, and do the other design-review choices feel right in use? |
+| [M22](#m22-design-review-choices-round-12--decided-the-look-is-yours-to-judge) | Round 12 has landed: does the two-pane Manage look in Aeon Nox (list left, help/art right) work for you, at 16:9 and 4:3, and do the other design-review choices feel right in use? VERIFY.md "Manage look (round 12)" lists what to look at. |
+| [W5](#w5-agents-without-the-windows-desktop--decided-2026-10-28) | Round 12 isn't deployed to `E:\Storage\OneSauce` (it was built and tested on Windows CI only). Build and deploy it there when convenient. Optionally, rebuild the CoinOPS worker image on Unraid (`sh /mnt/user/development/agent-harness/rebuild-worker.sh coinops binhex-code-server-r2`) so agents can build RetroFE fully on Linux. |
 
 Behaviour that still needs a check on a real setup is tracked in
 [VERIFY.md](VERIFY.md).
@@ -487,6 +488,55 @@ From [UX-REVIEW.md](UX-REVIEW.md) section 6; the recommended option each time.
   Manage / Browse order; Catalog as the default].
 - **"Theme" everywhere in the UI** (the setting key stays `layout`).
 
+### M23. Round 12 choices — Decided
+Made while building the design review (M22); the option not taken in brackets.
+- **"Browse with Windows…" needs a real mouse click in Manage** and use in
+  the last 15 s; motion within a second of RetroFE moving the pointer itself
+  and touch don't count [any mouse motion, which RetroFE's own pointer warps
+  and trackballs triggered on cabinets; a setting]. A trackball or light
+  gun's button still counts: VERIFY.md B2.
+- **Slow drives:** drive letters list at once; labels and free space arrive
+  per drive from a background fetch, kept 30 s, one at a time per drive;
+  an empty card-reader slot drops out [asking every drive on the UI thread,
+  which stalled on sleeping USB disks and lost shares].
+- **Folder counts** ("212 files matching zip") for the first 50 folders of
+  a listing, each capped at 10,000 entries, off the UI thread [every
+  folder, a few per frame]. **No thumbnail for pictures over 8 MB**
+  [decoding them off the UI thread: the widget owns the textures, so it
+  waits for a later round].
+- **One letter jump everywhere:** ASCII letters, case aside, with leading
+  spaces skipped; anything else (digits, accents, `..`) is one `#` group;
+  letter up goes to the previous letter's first row. The browser's own
+  rules (digits as groups, up to the start of the current group first)
+  were dropped when the branches met.
+- **Note-only screens scroll** with Up/Down and page with Left/Right, for
+  every form [turning the save files list into results rows only].
+- **Genre, Players and Rating:** "Other…" comes right after "None" [a text
+  field instead of the list past 30 values].
+- **The Favourite toggle shows what was just written** until the library
+  is re-read [waiting for the rebuild, which looked like a missed press].
+- **The keyboard remembers only keys that type** (not Del or the cursor
+  keys), so the next field doesn't start on Del.
+- **Changes waiting** count each thing once, an action and its reversal
+  included (adding then deleting a system is one change); Catalog installs
+  count and are applied when Manage closes, like library edits.
+- **One hint row** at the bottom of a form; what doesn't fit is cut [two
+  rows, which cost a list row on every screen]. A link's help goes there
+  when the page has no help panel (the built-in layout).
+- **The page down/up controls jump to the pinned actions and back**, and a
+  bare install maps them to the shoulders too [a new control].
+- **`auto` window size** on a bare install: the largest 16:9 window within
+  90% of the display's usable area, never below 640 x 360 [1280 x 720;
+  windowed full screen].
+- **The generator owns every Aeon Nox page:** the keyboard's height moved
+  into `Scripts/aeon-nox/gen_layouts.py` (it had been edited in the pages),
+  and the panel behind it follows the generator's margin rule.
+- **Saving on Windows replaces files with a POSIX-semantics rename**
+  (Windows 10 1607+, NTFS), which works while the library reads the file,
+  and falls back to MoveFileEx where unsupported; both retry ten times,
+  30 ms apart, on access or sharing errors [reads sharing delete access
+  only, which wasn't enough; retries only]. Non-NTFS drives: VERIFY.md S1.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
@@ -528,6 +578,20 @@ From [UX-REVIEW.md](UX-REVIEW.md) section 6; the recommended option each time.
   `master`, pull requests to it, and by hand. Code stays portable as
   before (the existing platform splits are kept), but a Linux or macOS
   failure doesn't hold up a round.
+
+### W5. Agents without the Windows desktop — Decided (2026-10-28)
+- From round 12 the orchestrating session runs on the Unraid server, not
+  on your Windows machine. Implementation, fixes and tests are done by the
+  isolated Codex worker (`/mnt/dev/agent-harness`), reviews by Fable
+  agents, and every patch is read before it's committed.
+- **Windows CI is the build and test of record.** Branches are pushed as
+  `ci/<name>` to run it; the job repeats build errors, failing checks and
+  the check count as annotations, which can be read without a GitHub login.
+  The worker compiles the SDL-free tests on Linux with g++ for a quick
+  check. Once its image has the RetroFE packages (Dockerfile updated; the
+  rebuild needs root on Unraid), it can build everything on Linux too.
+- What needs your desktop (GUI checks, screenshots at 16:9 and 4:3,
+  deploying to `E:\Storage\OneSauce`) is listed in VERIFY.md instead.
 
 ### W3. CI: two macOS builds, Xcode project left unused — Decided
 - `build.yml` builds macOS with Homebrew's libraries (quick, like a

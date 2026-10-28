@@ -4,6 +4,51 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 12 — the design review, built (2026-10-28)
+
+Unit tests: 6,749 → 7,571 checks (Windows CI, which also runs the
+Catalog's HTTP tests). Parcels A–J of [UX-REVIEW.md](UX-REVIEW.md); its
+choices are M22 and this round's are M23 in [DECISIONS.md](DECISIONS.md).
+
+- **A file and folder browser for every path field**, driven by the
+  controller: starting places (the field's folder, RetroFE's folder,
+  recent picks, Downloads and Desktop, drives), folders with what they
+  hold ("212 files matching zip"), thumbnails, search and letter jump. It
+  keeps a path relative to RetroFE's folder when it was. "Browse with
+  Windows…" appears only after a real mouse click in Manage. Slow or
+  missing drives never hold up the screen.
+- **Pinned actions and a help panel.** Save and the other actions stay at
+  the bottom of the panel; Page Down (the right shoulder on a bare
+  install) jumps there and Page Up back. In Aeon Nox, Manage is two panes:
+  the list on the left, help and art for the focused row on the right;
+  long intro notes moved there. A green "Page Down: Save" hint appears
+  after an edit; why a button can't run shows when it's focused.
+- **Easier to read.** Larger form text in Aeon Nox; statuses in warning,
+  error and OK colours ("Won't start", "isn't installed", "Missing"). A
+  bare install opens in a window as large as fits the screen (`auto`).
+- **Changes waiting.** Every Manage screen shows how many saved changes
+  apply when you close Manage, and the Manage hub has **Apply changes
+  now**. Catalog installs count too and apply when Manage closes.
+- **First run and Home.** Home lands on Browse after a reload when there's
+  something to browse, and on Manage on first run; short wheels show each
+  entry once. After an action, focus goes somewhere sensible (Install →
+  Back to the Catalog, Hide → the previous link).
+- **Sections.** Games: results straight after Search, one Filters screen,
+  letter jump, "Add a launcher called…" when a game can't start, a
+  Favourite toggle, Media grouped Shown/Missing, Genre/Players/Rating
+  chosen from the system's values. Systems, Menus, Emulators and Themes
+  tidied (one Launcher row, Delete under Actions, Check splits Problems
+  from Notes, theme preview pictures). One vocabulary: Save, Undo changes,
+  Put back the original, Saved in. Settings says "Theme" and offers screen
+  sizes.
+- **On-screen keyboard:** a path row (`. / \ : - _`), cursor keys, Home and
+  End; letter up/down move the cursor; it starts on the key last typed.
+- **Fixes:** a Manage save on Windows could fail if the library was being
+  re-read at that moment (files are now replaced with a rename that works
+  while they're open); screens with only notes scroll with a controller.
+- CI repeats Windows build errors, failing checks and the check count as
+  annotations, readable without a GitHub login.
+
 ## Round 11 — leaving warnings, neutral messages, design review (2026-10-24)
 
 Unit tests: 6,718 → 6,749 checks.
