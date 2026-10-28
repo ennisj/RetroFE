@@ -20,9 +20,32 @@
 #include "../Collection/VideoCollections.h"
 #include <algorithm>
 #include <map>
+#include <set>
+#include <cstdint>
 
 namespace Manager
 {
+    // A release must be observed after opening before a held input can cancel.
+    struct LaunchReturnWait
+    {
+        std::set<std::pair<int, int64_t>> released;
+
+        bool input(int kind, int64_t control, bool down, bool repeat = false)
+        {
+            auto id = std::make_pair(kind, control);
+            if (!down) {
+                released.insert(id);
+                return false;
+            }
+            return !repeat && released.erase(id) != 0;
+        }
+
+        static bool ready(bool hasIndex, bool building)
+        {
+            return hasIndex || !building;
+        }
+    };
+
     // Owned by the launch request, including while LaunchQueue waits across a
     // reload. Only view state: records and caches come from the new library.
     struct LaunchReturn

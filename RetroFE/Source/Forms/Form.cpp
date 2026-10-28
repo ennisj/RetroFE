@@ -662,7 +662,7 @@ bool primaryHint(const Field& button, bool edited, bool ready)
     return button.primary && edited && ready;
 }
 
-std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<int>& priorities, float width, float gap)
+std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<int>& priorities, float width, float gap, float reserved)
 {
     std::vector<int> kept;
     float total = 0.0f;
@@ -670,7 +670,8 @@ std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<in
         kept.push_back(static_cast<int>(i));
         total += widths[i] + (i ? gap : 0.0f);
     }
-    while (total > width && kept.size() > 1) {
+    width = std::max(0.0f, width - reserved);
+    while (total > width && kept.size() > (reserved > 0.0f ? 0u : 1u)) {
         auto drop = std::min_element(kept.begin(), kept.end(), [&](int a, int b) { return priorities[a] < priorities[b]; });
         total -= widths[*drop] + gap;
         kept.erase(drop);
@@ -753,6 +754,14 @@ bool parseNumber(const std::string& text, float& value)
     }
     value = parsed;
     return true;
+}
+
+int refocusBarFallback(const std::vector<FocusTarget>& buttons, int target)
+{
+    for (size_t i = 0; i < buttons.size(); i++) {
+        if (buttons[i] == FocusTarget::Free) return static_cast<int>(i);
+    }
+    return target;
 }
 
 FocusMove refocusBar(const std::vector<FocusTarget>& rows, int returnRow, FocusTarget replacement)

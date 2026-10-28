@@ -557,8 +557,7 @@ Forms::Params SystemProvider::saveView() const
     return {
         { "query", query_ },
         { "menu", menu_ },
-        { "playlistQuery", playlistQuery_ },
-        { "newPlaylist", newPlaylist_ }
+        { "playlistQuery", playlistQuery_ }
     };
 }
 
@@ -572,9 +571,6 @@ void SystemProvider::restoreView(const Forms::Params& state)
     }
     if (auto found = state.find("playlistQuery"); found != state.end()) {
         playlistQuery_ = found->second;
-    }
-    if (auto found = state.find("newPlaylist"); found != state.end()) {
-        newPlaylist_ = found->second;
     }
 }
 

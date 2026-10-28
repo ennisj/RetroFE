@@ -801,9 +801,18 @@ void FormWidget::resolveFocus(int previousFocus, int previousBar)
         focusedField_ = rows_[focus_].field;
         focusedItem_ = rows_[focus_].item;
     }
-    else if (barCanFocus() && previousBar < 0) {
-        // Nothing in the rows takes focus: the bar does on first opening
+    else if (barCanFocus()) {
+        // Nothing in the rows takes focus: prefer a safe bar button.
         int target = barTargetIndex();
+        if (previousBar >= 0) {
+            std::vector<Forms::FocusTarget> buttons;
+            for (const BarButton& button : bar_) {
+                bool wasShown = std::find(shownFields_.begin(), shownFields_.end(), button.field) != shownFields_.end();
+                buttons.push_back(Forms::refocusTarget(button.field, button.enabled, wasShown));
+            }
+            target = Forms::refocusBarFallback(buttons, target);
+            focusGuarded_ = buttons[target] != Forms::FocusTarget::Free;
+        }
         barFocus_ = target;
         focusedField_ = bar_[target].field;
         focusedItem_.clear();
@@ -1368,7 +1377,7 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
                 add(focusGuarded_ ? "Move, then Select: " + field->label : "Select: " + field->label);
             }
             else if (!helpPanel_) {
-                add(problem, infoFont_ ? infoFont_ : detailFont_);   // a help panel says why instead
+                add(problem, infoFont_ ? infoFont_ : detailFont_, -2);   // a help panel says why instead
             }
             break;
         case FieldType::Link:   add("Select: open"); break;
@@ -1382,7 +1391,7 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
         }
     }
     if (std::none_of(rows_.begin(), rows_.end(), [](const Row& r) { return r.focusable; })) {
-        add(inBar ? "Up/Down: scroll" : "Up/Down: scroll   Left/Right: page");
+        add(inBar ? "Up/Down: scroll   Page up/down: page" : "Up/Down: scroll   Left/Right: page   Page up/down: page");
     }
     // The jump to the pinned bar; after a change that can be saved, in the success color
     if (barCanFocus()) {
@@ -1396,13 +1405,23 @@ std::vector<FormWidget::HintPart> FormWidget::hintParts() const
             int target = barTargetIndex();
             const BarButton& button = bar_[target];
             bool ready = Forms::primaryHint(*button.field, edited_, button.enabled && button.problem.empty());
-            add("Page down: " + button.field->label, ready ? severityFont(Forms::Severity::Ok, nullptr) : nullptr, 3);
+            add("Page down: " + button.field->label, ready ? severityFont(Forms::Severity::Ok, nullptr) : nullptr, button.field->primary ? 4 : 3);
         }
+    }
+    // Informational text is drawn last, in the room navigation leaves.
+    HintPart information;
+    bool hasInformation = false;
+    auto informational = std::find_if(parts.begin(), parts.end(), [](const HintPart& part) { return part.priority < 0; });
+    if (informational != parts.end()) {
+        information = *informational;
+        parts.erase(informational);
+        hasInformation = true;
     }
     add(backCloses_ ? "Back: close" : "Back: return", nullptr, 3);
     if (!helpPanel_ && field && field->type == FieldType::Link) {
         add(field->help, nullptr, -1);
     }
+    if (hasInformation) parts.push_back(information);
     return parts;
 }
 
@@ -1962,13 +1981,22 @@ void FormWidget::draw()
         const float spacing = painter_.textWidth("   ", hintSize);
         float x = left;
         auto parts = hintParts();
+        HintPart information;
+        bool hasInformation = !parts.empty() && parts.back().priority < 0;
+        if (hasInformation) {
+            information = parts.back();
+            parts.pop_back();
+        }
         std::vector<float> widths;
         std::vector<int> priorities;
         for (const HintPart& part : parts) {
             widths.push_back(painter_.textWidthWith(part.font, part.text, hintSize));
             priorities.push_back(part.priority);
         }
-        for (int index : Forms::fitHints(widths, priorities, width, spacing)) {
+        for (int index : Forms::fitHints(widths, priorities, width, spacing,
+            hasInformation && information.priority == -2
+                ? std::min(width, std::min(painter_.textWidthWith(information.font, information.text, hintSize),
+                    painter_.textWidthWith(information.font, "Reason: unavailable...", hintSize)) + spacing) : 0.0f)) {
             const HintPart& part = parts[index];
             float room = left + width - x;
             if (room <= 0.0f) {
@@ -1977,6 +2005,10 @@ void FormWidget::draw()
             float alpha = part.font ? 1.0f : style_.noteAlpha;
             painter_.textWith(part.font, part.text, x, hintY, room, hintSize, alpha);
             x += painter_.textWidthWith(part.font, part.text, hintSize) + spacing;
+        }
+        if (hasInformation && x < left + width) {
+            painter_.textWith(information.font, information.text, x, hintY, left + width - x,
+                              hintSize, information.font ? 1.0f : style_.noteAlpha);
         }
     }
 }

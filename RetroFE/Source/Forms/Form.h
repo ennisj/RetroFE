@@ -114,7 +114,7 @@ namespace Forms
     };
 
     bool primaryHint(const Field& button, bool edited, bool ready);
-    std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<int>& priorities, float width, float gap);
+    std::vector<int> fitHints(const std::vector<float>& widths, const std::vector<int>& priorities, float width, float gap, float reserved = 0.0f);
 
     struct Form
     {
@@ -440,6 +440,8 @@ namespace Forms
     };
     // A vanished bar button may hand focus only to a previously shown, safe
     // button; otherwise return to the rows, preferring the previous link.
+    // No focusable rows remain: a safe bar button, else the guarded target.
+    int refocusBarFallback(const std::vector<FocusTarget>& buttons, int target);
     FocusMove refocusBar(const std::vector<FocusTarget>& rows, int returnRow, FocusTarget replacement);
 
     FocusMove moveFocus(const std::vector<bool>& focusable, int current, bool inBar, int barSize, int direction, int returnRow = -1);

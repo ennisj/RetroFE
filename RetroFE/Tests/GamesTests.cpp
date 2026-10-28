@@ -924,7 +924,13 @@ static void runGamesTests()
             original.push("game", gameParams("Arcade", "a"), results);
             Manager::LaunchQueue::Request wanted{ "Arcade", "a", "Alpha" };
             wanted.returning.frames = original.frames();
+            before.model.set("system:newPlaylist", "Draft playlist");
+            before.model.set("menu:addEntry", "Draft entry");
+            before.model.set("menu:addSource", "Draft source");
             wanted.returning.providers = before.model.saveView();
+            check(wanted.returning.providers["system"].count("newPlaylist") == 0, "playlist edit buffer stays out");
+            check(wanted.returning.providers["menu"].count("addEntry") == 0, "entry edit buffer stays out");
+            check(wanted.returning.providers["menu"].count("addSource") == 0, "source edit buffer stays out");
             Manager::LaunchQueue queue;
             queue.want(wanted);
             queue.handle(true, [](bool) { return true; });

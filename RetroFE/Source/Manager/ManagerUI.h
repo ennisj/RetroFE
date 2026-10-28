@@ -251,7 +251,9 @@ private:
     // Static: a request waiting for the reload outlives this ManagerUI (RetroFE reloads by starting again)
     inline static Manager::LaunchQueue launches_;
     std::optional<std::pair<LaunchRequest, std::string>> launchReturn_;
+    Manager::LaunchReturnWait launchReturnWait_;
     void finishLaunchReturn(const LaunchRequest& request, const std::string& problem);
+    void cancelLaunchReturn();
     inline static Manager::AfterReload afterReload_;   // likewise: where to go once it's back
 
     std::string status_;

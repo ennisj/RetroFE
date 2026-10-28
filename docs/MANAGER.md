@@ -928,7 +928,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty. `severity="warning"` (or `error`, `ok`) colors it when RetroFE doesn't say; `panel="yes"` puts it in a help panel instead of the rows when the page has one. |
 | `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
-| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. `primary="yes"` marks the button that saves the fields; its Page down hint turns green after an edit when it can run. |
+| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. `primary="yes"` applies to a button in the pinned `<actions>` bar. It marks the button that saves the fields; its Page down hint turns green after an edit when it can run. |
 | `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right; help appears in the help panel, or on the hint line when there is no panel (ImGui: a tooltip) |
 | `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. Left/Right page through them, or with `jump="letter"` jump to the previous or next letter; letterUp/letterDown do that in any list. A row that stands for a screen to go to rather than a record ("Add a launcher called lr-stella2014", a system's "Games  622 games") is drawn with the link marker, like a `link`. |
 
@@ -940,7 +940,7 @@ be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
 (the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
 a value to use as the title when it has one, e.g. `bind="package:name"`.
 
-Buttons that save the fields use `primary="yes"` (Save, Add source, Create,
+Buttons in the pinned `<actions>` bar that save the fields use `primary="yes"` (Save, Add source, Create,
 or Use this file). After an edit, the Page down hint is green only when its
 target is a primary button that can run. Without a primary button there is
 no green hint.
