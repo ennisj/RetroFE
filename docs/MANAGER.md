@@ -169,17 +169,17 @@ like the others, driven by the controller:
   now, the field's own suggestion (a game's or system's media slot suggests
   its media folder), RetroFE's folder, folders picked from before (since
   RetroFE started), your Downloads and Desktop, then every drive with its
-  name and free space (removable ones say so; network and disc drives aren't
-  asked anything, so a lost share can't hold the screen up).
+  name and free space as they arrive from background workers (removable
+  ones say so; a slow drive does not hold up the screen).
 - A field with a value, or with a suggestion, **opens straight in that
   folder** (the media fields open in the slot's own folder, or the nearest
   folder that's there); Back from it shows the places.
 - **Each folder is a screen**: `..` goes up a folder; folders end in `\` and
   say what they hold ("212 files matching zip" for a system's games folder,
-  counted from the Extensions field; "3 folders", "Empty"), counted a few at
-  a time so a big folder opens at once. A file field lists only the files
+  counted from the Extensions field; "3 folders", "Empty"), counted in a background batch for the first 50 folders. Counts stop at
+  10,000 entries and show `+` when capped; unreadable folders say "Can't be read". A file field lists only the files
   its pattern allows, with their size and date, and **pictures as
-  thumbnails**; videos show their size and date.
+  thumbnails** for files up to 8 MB; videos show their size and date.
 - **Select on a folder opens it.** A folder field has **Use this folder** at
   the top; a file field takes the file Select is pressed on. Either way the
   field gets it as if it were typed (nothing is saved until the screen's own
@@ -195,9 +195,10 @@ like the others, driven by the controller:
   `%RETROFE_PATH%`) stays that way when the new one is inside RetroFE's
   folder too; everything else gets the full path, as Windows' dialog gave.
 - **Browse with Windows...**, the system's own file dialog, is offered at the
-  bottom only once a mouse has been moved or clicked in RetroFE's window since
-  it started (a cabinet without one never sees it). A controller press never
-  opens it otherwise.
+  bottom after a mouse button press while Manage is open, with mouse use
+  in the last 15 seconds. Touch and motion within a second of RetroFE moving
+  the pointer do not count. Closing Manage resets this. A trackball or light
+  gun button reported as a mouse button can also qualify; motion alone cannot.
 
 The browser is the form `file-browser` (bindings `browse:`), so a layout can
 style it with `forms/file-browser/layout.xml`; Aeon Nox has one for 16:9 and

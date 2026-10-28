@@ -17,6 +17,7 @@
 #include "../../Database/Configuration.h"
 #include <algorithm>
 #include <chrono>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -26,10 +27,7 @@ namespace
     constexpr size_t shownRows = 200;
 
     // Folders counted per screen; past that they show no count
-    constexpr size_t maxCounted = 400;
-
-    // Time spent counting per frame
-    constexpr auto countBudget = std::chrono::milliseconds(6);
+    constexpr size_t maxCounted = 50;
 
     std::string yesNo(bool value) { return value ? "yes" : "no"; }
 
@@ -75,6 +73,27 @@ namespace
 
 namespace Browser
 {
+
+void replaceFolder(Navigator& nav, Forms::Params params)
+{
+    const auto& frames = nav.frames();
+    if (frames.size() > 1) {
+        const auto& below = frames[frames.size() - 2];
+        auto dir = below.params.find("dir");
+        if (below.form == formId && dir != below.params.end()
+            && insideRoot(fs::path(params["dir"]), fs::path(dir->second))
+            && insideRoot(fs::path(dir->second), fs::path(params["dir"]))) {
+            nav.back();
+            return;
+        }
+    }
+    // Level counts stack frames, including when deep folders replace a frame.
+    if (nav.current()) {
+        auto level = nav.current()->params.find("level");
+        if (level != nav.current()->params.end()) params["level"] = level->second;
+    }
+    nav.replace(formId, params);
+}
 
 Forms::Params screenParams(const Request& request)
 {
@@ -138,14 +157,17 @@ std::vector<std::string> BrowserProvider::countedExtensions(const Manager::Scree
 void BrowserProvider::refresh()
 {
     // Files may have changed while the manager was closed
+    if (pending_) pending_->cancelled = true;
+    pending_.reset();
     counts_.clear();
-    toCount_.clear();
     listedKey_ = "\x01";
 }
 
 void BrowserProvider::enter(const Manager::Screen& screen)
 {
     if (screen.form != formId) {
+        if (pending_) pending_->cancelled = true;
+        listedKey_ = "\x01";
         return;
     }
     std::string dir = screen.param("dir");
@@ -158,67 +180,141 @@ void BrowserProvider::enter(const Manager::Screen& screen)
     query_.clear();
     listing_ = Listing{};
     places_.clear();
-    toCount_.clear();
     countExtensions_ = joined(counted);
     dir_ = dir.empty() ? fs::path() : fs::path(dir);
+    filterDirty_ = true;
+    auto pending = std::make_shared<Pending>();
+    if (pending_) pending_->cancelled = true;
+    pending_ = pending;
+    PlacesInput input;
+    input.root = root();
+    input.value = screen.param("value");
+    input.start = screen.param("start");
+    input.folderField = isFolderKind(screen);
+    input.recent = recent();
+    auto drives = drives_;
+    auto folders = folders_;
+#ifdef _WIN32
     if (dir_.empty()) {
-        // The places, drives included: a USB stick plugged in since shows up
-        PlacesInput input;
-        input.root = root();
-        input.value = screen.param("value");
-        input.start = screen.param("start");
-        input.folderField = isFolderKind(screen);
-        input.recent = recent();
-        if (folders_) input.userFolders = folders_();
-        if (drives_) input.drives = drives_();
-        places_ = startingPlaces(input);
-        return;
+        if (drives) input.drives = drives();
+        PlacesInput letters;
+        letters.drives = input.drives;
+        places_ = startingPlaces(letters);
+        drives = {};
     }
-    // A folder field lists no files, but counts the ones matching its extensions
-    listing_ = listFolder(dir_, counted, !isFolderKind(screen));
-    for (const Entry& entry : listing_.entries) {
-        if (!entry.folder || toCount_.size() >= maxCounted) {
-            break;
+#endif
+    auto path = dir_;
+    auto extensions = countExtensions_;
+    std::thread([pending, input, drives, folders, path, extensions, counted]() mutable {
+        try {
+            if (path.empty()) {
+                if (folders) input.userFolders = folders();
+                if (drives) input.drives = drives();
+                auto places = startingPlaces(input);
+                {
+                    std::lock_guard<std::mutex> lock(pending->mutex);
+                    pending->places = std::move(places);
+                    pending->listed = true;
+                }
+                // Each drive answers independently; none holds up another or shutdown.
+                for (auto drive : input.drives) {
+                    if (pending->cancelled) break;
+                    std::thread([pending, drive]() mutable {
+                        try {
+                            driveDetails(drive);
+                            PlacesInput detail;
+                            detail.drives.push_back(drive);
+                            auto places = startingPlaces(detail);
+                            std::lock_guard<std::mutex> lock(pending->mutex);
+                            for (const auto& place : places) {
+                                for (auto& shown : pending->places) {
+                                    if (shown.path == place.path) shown = place;
+                                }
+                            }
+                            pending->listed = true;
+                        }
+                        catch (const std::exception&) {
+                            // Unknown details leave the drive letter available.
+                        }
+                    }).detach();
+                }
+            }
+            else {
+                auto listing = listFolder(path, counted, !input.folderField);
+                std::vector<fs::path> countPaths;
+                for (const auto& entry : listing.entries) {
+                    if (!entry.folder || countPaths.size() >= maxCounted) break;
+                    countPaths.push_back(path / entry.name);
+                }
+                {
+                    std::lock_guard<std::mutex> lock(pending->mutex);
+                    pending->listing = std::move(listing);
+                    pending->listed = true;
+                }
+                std::map<std::string, Count> counts;
+                for (const auto& folder : countPaths) {
+                    if (pending->cancelled) break;
+                    counts[countKey(extensions, folder)] = countFolder(folder, counted);
+                }
+                {
+                    std::lock_guard<std::mutex> lock(pending->mutex);
+                    pending->counts = std::move(counts);
+                }
+            }
         }
-        fs::path path = dir_ / entry.name;
-        if (!counts_.count(countKey(countExtensions_, path))) {
-            toCount_.push_back(path);
+        catch (const std::exception& error) {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            pending->listing.ok = false;
+            pending->listing.error = error.what();
+            pending->listed = true;
         }
-    }
-    std::reverse(toCount_.begin(), toCount_.end());   // popped from the back: top of the list first
-}
-
-bool BrowserProvider::countOne()
-{
-    if (toCount_.empty()) {
-        return false;
-    }
-    fs::path path = toCount_.back();
-    toCount_.pop_back();
-    counts_[countKey(countExtensions_, path)] = countFolder(path, parseExtensions(countExtensions_));
-    return true;
+        {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            pending->done = true;
+        }
+        pending->ready.notify_all();
+    }).detach();
 }
 
 void BrowserProvider::update(float)
 {
-    if (toCount_.empty()) {
-        return;
+    if (!pending_) return;
+    std::lock_guard<std::mutex> lock(pending_->mutex);
+    bool changed = false;
+    if (pending_->listed) {
+        if (dir_.empty()) places_ = pending_->places;
+        else {
+            listing_ = std::move(pending_->listing);
+            filterDirty_ = true;
+        }
+        pending_->listed = false;
+        changed = true;
     }
-    auto started = std::chrono::steady_clock::now();
-    bool counted = false;
-    while (std::chrono::steady_clock::now() - started < countBudget && countOne()) {
-        counted = true;
+    if (!pending_->counts.empty()) {
+        counts_.insert(pending_->counts.begin(), pending_->counts.end());
+        pending_->counts.clear();
+        changed = true;
     }
-    if (counted) {
-        generation_++;
-    }
+    if (changed) ++generation_;
 }
 
 void BrowserProvider::countAll()
 {
-    while (countOne()) {
+    // Tests may wait for the batch; the UI only polls it in update().
+    if (pending_) {
+        std::unique_lock<std::mutex> lock(pending_->mutex);
+        pending_->ready.wait(lock, [&] { return pending_->done; });
     }
-    generation_++;
+    update(0);
+}
+
+const std::vector<size_t>& BrowserProvider::filtered()
+{
+    if (filterDirty_) {
+        filtered_ = filterEntries(listing_.entries, query_);
+        filterDirty_ = false;
+    }
+    return filtered_;
 }
 
 std::string BrowserProvider::get(const std::string& key, const Manager::Screen& screen)
@@ -243,7 +339,7 @@ std::string BrowserProvider::get(const std::string& key, const Manager::Screen& 
             return "";
         }
         if (!listing_.ok) {
-            return "Can't be read: " + listing_.error;
+            return listing_.error.empty() ? "Loading..." : "Can't be read: " + listing_.error;
         }
         Count count;
         count.ok = true;
@@ -270,7 +366,7 @@ std::string BrowserProvider::get(const std::string& key, const Manager::Screen& 
         if (!listed) {
             return "";
         }
-        if (!filterEntries(listing_.entries, query_).empty()) {
+        if (!filtered().empty()) {
             return "";
         }
         if (!query_.empty()) {
@@ -292,6 +388,7 @@ std::string BrowserProvider::get(const std::string& key, const Manager::Screen& 
 void BrowserProvider::set(const std::string& key, const std::string& value, const Manager::Screen&)
 {
     if (key == "query") {
+        if (query_ != value) filterDirty_ = true;
         query_ = value;
     }
 }
@@ -321,9 +418,9 @@ Forms::Rows BrowserProvider::rows(const std::string& key, size_t limit, const Ma
         return rows;
     }
     // Up a folder, unless this is the top of a drive (Back goes to the places)
-    fs::path parent = dir_.parent_path();
-    bool hasParent = !parent.empty() && parent != dir_ && dir_.has_relative_path();
-    std::vector<size_t> shown = filterEntries(listing_.entries, query_);
+    fs::path parent = parentFolder(dir_);
+    bool hasParent = !parent.empty();
+    const auto& shown = filtered();
     rows.total = shown.size() + (hasParent ? 1 : 0);
     if (hasParent && limit > 0) {
         Forms::Row up;
@@ -350,7 +447,7 @@ Forms::Rows BrowserProvider::rows(const std::string& key, size_t limit, const Ma
         else {
             row.label = entry.name;
             row.detail = fileDetail(entry);
-            if (isPicture(entry.name)) {
+            if (isPicture(entry.name) && entry.size <= 8 * 1024 * 1024) {
                 row.image = path.string();
             }
             row.action = "browse.pick:" + path.string();
@@ -370,7 +467,7 @@ std::string BrowserProvider::actionProblem(const std::string& action, const Mana
         return "";
     }
     if (action == "system") {
-        return services_.pickWithSystem ? "" : "There's no system file dialog here.";
+        return services_.pickWithSystem && services_.mousePresent && services_.mousePresent() ? "" : "There's no system file dialog here.";
     }
     return Provider::actionProblem(action, screen);
 }
@@ -383,8 +480,7 @@ Forms::Model::Result BrowserProvider::chosen(const fs::path& path, const Manager
     result.pickFor = screen.param("for");
     result.pick = storedValue(path, root(), screen.param("value"));
     result.message = "Chose " + displayPath(path, root(), isRelativeStyle(screen.param("value"))) + ".";
-    std::error_code ec;
-    remember(recent(), fs::is_directory(path, ec) ? path : path.parent_path());
+    remember(recent(), isFolderKind(screen) ? path : path.parent_path());
     return result;
 }
 
@@ -414,9 +510,12 @@ Forms::Model::Result BrowserProvider::runAction(const std::string& action, const
     }
     if (action == "up") {
         // In place of this folder's screen, so going up doesn't pile screens up
+        auto parent = parentFolder(fs::path(screen.param("dir")));
+        if (parent.empty()) return result;
         result.open = formId;
         result.keepParams = true;
-        result.params["dir"] = dir_.parent_path().string();
+        result.params["dir"] = parent.string();
+        result.params["level"] = std::to_string(std::max(1, levelOf(screen) - 1));
         result.replace = true;
         return result;
     }

@@ -20,6 +20,12 @@
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -172,7 +178,7 @@ Listing listFolder(const fs::path& dir, const std::vector<std::string>& extensio
 {
     Listing listing;
     std::error_code ec;
-    fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec);
+    fs::directory_iterator it(dir, fs::directory_options::none, ec);
     if (ec) {
         listing.error = ec.message();
         return listing;
@@ -186,11 +192,17 @@ Listing listFolder(const fs::path& dir, const std::vector<std::string>& extensio
         if (!Library::narrowName(it->path().filename(), name) || isHidden(name)) {
             continue;
         }
+#ifdef _WIN32
+        DWORD attributes = GetFileAttributesW(it->path().c_str());
+        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_HIDDEN)
+            && (attributes & FILE_ATTRIBUTE_SYSTEM)) continue;
+#endif
         std::error_code fec;
         if (it->is_directory(fec)) {
             listing.folders++;
             Entry entry;
             entry.name = name;
+            entry.lowerName = lower(name);
             entry.folder = true;
             listing.entries.push_back(entry);
         }
@@ -203,6 +215,7 @@ Listing listFolder(const fs::path& dir, const std::vector<std::string>& extensio
             if (withFiles) {
                 Entry entry;
                 entry.name = name;
+                entry.lowerName = lower(name);
                 entry.size = it->file_size(fec);
                 auto time = it->last_write_time(fec);
                 entry.modified = fec ? 0 : secondsOf(time);
@@ -210,11 +223,13 @@ Listing listFolder(const fs::path& dir, const std::vector<std::string>& extensio
             }
         }
     }
+    if (ec) {
+        listing.ok = false;
+        listing.error = ec.message();
+    }
     std::sort(listing.entries.begin(), listing.entries.end(), [](const Entry& a, const Entry& b) {
         if (a.folder != b.folder) return a.folder;
-        std::string la = lower(a.name);
-        std::string lb = lower(b.name);
-        return la != lb ? la < lb : a.name < b.name;
+        return a.lowerName != b.lowerName ? a.lowerName < b.lowerName : a.name < b.name;
     });
     return listing;
 }
@@ -223,7 +238,7 @@ Count countFolder(const fs::path& dir, const std::vector<std::string>& extension
 {
     Count count;
     std::error_code ec;
-    fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec);
+    fs::directory_iterator it(dir, fs::directory_options::none, ec);
     if (ec) {
         return count;
     }
@@ -241,6 +256,11 @@ Count countFolder(const fs::path& dir, const std::vector<std::string>& extension
         if (!Library::narrowName(it->path().filename(), name) || isHidden(name)) {
             continue;
         }
+#ifdef _WIN32
+        DWORD attributes = GetFileAttributesW(it->path().c_str());
+        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_HIDDEN)
+            && (attributes & FILE_ATTRIBUTE_SYSTEM)) continue;
+#endif
         std::error_code fec;
         if (it->is_directory(fec)) {
             count.folders++;
@@ -252,6 +272,7 @@ Count countFolder(const fs::path& dir, const std::vector<std::string>& extension
             }
         }
     }
+    if (ec) count.ok = false;
     return count;
 }
 
@@ -339,6 +360,20 @@ bool isPicture(const std::string& name)
 
 // --- Paths ------------------------------------------------------------------------
 
+fs::path parentFolder(const fs::path& path)
+{
+    fs::path p = normal(path);
+#ifdef _WIN32
+    // A UNC share is the browse root, rather than the server above it.
+    if (!p.root_name().empty() && p.root_name().native().size() > 2) {
+        auto part = p.relative_path();
+        if (part.empty() || part == part.filename()) return {};
+    }
+#endif
+    fs::path parent = p.parent_path();
+    return parent == p || !p.has_relative_path() ? fs::path() : parent;
+}
+
 bool isRelativeStyle(const std::string& value)
 {
     std::string v = unquote(value);
@@ -351,6 +386,8 @@ bool isRelativeStyle(const std::string& value)
     if (v.find('%') != std::string::npos) {
         return false;   // another variable: leave it alone
     }
+    if (v.size() >= 2 && std::isalpha(static_cast<unsigned char>(v[0])) && v[1] == ':') return false;
+    if (v.rfind("\\\\", 0) == 0) return false;
     fs::path p(v);
     return p.is_relative() && !p.has_root_name();
 }
@@ -366,6 +403,9 @@ fs::path resolve(const std::string& value, const fs::path& root)
         while (!rest.empty() && (rest[0] == '/' || rest[0] == '\\')) {
             rest.erase(0, 1);
         }
+#ifndef _WIN32
+        std::replace(rest.begin(), rest.end(), '\\', '/');
+#endif
         return normal(root / rest);
     }
     fs::path p(v);
@@ -383,13 +423,14 @@ bool insideRoot(const fs::path& path, const fs::path& root, fs::path* relative)
         return false;
     }
     auto ai = a.begin();
-    for (auto bi = b.begin(); bi != b.end(); ++bi, ++ai) {
+    for (auto bi = b.begin(); bi != b.end(); ++bi) {
         if (bi->empty()) {
             continue;
         }
         if (ai == a.end() || !sameName(*ai, *bi)) {
             return false;
         }
+        ++ai;
     }
     if (relative) {
         fs::path rest;
@@ -482,8 +523,8 @@ fs::path existingFolder(const fs::path& path)
         if (fs::is_directory(p, ec)) {
             return p;
         }
-        fs::path parent = p.parent_path();
-        if (parent == p) {
+        fs::path parent = parentFolder(p);
+        if (parent.empty() || parent == p) {
             break;
         }
         p = parent;
@@ -593,7 +634,7 @@ std::vector<size_t> filterEntries(const std::vector<Entry>& entries, const std::
     std::vector<size_t> shown;
     std::string q = lower(trim(query));
     for (size_t i = 0; i < entries.size(); i++) {
-        if (q.empty() || lower(entries[i].name).find(q) != std::string::npos) {
+        if (q.empty() || entries[i].lowerName.find(q) != std::string::npos) {
             shown.push_back(i);
         }
     }

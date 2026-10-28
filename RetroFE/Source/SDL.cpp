@@ -310,11 +310,11 @@ bool SDL::initialize(Configuration& config)
 			{
 #ifndef __APPLE__
 				// If not MacOS, warp cursor top right
-				SDL_WarpMouseInWindow(window_[screenNum], windowWidth_[screenNum], 0);
+				SDL::warpMouse(window_[screenNum], windowWidth_[screenNum], 0);
 #endif
 #ifdef __APPLE__
 				// If MacOS, warp cursor to center to prevent hot corner activation
-				SDL_WarpMouseInWindow(window_[screenNum], windowWidth_[screenNum] / 2, windowHeight_[screenNum] / 2);
+				SDL::warpMouse(window_[screenNum], windowWidth_[screenNum] / 2, windowHeight_[screenNum] / 2);
 				SDL_SetRelativeMouseMode(SDL_TRUE);
 #endif
 			}
@@ -445,7 +445,7 @@ bool SDL::deInitialize()
 		SDL_SetRelativeMouseMode(SDL_FALSE);
 #endif
 		// Center mouse in primary window
-		SDL_WarpMouseInWindow(window_[0], windowWidth_[0] / 2, windowHeight_[0] / 2);
+		SDL::warpMouse(window_[0], windowWidth_[0] / 2, windowHeight_[0] / 2);
 	}
 	else
 	{
@@ -1926,4 +1926,13 @@ bool SDL::renderCopyF(SDL_Texture* texture, float alpha, const SDL_Rect* src, co
 		}
 	}
 	return true;
+}
+
+Uint32 SDL::lastWarp_ = 0;
+bool SDL::hasWarped_ = false;
+void SDL::warpMouse(SDL_Window* window, int x, int y)
+{
+    lastWarp_ = SDL_GetTicks();
+    hasWarped_ = true;
+    SDL_WarpMouseInWindow(window, x, y);
 }

@@ -49,25 +49,24 @@ std::vector<Drive> listDrives()
         case DRIVE_NO_ROOT_DIR: continue;
         default: drive.kind = Drive::Kind::Other; break;
         }
-        // Network and disc drives aren't asked anything: a lost share or a
-        // disc spinning up would hold the screen for seconds
-        if (drive.kind == Drive::Kind::Fixed || drive.kind == Drive::Kind::Removable) {
-            char label[MAX_PATH + 1] = {};
-            if (!GetVolumeInformationA(root, label, sizeof(label), nullptr, nullptr, nullptr, nullptr, 0)) {
-                if (drive.kind == Drive::Kind::Removable) {
-                    continue;   // a card reader with no card in it
-                }
-            }
-            drive.name = label;
-            ULARGE_INTEGER free{};
-            if (GetDiskFreeSpaceExA(root, &free, nullptr, nullptr)) {
-                drive.free = free.QuadPart;
-            }
-        }
         drives.push_back(drive);
     }
     SetThreadErrorMode(oldMode, nullptr);
     return drives;
+}
+
+void driveDetails(Drive& drive)
+{
+    DWORD oldMode = 0;
+    SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &oldMode);
+    std::wstring path = fs::path(drive.path).wstring();
+    wchar_t label[MAX_PATH + 1] = {};
+    if (GetVolumeInformationW(path.c_str(), label, MAX_PATH + 1, nullptr, nullptr, nullptr, nullptr, 0)) {
+        drive.name = fs::path(label).u8string();
+    }
+    ULARGE_INTEGER free{};
+    if (GetDiskFreeSpaceExW(path.c_str(), &free, nullptr, nullptr)) drive.free = free.QuadPart;
+    SetThreadErrorMode(oldMode, nullptr);
 }
 
 std::vector<Place> userFolders()
@@ -87,6 +86,8 @@ std::vector<Place> userFolders()
 }
 
 #else
+
+void driveDetails(Drive&) {}
 
 std::vector<Drive> listDrives()
 {

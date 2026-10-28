@@ -17,8 +17,13 @@
 
 #include "PathBrowser.h"
 #include "../Provider.h"
+#include "../Navigator.h"
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -65,9 +70,12 @@ namespace Browser
     // first one. False when it starts at the places.
     bool openingParams(const Forms::Params& first, const std::filesystem::path& root, Forms::Params& folder);
 
+    void replaceFolder(Navigator& nav, Forms::Params params);
+
     class BrowserProvider : public Manager::Provider
     {
     public:
+        ~BrowserProvider() override { if (pending_) pending_->cancelled = true; }
         explicit BrowserProvider(const Manager::Services& services);
 
         std::string prefix() const override { return "browse"; }
@@ -101,7 +109,21 @@ namespace Browser
         std::vector<std::string> shownExtensions(const Manager::Screen& screen) const;    // files listed (file fields)
         std::vector<std::string> countedExtensions(const Manager::Screen& screen) const;  // files counted in folders
         Forms::Model::Result chosen(const std::filesystem::path& path, const Manager::Screen& screen);
-        bool countOne();
+        struct Pending
+        {
+            std::mutex mutex;
+            std::condition_variable ready;
+            Listing listing;
+            std::vector<Place> places;
+            std::map<std::string, Count> counts;
+            std::atomic<bool> cancelled{false};
+            bool listed = false;
+            bool done = false;
+        };
+        std::shared_ptr<Pending> pending_;
+        const std::vector<size_t>& filtered();
+        std::vector<size_t> filtered_;
+        bool filterDirty_ = true;
 
         Manager::Services services_;
         std::string root_;
@@ -115,10 +137,9 @@ namespace Browser
         std::string query_;
         std::vector<Place> places_;
 
-        // What each folder holds, by extensions and path; counted a few at a time
+        // What the first folders hold, published together after the worker finishes
         std::map<std::string, Count> counts_;
-        std::vector<std::filesystem::path> toCount_;
-        std::string countExtensions_;   // what toCount_ is counted with
+        std::string countExtensions_;   // extensions used for folder counts
         unsigned generation_ = 0;
     };
 }

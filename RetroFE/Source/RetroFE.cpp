@@ -294,7 +294,7 @@ void RetroFE::launchExit()
 
 #ifndef __APPLE__
 	// If not MacOS, warp cursor top right. game/program may warp elsewhere
-	SDL_WarpMouseInWindow(SDL::getWindow(0), SDL::getWindowWidth(0), 0);
+	SDL::warpMouse(SDL::getWindow(0), SDL::getWindowWidth(0), 0);
 #endif
 
 #ifdef WIN32

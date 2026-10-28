@@ -253,9 +253,16 @@ Things to know:
   `pattern` (the files listed), `start="yourprefix:someFolder"` (a value
   naming the folder it opens in while the field is empty; a slot's place
   like `.../logo/Sonic.*` works) and, on a `<folder>`,
-  `matching="yourprefix:extensions"` (counted in every folder it lists). The
+  `matching="yourprefix:extensions"` (counted for the first 50 folders in list order). The
   browser keeps a value relative to RetroFE's folder when it was relative
   (`Browser::storedValue`); otherwise it gives an absolute path, as before.
+  Filesystem listing and capped counts run on workers, publishing results
+  through mutex-protected storage consumed by the UI thread. Workers own
+  that storage and never access the provider or forms; shutdown does not wait
+  for a drive. Drive details arrive independently. Search reuses lowercase
+  listing keys and caches an unchanged query. Pictures above 8 MB have no
+  browser thumbnail. The Windows dialog requires a real mouse press in Manage
+  and use within 15 seconds; touch and motion after pointer warps are ignored.
 - **A row that runs an action**: set `Row::action` (e.g. `"browse.pick:..."`)
   and choosing the row runs it instead of opening the field's form; put
   whatever the action needs in its name. **Picking for another screen's

@@ -45,6 +45,7 @@ namespace Browser
     struct Entry
     {
         std::string name;
+        std::string lowerName;
         bool folder = false;
         std::uintmax_t size = 0;     // files
         std::int64_t modified = 0;   // seconds since 1970, 0 if unknown
@@ -94,6 +95,8 @@ namespace Browser
 
     // Picture files, which a list shows as thumbnails
     bool isPicture(const std::string& name);
+
+    std::filesystem::path parentFolder(const std::filesystem::path& path);
 
     // --- Paths --------------------------------------------------------------------
 
@@ -178,5 +181,6 @@ namespace Browser
 
     // The machine's drives and the user's Downloads and Desktop (Drives.cpp)
     std::vector<Drive> listDrives();
+    void driveDetails(Drive& drive);
     std::vector<Place> userFolders();
 }

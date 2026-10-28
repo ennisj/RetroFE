@@ -24,6 +24,8 @@
 #include "../Source/Manager/Browser/PathBrowser.h"
 #include "../Source/Manager/ManagerModel.h"
 #include <filesystem>
+#include <algorithm>
+#include "../Source/Manager/Browser/MouseUse.h"
 #include <memory>
 
 using namespace Test;
@@ -94,6 +96,7 @@ namespace
         {
             this->params = params;
             model->setScreen(Browser::formId, params);
+            provider->countAll();
         }
 
         const Forms::Row* row(const std::string& list, const std::string& id)
@@ -131,6 +134,76 @@ namespace
 }
 
 static Test::Suite browserSuite("browser", [] {
+    run("browser: deep up and down keep the stack in order", [] {
+        Navigator nav;
+        nav.open("manage");
+        nav.push(Browser::formId, {{"level", "0"}}, {});
+        fs::path path = fs::path(makeRoot("browser_deep"));
+        for (int cycle = 0; cycle < 2; ++cycle) {
+            for (int depth = 1; depth <= 40; ++depth) {
+                path /= "child";
+                Forms::Params params = {{"dir", path.string()}, {"level", std::to_string(std::min(depth, Browser::maxLevels))}};
+                if (depth > Browser::maxLevels) Browser::replaceFolder(nav, params);
+                else nav.push(Browser::formId, params, {});
+                check(nav.depth() <= Browser::maxLevels + 2, "bounded stack");
+            }
+            for (int depth = 40; depth > 0; --depth) {
+                path = Browser::parentFolder(path);
+                Browser::replaceFolder(nav, {{"dir", path.string()}, {"level", std::to_string(depth - 1)}});
+                check(fs::path(nav.current()->params.at("dir")) == path, "up reaches parent");
+                check(std::stoi(nav.current()->params.at("level")) == static_cast<int>(nav.depth()) - 2,
+                      "level tracks actual browser frames");
+            }
+            // Return to the places for the next descent.
+            nav.back();
+        }
+    });
+    run("browser: mouse use requires a recent real press in Manage", [] {
+        Browser::MouseUse mouse;
+        mouse.warped(100);
+        mouse.motion(200, 2, 3, false);
+        check(!mouse.present(200), "warped motion is ignored");
+        mouse.motion(1200, 2, 3, false);
+        check(!mouse.present(1200), "motion alone never enables the dialog");
+        mouse.press(1300, true);
+        check(!mouse.present(1300), "touch is ignored");
+        mouse.press(1400, false);
+        check(mouse.present(1400), "real click enables it");
+        check(!mouse.present(16401), "old use expires");
+        mouse.motion(17000, 2, 0, false);
+        check(mouse.present(17000), "real motion renews a clicked mouse");
+        mouse.reset();
+        check(!mouse.present(17000), "closing resets it");
+    });
+    run("browser: roots, stored paths and capped counts", [] {
+        fs::path root = fs::path(makeInstall("browser_edges"));
+        check(Browser::insideRoot(root / "roms", root / ""), "trailing root separator");
+        checkEqual(Browser::storedValue(root / "roms", root / "", "%RETROFE_PATH%/old"),
+                   "%RETROFE_PATH%/roms", "token style survives trailing root");
+        check(Browser::resolve("roms/nes", root) == root / "roms/nes", "relative values use RetroFE root");
+        Browser::Count count;
+        count.ok = true; count.files = 10000; count.capped = true;
+        checkEqual(Browser::countText(count, {}), "10,000+ files", "capped count");
+        checkEqual(Browser::countText(Browser::Count{}, {}), "Can't be read", "unreadable count");
+        check(Browser::parentFolder(fs::path(root).root_path()).empty(), "up at filesystem root");
+        Fixture f(root.string());
+        Manager::Screen screen{Browser::formId, {{"dir", root.root_path().string()}}};
+        auto up = f.provider->runAction("up", screen);
+        check(up.ok && up.open.empty(), "up at root does not push another screen");
+#ifdef _WIN32
+        check(Browser::parentFolder("C:\\").empty(), "up at drive root");
+        screen.params["dir"] = "C:\\";
+        check(f.provider->runAction("up", screen).open.empty(), "drive-root action is a no-op");
+        screen.params["dir"] = "\\\\server\\share";
+        check(f.provider->runAction("up", screen).open.empty(), "UNC-root action is a no-op");
+        check(Browser::parentFolder("\\\\server\\share").empty(), "up at UNC root");
+        check(Browser::insideRoot("C:\\RETROFE\\roms", "c:\\RetroFE\\"), "Windows case and separator");
+        std::vector<std::string> recent;
+        Browser::remember(recent, "C:\\RetroFE\\roms");
+        Browser::remember(recent, "c:\\retrofe\\ROMS\\");
+        check(recent.size() == 1, "recent picks deduplicate case on Windows");
+#endif
+    });
     run("browser: extensions come from a pattern or a list, lower case and without dots", [] {
         checkEqual(joined(Browser::parseExtensions("*.exe;*.bat;*.cmd")), "exe,bat,cmd", "a field's pattern");
         checkEqual(joined(Browser::parseExtensions("zip, 7z")), "zip,7z", "a system's extensions");
@@ -149,6 +222,10 @@ static Test::Suite browserSuite("browser", [] {
         Browser::Listing listing = Browser::listFolder(root, {}, true);
         check(listing.ok, "the root is read");
         checkEqual(names(listing), "collections/,emulators/,roms/", "folders only (no files at the top), .hidden left out");
+        for (const auto& entry : listing.entries) {
+            check(entry.lowerName == entry.name, "lowercase sort keys are stored in the listing");
+        }
+        check(!Browser::listFolder(fs::path(root) / "missing", {}, true).ok, "listing errors remain visible");
         Browser::Listing nes = Browser::listFolder(fs::path(root) / "roms" / "nes", { "zip" }, true);
         checkEqual(names(nes), "mario.zip,zelda.ZIP", "matching files, any case, by name");
         check(nes.files == 3 && nes.matching == 2 && nes.folders == 0, "every file is counted");
@@ -272,10 +349,10 @@ static Test::Suite browserSuite("browser", [] {
               "recent picks: newest first, no repeats, at most max");
 
         std::vector<Browser::Entry> entries(3);
-        entries[0].name = "Mario.zip";
-        entries[1].name = "Zelda.zip";
-        entries[2].name = "Super Mario.zip";
-        check(Browser::filterEntries(entries, "mario").size() == 2 && Browser::filterEntries(entries, "").size() == 3,
+        entries[0].name = "Mario.zip"; entries[0].lowerName = "mario.zip";
+        entries[1].name = "Zelda.zip"; entries[1].lowerName = "zelda.zip";
+        entries[2].name = "Super Mario.zip"; entries[2].lowerName = "super mario.zip";
+        check(Browser::filterEntries(entries, "MARIO").size() == 2 && Browser::filterEntries(entries, "").size() == 3,
               "a search matches part of the name, case aside");
     });
 
@@ -332,7 +409,7 @@ static Test::Suite browserSuite("browser", [] {
         roms["level"] = "2";
         f.show(roms);
         const Forms::Row* nes = f.row("entries", "nes");
-        check(nes && nes->detail.empty(), "a folder's count comes later");
+        check(nes != nullptr, "a folder is listed");
         f.provider->countAll();
         nes = f.row("entries", "nes");
         check(nes && nes->detail == "2 files matching zip", "then says how many files match");
@@ -344,6 +421,14 @@ static Test::Suite browserSuite("browser", [] {
         nesScreen["dir"] = (fs::path(root) / "roms" / "nes").string();
         f.show(nesScreen);
         checkEqual(f.model->get("browse:summary"), "2 files matching zip", "inside: what it holds");
+        Forms::Params empty = first;
+        empty["dir"] = (fs::path(root) / "roms" / "empty").string();
+        empty["level"] = "3";
+        f.show(empty);
+        auto emptyUp = f.model->runAction("browse.up");
+        check(emptyUp.params["dir"] == (fs::path(root) / "roms").string()
+              && emptyUp.params["level"] == "2", "up from an empty folder");
+        f.show(nesScreen);
         Forms::Model::Result use = f.model->runAction("browse.use");
         check(use.ok && use.pickFor == "system:addFolder", "Use this folder picks for the field");
         checkEqual(use.pick, (fs::path(root) / "roms" / "nes").lexically_normal().make_preferred().string(),
@@ -381,6 +466,8 @@ static Test::Suite browserSuite("browser", [] {
         for (int i = 0; i < 205; i++) {
             writeFile(root + "/collections/Arcade/medium_artwork/logo/game" + std::to_string(1000 + i) + ".png", "x");
         }
+        writeFile(root + "/collections/Arcade/medium_artwork/logo/large.png", "x");
+        fs::resize_file(root + "/collections/Arcade/medium_artwork/logo/large.png", 9 * 1024 * 1024);
         Fixture f(root);
         Forms::Params first = request(false, "game:slot:newFile", "*.png;*.jpg", "",
                                       root + "/collections/Arcade/medium_artwork/logo/Sonic.*");
@@ -388,9 +475,14 @@ static Test::Suite browserSuite("browser", [] {
         check(Browser::openingParams(first, root, folder), "an empty media field opens in its slot's folder");
         f.show(folder);
         const Forms::Row* sonic = f.row("entries", "Sonic.png");
-        check(f.rows.total == 207, "up, then every picture counted");
+        check(f.rows.total == 208, "up, then every picture counted");
         check(f.rows.items.size() == 200, "but 200 shown");
         checkEqual(f.model->get("browse:canSearch"), "yes", "a search for the rest");
+        const Forms::Row* large = f.row("entries", "large.png");
+        // Search makes this row visible even when its name falls after the first 200.
+        f.model->set("browse:query", "large");
+        large = f.row("entries", "large.png");
+        check(large && large->image.empty(), "large pictures have no synchronous thumbnail");
         f.model->set("browse:query", "soni");
         sonic = f.row("entries", "Sonic.png");
         check(sonic && f.rows.total == 2, "the search finds it (up stays)");

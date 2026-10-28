@@ -16,6 +16,7 @@
 #pragma once
 
 #include "FormView.h"
+#include "Browser/MouseUse.h"
 #include "ImGuiScreen.h"
 #include "LaunchQueue.h"
 #include "LeaveWarning.h"
@@ -35,6 +36,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <mutex>
 #include <string>
 
 class CollectionInfo;
@@ -255,6 +257,13 @@ private:
 
     // The file browser's "Browse with Windows...", opened from update()
     std::optional<Manager::Services::SystemPick> systemPick_;
-    // A mouse moved or clicked in RetroFE's window since it started (kept across reloads)
-    inline static bool mouseSeen_ = false;
+    Browser::MouseUse mouseUse_;
+    struct BrowserOpening
+    {
+        std::mutex mutex;
+        Forms::Params places;
+        Forms::Params folder;
+        bool ready = false;
+    };
+    std::shared_ptr<BrowserOpening> browserOpening_;
 };
