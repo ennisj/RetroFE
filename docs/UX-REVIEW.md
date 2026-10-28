@@ -29,12 +29,13 @@ ten tasks and no path has to be typed any more; adding the first system goes
 from ~350–550 presses to about 70, starting a game from Manage from ~17 to 9,
 fixing a title from ~22 to 11, remapping Select from ~26 to 16.
 
-Of the 42 items in section 4: 33 done; partly done: A2 (no video duration),
-C3 (intro notes stay rows on the built-in page), E2 (Settings wording, Menus'
-Delete, docs), E3 (focus after Hide), F1 (letter jump not reachable on a bare
-install's pad), F4 (no video preview); not done: B5 ("Delete this menu") and
-F8 (Start this game doesn't restore the search). QA-ROUND12.md section 3 has
-the item-by-item list, and its findings are what round 13 picks up.
+Of the 42 items in section 4, after round 13: 38 done; partly done: A2 (no
+video duration), C3 (intro notes stay rows on the built-in page, which has
+no help panel), E2 (Settings wording is fixed; the vocabulary is otherwise
+consistent) and F4 (no video preview on a media slot). Round 13 finished E3
+(focus after Hide), F1 (letter jump on a bare install's pad), B5 ("Delete
+this menu") and F8 (back from a game to the same screens and search).
+QA-ROUND12.md section 3 has the item-by-item list as of round 12.
 
 ## 1. Summary
 
