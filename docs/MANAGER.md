@@ -196,8 +196,10 @@ each package it installed).
 - Changes Manage saves show after RetroFE reloads, when you close Manage.
   Every screen says how many are waiting at the right of its title ("2
   changes apply when you close Manage"): each different thing saved counts
-  once (saving the same screen twice is one change), plus a theme to switch
-  to, and Catalog installs not shown yet. Unsaved edits don't count.
+  once (saving the same screen twice, or adding then deleting the same
+  system, is one change), plus a theme to switch
+  to, and Catalog installs or removals not shown yet. A queued reload still
+  counts while it waits for an install to finish. Unsaved edits don't count.
 - While changes are waiting, **Apply changes now** at the top of Manage
   reloads RetroFE straight away and opens Manage again ("Applied 2
   changes."). It waits for a Catalog install to finish first.

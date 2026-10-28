@@ -132,7 +132,7 @@ public:
     // True once after changes were saved that RetroFE has to reload to show:
     // straight away for Result::reload, after the manager closes for
     // Services::requestReload. Waits while a Catalog install is running.
-    bool takeReloadRequest();
+    bool takeReloadRequest(bool backHome = false);
 
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);

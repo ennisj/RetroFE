@@ -2243,7 +2243,7 @@ Forms::Model::Result SystemProvider::create()
         result.message = (error.empty() ? "Could not add " + name + "." : error) + " Nothing was added.";
         return result;
     }
-    changed("added " + name);
+    changed("systems: " + name);
     for (const char* key : { "addName", "addFolder", "addProgram" }) {
         add_.erase(key);
     }
@@ -2287,13 +2287,13 @@ Forms::Model::Result SystemProvider::remove(const Screen& screen)
             for (const auto& [listed, at] : unlisted) {
                 services_.editor->addMenuChild(*idx, listed, name, at);
             }
-            changed("delete of " + name + " undone");
+            changed("systems: " + name);
             result.message = edit.message + (back ? " Nothing was changed." : " Its folder is in " + kept + ".");
             return result;
         }
         unlisted.emplace_back(menu.name, position);
     }
-    changed("deleted " + name);
+    changed("systems: " + name);
 
     std::vector<std::string> folders;
     for (const std::string& folder : r.listPaths) {

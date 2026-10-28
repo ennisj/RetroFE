@@ -49,9 +49,10 @@ inline size_t itemAtOffset(size_t index, int offset, size_t size)
 // count goes after it); otherwise every position is drawn.
 inline bool showsMenuSlot(size_t slot, size_t selected, size_t slots, size_t size)
 {
-    if (size == 0 || size >= slots) return true;
-    long long offset = static_cast<long long>(slot) - static_cast<long long>(selected);
-    long long before = static_cast<long long>(size - 1) / 2;
-    long long after = static_cast<long long>(size) - 1 - before;
-    return offset >= -before && offset <= after;
+    if (size == 0) return false;
+    if (size >= slots) return true;
+    size_t before = (size - 1) / 2;
+    size_t first = selected > before ? selected - before : 0;
+    if (first > slots - size) first = slots - size;
+    return slot >= first && slot - first < size;
 }

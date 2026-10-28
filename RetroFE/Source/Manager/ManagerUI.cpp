@@ -428,7 +428,7 @@ Manager::PendingChanges ManagerUI::pendingChanges() const
         pending.library = library_->pendingChanges();
         pending.libraryFlag = library_->changesPending();
     }
-    pending.reloadAsked = reloadWhenClosed_;
+    pending.reloadAsked = reloadWhenClosed_ || reloadRequested_;
     pending.catalog = catalog_ && catalog_->hasChanges();
     return pending;
 }
@@ -523,12 +523,12 @@ void ManagerUI::close()
     retireScreen();
     SDL_ShowCursor(cursorWasShown_);
 
+    bool reload = pendingChanges().needsReloadOnClose();
     // Changes that asked for a reload once the user was done, including library edits
     if (library_ && library_->changesPending()) {
         library_->clearPendingChanges();
-        reloadWhenClosed_ = true;
     }
-    if (reloadWhenClosed_) {
+    if (reload) {
         reloadWhenClosed_ = false;
         reloadRequested_ = true;
         // A bare install that's now set up (e.g. its first system added in
@@ -1114,9 +1114,12 @@ void ManagerUI::render()
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer_);
 }
 
-bool ManagerUI::takeReloadRequest()
+bool ManagerUI::takeReloadRequest(bool backHome)
 {
     // Reloading destroys the Catalog, so it waits for installs to finish
+    if (backHome && catalog_ && catalog_->hasChanges()) {
+        reloadRequested_ = true;
+    }
     if (!reloadRequested_ || (catalog_ && catalog_->isBusy())) {
         return false;
     }

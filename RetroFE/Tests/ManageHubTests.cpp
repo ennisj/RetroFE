@@ -33,6 +33,7 @@
 #include "minizip/zip.h"
 #include <algorithm>
 #include <filesystem>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -131,6 +132,24 @@ static Test::Suite manageHub("manage hub", [] {
         checkEqual(Manager::PendingChanges::appliedText(3), "Applied 3 changes.", "applied, several");
     });
 
+    run("hub: closing requests a reload for each pending reason", [] {
+        Manager::PendingChanges pending;
+        check(!pending.needsReloadOnClose(), "nothing saved");
+        pending.catalog = true;
+        check(pending.needsReloadOnClose(), "only Catalog changes pending, without Home");
+        pending.catalog = false;
+        pending.libraryFlag = true;
+        check(pending.needsReloadOnClose(), "saved library edits");
+        pending.libraryFlag = false;
+        pending.reloadAsked = true;
+        check(pending.needsReloadOnClose(), "an explicit or already queued reload");
+        checkEqual(pending.text(), "1 change applies when you close Manage", "queued reload remains visible after library changes are cleared");
+
+        pending.library = { "systems: Arcade", "systems: Arcade" };
+        pending.reloadAsked = false;
+        check(pending.count() == 1, "adding then deleting a system counts once");
+    });
+
     run("hub: the model shows pending changes and applies them by reloading back to the hub", [] {
         std::string root = makeRoot("hub-pending");
         Configuration::absolutePath = root;
@@ -199,6 +218,7 @@ static Test::Suite manageHub("manage hub", [] {
             for (size_t slot = 0; slot < slots; slot++) drawn += showsMenuSlot(slot, selected, slots, size) ? 'x' : '.';
             return drawn;
         };
+        checkEqual(shown(0, 5, 0), ".....", "no items: no positions drawn");
         checkEqual(shown(4, 9, 1), "....x....", "one system: just the selected position (Browse's Main menu)");
         checkEqual(shown(4, 9, 2), "....xx...", "two: the selected one and the next (the Catalog list)");
         checkEqual(shown(4, 9, 4), "...xxxx..", "four: one before, two after (Home)");
@@ -206,6 +226,17 @@ static Test::Suite manageHub("manage hub", [] {
         checkEqual(shown(4, 9, 9), "xxxxxxxxx", "as many as positions: all of them");
         checkEqual(shown(4, 9, 30), "xxxxxxxxx", "more: all of them");
         checkEqual(shown(0, 5, 2), "xx...", "selected at the start");
+        checkEqual(shown(0, 5, 4), "xxxx.", "even window shifts at the start");
+        checkEqual(shown(4, 5, 4), ".xxxx", "even window shifts at the end");
+        checkEqual(shown(0, 5, 3), "xxx..", "odd window shifts at the start");
+        checkEqual(shown(4, 5, 3), "..xxx", "odd window shifts at the end");
+        for (size_t selected : { size_t(0), size_t(4) }) {
+            std::set<size_t> items;
+            for (size_t slot = 0; slot < 5; slot++) {
+                if (showsMenuSlot(slot, selected, 5, 4)) items.insert(loopIncrement(0, slot, 4));
+            }
+            check(items.size() == 4, "ScrollingList's consecutive slot indices show every item once");
+        }
     });
 
     run("hub: a system added on another screen counts straight away", [] {

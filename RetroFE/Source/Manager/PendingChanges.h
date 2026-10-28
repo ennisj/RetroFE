@@ -28,7 +28,7 @@ namespace Manager
     //
     // What counts as one change:
     //   - each different thing the library was told changed
-    //     (Indexer::changed("game metadata"), "added Arcade", ...): saving the
+    //     (Indexer::changed("game metadata"), "systems: Arcade", ...): saving the
     //     same screen twice is still one change
     //   - a library change with no description, when there's none with one
     //   - Services::requestReload (e.g. "Use this theme"), once
@@ -37,8 +37,13 @@ namespace Manager
     {
         std::vector<std::string> library;   // Indexer::pendingChanges()
         bool libraryFlag = false;           // Indexer::changesPending()
-        bool reloadAsked = false;           // Services::requestReload was called
+        bool reloadAsked = false;           // A reload was asked for or is queued
         bool catalog = false;               // Catalog::Service::hasChanges()
+
+        bool needsReloadOnClose() const
+        {
+            return libraryFlag || reloadAsked || catalog;
+        }
 
         size_t count() const
         {

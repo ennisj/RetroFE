@@ -2615,7 +2615,7 @@ bool RetroFE::run()
 				reboot_ = false;
 				state = RETROFE_QUIT_REQUEST;
 			}
-			else if (manager_.takeReloadRequest() || (backHome && manager_.takeCatalogChanges()))
+			else if (manager_.takeReloadRequest(backHome))
 			{
 				// Reload everything so the changes show up
 				reboot_ = true;
@@ -3719,6 +3719,11 @@ RetroFE::RETROFE_STATE RetroFE::browseFromManager(const std::string& collection)
 	if (catalogList && !homeMenu_)
 	{
 		return RETROFE_IDLE;   // the Catalog list is one of Home's pages
+	}
+	if (catalogList && (!manager_.catalog() || manager_.catalog()->entries().empty()))
+	{
+		manager_.open("sources");
+		return RETROFE_IDLE;
 	}
 	if (currentPage_->getCollectionName() == collection)
 	{
