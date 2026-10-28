@@ -99,6 +99,9 @@ jobs:
   windows:
     runs-on: windows-2022
     name: Windows x64
+    # Only to publish the management-ui-latest pre-release (last step)
+    permissions:
+      contents: write
 
     steps:
     - name: Check out repository code
@@ -159,6 +162,39 @@ jobs:
         } finally {
           Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
         }
+
+    - name: Publish the build for testing
+      # Each push to feature/management-ui that passes replaces the management-ui-latest
+      # pre-release: retrofe\retrofe.exe and layouts\Aeon Nox, laid out like an install
+      # (without the DLLs, which an install already has), and BUILD.txt naming the
+      # commit. It can be downloaded without signing in. The Catalog skips it: its tag
+      # isn't a version (docs/design/catalog-sources.md)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/feature/management-ui'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $tag = 'management-ui-latest'
+        $name = 'RetroFE-management-ui-windows-x64.zip'
+        $out = "dist\RetroFE"
+        New-Item -ItemType Directory -Force "$out\retrofe", "$out\layouts" | Out-Null
+        Copy-Item "RetroFE\Build\Release\retrofe.exe" "$out\retrofe\retrofe.exe"
+        Copy-Item -Recurse "Package\Environment\Common\layouts\Aeon Nox" "$out\layouts\Aeon Nox"
+        $commit = git log -1 --format='%H%n%cI%n%s'
+        Set-Content -Path "$out\BUILD.txt" -Encoding utf8 -Value @(
+          "feature/management-ui", $commit,
+          "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID")
+        $zip = "dist\$name"
+        Compress-Archive -Path "$out\*" -DestinationPath $zip
+        $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        Set-Content -Path "$zip.sha256" -Value "$hash  $name" -NoNewline -Encoding ascii
+        "SHA-256 $hash"
+        # Recreated rather than updated, so the tag moves to this commit
+        gh release delete $tag --yes --cleanup-tag *> $null
+        gh release create $tag $zip "$zip.sha256" --prerelease --target $env:GITHUB_SHA `
+          --title 'Management UI (latest test build)' `
+          --notes "Windows test build of feature/management-ui at $env:GITHUB_SHA. Not a release: unzip over an install that already has RetroFE's DLLs."
+        if ($LASTEXITCODE -ne 0) { throw "Could not publish the pre-release" }
 
   macos:
     if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'

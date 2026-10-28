@@ -9,7 +9,7 @@ The GitHub Actions workflows are in `.github/workflows`.
 - on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, `.github/workflows` or `.github/scripts` changes
 - by hand: `gh workflow run build.yml --ref <branch>`, or "Run workflow" on the Actions tab
 
-A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`); `release-windows.yml` alone can write, to publish releases.
+A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`), except to publish: `release-windows.yml` for releases and `build.yml`'s Windows job for the test build below.
 
 It has four jobs:
 
@@ -49,6 +49,16 @@ These run only by hand (`workflow_dispatch`) and upload the package as an artifa
 - `build-macos.yml`: `RetroFE.dmg`, holding a universal (arm64 and x86_64) `RetroFE.app` for macOS 11 and later
 
 `release-windows.yml` runs when a `v*` tag is pushed and attaches the Windows archive to that tag's release (see the workflow's comments).
+
+### The test build of `feature/management-ui`
+
+When the Windows job passes on a push to `feature/management-ui`, its last step replaces the `management-ui-latest` pre-release with `RetroFE-management-ui-windows-x64.zip` and its `.sha256`. The zip holds `retrofe\retrofe.exe`, `layouts\Aeon Nox` and `BUILD.txt` (branch, commit, date, subject and the run's link), laid out like an install. It has no DLLs, so it goes over an install that already has them (`E:\Storage\OneSauce`). Anyone can download it without signing in:
+
+```
+https://github.com/ennisj/RetroFE/releases/download/management-ui-latest/RetroFE-management-ui-windows-x64.zip
+```
+
+The release is deleted and created again each time, so its tag always points at the commit that was built. The Catalog never offers it as an update: its tag isn't a version, and it's a pre-release.
 
 ## macOS builds
 
