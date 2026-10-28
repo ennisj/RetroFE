@@ -817,10 +817,13 @@ bool ManagerUI::handleEvent(const SDL_Event& e)
 void ManagerUI::navigate(const Controls& held, float now)
 {
     using Control = Manager::ImGuiScreen::Control;
+    // Controls' order; page up/down jump to a form's pinned action bar and back
     static constexpr FormWidget::Nav navs[] = {
         FormWidget::Nav::Up, FormWidget::Nav::Down, FormWidget::Nav::Left,
-        FormWidget::Nav::Right, FormWidget::Nav::Select, FormWidget::Nav::Back
+        FormWidget::Nav::Right, FormWidget::Nav::Select, FormWidget::Nav::Back,
+        FormWidget::Nav::PageUp, FormWidget::Nav::PageDown
     };
+    constexpr size_t formControls = sizeof(navs) / sizeof(navs[0]);
     const float repeatDelay = 0.4f;
     const float repeatInterval = 0.09f;
 
@@ -833,6 +836,10 @@ void ManagerUI::navigate(const Controls& held, float now)
     // ones that repeat (everything but select and back)
     auto acts = [&](size_t i, bool& repeat) {
         bool repeats = i != static_cast<size_t>(Control::Select) && i != static_cast<size_t>(Control::Back);
+        // On a form, page up/down jump into the bar and back: once a press
+        if (page_ && (i == static_cast<size_t>(Control::PageUp) || i == static_cast<size_t>(Control::PageDown))) {
+            repeats = false;
+        }
         bool act = false;
         repeat = false;
         if (held[i] && !navHeld_[i]) {
@@ -868,13 +875,17 @@ void ManagerUI::navigate(const Controls& held, float now)
     }
 
     syncKeyboard();
-    for (size_t i = 0; i < 6 && widget_; i++) {
+    for (size_t i = 0; i < formControls && widget_; i++) {
         bool repeat = false;
         if (!acts(i, repeat)) {
             continue;
         }
 
         // While a field is edited the controls type on the on-screen keyboard
+        // (page up/down mean nothing there)
+        if (keyboard_ && (navs[i] == FormWidget::Nav::PageUp || navs[i] == FormWidget::Nav::PageDown)) {
+            continue;
+        }
         if (keyboard_) {
             KeyboardWidget::Result result = keyboard_->navigate(navs[i]);
             if (result == KeyboardWidget::Result::LineUp || result == KeyboardWidget::Result::LineDown) {

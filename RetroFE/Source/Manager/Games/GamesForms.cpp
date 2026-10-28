@@ -123,7 +123,7 @@ const char* const launcherForm = R"(
 const char* const mediaForm = R"(
 <form id="game-media" title="Media" bind="game:screenTitle">
   <note bind="game:notFound"/>
-  <note bind="game:mediaNote"/>
+  <note bind="game:mediaNote" panel="yes"/>
   <results bind="game:media" open="game-media-slot" param="type" empty="No media folders."/>
 </form>
 )";

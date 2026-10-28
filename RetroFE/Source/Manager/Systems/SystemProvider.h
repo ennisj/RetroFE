@@ -80,6 +80,8 @@ namespace Manager
         unsigned generation() const override;
 
         std::string get(const std::string& key, const Screen& screen) override;
+        // Warnings: a launcher that isn't installed, a games folder with nothing in it
+        Forms::Severity severity(const std::string& key, const Screen& screen) override;
         void set(const std::string& key, const std::string& value, const Screen& screen) override;
         void setDefault(const std::string& key, const std::string& value, const Screen& screen) override;
         Forms::Rows rows(const std::string& key, size_t limit, const Screen& screen) override;

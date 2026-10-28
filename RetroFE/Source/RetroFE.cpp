@@ -44,6 +44,7 @@
 #include <fstream>
 #include <gst/gst.h>
 #include <sstream>
+#include <cstdlib>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -228,6 +229,14 @@ int RetroFE::initialize(void* context)
 	return 0;
 }
 
+// Fork: started with SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1 (e.g. GUI checks
+// on a desktop in use), RetroFE doesn't raise or grab its window either
+static bool mayTakeFocus()
+{
+	const char* noActivation = std::getenv("SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN");
+	return !(noActivation && std::string(noActivation) == "1");
+}
+
 // Launch a game/program
 void RetroFE::launchEnter()
 {
@@ -265,8 +274,10 @@ void RetroFE::launchExit()
 
 	// Restore the SDL settings
 	SDL_RestoreWindow(SDL::getWindow(0));
-	SDL_RaiseWindow(SDL::getWindow(0));
-	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	if (mayTakeFocus()) {
+		SDL_RaiseWindow(SDL::getWindow(0));
+		SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	}
 
 	// Empty event queue, but handle joystick add/remove events
 	SDL_Event e;
@@ -453,8 +464,10 @@ bool RetroFE::run()
 		[this](const std::string& name) { return getCollection(name, true); },
 		[this]() { return currentPage_ ? currentPage_->getCollectionName() : std::string(); });
 	SDL_RestoreWindow(SDL::getWindow(0));
-	SDL_RaiseWindow(SDL::getWindow(0));
-	SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	if (mayTakeFocus()) {
+		SDL_RaiseWindow(SDL::getWindow(0));
+		SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
+	}
 #ifdef WIN32
 	if (!PacInitialize()) {  //attempt to enable ServoStik
 		config_.setProperty(OPTION_SERVOSTIKENABLED, false);

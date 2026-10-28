@@ -490,6 +490,26 @@ std::string GameProvider::get(const std::string& key, const Screen& screen)
     return detail(key, screen);
 }
 
+Forms::Severity GameProvider::severity(const std::string& key, const Screen& screen)
+{
+    using Forms::Severity;
+    if (key == "launcherStatus" || key == "file") {
+        IndexPtr idx = index();
+        const auto* game = idx ? findGame(*idx, screen) : nullptr;
+        if (!game) return Severity::None;
+        if (key == "file") return game->missing || game->file.empty() ? Severity::Error : Severity::None;
+        return idx->resolveLauncher(game->collection, game->name).launcher < 0 ? Severity::Warning : Severity::None;
+    }
+    if (key == "launcherProblem" || key == "unresolvedNote" || key == "notFound") {
+        return get(key, screen).empty() ? Severity::None : Severity::Warning;
+    }
+    if (key == "slot:status") {
+        const MediaSlot* s = slot(screen, screen.param("type"));
+        return s && !s->own && s->file.empty() ? Severity::Warning : Severity::None;
+    }
+    return Severity::None;
+}
+
 void GameProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
     if (key == "query") {
@@ -812,6 +832,7 @@ Forms::Rows GameProvider::rows(const std::string& key, size_t limit, const Scree
             const MediaSlot& slot = found->second;
             row.detail = slot.own ? (slot.fromFolder() ? "Own folder (" + std::to_string(slot.shownFolderFiles) + ")" : "Own file")
                        : !slot.file.empty() ? "Fallback: " + slot.fallback : "Missing";
+            row.severity = !slot.own && slot.file.empty() ? Forms::Severity::Warning : Forms::Severity::None;
             if (slot.kind == MediaKind::Image) {
                 row.image = slot.file;
             }

@@ -27,6 +27,7 @@
 #error "Cannot find SDL_mixer header"
 #endif
 #include "Utility/Utils.h"
+#include "Utility/WindowSize.h"
 #include "Graphics/LayoutCompat.h"
 #include <SDL2/SDL_version.h>
 #if !SDL_VERSION_ATLEAST(2, 0, 18)
@@ -190,7 +191,7 @@ bool SDL::initialize(Configuration& config)
 				windowWidth_[screenNum] = Utils::convertInt(hString);
 			}
 		}
-		else if (hString != "stretch" && (screenNum != mainScreen || !config.getProperty(OPTION_HORIZONTAL, windowWidth_[screenNum])) && !config.getProperty(OPTION_HORIZONTAL + screenIndex, windowWidth_[screenNum]))
+		else if (hString != "stretch" && hString != "auto" && (screenNum != mainScreen || !config.getProperty(OPTION_HORIZONTAL, windowWidth_[screenNum])) && !config.getProperty(OPTION_HORIZONTAL + screenIndex, windowWidth_[screenNum]))
 		{
 			LOG_ERROR("Configuration", "Invalid property value for \"horizontal\"" + screenIndex);
 			return false;
@@ -222,10 +223,22 @@ bool SDL::initialize(Configuration& config)
 				windowHeight_[screenNum] = Utils::convertInt(vString);
 			}
 		}
-		else if (vString != "stretch" && (screenNum != mainScreen || !config.getProperty(OPTION_VERTICAL, windowHeight_[screenNum])) && !config.getProperty(OPTION_VERTICAL + screenIndex, windowHeight_[screenNum]))
+		else if (vString != "stretch" && vString != "auto" && (screenNum != mainScreen || !config.getProperty(OPTION_VERTICAL, windowHeight_[screenNum])) && !config.getProperty(OPTION_VERTICAL + screenIndex, windowHeight_[screenNum]))
 		{
 			LOG_ERROR("Configuration", "Invalid property value for \"vertical\"" + screenIndex);
 			return false;
+		}
+		// Fork: "auto" (a bare install's default) is a 16:9 window as large as
+		// fits comfortably on this display (Utility/WindowSize.h)
+		if (hString == "auto" || vString == "auto")
+		{
+			SDL_Rect usable{ 0, 0, mode.w, mode.h };
+			SDL_GetDisplayUsableBounds(configuredScreenNum, &usable);
+			WindowSize::Size size = WindowSize::automatic(usable.w, usable.h, windowBorder ? 32 : 0);
+			if (hString == "auto")
+				windowWidth_[screenNum] = size.width;
+			if (vString == "auto")
+				windowHeight_[screenNum] = size.height;
 		}
 
 		bool fullscreen = false;

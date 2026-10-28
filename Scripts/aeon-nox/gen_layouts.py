@@ -377,21 +377,40 @@ def catalog_page(variant):
 # Form and keyboard pages. RetroFE uses forms/<screen>/<page>.xml, then forms/<page>.xml,
 # for the page collections are drawn with ("layout" or, with randomLayout, "layout 4x3").
 
-def form_attrs(up):
+FORM_FONT = 'fonts/RobotoCondensed-Regular.ttf'   # heavier than Open Sans Condensed: readable from a cabinet
+
+def form_attrs(up, size=38, row=56):
     # focusImage is relative to the page's own folder. Details (a result's, a link's
     # status) in a pale accent, section headers and separators in the accent, pictures
     # on a faint light backing, results in green, messages that report nothing happened
     # (cancelled, undone) in a quiet blue-grey, errors and a button waiting for
-    # confirmation in red.
+    # confirmation in red, warnings (a launcher that won't start, missing art) in amber,
+    # the pinned action bar's buttons on a faint accent.
     lines = [
-        'font="fonts/OpenSans.ttf" loadFontSize="40" fontSize="34" fontColor="dedede" focusColor="ffffff"',
-        'rowHeight="50" focusImage="%simages/form_focus.png" noteAlpha="0.6" disabledAlpha="0.35"' % up,
-        'rowDetailColor="a9d8f5" rowDetailAlpha="0.8" headerColor="%s" headerAlpha="0.95"' % ACCENT,
+        'font="%s" loadFontSize="44" fontSize="%d" fontColor="e6e6e6" focusColor="ffffff"' % (FORM_FONT, size),
+        'rowHeight="%d" focusImage="%simages/form_focus.png" noteAlpha="0.8" disabledAlpha="0.4"' % (row, up),
+        'rowDetailColor="a9d8f5" rowDetailAlpha="0.9" headerColor="%s" headerAlpha="1"' % ACCENT,
         'separatorColor="%s" separatorAlpha="0.18" imageBackgroundColor="ffffff" imageBackgroundAlpha="0.06"' % ACCENT,
-        'statusColor="9fe3a6" infoColor="b8c4d0" errorColor="ff9a8a" confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3"',
+        'statusColor="9fe3a6" infoColor="c4d0dc" errorColor="ff9a8a" warningColor="f2c46d" successColor="9fe3a6"',
+        'confirmBackgroundColor="d9442f" confirmBackgroundAlpha="0.3" buttonColor="%s" buttonAlpha="0.1"' % ACCENT,
         'backgroundColor="000000" backgroundAlpha="0"',
     ]
     return ('\n' + ' ' * 10).join(lines)
+
+# The help panel beside the rows (<formHelp>): the focused row's picture, else Home's
+# icon for that part of RetroFE, then its name in the theme's title face, its status
+# and its help
+def help_attrs(picture_h):
+    icons = '../collections/Home/medium_artwork/icon/'
+    return '''font="%s" loadFontSize="44" fontSize="32" fontColor="e6e6e6"
+              headingColor="ffffff" detailColor="a9d8f5" warningColor="f2c46d" errorColor="ff9a8a" successColor="9fe3a6"
+              noteAlpha="0.85" headingFont="fonts/Oswald-Bold.ttf" headingScale="1.5" pictureHeight="%d"
+              imageBackgroundColor="000000" imageBackgroundAlpha="0.35" layer="3"
+              defaultImage="%sManage.png">
+        <!-- Rows without a picture of their own show Home's icon for the part of RetroFE they're in -->
+        <defaultImage forms="settings control*" src="%sSettings.png"/>
+        <defaultImage forms="sources package" src="%sCatalog.png"/>
+    </formHelp>''' % (FORM_FONT, picture_h, icons, icons, icons)
 
 # The info panel images have a transparent margin (12 px of 811 x 214) that grows when
 # they're stretched, so they're drawn larger than the panel that shows.
@@ -399,16 +418,20 @@ def panel_size(w, h):
     return round(w / (1 - 24 / 811)), round(h / (1 - 24 / 214))
 
 FORMS = {
-    '': dict(W=1920, H=1080, file='layout.xml', panel=(232, 70, 1688, 1040), form_w=1400, label=460,
+    # panel: the rows' panel; form: x, y, width, height of the <form> in it; help_panel and
+    # help: the same for the help panel and its <formHelp>
+    '': dict(W=1920, H=1080, file='layout.xml', panel=(40, 70, 1250, 1040), form=(60, 84, 1170, 942), label=430,
+             help_panel=(1270, 70, 1880, 1040), help=(1286, 90, 578, 930), picture_h=300,
              pkg_cover=655, pkg_panel=(184, 70, 1736, 640), pkg_form_w=1500, pkg_label=420,
              kb=(1440, 588, 1050)),
-    ' 4x3': dict(W=1600, H=1200, file='layout 4x3.xml', panel=(100, 70, 1500, 1160), form_w=1320, label=420,
+    ' 4x3': dict(W=1600, H=1200, file='layout 4x3.xml', panel=(30, 70, 1080, 1160), form=(46, 84, 1020, 1062), label=400,
+                 help_panel=(1098, 70, 1570, 1160), help=(1110, 90, 448, 1050), picture_h=240,
                  pkg_cover=775, pkg_panel=(60, 70, 1540, 755), pkg_form_w=1420, pkg_label=400,
                  kb=(1400, 640, 1170)),
 }
 
 def head(f):
-    return '<layout width="%d" height="%d" font="fonts/OpenSans.ttf" loadFontSize="40" fontColor="dedede">' % (f['W'], f['H'])
+    return '<layout width="%d" height="%d" font="%s" loadFontSize="44" fontColor="e6e6e6">' % (f['W'], f['H'], FORM_FONT)
 
 def topbar(f, label):
     return ('''    <!-- Top bar (no clock: a form page has no selected item, which reloadableText needs) -->
@@ -426,25 +449,34 @@ def panel_images(x0, y0, x1, y1):
 def forms_page(v):
     f = FORMS[v]
     x0, y0, x1, y1 = f['panel']
+    hx0, hy0, hx1, hy1 = f['help_panel']
     return '''%s
 
 <!-- Aeon Nox: Settings, Manage, Sources and the other screens, drawn over the page behind.
-     Image paths are relative to this page's folder. -->
+     Two panels, as on Home: the screen's rows on the left, and on the right the focused
+     row's picture, status and help (<formHelp>). Image paths are relative to this page's folder. -->
 
     <!-- Background -->
     <image src="images/background.png" x="0" y="0" width="%d" height="%d" layer="0"/>
 
 %s
 
-    <!-- Panel: the theme's info panel and its frame, stretched (seen at x %d-%d, y %d-%d) -->
+    <!-- The rows' panel: the theme's info panel and its frame, stretched (seen at x %d-%d, y %d-%d) -->
 %s
 
-    <form x="%d" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="center" labelWidth="%d"
+    <!-- The help panel (seen at x %d-%d, y %d-%d) -->
+%s
+
+    <form x="%d" y="%d" width="%d" height="%d" labelWidth="%d"
           %s layer="3"/>
 
+    <formHelp x="%d" y="%d" width="%d" height="%d"
+              %s
+
 </layout>
-''' % (head(f), f['W'], f['H'], topbar(f, 'RETROFE'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),
-       (x0 + x1) // 2, (y0 + y1) // 2, f['form_w'], y1 - y0 - 40, f['label'], form_attrs('../'))
+''' % ((head(f), f['W'], f['H'], topbar(f, 'RETROFE'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),
+        hx0, hx1, hy0, hy1, panel_images(hx0, hy0, hx1, hy1))
+       + f['form'] + (f['label'], form_attrs('../')) + f['help'] + (help_attrs(f['picture_h']),))
 
 def package_page(v):
     f = FORMS[v]
@@ -469,7 +501,7 @@ def package_page(v):
 
 </layout>
 ''' % (head(f), f['W'], f['pkg_cover'], topbar(f, 'CATALOG'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),
-       (x0 + x1) // 2, y0 + 18, f['pkg_form_w'], y1 - y0 - 30, f['pkg_label'], form_attrs('../../'))
+       (x0 + x1) // 2, y0 + 18, f['pkg_form_w'], y1 - y0 - 30, f['pkg_label'], form_attrs('../../', 36, 54))
 
 def keyboard_page(v):
     f = FORMS[v]
@@ -484,12 +516,12 @@ def keyboard_page(v):
     <image src="images/system_info_overlay.png" x="center" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="bottom" layer="2"/>
 
     <keyboard x="center" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="bottom"
-              font="fonts/OpenSans.ttf" loadFontSize="44" fontSize="38" fontColor="dedede" focusColor="ffffff"
+              font="%s" loadFontSize="44" fontSize="38" fontColor="e6e6e6" focusColor="ffffff"
               keyColor="%s" keyAlpha="0.09" focusKeyColor="%s" focusKeyAlpha="0.55"
-              backgroundColor="070d12" backgroundAlpha="1" noteAlpha="0.65" layer="1"/>
+              backgroundColor="070d12" backgroundAlpha="1" noteAlpha="0.8" layer="1"/>
 
 </layout>
-''' % (head(f), frame_bottom, fw, fh, bottom, w, h, ACCENT, ACCENT)
+''' % (head(f), frame_bottom, fw, fh, bottom, w, h, FORM_FONT, ACCENT, ACCENT)
 
 # ---------------------------------------------------------------------------------------
 

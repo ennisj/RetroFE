@@ -93,6 +93,17 @@ namespace Manager
 
         virtual std::string get(const std::string& key, const Screen& screen) = 0;
 
+        // How get(key)'s text is drawn where it's a status, a value or a
+        // note: Warning for something to look at ("Won't start", "Missing"),
+        // Error for something broken, Ok for good news; None (the default)
+        // for plain facts. Rows say it with Forms::Row::severity instead.
+        // Called on every rebuild like get(), so keep it cheap.
+        virtual Forms::Severity severity(const std::string& key, const Screen& screen)
+        {
+            (void)key; (void)screen;
+            return Forms::Severity::None;
+        }
+
         virtual void set(const std::string& key, const std::string& value, const Screen& screen)
         {
             (void)key; (void)value; (void)screen;

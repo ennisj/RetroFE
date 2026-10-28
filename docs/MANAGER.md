@@ -157,6 +157,19 @@ field (a game's story), Enter starts a new line and **Ctrl+Enter** keeps the
 text; the arrows, Home, End, Page Up and Page Down move the cursor, and
 Delete removes the character after it.
 
+A screen's buttons (Save, Undo changes, Start this game...) sit in a **bar
+pinned at the bottom**, always in view while the rows above scroll. **Page
+Down** (the `pageDown` control: the keyboard's Page Down, or the right shoulder
+button on a pad with RetroFE's built-in controls) jumps to the bar's first
+button that can run now, never one that asks to confirm; **Page Up** goes back
+to where you were. Down past the last row, or Up past the first, also goes into
+the bar, and Left/Right move along it. The hints say where the jump goes
+("Page down: Save"), in green once something you changed can be saved; without
+a bar, Page Up and Page Down move a page. A button that can't run now is
+dimmed, and says why while it's focused (in the hints, or the help panel).
+Statuses that need a look are colored: amber for a warning ("Won't start",
+"Missing", a launcher "which isn't installed"), red for something broken.
+
 **Manage** links to a screen for each part of your setup: Games, Menus,
 Systems, Videos, Emulators and Themes, then the Catalog (what it installed,
 its Sources, and removing a package).
@@ -623,12 +636,58 @@ The page places the form with a `<form>` element:
 | `infoColor` | The message when nothing happened (cancelled, undone, nothing to do) and "press it now" prompts (default `fontColor`) |
 | `errorColor` | Error messages, and the question of a button waiting for confirmation (default `fontColor`) |
 | `confirmBackgroundColor`, `confirmBackgroundAlpha` | Tint over a button waiting for a second Select to confirm (default alpha 0: none) |
+| `warningColor` | Statuses, values, notes and results' details RetroFE marks as a warning, e.g. "Won't start", "Missing" (default `errorColor`) |
+| `successColor` | The same marked as good news (default `statusColor`); `errorColor` is used for ones marked broken |
+| `buttonColor`, `buttonAlpha` | Behind the pinned bar's buttons that aren't focused (default white at 0.06; alpha 0: none). The focused one gets `focusImage` or the focus background. |
+| `pinActions` | `no` leaves a screen's buttons where the form puts them instead of in a bar pinned at the bottom |
+| `titleStatus` | A value shown at the right of the title, e.g. changes waiting to apply (default the binding `info:titleStatus`; empty for none) |
 | `title` | `no` hides the screen's title |
 | `hints` | `no` hides the controls hint at the bottom |
 
 Text that doesn't fit its column ends in `...`; a result's detail gets the
 room it needs, up to about half the row when the name needs the rest. Long
 notes and values wrap, breaking long paths where they reach the edge.
+
+From the bottom up, the form has the hints, the status line after an action,
+then the **pinned bar**: the form's first `<actions>` and any straight after it
+(see `pin` below), with a line over it (`separatorColor`). The rows scroll
+above it.
+
+#### The help panel
+
+A `<formHelp>` element on the same page draws a panel for the focused row:
+its picture (a result's thumbnail such as a game's art, a field's `preview`,
+or else the screen's `<image>`, e.g. a game's or a system's logo), its name,
+its status (a link's status, a result's detail, why a button can't run) and
+its help. With one, the rows stay compact: fields' `help`, "Set in ..." and
+the screen's `<image>` move to the panel, and so do notes marked `panel="yes"`
+(shown for rows with no help of their own). Aeon Nox draws it as a second
+panel beside the rows, as on Home.
+
+```xml
+<formHelp x="1286" y="90" width="578" height="930" font="fonts/RobotoCondensed-Regular.ttf"
+          fontSize="32" fontColor="e6e6e6" headingColor="ffffff" headingFont="fonts/Oswald-Bold.ttf"
+          headingScale="1.5" detailColor="a9d8f5" warningColor="f2c46d" errorColor="ff9a8a"
+          pictureHeight="300" imageBackgroundColor="000000" imageBackgroundAlpha="0.35" layer="3"
+          defaultImage="../collections/Home/medium_artwork/icon/Manage.png">
+  <defaultImage forms="settings control*" src="../collections/Home/medium_artwork/icon/Settings.png"/>
+</formHelp>
+```
+
+| Attribute | Meaning |
+|-----------|---------|
+| `x`, `y`, `width`, `height`, `xOrigin`, `yOrigin`, `layer`, `alpha`, `monitor` | As for other components; tweens work too |
+| `font`, `fontSize`, `fontColor`, `loadFontSize` | The help text |
+| `headingColor`, `headingFont`, `headingScale` | The row's name: its color, another face (e.g. the theme's title font), and size relative to `fontSize` (default 1.2) |
+| `detailColor`, `detailAlpha` | The row's status (default `fontColor` at 1) |
+| `warningColor`, `errorColor`, `successColor` | The status when it's marked a warning, broken or good news |
+| `noteAlpha` | Opacity of the help text (default 0.85) |
+| `pictureHeight` | Height of the picture's box above the text (default 45% of the panel); without a picture the text starts at the top |
+| `pictureWidth` | More than 0: the picture on the left, that wide, and the text beside it (for a wide, low panel) |
+| `imageBackgroundColor`, `imageBackgroundAlpha` | Behind a row's picture (default alpha 0: none) |
+| `defaultImage` | A picture for rows without one, never drawn larger than its file (so an icon stays crisp). `<defaultImage forms="..." src="..."/>` children pick another for some screens by form id; `control*` matches every id starting with `control`. |
+
+It follows the page's first `<form>`.
 
 Set `formsRenderer = imgui` in `settings.conf` to draw the screens with Dear
 ImGui instead, for example while developing.
@@ -693,21 +752,23 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | Element | Field |
 |---------|-------|
 | `section` | A titled group of fields |
-| `actions` | Buttons |
+| `actions` | Buttons. The form's first top-level `actions`, and any straight after it, are drawn as the pinned bar; `pin="no"` keeps one (and those after it) in place. |
 | `text`, `folder`, `file` | Text, a folder path, or a file path (`filter`, `pattern` like `*.exe`). `live="yes"` on `text` passes every change on while typing, e.g. for a search box. `multiline="yes"` makes `text` several lines, `rows` high (default 4), wrapped at spaces, with "..." when there's more than fits; the value keeps a `\n` between lines. |
 | `toggle` | On or off |
 | `number` | A whole number (`min`, `max`) |
 | `choice` | One of a list (`options` is `layouts`, `collections`, `sources`, `sourceTypes` or `installed`) |
 | `list` | A read-only list (`empty` is shown when there's nothing in it) |
-| `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty |
+| `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty. `severity="warning"` (or `error`, `ok`) colors it when RetroFE doesn't say; `panel="yes"` puts it in a help panel instead of the rows when the page has one. |
 | `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
 | `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
-| `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right |
+| `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right. Its `help` shows only in a help panel (the ImGui renderer: a tooltip), so a list of links stays a list. |
 | `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
-under it), `status` (a value shown under it), `enabledWhen` (a value that must
+under it, or in the help panel), `preview` (a value giving a picture's file,
+shown in the help panel while the field is focused), `status` (a value shown
+under it), `enabledWhen` (a value that must
 be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
 (the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
 a value to use as the title when it has one, e.g. `bind="package:name"`.
@@ -805,7 +866,7 @@ above, so it's a working example:
 | `collections/Home/medium_artwork/` | Home's artwork and text: `logo/`, `icon/`, `tagline/` and `description/`, each with a file per item (`Catalog.png`, `Catalog.txt`...) |
 | `collections/Catalog/layout/layout.xml` | The Catalog: package logos, with kind, source and version in the info panel |
 | `collections/Catalog/medium_artwork/` | An icon and text for the Sources item (`Catalog Sources.png`, `.txt`), which has no package artwork |
-| `forms/layout.xml` | Settings, Manage, Sources and the other screens |
+| `forms/layout.xml` | Settings, Manage, Sources and the other screens: the rows on the left and a help panel on the right with the focused row's picture (or Home's icon for that part: Manage, Settings, Catalog), name in Oswald, status and help. Roboto Condensed at 38 (notes at 32), notes at 0.8 opacity, so they read from a cabinet. |
 | `forms/package/layout.xml` | A package: the form takes the top of the screen, so the Catalog's info panel stays visible below it |
 | `forms/keyboard/layout.xml` | The on-screen keyboard |
 | `layout 4x3.xml` next to each `layout.xml` | 4:3 versions, used with `randomLayout = layout 4x3` |
