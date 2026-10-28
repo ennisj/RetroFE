@@ -315,6 +315,44 @@ static Test::Suite browserSuite("browser", [] {
         check(Browser::openingFolder((fs::path(root) / "gone").string(), "", true, root).empty(), "a value that isn't there: the places");
     });
 
+    run("browser: drive fetches are shared and expire after thirty seconds", [] {
+        using Clock = std::chrono::steady_clock;
+        auto now = Clock::time_point{} + std::chrono::seconds(100);
+        Browser::DriveFetch fetch;
+        check(fetch.begin(now), "the first visit starts a fetch");
+        check(!fetch.begin(now + std::chrono::hours(1)), "even a hung fetch is not started again");
+        fetch.inFlight = false;
+        fetch.valid = true;
+        fetch.fetched = now;
+        check(fetch.fresh(now + std::chrono::seconds(29))
+              && !fetch.begin(now + std::chrono::seconds(29)), "recent details are reused");
+        check(fetch.begin(now + std::chrono::seconds(30)), "expired details are fetched again");
+        check(!fetch.begin(now + std::chrono::seconds(31)), "later visits share the refresh");
+    });
+
+    run("browser: only unanswered removable drives disappear", [] {
+        Browser::PlacesInput input;
+        for (auto kind : { Browser::Drive::Kind::Removable, Browser::Drive::Kind::Fixed,
+                           Browser::Drive::Kind::Network, Browser::Drive::Kind::Optical }) {
+            Browser::Drive drive;
+            drive.path = std::string(1, static_cast<char>('U' + input.drives.size())) + ":\\";
+            drive.kind = kind;
+            input.drives.push_back(drive);
+        }
+        auto places = Browser::startingPlaces(input);
+        for (const auto& drive : input.drives) Browser::applyDriveDetails(places, drive, false);
+        check(places.size() == 3, "fixed, network and optical letters remain");
+        check(std::none_of(places.begin(), places.end(), [&](const Browser::Place& place) {
+            return place.path == fs::path(input.drives.front().path);
+        }), "the empty removable slot is removed");
+        auto usb = input.drives.front();
+        places = Browser::startingPlaces(input);
+        usb.name = "STICK";
+        Browser::applyDriveDetails(places, usb, true);
+        check(places.size() == 4 && places.front().label.find("STICK") != std::string::npos,
+              "an answered removable drive stays and gets its label");
+    });
+
     run("browser: starting places come in order, each folder once", [] {
         std::string root = makeInstall("browser_places");
         Browser::PlacesInput input;

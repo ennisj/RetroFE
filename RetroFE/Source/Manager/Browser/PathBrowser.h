@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -181,6 +182,17 @@ namespace Browser
 
     // The machine's drives and the user's Downloads and Desktop (Drives.cpp)
     std::vector<Drive> listDrives();
-    void driveDetails(Drive& drive);
+    bool driveDetails(Drive& drive);
+    void applyDriveDetails(std::vector<Place>& places, const Drive& drive, bool answered);
+
+    struct DriveFetch
+    {
+        std::chrono::steady_clock::time_point fetched;
+        bool valid = false;
+        bool inFlight = false;
+
+        bool fresh(std::chrono::steady_clock::time_point now) const;
+        bool begin(std::chrono::steady_clock::time_point now);
+    };
     std::vector<Place> userFolders();
 }

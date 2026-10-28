@@ -120,6 +120,7 @@ namespace Browser
             bool listed = false;
             bool done = false;
         };
+        static void requestDriveDetails(const std::shared_ptr<Pending>& pending, Drive drive);
         std::shared_ptr<Pending> pending_;
         const std::vector<size_t>& filtered();
         std::vector<size_t> filtered_;

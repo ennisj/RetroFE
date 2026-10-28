@@ -219,24 +219,7 @@ void BrowserProvider::enter(const Manager::Screen& screen)
                 // Each drive answers independently; none holds up another or shutdown.
                 for (auto drive : input.drives) {
                     if (pending->cancelled) break;
-                    std::thread([pending, drive]() mutable {
-                        try {
-                            driveDetails(drive);
-                            PlacesInput detail;
-                            detail.drives.push_back(drive);
-                            auto places = startingPlaces(detail);
-                            std::lock_guard<std::mutex> lock(pending->mutex);
-                            for (const auto& place : places) {
-                                for (auto& shown : pending->places) {
-                                    if (shown.path == place.path) shown = place;
-                                }
-                            }
-                            pending->listed = true;
-                        }
-                        catch (const std::exception&) {
-                            // Unknown details leave the drive letter available.
-                        }
-                    }).detach();
+                    requestDriveDetails(pending, drive);
                 }
             }
             else {
@@ -274,6 +257,71 @@ void BrowserProvider::enter(const Manager::Screen& screen)
         }
         pending->ready.notify_all();
     }).detach();
+}
+
+void BrowserProvider::requestDriveDetails(const std::shared_ptr<Pending>& pending, Drive drive)
+{
+    struct Entry
+    {
+        DriveFetch fetch;
+        Drive drive;
+        bool answered = true;
+        std::vector<std::weak_ptr<Pending>> waiting;
+    };
+    struct Cache
+    {
+        std::mutex mutex;
+        std::map<std::string, Entry> entries;
+    };
+    // Process lifetime: detached workers may still use it during static destruction.
+    static auto cache = new Cache;
+    auto shared = cache;
+    std::lock_guard<std::mutex> lock(shared->mutex);
+    auto& entry = shared->entries[drive.path];
+    auto now = std::chrono::steady_clock::now();
+    if (entry.fetch.fresh(now)) {
+        std::lock_guard<std::mutex> pendingLock(pending->mutex);
+        applyDriveDetails(pending->places, entry.drive, entry.answered);
+        pending->listed = true;
+        return;
+    }
+    entry.waiting.erase(std::remove_if(entry.waiting.begin(), entry.waiting.end(),
+        [](const std::weak_ptr<Pending>& waiter) {
+            auto pending = waiter.lock();
+            return !pending || pending->cancelled;
+        }), entry.waiting.end());
+    entry.waiting.push_back(pending);
+    if (!entry.fetch.begin(now)) return;
+    try {
+        std::thread([shared, drive]() mutable {
+            bool answered = true;
+            try {
+                answered = driveDetails(drive);
+            }
+            catch (const std::exception&) {
+                // An unexpected failure leaves the letter available.
+            }
+            std::lock_guard<std::mutex> lock(shared->mutex);
+            auto& entry = shared->entries[drive.path];
+            entry.drive = drive;
+            entry.answered = answered;
+            entry.fetch.fetched = std::chrono::steady_clock::now();
+            entry.fetch.valid = true;
+            entry.fetch.inFlight = false;
+            for (const auto& waiter : entry.waiting) {
+                auto pending = waiter.lock();
+                if (!pending || pending->cancelled) continue;
+                std::lock_guard<std::mutex> pendingLock(pending->mutex);
+                applyDriveDetails(pending->places, drive, answered);
+                pending->listed = true;
+            }
+            entry.waiting.clear();
+        }).detach();
+    }
+    catch (const std::exception&) {
+        entry.fetch.inFlight = false;
+        entry.waiting.clear();
+    }
 }
 
 void BrowserProvider::update(float)

@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "PathBrowser.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <system_error>
@@ -26,6 +27,35 @@ namespace fs = std::filesystem;
 
 namespace Browser
 {
+
+bool DriveFetch::fresh(std::chrono::steady_clock::time_point now) const
+{
+    return valid && now - fetched < std::chrono::seconds(30);
+}
+
+bool DriveFetch::begin(std::chrono::steady_clock::time_point now)
+{
+    if (inFlight || fresh(now)) return false;
+    inFlight = true;
+    return true;
+}
+
+void applyDriveDetails(std::vector<Place>& places, const Drive& drive, bool answered)
+{
+    if (!answered && drive.kind == Drive::Kind::Removable) {
+        places.erase(std::remove_if(places.begin(), places.end(), [&](const Place& place) {
+            return place.path == fs::path(drive.path);
+        }), places.end());
+        return;
+    }
+    PlacesInput input;
+    input.drives.push_back(drive);
+    for (const auto& place : startingPlaces(input)) {
+        for (auto& shown : places) {
+            if (shown.path == place.path) shown = place;
+        }
+    }
+}
 
 #ifdef _WIN32
 
@@ -55,18 +85,20 @@ std::vector<Drive> listDrives()
     return drives;
 }
 
-void driveDetails(Drive& drive)
+bool driveDetails(Drive& drive)
 {
     DWORD oldMode = 0;
     SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &oldMode);
     std::wstring path = fs::path(drive.path).wstring();
     wchar_t label[MAX_PATH + 1] = {};
-    if (GetVolumeInformationW(path.c_str(), label, MAX_PATH + 1, nullptr, nullptr, nullptr, nullptr, 0)) {
+    bool answered = GetVolumeInformationW(path.c_str(), label, MAX_PATH + 1, nullptr, nullptr, nullptr, nullptr, 0) != 0;
+    if (answered) {
         drive.name = fs::path(label).u8string();
     }
     ULARGE_INTEGER free{};
     if (GetDiskFreeSpaceExW(path.c_str(), &free, nullptr, nullptr)) drive.free = free.QuadPart;
     SetThreadErrorMode(oldMode, nullptr);
+    return answered;
 }
 
 std::vector<Place> userFolders()
@@ -87,7 +119,7 @@ std::vector<Place> userFolders()
 
 #else
 
-void driveDetails(Drive&) {}
+bool driveDetails(Drive&) { return true; }
 
 std::vector<Drive> listDrives()
 {
