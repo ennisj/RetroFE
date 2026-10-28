@@ -17,15 +17,23 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <new>
 #include <system_error>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#ifndef FILE_RENAME_FLAG_REPLACE_IF_EXISTS
+#define FILE_RENAME_FLAG_REPLACE_IF_EXISTS 0x00000001
+#endif
+#ifndef FILE_RENAME_FLAG_POSIX_SEMANTICS
+#define FILE_RENAME_FLAG_POSIX_SEMANTICS 0x00000002
+#endif
 #else
 #include <cstdio>
 #include <fcntl.h>
@@ -97,8 +105,71 @@ bool flushToDisk(const std::string& path)
 bool replaceFile(const std::string& from, const std::string& to)
 {
 #ifdef _WIN32
-    return MoveFileExW(fs::path(from).wstring().c_str(), fs::path(to).wstring().c_str(),
-                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    std::wstring source = fs::path(from).wstring();
+    std::wstring target = fs::absolute(fs::path(to)).make_preferred().wstring();
+    // A POSIX-semantics rename (Windows 10 1607+, NTFS) replaces the file even
+    // while a reader has it open; MoveFileEx can't, so it's the fallback for
+    // volumes without it (FAT32/exFAT, some shares)
+    auto posixRename = [&](DWORD& error) {
+        HANDLE handle = CreateFileW(source.c_str(), DELETE,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (handle == INVALID_HANDLE_VALUE) {
+            error = GetLastError();
+            return false;
+        }
+        std::unique_ptr<void, decltype(&CloseHandle)> file(handle, CloseHandle);
+        // The FILE_RENAME_INFO layout, declared here: older SDKs and MinGW
+        // lack the Flags member
+        struct RenameInfo
+        {
+            union {
+                BOOLEAN ReplaceIfExists;
+                DWORD Flags;
+            };
+            HANDLE RootDirectory;
+            DWORD FileNameLength;
+            WCHAR FileName[1];
+        };
+        size_t nameBytes = target.size() * sizeof(WCHAR);
+        size_t infoBytes = sizeof(RenameInfo) + nameBytes;
+        std::unique_ptr<unsigned char[]> buffer(new unsigned char[infoBytes]());
+        auto* info = new (buffer.get()) RenameInfo{};
+        info->Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS;
+        info->FileNameLength = static_cast<DWORD>(nameBytes);
+        std::memcpy(info->FileName, target.data(), nameBytes);
+        // FileRenameInfoEx (22): missing from some SDK and MinGW headers
+        if (SetFileInformationByHandle(handle, static_cast<FILE_INFO_BY_HANDLE_CLASS>(22), info, static_cast<DWORD>(infoBytes))) {
+            return true;
+        }
+        error = GetLastError();
+        return false;
+    };
+    bool posix = true;
+    // Antivirus and readers that don't share delete access hold files briefly:
+    // a few tries, well under a second in all
+    for (int attempt = 0; attempt < 10; attempt++) {
+        DWORD error = ERROR_SUCCESS;
+        if (posix) {
+            if (posixRename(error)) {
+                return true;
+            }
+            if (error == ERROR_INVALID_PARAMETER || error == ERROR_NOT_SUPPORTED || error == ERROR_INVALID_FUNCTION) {
+                posix = false;
+            }
+        }
+        if (!posix) {
+            if (MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                return true;
+            }
+            error = GetLastError();
+        }
+        if (error != ERROR_ACCESS_DENIED && error != ERROR_SHARING_VIOLATION) {
+            return false;
+        }
+        Sleep(30);
+    }
+    return false;
 #else
     if (std::rename(from.c_str(), to.c_str()) != 0) {
         return false;
