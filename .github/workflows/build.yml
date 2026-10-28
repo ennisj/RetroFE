@@ -122,12 +122,22 @@ jobs:
         cmake -A x64 -B .\RetroFE\Build -D "GSTREAMER_ROOT=$env:GSTREAMER_ROOT" -D RETROFE_BUILD_TESTS=ON -S .\RetroFE\Source
 
     - name: Build
+      # Compiler and linker errors are repeated as annotations, which (unlike the log)
+      # can be read without signing in to GitHub
+      shell: pwsh
       run: |
-        cmake --build RetroFE/Build --config Release --parallel 4
+        cmake --build RetroFE/Build --config Release --parallel 4 2>&1 | Tee-Object -Variable out
+        if ($LASTEXITCODE -ne 0) {
+          $out | ForEach-Object { "$_" } | Where-Object { $_ -match ': (fatal )?error [A-Z]+\d+' } |
+            ForEach-Object { $_.Trim() } | Select-Object -Unique -First 30 |
+            ForEach-Object { '::error::' + $_.Replace('%', '%25') }
+          throw "The build failed"
+        }
 
     - name: Run the unit tests
       # With Tests/test_server.py running, so the Catalog's and self-update's real HTTP
-      # tests run too (only Windows has an HTTP client so far)
+      # tests run too (only Windows has an HTTP client so far). Failing checks and the
+      # "N/M checks passed" line are repeated as annotations, like the build's errors
       shell: pwsh
       run: |
         $server = Start-Process -FilePath python -ArgumentList '-I', 'RetroFE\Tests\test_server.py', '8765' -PassThru -NoNewWindow
@@ -138,8 +148,14 @@ jobs:
           }
           if (-not $ready) { throw "test_server.py didn't start" }
           $env:RETROFE_TEST_SERVER = 'http://127.0.0.1:8765'
-          ctest --test-dir RetroFE/Build -C Release --output-on-failure
-          if ($LASTEXITCODE -ne 0) { throw "The unit tests failed" }
+          ctest --test-dir RetroFE/Build -C Release -V 2>&1 | Tee-Object -Variable out
+          $failed = $LASTEXITCODE -ne 0
+          $lines = $out | ForEach-Object { "$_" }
+          $lines | Where-Object { $_ -match 'FAIL \[' } | Select-Object -First 40 |
+            ForEach-Object { '::error::' + ($_ -replace '^\d+: ', '').Trim().Replace('%', '%25') }
+          $lines | Where-Object { $_ -match 'checks passed' } | Select-Object -Last 1 |
+            ForEach-Object { '::notice::' + ($_ -replace '^\d+: ', '').Trim() }
+          if ($failed) { throw "The unit tests failed" }
         } finally {
           Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
         }
