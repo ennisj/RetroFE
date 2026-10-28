@@ -3,9 +3,9 @@
 <!-- Aeon Nox: the on-screen keyboard, drawn over the screen being edited -->
 
     <!-- Frame -->
-    <image src="../../images/system_info_overlay.png" x="center" y="1219" width="1459" height="739" xOrigin="center" yOrigin="bottom" layer="2"/>
+    <image src="../../images/system_info_overlay.png" x="center" y="1224" width="1459" height="829" xOrigin="center" yOrigin="bottom" layer="2"/>
 
-    <keyboard x="center" y="1170" width="1400" height="640" xOrigin="center" yOrigin="bottom"
+    <keyboard x="center" y="1170" width="1400" height="720" xOrigin="center" yOrigin="bottom"
               font="fonts/OpenSans.ttf" loadFontSize="44" fontSize="38" fontColor="dedede" focusColor="ffffff"
               keyColor="75c8f7" keyAlpha="0.09" focusKeyColor="75c8f7" focusKeyAlpha="0.55"
               backgroundColor="070d12" backgroundAlpha="1" noteAlpha="0.65" layer="1"/>

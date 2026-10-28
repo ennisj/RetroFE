@@ -100,6 +100,33 @@ namespace
 
 namespace Themes
 {
+    // ---- the hint strip ------------------------------------------------------------
+
+    float hintStripHeight()
+    {
+        return ImGui::GetTextLineHeight() * 1.9f;
+    }
+
+    void drawHintStrip(const std::string& text)
+    {
+        // The rest of the window's width, as a child the size of the strip
+        // (wrapped to two lines at most; the text is short)
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(KEYBOARD_BACKGROUND));
+        ImGui::BeginChild("##hintStrip", ImVec2(0, hintStripHeight()), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNav);
+        ImGui::PopStyleColor();
+        const float size = ImGui::GetFontSize() * 0.92f;
+        const ImVec2 at = ImGui::GetWindowPos();
+        const ImVec2 room = ImGui::GetWindowSize();
+        ImFont* font = ImGui::GetFont();
+        const float pad = ImGui::GetFontSize() * 0.6f;
+        const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, room.x - pad * 2.0f, text.c_str());
+        // A little brighter than the keyboard's notes: it's read from a distance
+        ImGui::GetWindowDrawList()->AddText(font, size, ImVec2(at.x + pad, at.y + (room.y - textSize.y) * 0.5f),
+                                            IM_COL32(0xd8, 0xd8, 0xd8, 210), text.c_str(), nullptr, room.x - pad * 2.0f);
+        ImGui::EndChild();
+    }
+
     // ---- lifetime ------------------------------------------------------------------
 
     void EditorPad::releaseGamepadKeys()
@@ -602,6 +629,9 @@ namespace Themes
         case Control::Right: nav = Nav::Right; break;
         case Control::Select: nav = Nav::Select; break;
         case Control::Back: nav = Nav::Back; break;
+        // letterUp / letterDown move the cursor, as on the forms' keyboard
+        case Control::LetterUp: keyboard_.text.left(); return;
+        case Control::LetterDown: keyboard_.text.right(); return;
         default: return;
         }
         using Result = Forms::KeyboardKeys::Result;
@@ -651,7 +681,8 @@ namespace Themes
         const float size = ImGui::GetFontSize() * 1.15f;
         const float pad = size * 0.6f;
         const float width = std::min(display.x - 32.0f * scale, 940.0f * scale);
-        const float height = std::min(display.y - 32.0f * scale, (keyboard_.keys.multiline() ? 470.0f : 420.0f) * scale);
+        // Six rows of keys for text (the path row), five for numbers
+        const float height = std::min(display.y - 32.0f * scale, (keyboard_.keys.numeric() ? 420.0f : 470.0f) * scale);
         const ImVec2 a((display.x - width) * 0.5f, display.y - height - 16.0f * scale);
         const ImVec2 b(a.x + width, a.y + height);
         dl->AddRectFilled(a, b, KEYBOARD_BACKGROUND, 8.0f * scale);

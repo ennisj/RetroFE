@@ -180,7 +180,7 @@ static const char* const formLayout = R"(
 // The on-screen keyboard when the layout doesn't style it (layouts/<layout>/forms/keyboard/layout.xml)
 static const char* const keyboardLayout = R"(
 <layout width="1280" height="720" loadFontSize="40" fontColor="c8c8c8">
-  <keyboard x="center" y="700" xOrigin="center" yOrigin="bottom" width="940" height="400"
+  <keyboard x="center" y="700" xOrigin="center" yOrigin="bottom" width="940" height="440"
             fontSize="24" fontColor="c8c8c8" focusColor="ffffff"
             backgroundColor="0d1014" backgroundAlpha="1"
             keyColor="ffffff" keyAlpha="0.07" focusKeyColor="3d6fb6" focusKeyAlpha="0.75" layer="1"/>

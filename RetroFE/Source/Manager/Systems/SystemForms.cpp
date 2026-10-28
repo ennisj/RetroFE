@@ -44,16 +44,17 @@ const char* const detailsForm = R"(
   <value label="In menus" bind="{p}:menus"/>
   <value label="{Items} folder" bind="{p}:gamesFolder"/>
   <value label="Extensions" bind="{p}:extensionsText"/>
-  {playsValue}<value label="Launcher" bind="{p}:launcherInEffect" visibleWhen="{p}:usesLauncher"/>
-  <results bind="{p}:games" open="games" param="collection"/>
+  {playsValue}<results bind="{p}:games" open="games" param="collection"/>
   <link label="Settings" open="{p}-settings" status="{p}:settingsStatus"/>
   <link label="{launcherLink}" open="{p}-launcher" status="{p}:launcherStatus"/>
   {raLink}<link label="Info" open="{p}-info" status="{p}:infoStatus"/>
   <link label="Media" open="{p}-media" status="{p}:mediaStatus"/>
   <link label="Playlists" open="{p}-playlists" status="{p}:playlistsStatus"/>
   <link label="Check this {noun}" open="{p}-check" status="{p}:checkStatus"/>
-  <button label="Delete this {noun}" action="{p}.delete" visibleWhen="{p}:canDelete"
-          confirm="Delete this {noun}? Its {items} stay on the drive; its settings, art and playlists are kept in manage/backups."/>
+  <section label="Actions" visibleWhen="{p}:canDelete">
+    <button label="Delete this {noun}" action="{p}.delete"
+            confirm="Delete this {noun}? Its {items} stay on the drive; its settings, art and playlists are kept in manage/backups."/>
+  </section>
 </form>
 )";
 
@@ -65,9 +66,10 @@ const char* const settingsForm = R"(
   <toggle label="Sort by title" bind="{p}:menuSort"/>
   <toggle label="Show missing {items}" bind="{p}:includeMissing" help="Lists the {items} named in include.txt even when their file isn't there."/>
   <choice label="Metadata" bind="{p}:metadataType" options="{p}:metadataTypes" help="The meta/hyperlist file titles and years come from."/>
+  <value label="Saved in" bind="{p}:settingsFile"/>
   <actions>
     <button label="Save" action="{p}.saveSettings"/>
-    <button label="Reset" action="{p}.resetSettings" visibleWhen="{p}:settingsDirty"/>
+    <button label="Undo changes" action="{p}.resetSettings" visibleWhen="{p}:settingsDirty"/>
   </actions>
 </form>
 )";
@@ -81,9 +83,10 @@ const char* const launcherForm = R"(
   <value label="Alternatives" bind="{p}:alternatives" visibleWhen="{p}:usesLauncher" help="RetroFE Plus lists these after the default; this RetroFE starts the default and keeps the list as it is."/>
   <note bind="{p}:overridesNote"/>
   <note bind="{p}:launcherProblem"/>
+  <value label="Saved in" bind="{p}:launcherFile"/>
   <actions>
     <button label="Save" action="{p}.saveLauncher"/>
-    <button label="Reset" action="{p}.resetLauncher" visibleWhen="{p}:launcherDirty"/>
+    <button label="Undo changes" action="{p}.resetLauncher" visibleWhen="{p}:launcherDirty"/>
   </actions>
 </form>
 )";
@@ -96,10 +99,10 @@ const char* const infoForm = R"(
   <text label="Year" bind="{p}:year"/>
   <text label="Genre" bind="{p}:genre"/>
   <toggle label="This is a video collection" bind="{p}:isVideo" help="Writes type = videos: it's then listed under Videos instead of Systems."/>
-  <note value="Kept in its info.conf. Leave a field empty to take it out."/>
+  <value label="Saved in" bind="{p}:infoFile" help="Leave a field empty to take it out."/>
   <actions>
     <button label="Save" action="{p}.saveInfo"/>
-    <button label="Reset" action="{p}.resetInfo" visibleWhen="{p}:infoDirty"/>
+    <button label="Undo changes" action="{p}.resetInfo" visibleWhen="{p}:infoDirty"/>
   </actions>
 </form>
 )";
@@ -118,7 +121,7 @@ const char* const mediumForm = R"(
   <image bind="{p}:mediumImage" rows="6"/>
   <value label="Shows" bind="{p}:mediumFile"/>
   <value label="From" bind="{p}:mediumWhere"/>
-  <value label="New files go in" bind="{p}:mediumFolder"/>
+  <value label="Saved in" bind="{p}:mediumFolder"/>
   <note bind="{p}:mediumFolderNote"/>
   <results label="In the folder" bind="{p}:folderFiles" open="{p}-medium-file" param="file" empty="No files of this kind." visibleWhen="{p}:hasMediaFolder"/>
   <file label="Replace with" bind="{p}:mediaFile" hint="Not chosen yet" filter="Images" pattern="*.png;*.jpg;*.jpeg;*.gif;*.webp" visibleWhen="{p}:isImageSlot"/>
@@ -192,22 +195,33 @@ const char* const entryForm = R"(
 </form>
 )";
 
+// Problems (counted, something to fix) apart from notes (how this fork reads a setting)
 const char* const checkForm = R"(
 <form id="{p}-check" title="Check" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <note bind="{p}:finding0"/>
-  <note bind="{p}:finding1"/>
-  <note bind="{p}:finding2"/>
-  <note bind="{p}:finding3"/>
-  <note bind="{p}:finding4"/>
-  <note bind="{p}:finding5"/>
-  <note bind="{p}:finding6"/>
-  <note bind="{p}:finding7"/>
-  <note bind="{p}:finding8"/>
-  <note bind="{p}:finding9"/>
-  <note bind="{p}:finding10"/>
-  <note bind="{p}:finding11"/>
   <note bind="{p}:checkSummary"/>
+  <section label="Problems" visibleWhen="{p}:hasProblems">
+    <note bind="{p}:finding0"/>
+    <note bind="{p}:finding1"/>
+    <note bind="{p}:finding2"/>
+    <note bind="{p}:finding3"/>
+    <note bind="{p}:finding4"/>
+    <note bind="{p}:finding5"/>
+    <note bind="{p}:finding6"/>
+    <note bind="{p}:finding7"/>
+    <note bind="{p}:finding8"/>
+    <note bind="{p}:finding9"/>
+    <note bind="{p}:finding10"/>
+    <note bind="{p}:finding11"/>
+  </section>
+  <section label="Notes" visibleWhen="{p}:hasNotes">
+    <note bind="{p}:note0"/>
+    <note bind="{p}:note1"/>
+    <note bind="{p}:note2"/>
+    <note bind="{p}:note3"/>
+    <note bind="{p}:note4"/>
+    <note bind="{p}:note5"/>
+  </section>
 </form>
 )";
 

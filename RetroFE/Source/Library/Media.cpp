@@ -245,13 +245,23 @@ std::vector<std::string> mediaTypes(const Index& index, int collection)
 
 MediaSlot gameMedia(const Index& index, int game, const std::string& type, MediaKind kind, int pageCollection)
 {
+    if (game < 0 || static_cast<size_t>(game) >= index.games.size()) {
+        MediaSlot slot;
+        slot.type = type;
+        slot.kind = kind;
+        return slot;
+    }
+    return gameMedia(index, index.games[static_cast<size_t>(game)], type, kind, pageCollection);
+}
+
+MediaSlot gameMedia(const Index& index, const GameRecord& record, const std::string& type, MediaKind kind, int pageCollection)
+{
     MediaSlot slot;
     slot.type = type;
     slot.kind = kind;
-    if (game < 0 || static_cast<size_t>(game) >= index.games.size()) {
+    if (record.collection < 0 || static_cast<size_t>(record.collection) >= index.collections.size()) {
         return slot;
     }
-    const GameRecord& record = index.games[static_cast<size_t>(game)];
     const std::string& own = index.collections[static_cast<size_t>(record.collection)].name;
     const std::string& page = pageCollection >= 0 && static_cast<size_t>(pageCollection) < index.collections.size()
         ? index.collections[static_cast<size_t>(pageCollection)].name : own;

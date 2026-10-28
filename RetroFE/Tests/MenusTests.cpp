@@ -164,7 +164,7 @@ static void runMenusTests()
         check(tree.items.size() >= 9 && tree.items[0].id == "Main" && contains(tree.items[0].detail, "Browse"),
               "the top menu first");
         checkEqual(tree.items[1].label, "      Consoles", "children are indented");
-        check(contains(tree.items[1].detail, "menu, 3 entries"), "kind and count: " + tree.items[1].detail);
+        checkEqual(tree.items[1].detail, "3 entries", "a menu: its count, in a few words");
         bool loop = false, missing = false, misspelt = false;
         for (const Forms::Row& row : tree.items) {
             loop |= row.id == "Main" && contains(row.detail, "loop") && row.label == "            Main";
@@ -176,7 +176,7 @@ static void runMenusTests()
         }
         check(loop && missing && misspelt, "loop, missing and misspelt entries are flagged");
         const Forms::Row* favs = findRow(tree, "Favs");
-        check(favs && contains(favs->detail, "merged collection, 3 games"), "a merged collection's games");
+        check(favs && favs->detail == "merged, 3 games", "a merged collection's games: " + (favs ? favs->detail : std::string()));
 
         Forms::Rows unlisted = rig.rows("unlisted");
         check(findRow(unlisted, "Folders") && findRow(unlisted, "Spare") && !findRow(unlisted, "Arcade"),

@@ -405,14 +405,16 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
             // The detail on the right and the label on the left share the row,
             // ending in "..." when they don't fit, rather than overlapping
             float available = ImGui::GetContentRegionAvail().x;
-            float detailNeeds = row.detail.empty() ? 0.0f : textWidth(row.detail);
+            // A row that stands for a screen to go to ends in the link marker
+            std::string rowDetail = row.link ? (row.detail.empty() ? ">" : row.detail + "  >") : row.detail;
+            float detailNeeds = rowDetail.empty() ? 0.0f : textWidth(rowDetail);
             Forms::RowSplit split = Forms::splitRow(textWidth(row.label), detailNeeds, available, gap);
             std::string label = Forms::ellipsize(row.label, split.label, textWidth);
             if (ImGui::Selectable((label + "##row").c_str())) {
                 open(field.open, Forms::rowParams(field, row), false);
             }
             if (split.detail > 0.0f) {
-                std::string detail = Forms::ellipsize(row.detail, split.detail, textWidth);
+                std::string detail = Forms::ellipsize(rowDetail, split.detail, textWidth);
                 ImGui::SameLine(ImGui::GetContentRegionMax().x - textWidth(detail));
                 ImGui::TextDisabled("%s", detail.c_str());
             }

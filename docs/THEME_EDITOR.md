@@ -135,8 +135,13 @@ arcade controls, or the keyboard keys mapped there), no mouse needed. The
 screen has four regions: the **toolbar** at the top, the **theme panel** (in
 the layout editor: pages and elements) on the left, the **canvas** in the
 middle and the **properties** on the right. The focused region has a gold
-frame, the focused item a gold outline, and the line under the canvas says
-what the controls do there.
+frame and the focused item a gold outline. A **hint strip** along the bottom
+of the screen, in the Manage screens' style, always says what the controls
+do: "Select: pick / move / resize   Hold Select + direction: add   Letter
+up/down: previous / next   Back: pick, then leave" until a control is
+pressed, then what they do in the focused region and mode (Pick, Move,
+Resize, a panel, a dialog). The mouse and keyboard shortcuts stay in the
+line under the canvas.
 
 - **The canvas** (where the editor starts) has three modes, shown in its top
   left corner:
@@ -190,7 +195,10 @@ what the controls do there.
   not it's mapped as Select. In the file chooser Select opens a folder and
   chooses a file.
 - **The on-screen keyboard**: the directions move between keys, Select
-  presses one, Done keeps the text and Back cancels. Typing on a real
+  presses one, Done keeps the text and Back cancels. A one-line field has the
+  path row (`.` `/` `\` `:` `-` `_`, `<-`, `->`, Home, End), Letter up /
+  down move the cursor too, and the keyboard starts on the key last typed
+  with, as on the Manage screens. Typing on a real
   keyboard while it's up types there instead (Enter keeps it, Escape cancels).
   With `onScreenKeyboard = no` Select starts typing into the field with a
   real keyboard instead.

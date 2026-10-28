@@ -37,10 +37,13 @@
 namespace Manager
 {
     // What "Check this system" finds: plain sentences, most important first,
-    // and a one-line summary. Warn-only; nothing is changed.
+    // and a one-line summary. Warn-only; nothing is changed. findings are the
+    // problems (counted); notes say how this fork reads a setting, with
+    // nothing to fix (e.g. a OneSauce key it honours), and aren't counted.
     struct SystemCheck
     {
         std::vector<std::string> findings;
+        std::vector<std::string> notes;
         std::string summary;
     };
     SystemCheck checkSystem(const Library::Index& index, int collection, bool videos);

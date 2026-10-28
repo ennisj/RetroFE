@@ -403,10 +403,10 @@ def panel_size(w, h):
 FORMS = {
     '': dict(W=1920, H=1080, file='layout.xml', panel=(232, 70, 1688, 1040), form_w=1400, label=460,
              pkg_cover=655, pkg_panel=(184, 70, 1736, 640), pkg_form_w=1500, pkg_label=420,
-             kb=(1440, 588, 1050)),
+             kb=(1440, 660, 1050)),
     ' 4x3': dict(W=1600, H=1200, file='layout 4x3.xml', panel=(100, 70, 1500, 1160), form_w=1320, label=420,
                  pkg_cover=775, pkg_panel=(60, 70, 1540, 755), pkg_form_w=1420, pkg_label=400,
-                 kb=(1400, 640, 1170)),
+                 kb=(1400, 720, 1170)),
 }
 
 def head(f):

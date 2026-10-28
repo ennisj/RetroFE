@@ -32,6 +32,9 @@ namespace
         "The launcher hasn't been created yet. Create it, or leave again to discard it.";
     const char* const updatingText = "Updating the list...";
 
+    // Names used but not defined that Emulators lists inline; more go on their own screen
+    const size_t maxInlineUnresolved = 10;
+
     // The last part of a path, either separator
     std::string fileName(const std::string& path)
     {
@@ -602,6 +605,16 @@ std::string EmulatorProvider::get(const std::string& key, const Manager::Screen&
     if (key == "hasUnresolved") {
         return current() && !unresolved_.empty() ? "yes" : "no";
     }
+    // Emulators lists a few inline; more than that (OneSauce asks for 100+) are a screen of their own
+    if (key == "hasFewUnresolved") {
+        return current() && !unresolved_.empty() && unresolved_.size() <= maxInlineUnresolved ? "yes" : "no";
+    }
+    if (key == "hasManyUnresolved") {
+        return current() && unresolved_.size() > maxInlineUnresolved ? "yes" : "no";
+    }
+    if (key == "unresolvedCount") {
+        return current() ? std::to_string(unresolved_.size()) + (unresolved_.size() == 1 ? " name" : " names") : "";
+    }
     if (key == "unresolvedNote") {
         if (!current() || unresolved_.empty()) {
             return "";
@@ -621,7 +634,8 @@ std::string EmulatorProvider::get(const std::string& key, const Manager::Screen&
         if (key == "editIsCustom") return edit_.get("preset") == "custom" ? "yes" : "no";
         if (!ready) return "";
         if (key == "editIntro") {
-            std::string text = "Changes apply to everything that uses this launcher, the next time RetroFE starts. ";
+            // RetroFE reads launcher files when it loads, so a reload is enough
+            std::string text = "Changes apply to everything that uses this launcher after RetroFE reloads, when you close Manage. ";
             const Details* found = details(screen);
             text += found ? found->users.summary() : "";
             if (!editGlobal_) {

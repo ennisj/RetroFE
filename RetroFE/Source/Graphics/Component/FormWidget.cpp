@@ -94,6 +94,7 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     wantedFocus_.clear();
     focusedField_ = nullptr;
     focusedItem_.clear();
+    manualScroll_ = false;
     scroll_ = 0.0f;
     status_.clear();
     confirm_.cancel();
@@ -315,6 +316,7 @@ void FormWidget::addResults(const Field& field)
         row.text = std::move(item.label);
         row.detail = std::move(item.detail);
         row.image = std::move(item.image);
+        row.link = item.link;
         row.thumbnail = thumbnails;
         row.focusable = true;
         rows_.push_back(std::move(row));
@@ -582,7 +584,7 @@ void FormWidget::buildRows()
 void FormWidget::keepFocusVisible(float visibleHeight)
 {
     float total = rows_.size() * rowHeight();
-    if (focus_ >= 0) {
+    if (focus_ >= 0 && !manualScroll_) {
         // Show the section header above the focused field too
         int top = focus_;
         while (top > 0 && rows_[top - 1].kind == RowKind::Header) {
@@ -636,13 +638,16 @@ void FormWidget::moveFocus(int direction)
     int start = focus_ < 0 ? (direction > 0 ? -1 : count) : focus_;
     for (int step = 1; step <= count; step++) {
         int index = ((start + direction * step) % count + count) % count;
-        if (rows_[index].focusable) {
+        if (rows_[index].focusable && index != focus_) {
+            manualScroll_ = false;
             focus_ = index;
             focusedField_ = rows_[index].field;
             focusedItem_ = rows_[index].item;
             return;
         }
     }
+    manualScroll_ = true;
+    scroll_ = Forms::scrollRows(scroll_, direction, count, rowHeight(), pageRows_ * rowHeight());
 }
 
 // Left/Right in a results list: a page at a time, staying in the list
@@ -660,6 +665,26 @@ void FormWidget::pageResults(int direction)
         }
         target = next;
     }
+    focus_ = target;
+    focusedItem_ = rows_[target].item;
+}
+
+// letterUp/letterDown in a results list: to the first row of the previous or next letter
+void FormWidget::jumpLetter(int direction)
+{
+    if (focus_ < 0 || rows_[focus_].kind != RowKind::Item) {
+        return;
+    }
+    const Field* list = rows_[focus_].field;
+    int first = focus_;
+    while (first > 0 && rows_[first - 1].kind == RowKind::Item && rows_[first - 1].field == list) {
+        first--;
+    }
+    std::vector<std::string> labels;
+    for (int i = first; i < static_cast<int>(rows_.size()) && rows_[i].kind == RowKind::Item && rows_[i].field == list; i++) {
+        labels.push_back(rows_[i].text);
+    }
+    int target = first + Forms::letterJump(labels, focus_ - first, direction);
     focus_ = target;
     focusedItem_ = rows_[target].item;
 }
@@ -685,7 +710,7 @@ bool FormWidget::navigate(Nav nav)
 
     const Row* row = focus_ >= 0 ? &rows_[focus_] : nullptr;
     const Field* field = row ? row->field : nullptr;
-    static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back" };
+    static const char* const names[] = { "Up", "Down", "Left", "Right", "Select", "Back", "LetterUp", "LetterDown" };
     LOG_DEBUG("Forms", std::string(names[static_cast<int>(nav)]) + " on " + (field ? field->label : "nothing"));
 
     // Anything but confirming disarms a button waiting for confirmation; Back only does that
@@ -713,6 +738,11 @@ bool FormWidget::navigate(Nav nav)
         if (row && row->kind == RowKind::Item) {
             pageResults(nav == Nav::Right ? 1 : -1);
         }
+        else if (!field) {
+            manualScroll_ = true;
+            scroll_ = Forms::scrollRows(scroll_, (nav == Nav::Right ? 1 : -1) * pageRows_,
+                                        static_cast<int>(rows_.size()), rowHeight(), pageRows_ * rowHeight());
+        }
         else if (field) {
             if ((field->type == FieldType::Folder || field->type == FieldType::File) && nav == Nav::Right) {
                 startEditing(*field);
@@ -726,6 +756,10 @@ bool FormWidget::navigate(Nav nav)
         if (row && field) {
             activate(*row);
         }
+        break;
+    case Nav::LetterUp:
+    case Nav::LetterDown:
+        jumpLetter(nav == Nav::LetterDown ? 1 : -1);
         break;
     case Nav::Back:
         return false;
@@ -939,6 +973,17 @@ bool FormWidget::handleTextEvent(const SDL_Event& e)
             edit_.insert(text);
             sendLiveText();
         }
+        else if (!multiline && (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_HOME || key == SDLK_END || key == SDLK_DELETE)) {
+            // A one-line field: the cursor moves in the text too (the manager
+            // leaves the arrows to the on-screen keyboard while that's shown)
+            switch (key) {
+            case SDLK_LEFT: edit_.left(); break;
+            case SDLK_RIGHT: edit_.right(); break;
+            case SDLK_HOME: edit_.home(); break;
+            case SDLK_END: edit_.end(); break;
+            default: edit_.erase(); sendLiveText(); break;
+            }
+        }
         else if (multiline && (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN
                                || key == SDLK_HOME || key == SDLK_END || key == SDLK_DELETE
                                || key == SDLK_PAGEUP || key == SDLK_PAGEDOWN)) {
@@ -1015,7 +1060,7 @@ std::string FormWidget::hintText() const
     }
     std::string hint;
     if (row && row->kind == RowKind::Item) {
-        hint = field && !field->open.empty() ? "Select: open   Left/Right: page" : "Left/Right: page";
+        hint = field && !field->open.empty() ? "Select: open   Left/Right: page   LetterUp/Down: letter" : "Left/Right: page   LetterUp/Down: letter";
     }
     else if (field) {
         switch (field->type) {
@@ -1302,13 +1347,25 @@ void FormWidget::draw()
                 }
                 x += thumbWidth + gap;
             }
+            // A row standing for a screen to go to ends in the link marker, as a link does
+            float right = left + width;
+            if (r.link && !style_.linkMarker.empty()) {
+                float markerWidth = painter_.textWidthWith(detailFont_, style_.linkMarker, size);
+                if (focused) {
+                    painter_.text(style_.linkMarker, right - markerWidth, textY, markerWidth, size, true, 1.0f);
+                }
+                else {
+                    painter_.textWith(detailFont_, style_.linkMarker, right - markerWidth, textY, markerWidth, size, style_.rowDetailAlpha);
+                }
+                right -= markerWidth + gap;
+            }
             // The detail on the right, as wide as it needs up to about half the row
             // when the label needs the room; whichever doesn't fit ends in "..."
-            float available = left + width - x;
+            float available = right - x;
             float detailNeeds = r.detail.empty() ? 0.0f : painter_.textWidthWith(detailFont_, r.detail, size);
             Forms::RowSplit split = Forms::splitRow(painter_.textWidthWith(nullptr, r.text, size), detailNeeds, available, gap);
             if (split.detail > 0.0f) {
-                float detailX = left + width - std::min(detailNeeds, split.detail);
+                float detailX = right - std::min(detailNeeds, split.detail);
                 painter_.textWith(detailFont_, r.detail, detailX, textY, split.detail, size, style_.rowDetailAlpha);
             }
             painter_.text(r.text, x, textY, split.label, size, focused, 1.0f);
@@ -1360,8 +1417,14 @@ void FormWidget::draw()
             bool editingThis = editing_ && focused;
             std::string value = r.value;
             if (editingThis) {
-                // Keep the end in view while typing, e.g. the folder at the end of a long path
-                value = painter_.tail(edit_.text + "_", valueWidth, size);
+                // Keep the cursor ("_") in view while typing, e.g. at the end of a
+                // long path, and as much after it as fits
+                size_t cursor = std::min(edit_.cursor, edit_.text.size());
+                value = painter_.tail(edit_.text.substr(0, cursor) + "_", valueWidth, size);
+                float rest = valueWidth - painter_.textWidth(value, size);
+                if (cursor < edit_.text.size() && rest > 0.0f) {
+                    value += painter_.fit(nullptr, edit_.text.substr(cursor), rest, size);
+                }
             }
             else if (focused && (field.type == FieldType::Number || field.type == FieldType::Choice)) {
                 // The arrows stay when the value is too long

@@ -194,7 +194,21 @@ Things to know:
   little in `update(dt)`, which runs every frame while the manager is open,
   and bump `generation()` when there's something new to show.
 - `rows()` should honour `limit` (default 200, set per field) and set `total`;
-  the model cuts longer lists anyway. `detail` is shown on the right.
+  the model cuts longer lists anyway. `detail` is shown on the right. Set
+  `Row::link` on a row that stands for a screen to go to rather than a record
+  (a system's "Games  622 games", "Add a launcher called X", "New
+  playlist..."): it's drawn with the link marker. That's also how a link
+  opens another record's screen with parameters of its own (a `<link>` only
+  passes the current screen's): a one-row `<results>` with `param`.
+- **Words on buttons and rows** (DECISIONS M22): **Save**; **Undo changes**
+  (drops unsaved edits: `reset`); **Put back the original** (restores the
+  backup Manage kept); **Put back the default** only for a built-in default.
+  Where a screen writes is a `<value label="Saved in" .../>` row with the
+  path (from RetroFE's folder when it's inside it), never a note. A change
+  RetroFE has to load says "... after it reloads, when you close Manage".
+- letterUp / letterDown jump through results by first letter
+  (`Forms::letterJump`), on whatever rows the field holds: give a list worth
+  jumping through a `limit` that covers it.
 - A search box is `<text bind="game:query" live="yes"/>`: `set("query", ...)`
   arrives on every keystroke, on a real or the on-screen keyboard. Cancelling
   the edit sets the old text back. Other text fields only `set()` when the
@@ -340,7 +354,7 @@ Things to know:
   <text label="Year" bind="game:year"/>
   <actions>
     <button label="Save" action="game.save"/>
-    <button label="Reset" action="game.reset" visibleWhen="game:isDirty"/>
+    <button label="Undo changes" action="game.reset" visibleWhen="game:isDirty"/>
   </actions>
 </form>
 ```

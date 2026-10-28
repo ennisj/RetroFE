@@ -274,19 +274,37 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:canDelete"), "no", "a system with games that wasn't made here stays");
         check(contains(f.model.actionProblem("system.delete"), "2 games"), "and says why");
 
+        check(games.items.size() == 1 && games.items[0].link, "drawn as a link");
+        checkEqual(f.model.get("system:launcherStatus"), "mame", "one Launcher row, the link");
+        checkEqual(f.model.get("system:settingsFile"), "collections/Arcade/settings.conf", "Saved in: settings");
+        checkEqual(f.model.get("system:infoFile"), "collections/Arcade/info.conf", "Saved in: info");
+
         f.open("system-check", { { "id", "Arcade" } });
         check(f.anyFinding("system", "C.ZIP"), "a wrong-case extension");
-        check(contains(f.model.get("system:checkSummary"), "Arcade: "), "a summary");
+        std::string summary = f.model.get("system:checkSummary");
+        check(contains(summary, "Arcade: ") && contains(summary, " problem"), "a summary counting problems: " + summary);
+        // "launcher = mame, fbneo" is how this fork reads a OneSauce list: a note, not a problem
+        check(!f.anyFinding("system", "several launchers"), "not a problem");
+        checkEqual(f.model.get("system:hasNotes"), "yes", "a note");
+        check(contains(f.model.get("system:note0"), "several launchers"), "the note: " + f.model.get("system:note0"));
+        f.open("system", { { "id", "Arcade" } });
+        std::string counted = summary.substr(std::string("Arcade: ").size(), summary.find('.') - std::string("Arcade: ").size());
+        checkEqual(f.model.get("system:checkStatus"), counted, "the link counts the same problems, not the notes");
 
         f.open("system-check", { { "id", "Lonely" } });
         check(f.anyFinding("system", "No menu lists Lonely"), "not in a menu");
         check(f.anyFinding("system", "doesn't exist"), "missing folder");
         check(f.anyFinding("system", "ghost"), "launcher not installed");
         check(contains(f.model.get("system:checkSummary"), "in no menu"), "summary says where it is");
+        checkEqual(f.model.get("system:hasNotes"), "no", "no notes");
+        f.open("system", { { "id", "Lonely" } });
+        checkEqual(f.model.get("system:launcherStatus"), "ghost, which isn't installed", "the Launcher link carries the warning");
 
         f.open("system-check", { { "id", "NES" } });
         check(f.anyFinding("system", "No launcher is set"), "no launcher");
         check(f.anyFinding("system", "meta/hyperlist/NES.xml"), "no metadata file");
+        f.open("system", { { "id", "NES" } });
+        checkEqual(f.model.get("system:launcherStatus"), "None: its games can't start", "no launcher: said on the link");
     });
 
     run("systems: settings save allow-listed keys in the file's own style", [] {
@@ -678,7 +696,8 @@ static void runSystemsTests()
         f.model.setScreen("system-playlists", { { "id", "Arcade" } });   // no waiting for the index
         check(has(f.ids("system:playlists"), "Quick"), "listed at once");
         f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
-        check(f.model.runAction("system.addEntry").ok, "added");
+        Forms::Model::Result added = f.model.runAction("system.addEntry");
+        check(added.ok, "added: " + added.message);
         f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
         Forms::Model::Result removed = f.model.runAction("system.removeEntry");
         check(removed.ok, "removed: " + removed.message);
@@ -688,6 +707,41 @@ static void runSystemsTests()
         f.model.setScreen("system-playlists", { { "id", "Arcade" } });
         std::vector<std::string> names = f.ids("system:playlists");
         check(has(names, "Quicker") && !has(names, "Quick"), "the new name at once");
+    });
+
+    run("systems: playlist edits survive index publication", [] {
+        for (int publish = 0; publish < 3; publish++) {
+            Fixture f("sys-publish-" + std::to_string(publish));
+            auto stale = f.indexer.index();
+            // Leave the snapshot stale until the chosen publication point.
+            check(f.editor.createPlaylist(*stale, "Arcade", "Quick").ok, "created on disk");
+            if (publish == 1) {
+                f.rescan();
+            }
+            f.model.setScreen("system-playlist-entry", { { "id", "Arcade" }, { "playlist", "Quick" }, { "game", "a" } });
+            checkEqual(f.model.get("system:isInPlaylist"), "no", "empty playlist cached");
+            check(f.model.actionProblem("system.addEntry").empty(), "add allowed");
+            if (publish == 2) {
+                f.rescan();   // publish after the cache check, without entering again
+            }
+            auto current = f.indexer.index();
+            check((current == stale) == (publish == 0), "the intended snapshot is in use");
+            const auto& oldRecord = stale->collections[static_cast<size_t>(stale->findCollection("Arcade"))];
+            const auto& newRecord = current->collections[static_cast<size_t>(current->findCollection("Arcade"))];
+            check(oldRecord.playlists.empty() && (newRecord.playlists.empty() == (publish == 0)), "stale and fresh playlist records");
+            check(oldRecord.name == newRecord.name && oldRecord.folder == newRecord.folder, "collection identity survives publication");
+            Forms::Model::Result added = f.model.runAction("system.addEntry");
+            check(added.ok, "added: " + added.message);
+            checkEqual(f.model.get("system:isInPlaylist"), "yes", "edit invalidated the empty cache");
+            f.rescan();
+            checkEqual(f.model.get("system:isInPlaylist"), "yes", "still listed after publication");
+            Forms::Model::Result removed = f.model.runAction("system.removeEntry");
+            check(removed.ok, "removed: " + removed.message);
+            checkEqual(f.model.get("system:isInPlaylist"), "no", "edit invalidated the populated cache");
+            f.rescan();
+            checkEqual(f.model.get("system:isInPlaylist"), "no", "still absent after publication");
+            check(readFile(f.root + "/collections/Arcade/playlists/Quick.txt").empty(), "empty on disk");
+        }
     });
 
     run("systems: cyclePlaylist decides which playlists RetroFE shows", [] {

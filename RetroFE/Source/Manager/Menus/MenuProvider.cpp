@@ -333,12 +333,16 @@ void MenuProvider::buildTree()
             out.detail = "loop: already above";
         }
         else {
-            out.detail = summary(row.collection);
+            // A few words: counts, "merged" where it is, and Browse on the top menu
+            const CollectionRecord& r = index_->collections[static_cast<size_t>(row.collection)];
+            std::vector<std::string> parts;
+            if (row.depth == 0) parts.push_back("Browse");
+            if (r.is(KindMenu)) parts.push_back(count(r.children.size(), "entry", "entries"));
+            if (r.is(KindMerged)) parts.push_back("merged");
+            if (r.is(KindMerged) || r.is(KindSystem)) parts.push_back(count(index_->itemsOf(row.collection).size(), "game", "games"));
+            out.detail = join(parts, ", ");
             if (!exact) {
                 out.detail = "folder is " + name + "; " + out.detail;
-            }
-            if (row.depth == 0) {
-                out.detail += "; Browse";
             }
         }
         if (row.collection >= 0) {
@@ -650,6 +654,9 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     if (key == "isReady") {
         return yesNo(idx != nullptr);
     }
+    if (key == "settingsLink") {
+        return "In Settings";   // the link leaves Menus: say where it goes
+    }
     if (key == "query") {
         return query_;
     }
@@ -826,9 +833,7 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
         else if (r->menuSource == MenuSource::CollectionLaunchers) {
             notes.push_back("This menu is built from the collectionLaunchers setting, so it can't be changed here.");
         }
-        if (r->hasMenuSupported) {
-            notes.push_back("menu_supported.txt (RetroFE Plus) is kept in step.");
-        }
+        // (menu_supported.txt, kept in step, is said on the menu's details screen only)
         if (!r->is(KindMenu) && r->is(KindSystem)) {
             notes.push_back(r->name + " has games of its own, so it doesn't list other collections.");
         }
@@ -996,6 +1001,13 @@ std::string MenuProvider::get(const std::string& key, const Screen& screen)
     }
     if (key == "newFile") {
         return newFile_;
+    }
+
+    // menu-info: Saved in
+    if (key == "infoFile") {
+        fs::path file = fs::path(Utils::combinePath(r->folder, "info.conf")).lexically_normal();
+        fs::path relative = file.lexically_relative(fs::path(idx->options.root).lexically_normal());
+        return relative.empty() || *relative.begin() == ".." ? Library::narrow(file) : Library::narrow(fs::path(relative.generic_wstring()));
     }
 
     // menu-actions
@@ -1531,7 +1543,7 @@ Forms::Model::Result MenuProvider::runAction(const std::string& action, const Sc
                 }
             }
         }
-        const std::string savedMessage = "Saved. RetroFE shows it after it reloads, when you leave Manage.";
+        const std::string savedMessage = "Saved. RetroFE shows it after it reloads, when you close Manage.";
         EditResult all{ true, savedMessage, {} };
         for (const auto& [key, value] : changes) {
             EditResult edit = value.empty() ? editor.removeCollectionSetting(idx, r->name, key)

@@ -49,6 +49,12 @@
 //   - A focus highlight over ImGui's own, and a frame around the focused region.
 namespace Themes
 {
+    // The editors' controller hints, as a strip along the bottom of the
+    // screen in the forms' style (small, muted, on a dark band): what the
+    // controls do where the focus is. Its height, for laying out what's above.
+    float hintStripHeight();
+    void drawHintStrip(const std::string& text);
+
     class EditorPad
     {
     public:

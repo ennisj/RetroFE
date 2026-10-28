@@ -32,10 +32,12 @@ namespace Manager
     // The logic is Library/Saves.h. Screens (GamesForms.cpp), params
     // collection + id:
     //   game               the "Saves" link: saves:status
-    //   game-saves         where they are, the files, Back up now, Delete, the backups
+    //   game-saves         where they are, a link to the files, Back up now, Delete, the backups
+    //   game-saves-files   the game's files, one line each
     //   game-saves-backup  one backup (param backup): its files, Restore, Delete
     // Keys: screenTitle, why, isKnown, savesFolder, statesFolder, notes, hasFiles,
-    //   backupsNote; list files; rows backups; backupTitle, backupWhen,
+    //   filesStatus ("7 files"), filesText, backupsFolder (Saved in), backupsNote;
+    //   list files; rows backups; backupTitle, backupWhen,
     //   backupReason, backupFolder, backupProblem; list backupFiles
     // Actions: backup, delete, restore, deleteBackup
     class SavesProvider : public Provider

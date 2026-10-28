@@ -173,12 +173,22 @@ it, or raise it, so that development builds aren't offered older releases.
 
 Each screen is a **form**: fields bound to settings or other values. Up and
 Down move between fields; Left and Right change a switch, number or choice,
-or page through a list of results; Select edits text, picks a folder or file,
-presses a button, or opens a link or a result. While editing text, type and
-press Enter to keep it or Escape to cancel; Ctrl+V pastes. In a multi-line
-field (a game's story), Enter starts a new line and **Ctrl+Enter** keeps the
-text; the arrows, Home, End, Page Up and Page Down move the cursor, and
-Delete removes the character after it.
+or page through a list of results; on note-only screens Up/Down scroll a row
+and Left/Right scroll a page; RetroFE's **letterUp** and **letterDown**
+controls jump through a list of results to the first row of the previous or
+next letter; Select edits text, picks a folder or file, presses a button, or
+opens a link or a result. While editing text, type and press Enter to keep it
+or Escape to cancel; Ctrl+V pastes; Left, Right, Home, End and Delete move and
+delete in the text. In a multi-line field (a game's story), Enter starts a new
+line and **Ctrl+Enter** keeps the text; Up, Down, Page Up and Page Down move
+the cursor between lines too.
+
+The screens use the same words throughout: **Save** writes what you changed;
+**Undo changes** drops edits not saved yet; **Put back the original** restores
+what a file was before Manage first changed it (from `manage/backups`); **Put
+back the default** returns a setting to RetroFE's built-in default. Where a
+screen writes is a **Saved in** row with the file or folder. Changes RetroFE
+has to load show "after it reloads, when you close Manage".
 
 **Settings** starts with **Controls** (see [Controls](#controls)), then
 Display (Fullscreen; **Screen size**: the screen's size, 1920 x 1080,
@@ -213,9 +223,13 @@ there waits until you've moved ("Any direction, then Select: ..."), so a
 second press from someone still holding Select does nothing. After **Start
 this game**, Manage comes back with focus on Start this game.
 
-**Games** searches every installed game by name or title, in one system or
-merged collection or under a menu, optionally only games without metadata,
-or only hidden games. Choosing a game shows its facts and artwork (with how
+**Games** searches every installed game by name or title. The results come
+straight after Search (up to 300; letterUp/letterDown jump through them by
+letter); **Filters**, between the two, says what the search looks through
+("All games", "Arcade, without metadata", "Hidden games in Arcade") and opens
+the filters: one system or merged collection or everything under a menu,
+only games without metadata, or only hidden games, with how many games
+match. Choosing a game shows its facts and artwork (with how
 often it was played, when last, and for how long, from
 `collections/playCount.txt` and `timeSpent.txt`; RetroFE counts plays only
 when `lastPlayedSkipCollection` is set, and only of programs that started,
@@ -224,24 +238,34 @@ counted),
 with a screen for each thing you can change:
 
 - **Metadata**: title, year, manufacturer, developer, genre, players, rating,
-  score and clone of. Changes are kept in `manage/metadata/<type>.xml`, so a
-  content update doesn't undo them; each changed field can be put back to the
-  shipped value.
+  score and clone of. Genre, players and rating are choices of the values the
+  system's games already have (numbers in order), with **None** then **Other...** first to type
+  one it doesn't. Changes are saved in `manage/metadata/<type>.xml` (the
+  **Saved in** row), so a content update doesn't undo them; each changed field
+  has **Put back the original title** (year, genre...), which returns it to
+  the shipped value.
 - **Launcher**: another installed launcher for this game only, or the
-  system's (which removes `collections/<system>/launchers/<game>.conf`).
-  Names that aren't installed are pointed out.
+  system's (which removes `collections/<system>/launchers/<game>.conf`, the
+  **Saved in** file). When the game won't start, one line says why, and each
+  launcher name it asks for that isn't defined gets an **Add a launcher called
+  <name>** link, which opens Emulators' Add a launcher with the name filled in.
 - **RetroArch** (only for a game whose launcher runs RetroArch): see
   [RetroArch settings](#retroarch-settings).
-- **Media**: every kind of art, video and text, saying whether the game has its
-  own file, shows a fallback (from its title, its parent or the collection's
-  default) or has nothing. Replace one from a file, clear the game's own file
-  (a fallback can't be cleared), or put back what it had before. A slot can
-  also be a [folder of files](#media-folders).
-- **Playlists and collections**: favourite on or off, add to or take out of a
+- **Media**: every kind of art, video and text in two lists, **Shown** (with
+  thumbnails of pictures, and whether it's the game's own file or folder or a
+  fallback from its title, its parent or the collection's default) and
+  **Missing**. Replace one from a file (the slot's **Saved in** row says
+  where), clear the game's own file (a fallback can't be cleared), or put back
+  what it had before. A slot can also be a [folder of files](#media-folders).
+- **Playlists and collections**: a **Favourite** switch (it adds or removes
+  the favourite straight away and says so under it), add to or take out of a
   playlist, and show it in a merged collection or take it out (`<system>.sub`).
-- **Description**: the story text (`medium_artwork/story/<game>.txt`) in a
-  multi-line field, or replaced from a file. Lines you didn't change keep
-  their exact bytes and line endings; new lines get the file's own.
+  When the game's pages have no playlist yet, **New playlist...** opens the
+  system's Playlists screen to make one.
+- **Description**: the story text (`medium_artwork/story/<game>.txt`, the
+  **Saved in** row) in a multi-line field, or replaced from a file. Lines you
+  didn't change keep their exact bytes and line endings; new lines get the
+  file's own.
 - **Saves**: the game's save files and save states, for games that start in
   RetroArch (other emulators keep saves their own way, so those say **Not
   known for this emulator**). It shows where RetroArch keeps them, worked out
@@ -250,8 +274,10 @@ with a screen for each thing you can change:
   and per core), and lists the game's files: exactly its name with a save or
   state ending (`.srm`, `.state`, `.state1`..., `.state.auto`, their `.png`
   pictures, `.rtc`...), never another game's (on Windows, where `Sonic.srm`
-  and `sonic.srm` are one file, ignoring case). **Back up now** copies them to
-  `manage/saves/<system>/<game>/<date-time>/`; **Delete these saves** backs
+  and `sonic.srm` are one file, ignoring case), as one **This game's files**
+  link ("7 files") so the backups come next. **Back up now** copies them to
+  `manage/saves/<system>/<game>/<date-time>/` (the Backups' **Saved in**
+  row); **Delete these saves** backs
   them up first, then deletes them. Each backup opens on its own screen with
   its files: **Restore this backup** backs up what's there now, then puts the
   backup's files back (so the game has exactly those), and **Delete this
@@ -271,11 +297,15 @@ The game's screen also has:
   the first press says so and the second leaves them and starts the game.
 - **Hide this game**: adds it to its system's exclude list (`exclude.txt`,
   or the file `list.excludeFile` names), so RetroFE stops listing it. Hidden
-  games are found with **Only hidden games** on Games; their screen has
-  **Show this game again**, which takes them out of the list.
+  games are found with **Only hidden games** in Games' Filters. Their screen
+  starts with **Hidden from RetroFE** and the list that names them, keeps the
+  Metadata, Media and Description links (so a title or art can be fixed
+  without showing the game first), and has **Show this game again**, which
+  takes them out of the list. Launcher, Playlists, Saves and Start need the
+  game listed.
 
 Every change keeps the original in `manage/backups/` first, and RetroFE shows
-it after it reloads, when you leave Manage.
+it after it reloads, when you close Manage.
 
 #### Media folders
 
@@ -315,9 +345,10 @@ On a bare install Manage opens by itself and says where to start.
 ### Menus
 
 **Manage → Menus** shows the menus you browse, starting with the one
-**Browse** opens (`firstCollection`; "Change what Browse opens" goes to
-Settings). Each row is indented under the menu that lists it and says what it
-is (menu, merged collection, system) and how many entries or games it has.
+**Browse** opens (`firstCollection`; "Change what Browse opens", marked **In
+Settings**, goes there). Each row is indented under the menu that lists it and
+says in a few words how many entries or games it has ("3 entries", "622 games",
+"merged, 40 games"; the top row also says "Browse").
 Entries that name no folder, are spelt differently from their folder (RetroFE
 then finds the folder but not its settings) or lead back up (a loop) say so.
 Menus and merged collections no menu reaches are listed below the tree.
@@ -331,7 +362,8 @@ systems a merged collection shows, which theme page draws it) and links to:
   wrongly-cased entry with the folder's spelling. Add any collection that isn't
   listed yet and wouldn't make a loop. Menus that are a `menu/` folder are
   sorted by name by RetroFE, so new entries go in name order and can't be
-  moved. `menu_supported.txt` (RetroFE Plus) is kept in step when it's there.
+  moved. `menu_supported.txt` (RetroFE Plus) is kept in step when it's there
+  (said on the menu's details, not on every screen).
 - **Sources** (merged collections): one `.sub` file per system, with what it
   shows. Adding a system writes an empty `.sub`, which shows all its games;
   removing one keeps the file in the backups. To show only some of a system's
@@ -372,8 +404,9 @@ when files differ only in the case of their extension), the extensions, and
 either an installed launcher or a new emulator program (written as the
 system's own `launcher.<os>.conf`, as before).
 
-A system's screen shows the menus it's in, its games folder, extensions and
-the launcher in effect (and which file sets it), with a link to each part:
+A system's screen shows the menus it's in, its games folder and extensions,
+with a link to each part (Games shows its count; the Launcher link names the
+launcher and carries the warning when there's none or it isn't installed):
 
 - **Games** opens the Games screen for this system.
 - **Settings**: extensions (tidied: no dots, no duplicates, case kept,
@@ -403,20 +436,23 @@ the launcher in effect (and which file sets it), with a link to each part:
   and, when `cyclePlaylist` is set, only the ones it names: a playlist screen
   says so and can add it to the system's `cyclePlaylist`. A playlist named
   like a sort field (`year`, `playCount`...) is sorted by it.
-- **Check this system**: warnings, as sentences, for a system no menu lists,
-  a games folder that isn't there, no files with its extensions (including
-  ones that differ only in case), include and exclude lists that leave
-  nothing, a missing or uninstalled launcher or its missing program, and no
-  metadata; then a one-line summary. It never changes anything.
-- **Delete this system** appears only for a system that is empty or was added
+- **Check this system**: a one-line summary, then **Problems**, as
+  sentences, for a system no menu lists, a games folder that isn't there, no
+  files with its extensions (including ones that differ only in case),
+  include and exclude lists that leave nothing, a missing or uninstalled
+  launcher or its missing program, and no metadata; then **Notes**, which
+  say how this fork reads a setting (a OneSauce key it honours, a launcher
+  list) and aren't counted as problems. It never changes anything.
+- **Delete this system**, under **Actions**, appears only for a system that is empty or was added
   here, isn't a menu or merged collection, isn't listed by a `menu.xml`, whose
   games folder isn't inside its own folder, and whose folder holds only
   settings, lists and art. It asks first, moves the whole folder to
   `manage/backups/deleted/<name> <time>`, then takes it out of its menus (if a
   menu can't be changed, everything is put back); its games aren't touched.
 
-Every change keeps the original file in `manage/backups` first and takes
-effect when RetroFE reloads, after you close Manage.
+Settings, Launcher and Info each have a **Saved in** row naming the file they
+write. Every change keeps the original file in `manage/backups` first and
+takes effect when RetroFE reloads, after you close Manage.
 
 **Videos** is the same for **video collections**: systems whose files are
 videos, marked with `type = videos` in their `info.conf`. They're listed
@@ -457,11 +493,14 @@ its own pages in `collections/<name>/layout/` (`layout.xml`, `player.xml`).
 
 ### Emulators
 
-**Manage → Emulators** lists every launcher (the global ones in
-`launchers.<os>`, a system's own launcher file, a system's local launchers)
-with where it's defined, its program (flagged when missing) and how many
-systems and games use it, then the names systems or games ask for that no
-launcher defines. **Add a launcher** asks for a name, the program, the
+**Manage → Emulators** starts with **Add a launcher**, then lists every
+launcher (the global ones in `launchers.<os>`, a system's own launcher file, a
+system's local launchers) with where it's defined, its program (flagged when
+missing) and how many systems and games use it, then the names systems or
+games ask for that no launcher defines: listed there when there are up to
+ten, else one **Used but not defined** link with their count (OneSauce asks
+for over a hundred) to a screen listing them. Each opens Add a launcher with
+the name filled in. **Add a launcher** asks for a name, the program, the
 arguments (the game's file, RetroArch with a core, MAME, or your own), the
 working folder and whether RetroFE restarts afterwards.
 
@@ -470,8 +509,10 @@ A launcher's screen shows its program, arguments and working folder, with:
 - **Used by**: the systems and games that use it, each opening its screen.
 - **Edit**: change the program, the arguments (from the same presets, or your
   own text), and for global launchers the working folder and whether RetroFE
-  restarts after it. The screen says who the change reaches. **Save** changes
-  only those lines of the launcher's file, keeping its comments and any other
+  restarts after it. The screen says who the change reaches, and that it
+  applies after RetroFE reloads, when you close Manage (RetroFE reads launcher
+  files when it loads). **Save** changes only those lines of the launcher's
+  file (the **Saved in** row), keeping its comments and any other
   settings; the program must be there, and arguments may only use the
   variables RetroFE fills in (`%ITEM_FILEPATH%`, `%ITEM_NAME%`,
   `%ITEM_DIRECTORY%`, `%RETROFE_PATH%`...; for the command prompt or a batch
@@ -537,8 +578,9 @@ A **game's** RetroArch screen shows the core and launcher and:
   1's buttons sends (another button, or nothing), in
   `<remaps>/<Core>/<game>.rmp`, with the same one-file rule.
 - **Use the system's settings** removes the game's own file for that screen
-  (it's kept in `manage/backups`), and **Reset to original** puts back the
-  file as it was before Manage first changed it.
+  (it's kept in `manage/backups`), and **Put back the original** puts back the
+  file as it was before Manage first changed it. Each screen's **Saved in** row
+  names the file it writes; **Undo changes** drops edits not saved yet.
 
 A **system's** (or a launcher's) RetroArch screen edits the core-wide `<Core>.cfg`, `.opt` and
 `.rmp` instead, and says which systems it reaches: every system whose
@@ -554,14 +596,16 @@ screen says those files won't be used.
 which one RetroFE uses, its size and orientation, whether it was made with
 the theme editor or by hand, and which pages it has (the main page, other
 main pages such as `layout 4x3`, a splash page, pages for particular
-collections). Choosing one shows the details and what you can do with it:
+collections). Choosing one shows a picture of it (its `preview.png`, else the
+first picture its splash page shows, else its main page's background), the
+details and what you can do with it:
 
 | Button | What it does |
 |--------|--------------|
-| Use this theme | Sets `layout` in your settings; RetroFE switches to it when you close the manager. Not for a theme without `splash.xml` (RetroFE wouldn't start); a theme made with the editor needs a wheel too. |
-| Edit | Opens the [theme editor](THEME_EDITOR.md): its widgets for an editor-made theme; for a hand-made one, the [layout editor](THEME_EDITOR.md#hand-made-themes-the-layout-editor), which changes the elements its pages already have in place. |
-| Duplicate | Copies the theme as "*name* Copy". Editor-made themes only. |
-| Delete | Deletes the theme's folder, after a second Select. Editor-made themes only, and not the one in use. |
+| Use this theme | Sets `layout` in your settings; RetroFE switches to it after it reloads, when you close Manage. Not for a theme without `splash.xml` (RetroFE wouldn't start); a theme made with the editor needs a wheel too. |
+| Edit this theme | Opens the [theme editor](THEME_EDITOR.md): its widgets for an editor-made theme; for a hand-made one, the [layout editor](THEME_EDITOR.md#hand-made-themes-the-layout-editor), which changes the elements its pages already have in place. |
+| Duplicate this theme | Copies the theme as "*name* Copy". Editor-made themes only. |
+| Delete this theme | Under Actions. Deletes the theme's folder, after a second Select. Editor-made themes only, and not the one in use. |
 
 **New theme** at the top of the list makes an editor-made theme: give it a
 name and choose landscape (1920 x 1080) or portrait (1080 x 1920). It starts
@@ -693,20 +737,27 @@ ImGui instead, for example while developing.
 Editing a text, number or path field shows an on-screen keyboard, so you can
 type with a gamepad or arcade controls: the directions move between keys,
 Select presses one, Back cancels. Shift switches to capitals and symbols, and
-number fields get a number pad. A multi-line field adds a **New line** key and
-a row of cursor keys (`<-`, `->`, **Line up**, **Line down**); **Done** keeps
-the text, and the box at the top shows the line the cursor is on. Typing on a
-real keyboard puts the on-screen one away for that edit; finish with Enter
-(Ctrl+Enter in a multi-line field) or cancel with Escape. Set
-`onScreenKeyboard = no` to never show it. The theme editor draws its own
-keyboard with the same keys (it isn't styled by the layout).
+number fields get a number pad. A one-line field has a row for paths and
+addresses: `.` `/` `\` `:` `-` `_` (whatever Shift says) and the cursor keys
+`<-`, `->`, **Home** and **End**, so the middle of a long value (a launcher's
+arguments) can be changed; the box at the top shows the cursor (`_`) where it
+is. A multi-line field adds a **New line** key and a row of cursor keys (`<-`,
+`->`, **Line up**, **Line down**); **Done** keeps the text, and the box at the
+top shows the line the cursor is on. RetroFE's letterUp and letterDown
+controls move the cursor left and right on any keyboard. Each keyboard starts
+on the key you last typed with on one of its kind (letters, lines, numbers),
+only letters, digits, symbols and Space, until RetroFE quits. Typing on a real keyboard puts the
+on-screen one away for that edit; finish with Enter (Ctrl+Enter in a
+multi-line field) or cancel with Escape. Set `onScreenKeyboard = no` to never
+show it. The theme editor draws its own keyboard with the same keys (it isn't
+styled by the layout).
 
 A layout styles it with `layouts/<layout>/forms/keyboard/layout.xml`, a page
 with a `<keyboard>` element; it's drawn over the screen being edited:
 
 ```xml
 <layout width="1920" height="1080" font="fonts/standard.ttf" loadFontSize="40">
-  <keyboard x="center" y="1050" xOrigin="center" yOrigin="bottom" width="1400" height="600"
+  <keyboard x="center" y="1050" xOrigin="center" yOrigin="bottom" width="1400" height="660"
             fontSize="36" fontColor="c8c8c8" focusColor="ffffff"
             keyColor="ffffff" keyAlpha="0.07" focusKeyColor="3d6fb6" focusKeyAlpha="0.75"
             backgroundColor="0d1014" backgroundAlpha="1" layer="1"/>
@@ -759,7 +810,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
 | `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. |
 | `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right |
-| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. |
+| `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. letterUp/letterDown jump to the first row of the previous or next letter. A row that stands for a screen to go to rather than a record ("Add a launcher called lr-stella2014", a system's "Games  622 games") is drawn with the link marker, like a `link`. |
 
 Every field can have `label`, `hint` (shown while empty), `help` (shown
 under it), `status` (a value shown under it), `enabledWhen` (a value that must

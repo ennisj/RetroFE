@@ -45,14 +45,14 @@ const char* const hubForm = R"XML(
     <choice label="Resume where you left off" bind="retroarch:row:resume" options="retroarch:choices:resume"
             help="Saves the game's state when RetroArch closes and loads it when the game starts."/>
     <note bind="retroarch:disabledNote"/>
-    <value label="Kept in" bind="retroarch:file"/>
+    <value label="Saved in" bind="retroarch:file"/>
   </section>
   <actions>
     <button label="Save" action="retroarch.save" visibleWhen="retroarch:isReady"/>
-    <button label="Reset" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
+    <button label="Undo changes" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
   </actions>
   <actions>
-    {useCore}<button label="Reset to original" action="retroarch.restore" visibleWhen="retroarch:canRestore"
+    {useCore}<button label="Put back the original" action="retroarch.restore" visibleWhen="retroarch:canRestore"
             confirm="Put back these settings as they were before Manage changed them?"/>
   </actions>
 </form>
@@ -65,9 +65,9 @@ const char* const optionsForm = R"XML(
   <results bind="retroarch:coreOptions" open="{p}-core-option" param="key" visibleWhen="retroarch:isReady"
            empty="Manage has no options for this core yet. RetroArch's own menu has them all (Quick Menu, Core Options)."/>
   <note bind="retroarch:disabledNote"/>
-  <value label="Kept in" bind="retroarch:file"/>
+  <value label="Saved in" bind="retroarch:file"/>
   <actions>
-    {useCore}<button label="Reset to original" action="retroarch.restore" visibleWhen="retroarch:canRestore"
+    {useCore}<button label="Put back the original" action="retroarch.restore" visibleWhen="retroarch:canRestore"
             confirm="Put back these options as they were before Manage changed them?"/>
   </actions>
 </form>
@@ -78,10 +78,10 @@ const char* const optionForm = R"XML(
   <note bind="retroarch:why"/>
   <choice label="Value" bind="retroarch:opt" options="retroarch:optChoices"/>
   <note bind="retroarch:optionNote"/>
-  <value label="Kept in" bind="retroarch:file"/>
+  <value label="Saved in" bind="retroarch:file"/>
   <actions>
     <button label="Save" action="retroarch.save" visibleWhen="retroarch:isReady"/>
-    <button label="Reset" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
+    <button label="Undo changes" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
   </actions>
 </form>
 )XML";
@@ -103,14 +103,14 @@ const char* const controlsForm = R"XML(
     <choice label="Select button sends" bind="retroarch:row:btn_select" options="retroarch:choices:btn_select"/>
     <choice label="Start button sends" bind="retroarch:row:btn_start" options="retroarch:choices:btn_start"/>
     <note bind="retroarch:disabledNote"/>
-    <value label="Kept in" bind="retroarch:file"/>
+    <value label="Saved in" bind="retroarch:file"/>
   </section>
   <actions>
     <button label="Save" action="retroarch.save" visibleWhen="retroarch:isReady"/>
-    <button label="Reset" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
+    <button label="Undo changes" action="retroarch.reset" visibleWhen="retroarch:isDirty"/>
   </actions>
   <actions>
-    {useCore}<button label="Reset to original" action="retroarch.restore" visibleWhen="retroarch:canRestore"
+    {useCore}<button label="Put back the original" action="retroarch.restore" visibleWhen="retroarch:canRestore"
             confirm="Put back these controls as they were before Manage changed them?"/>
   </actions>
 </form>

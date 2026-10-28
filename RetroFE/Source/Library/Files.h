@@ -25,7 +25,8 @@
 
 namespace Library
 {
-    // The whole file as bytes; false when it can't be opened
+    // The whole file as bytes, allowing atomic replacement while reading;
+    // false when it can't be opened or read.
     bool readFile(const std::string& path, std::string& content);
 
     // Writes <path>.tmp next to the file, then renames it over the file, so a

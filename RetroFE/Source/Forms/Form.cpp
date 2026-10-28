@@ -19,6 +19,7 @@
 #include "../Utility/Utils.h"
 #include <rapidxml.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -539,6 +540,46 @@ FocusTarget refocusTarget(const Field* field, bool focusable, bool wasShown)
         return FocusTarget::Guarded;
     }
     return FocusTarget::Free;
+}
+
+float scrollRows(float scroll, int direction, int rows, float rowHeight, float visibleHeight)
+{
+    if (rowHeight <= 0.0f) return 0.0f;
+    float maximum = std::ceil(std::max(0.0f, rows * rowHeight - visibleHeight) / rowHeight) * rowHeight;
+    return std::clamp(scroll + direction * rowHeight, 0.0f, maximum);
+}
+
+int letterJump(const std::vector<std::string>& labels, int current, int direction)
+{
+    int count = static_cast<int>(labels.size());
+    if (count == 0 || current < 0 || current >= count || direction == 0) {
+        return current;
+    }
+    // A letter, ignoring case; anything else is one group ('#')
+    auto group = [&](int i) {
+        const std::string& label = labels[static_cast<size_t>(i)];
+        size_t first = label.find_first_not_of(" \t\r\n\f\v");
+        unsigned char c = first == std::string::npos ? 0 : static_cast<unsigned char>(label[first]);
+        if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+        return c >= 'A' && c <= 'Z' ? static_cast<char>(c) : '#';
+    };
+    // The first row of the group i is in
+    auto groupStart = [&](int i) {
+        while (i > 0 && group(i - 1) == group(i)) {
+            i--;
+        }
+        return i;
+    };
+    if (direction > 0) {
+        for (int i = current + 1; i < count; i++) {
+            if (group(i) != group(current)) {
+                return i;
+            }
+        }
+        return current;
+    }
+    int start = groupStart(current);
+    return start == 0 ? current : groupStart(start - 1);
 }
 
 // --- Editing text ------------------------------------------------------------

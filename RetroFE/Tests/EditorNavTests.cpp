@@ -149,6 +149,7 @@ static Test::Suite editorNav("editor controller", [] {
 
     Test::run("on-screen keyboard keys", [] {
         using Keys = Forms::KeyboardKeys;
+        Keys::forgetLastKeys();
         Keys keys;
         Forms::TextEdit text;
         text.set("ab");
@@ -160,21 +161,90 @@ static Test::Suite editorNav("editor controller", [] {
         keys.navigate(Keys::Nav::Up, text);
         check(keys.row() == 0 && keys.rows()[0][keys.column()].label == "0", "up keeps the column");
         keys.navigate(Keys::Nav::Up, text);
-        check(keys.row() == 4 && keys.rows()[4][keys.column()].action == Keys::Action::Done, "up from the top wraps to Done");
+        check(keys.row() == 5 && keys.rows()[5][keys.column()].action == Keys::Action::Done, "up from the top wraps to Done");
         check(keys.navigate(Keys::Nav::Select, text) == Keys::Result::Done, "Done finishes");
         // Shift: capitals and symbols, from the bottom row's Shift
         keys.navigate(Keys::Nav::Left, text);
         keys.navigate(Keys::Nav::Left, text);
         keys.navigate(Keys::Nav::Left, text);
-        check(keys.rows()[4][keys.column()].action == Keys::Action::Shift, "Shift");
+        check(keys.rows()[5][keys.column()].action == Keys::Action::Shift, "Shift");
         keys.navigate(Keys::Nav::Select, text);
         check(keys.shift() && keys.rows()[1][0].label == "Q", "shift shows capitals");
         keys.navigate(Keys::Nav::Right, text);
         keys.navigate(Keys::Nav::Right, text);
-        check(keys.rows()[4][keys.column()].action == Keys::Action::Delete, "Del");
+        check(keys.rows()[5][keys.column()].action == Keys::Action::Delete, "Del");
         keys.navigate(Keys::Nav::Select, text);
         check(text.text == "ab", "Del takes the character before the cursor");
         check(keys.navigate(Keys::Nav::Back, text) == Keys::Result::Cancel, "back cancels");
+
+        // A one-line text: a row of path symbols and keys that move the cursor
+        const auto& pathRow = keys.rows()[4];
+        std::string symbols;
+        for (const auto& key : pathRow) {
+            if (key.action == Keys::Action::Insert) symbols += key.label;
+        }
+        check(symbols == "./\\:-_", "path symbols, whatever Shift says: " + symbols);
+        text.set("C:\\games");
+        auto pressAction = [&](Keys::Action action) {
+            for (const auto& key : pathRow) {
+                if (key.action == action) return keys.press(key, text);
+            }
+            return Keys::Result::Cancel;
+        };
+        pressAction(Keys::Action::Home);
+        check(text.cursor == 0, "Home goes to the start");
+        pressAction(Keys::Action::CursorRight);
+        pressAction(Keys::Action::CursorRight);
+        pressAction(Keys::Action::CursorRight);
+        Keys::Key d;
+        d.label = "D";
+        keys.press(d, text);
+        check(text.text == "C:\\Dgames", "typed in the middle: " + text.text);
+        pressAction(Keys::Action::CursorLeft);
+        keys.press(d, text);
+        check(text.text == "C:\\DDgames", "and after moving left: " + text.text);
+        pressAction(Keys::Action::End);
+        check(text.cursor == text.text.size(), "End goes to the end");
+
+        // The next edit starts on the last key typed with (not on Done or Shift)
+        Keys::forgetLastKeys();
+        keys.reset(false, false);
+        keys.navigate(Keys::Nav::Right, text);
+        keys.navigate(Keys::Nav::Right, text);
+        keys.navigate(Keys::Nav::Select, text);   // "e"
+        Keys again;
+        again.reset(false, false);
+        check(again.row() == 1 && again.column() == 2, "the next keyboard starts on e");
+        again.navigate(Keys::Nav::Down, text);
+        again.navigate(Keys::Nav::Down, text);
+        again.navigate(Keys::Nav::Down, text);
+        again.navigate(Keys::Nav::Down, text);
+        check(again.rows()[again.row()][again.column()].action == Keys::Action::Space, "on Space");
+        again.navigate(Keys::Nav::Right, text);
+        again.navigate(Keys::Nav::Right, text);
+        check(again.navigate(Keys::Nav::Select, text) == Keys::Result::Done, "Done");
+        Keys third;
+        third.reset(false, false);
+        check(third.row() == 1 && third.column() == 2, "Done isn't remembered");
+        for (Keys::Action action : { Keys::Action::Insert, Keys::Action::Space }) {
+            check(Keys::remembers(action), "character keys are remembered");
+        }
+        for (Keys::Action action : { Keys::Action::Delete, Keys::Action::CursorLeft, Keys::Action::CursorRight,
+                                    Keys::Action::Home, Keys::Action::End, Keys::Action::LineUp,
+                                    Keys::Action::LineDown, Keys::Action::NewLine, Keys::Action::Done, Keys::Action::Shift }) {
+            check(!Keys::remembers(action), "editing and movement keys aren't remembered");
+        }
+        again.navigate(Keys::Nav::Left, text);   // Del, then Done
+        again.navigate(Keys::Nav::Select, text);
+        again.navigate(Keys::Nav::Right, text);
+        again.navigate(Keys::Nav::Select, text);
+        third.reset(false, false);
+        check(third.row() == 1 && third.column() == 2, "deleting before Done still remembers e");
+        Keys numbers;
+        numbers.reset(true, false);
+        check(numbers.row() == 0 && numbers.column() == 0, "a number pad remembers its own keys");
+        Keys::forgetLastKeys();
+        text.set("ab");
 
         // Numbers, with and without a decimal point
         keys.reset(true, false);

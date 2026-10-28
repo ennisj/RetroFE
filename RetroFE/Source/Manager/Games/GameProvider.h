@@ -34,7 +34,9 @@
 //
 // Screens and their parameters:
 //   games                      search; param collection = the initial filter
-//   game                       collection + id: the game (id) of its own system (collection)
+//   games-filters              the search's filters (the Filters link on games)
+//   game                       collection + id: the game (id) of its own system (collection),
+//                              or a hidden game of that name (metadata, media and story only)
 //   game-metadata, game-launcher, game-media, game-playlists, game-description
 //                              the same parameters
 //   game-media-slot            collection + id + type: one media slot (logo, video, story...)
@@ -110,6 +112,9 @@ namespace Manager
         static std::string gameKey(const Screen& screen);
         // The game a screen is about (its own collection + name), or nullptr
         const Library::GameRecord* findGame(const Library::Index& index, const Screen& screen, int* position = nullptr) const;
+        // That game, or the hidden game of that name: what the screens that
+        // work for hidden games too (metadata, media, story) are about
+        const Library::GameRecord* findRecord(const Library::Index& index, const Screen& screen) const;
 
         // --- hidden games: files of a system its exclude list keeps RetroFE from
         // listing (Library::Index::hiddenGames, with their metadata)
@@ -122,6 +127,7 @@ namespace Manager
 
         // --- search
         std::string searchStatus() const;
+        std::string filterSummary(bool withCount);
         Forms::Rows searchRows(size_t limit);
         static std::string thumbnail(const Library::Index& index, const std::string& collection, const std::string& name);
 
@@ -165,6 +171,7 @@ namespace Manager
         void startThumbnailJob();
         bool collectJobs(bool wait);
         std::string slotStatus(const Library::MediaSlot& slot) const;
+        Forms::Rows mediaRows(const Screen& screen, int which, size_t limit);   // which: 0 every slot, 1 shown, 2 missing
         std::string slotValue(const std::string& key, const Screen& screen);
         // The slot's files Manage changed (its own file's, its media folder's), cached
         const std::vector<std::string>& originals(const Library::MediaSlot& slot);
@@ -175,6 +182,8 @@ namespace Manager
         const std::map<std::string, std::string>& shipped(const Library::Index& index, const Screen& screen, bool& known);
         std::string metadataValue(const std::string& key, const Screen& screen);
         Forms::Model::Result metadataAction(const std::string& action, const Screen& screen);
+        // Genre, players and rating: the values the system's games have, then "Other..."
+        std::vector<std::pair<std::string, std::string>> metadataChoices(const std::string& field, const Screen& screen);
 
         // --- launcher
         void loadLauncher(const Library::Index& index, const Screen& screen);
@@ -198,6 +207,8 @@ namespace Manager
         // While an action is checked and run, every lookup uses this one
         // snapshot, so a new index published meanwhile can't pull the game away
         IndexPtr pinned_;
+        IndexPtr favouritesIndex_;
+        std::map<std::string, bool> pendingFavourites_;
         Screen current_;
         unsigned generation_ = 0;
         unsigned indexGeneration_ = 0;
@@ -248,6 +259,10 @@ namespace Manager
             std::map<std::string, std::string> values;
         };
         std::map<std::string, Shipped> shippedCache_;      // "<type>\n<name>"
+        // The values a system's games have for a field, by "<collection>\n<field>", for one index
+        IndexPtr choicesIndex_;
+        std::map<std::string, std::vector<std::string>> choices_;
+        std::set<std::string> typing_;                     // fields whose choice is on "Other...": typed instead
 
         // Launcher
         EditBuffer launcher_;
@@ -258,6 +273,8 @@ namespace Manager
         std::string playlist_;                             // "<collection>/<playlist>"
         std::string merged_;                               // a merged collection
         std::string favouritePage_;                        // the page whose favourites are shown
+        std::string favouriteStatus_;                      // what the Favourite toggle last did, for this game
+        std::string favouriteStatusKey_;
 
         // Story
         EditBuffer story_;

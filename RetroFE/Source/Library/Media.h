@@ -84,6 +84,9 @@ namespace Library
     // A game's media as a page shows it. pageCollection is the page the game
     // is shown on (a merged collection, say); -1 = its own collection.
     MediaSlot gameMedia(const Index& index, int game, const std::string& type, MediaKind kind, int pageCollection = -1);
+    // The same for a game record that needn't be in index.games, e.g. one of
+    // index.hiddenGames (a game its exclude list hides keeps its media)
+    MediaSlot gameMedia(const Index& index, const GameRecord& game, const std::string& type, MediaKind kind, int pageCollection = -1);
 
     // A collection's own art: system_artwork/<type>.*
     MediaSlot collectionMedia(const Index& index, int collection, const std::string& type, MediaKind kind);

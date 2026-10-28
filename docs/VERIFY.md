@@ -31,6 +31,8 @@ launcher runs it.
 | C3 | A controller plugged in while RetroFE runs works, and unplugging/replugging doesn't break it | Plug in after start; unplug and replug; also with Manage open | To check | |
 | C4 | Settings → Controls captures a real controller button, stick direction and trigger | Add an input by pressing each | To check | Checked with posted keyboard keys only |
 | C5 | OneSauce's own `controls.conf` works with your actual controls | Run on a OneSauce install with no `controls1.conf` remap | To check | Starts without warnings in testing |
+| C6 | letterUp / letterDown on a pad (shoulder or trigger) jump through a Manage list by letter, and move the cursor while the on-screen keyboard is up | Manage → Games: jump through the results; then edit Search and press them with the keyboard shown | To check | Checked with the letterDown key (N) on lists only: a key press puts the on-screen keyboard away, so its cursor move was checked in unit tests |
+| C7 | The editors' hint strip says the right thing for each mode with a real controller | Themes → a theme → Edit this theme; Pick, Move, Resize, hold Select, a panel, a dialog | To check | Checked with posted keys |
 
 ## Launching and closing
 

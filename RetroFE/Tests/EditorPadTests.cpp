@@ -103,6 +103,7 @@ static Test::Suite editorPad("editor controller (ImGui)", [] {
     });
 
     Test::run("editor controller: the keyboard on a number, and leaving the panel", [] {
+        Forms::KeyboardKeys::forgetLastKeys();   // the pad starts on 1
         Headless h;
         double value = 0.1234567;
         int changes = 0;

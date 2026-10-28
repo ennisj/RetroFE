@@ -33,6 +33,7 @@
 //   theme:list            results: every installed theme (row id = folder)
 //   theme:name, folder, kind, size, pages, widgets, inUse, editNote, problem
 //                         facts about the theme param:id names
+//   theme:preview         a picture of it (themePreview), for an image field
 //   theme:isEditor, canEdit, canOpen, isActive, isHandMade   flags for visibleWhen
 //   theme:newName, theme:newOrientation             the New theme screen
 //   options="theme:orientations"
@@ -69,7 +70,14 @@ namespace Themes
         bool projectOk = false;                 // editor-made: project.xml loads
         std::string projectError;
         int editorPages = 0, widgets = 0;       // editor-made: from the project
+        std::string preview;                    // a picture of it (see themePreview), absolute; "" = none
     };
+
+    // A picture that shows what a theme looks like: its preview.png (or
+    // .jpg, screenshot.png, thumbnail.png), else the first picture its splash
+    // page shows, else the first one its main page shows (its background); ""
+    // when there's none. dir is the theme's folder.
+    std::string themePreview(const std::string& dir);
 
     // The <layout> root's width and height in a layout file's text; false when it has none
     bool layoutSize(const std::string& xml, int& width, int& height);

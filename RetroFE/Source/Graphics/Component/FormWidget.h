@@ -45,8 +45,12 @@ class Image;
 // Text too long for its column ends in "..." (see WidgetPainter).
 //
 // Up/Down move between fields; Left/Right change a toggle, number or choice,
-// or page through a results list; Select edits text, picks a folder or file,
-// presses a button, or opens a link or result; Back leaves.
+// or page through a results list; letterUp/letterDown jump through a results
+// list by first letter; Select edits text, picks a folder or file, presses a
+// button, or opens a link or result; Back leaves.
+//
+// While a one-line text field is edited on a real keyboard, Left/Right, Home,
+// End and Delete move and delete in the text too.
 //
 // A multi-line text field (<text multiline="yes" rows="N">) shows N wrapped
 // lines. While it's edited on a real keyboard, Enter starts a new line,
@@ -56,7 +60,10 @@ class Image;
 class FormWidget : public Component
 {
 public:
-    enum class Nav { Up, Down, Left, Right, Select, Back };
+    // LetterUp / LetterDown (RetroFE's letterUp and letterDown controls) jump
+    // through a results list to the first row starting with the previous or
+    // next letter
+    enum class Nav { Up, Down, Left, Right, Select, Back, LetterUp, LetterDown };
 
     struct Style
     {
@@ -191,6 +198,7 @@ private:
         int span = 1;           // Image: rows it covers
         int line = 0;           // Field, TextLine of a multi-line text: which of its rows
         bool thumbnail = false; // Item: leave room for thumbnails in this list
+        bool link = false;      // Item: drawn with the link marker (Forms::Row::link)
         bool focusable = false;
         bool enabled = true;
         bool indent = false;    // notes under a field line up with its value
@@ -211,6 +219,7 @@ private:
     void keepFocusVisible(float visibleHeight);
     void moveFocus(int direction);
     void pageResults(int direction);
+    void jumpLetter(int direction);
     void activate(const Row& row);
     void change(const Forms::Field& field, int direction);
     void startEditing(const Forms::Field& field);
@@ -249,6 +258,7 @@ private:
     std::string wantedFocus_;     // Result::focus not shown yet: focused when it is, until the user moves
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key
+    bool manualScroll_ = false;
     float scroll_ = 0.0f;
     int pageRows_ = 10;           // rows that fit, for paging through results
     Forms::Confirm confirm_;
