@@ -15,8 +15,10 @@
  */
 #include "ManagerModel.h"
 #include "Setup.h"
+#include "Emulators/EmulatorDownloads.h"
 #include "../Builtin/Builtin.h"
 #include "../Catalog/Download.h"
+#include "../Catalog/Emulators.h"
 #include "../Catalog/GitHub.h"
 #include "../Catalog/Service.h"
 #include "../Database/Configuration.h"
@@ -444,6 +446,22 @@ std::string ManagerModel::get(const std::string& key)
     if (key == "info:hasCollections") {
         return collections_.empty() ? "no" : "yes";
     }
+    if (key == "info:emulatorDownloadsSupported") {
+#ifdef _WIN32
+        return "yes";
+#else
+        return "no";
+#endif
+    }
+    if (key == "info:hasEmulatorsSource" || key == "info:emulatorDownloadsStatus") {
+        if (catalog_) for (const auto& source : catalog_->sources()) {
+            if (source.type != "emulators") continue;
+            if (key == "info:hasEmulatorsSource") return "yes";
+            if (!source.enabled) return "Emulator downloads are off in sources.conf.";
+            return catalog_->refreshing() ? "Checking emulator releases..." : "";
+        }
+        return key == "info:hasEmulatorsSource" ? "no" : "";
+    }
     if (key == "info:hasRetroFESource") {
         return catalog_ && retrofeSource(catalog_->sources()) ? "yes" : "no";
     }
@@ -703,6 +721,15 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
     else if (key == "info:catalogWarnings") {
         values = catalog_->warnings();
     }
+    else if (key == "info:emulatorDownloadsWarnings") {
+        for (const auto& source : catalog_->sources()) {
+            if (source.type != "emulators") continue;
+            const std::string prefix = source.name + ": ";
+            for (const auto& warning : catalog_->warnings()) {
+                if (warning.compare(0, prefix.size(), prefix) == 0) values.push_back(warning.substr(prefix.size()));
+            }
+        }
+    }
     else if (key == "source:problems") {
         // Its own lines of the Catalog's warnings, without the name in front;
         // not the error the status line already gives
@@ -725,6 +752,17 @@ Forms::Rows ManagerModel::rows(const std::string& key, size_t limit)
     Forms::Rows rows;
     if (Manager::Provider* p = provider(key, ':', name)) {
         rows = p->rows(name, limit, screen_);
+    }
+    else if (catalog_ && key == "info:emulatorDownloads") {
+        std::string sourceName;
+        for (const auto& source : catalog_->sources()) if (source.type == "emulators") { sourceName = source.name; break; }
+        const auto warnings = list("info:emulatorDownloadsWarnings");
+        if (!sourceName.empty()) for (const auto& emulator : Catalog::emulators()) {
+            Catalog::Entry entry;
+            bool found = packageEntry(*catalog_, "emulator-" + emulator.id, entry);
+            rows.items.push_back(Manager::emulatorDownloadRow(emulator, found ? &entry : nullptr, warnings,
+                                 catalog_->refreshing(), get("info:emulatorDownloadsSupported") == "yes"));
+        }
     }
     else if (catalog_ && key == "info:sources") {
         // Each opens its own screen; the detail says what it offers or what's wrong
@@ -1028,6 +1066,7 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
         result.ok = catalog_->addSource(source, result.message);
         if (result.ok) {
             result.message = "Added emulator downloads.";
+            result.focus = "info:emulatorDownloads";
             drafts_["emulatorsTrusted"] = "no";
         }
     }

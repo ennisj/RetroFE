@@ -16,6 +16,7 @@
 #pragma once
 
 #include "AfterReload.h"
+#include "HubProgress.h"
 #include "FormView.h"
 #include "Browser/MouseUse.h"
 #include "ImGuiScreen.h"
@@ -243,6 +244,7 @@ private:
     float scale_ = 1.0f;
     bool open_ = false;
     bool locked_ = false;
+    Manager::HubProgress hubProgress_;
     bool focusNext_ = false;   // give the panel keyboard/gamepad focus on the next frame
     bool reloadRequested_ = false;
     bool reloadWhenClosed_ = false;   // Services::requestReload was called

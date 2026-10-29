@@ -676,7 +676,11 @@ namespace Catalog
             }
         }
         LOG_NOTICE("Catalog", "Installed " + package.id + " " + package.version);
-        finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + "." + installer_.installMessage() + launcherMessage);
+        const Emulator* emulator = !updating && package.kind == "emulator" ? findEmulator(package.id) : nullptr;
+        std::string message = emulator ? package.name + " is installed in emulators\\" + emulator->folder
+                                      : (updating ? "Updated to " : "Installed ") + package.name + " " + package.version;
+        if (!emulator || launcherMessage.empty() || launcherMessage.front() == ' ') message += ".";
+        finish(id, true, message + launcherMessage + installer_.installMessage());
     }
 
     void Service::doUpdateApp(const Package& original)

@@ -1,10 +1,10 @@
 # Emulator downloads
 
-**Status:** step 2 backend built, 2026-10-29. Builds on [catalog-sources.md](catalog-sources.md) and
+**Status:** step 2 screens and backend built, 2026-10-29. Builds on [catalog-sources.md](catalog-sources.md) and
 [FOLDERS.md](../FOLDERS.md).
 
 On a bare install, a system needs a launcher, and a launcher needs an emulator program.
-Today the program must already be on the drive. This design lets Manage download and
+Without downloads the program must already be on the drive. Manage can download and
 install the major emulators, create their launchers, and keep them up to date through the
 Catalog. RetroArch also needs cores, which come in a second step.
 
@@ -32,7 +32,7 @@ at one) → **system** (a folder of games and its launcher or core) → **games*
 ## The emulators RetroFE knows
 
 A built-in list (`Catalog/Emulators.cpp`), one entry per emulator. Windows x64 only for
-now ([DECISIONS.md](../DECISIONS.md) W4); on other systems the list says so.
+now ([DECISIONS.md](../DECISIONS.md) W4); on other systems the screen says so and has no trust toggle.
 
 | Emulator | Releases from | Version from | Download | Program | Portable | Launcher arguments |
 |---|---|---|---|---|---|---|
@@ -148,7 +148,7 @@ in `.index-extended` beside them (`<date> <crc32> <file>` per line, about 250 co
 2. **The `emulators` source and packages:** the built-in list, the source and its trust
    screen, the `emulators` target, programs allowed there, portable files, launcher
    creation, update and removal rules, and the Download an emulator screen.
-   **Backend built.** The Download an emulator and trust screens are the next job.
+   **Built.** Download an emulator includes the trust step and the built-in list.
    The model action is `source.addEmulators`, requiring `draft:emulatorsTrusted`;
    forms cannot pre-fill that trust toggle. `package:noChecksum` exposes the
    libretro checksum notice. No emulator source is added automatically.

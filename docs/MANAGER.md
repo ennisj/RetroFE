@@ -571,6 +571,25 @@ the name filled in. **Add a launcher** asks for a name, the program, the
 arguments (the game's file, RetroArch with a core, MAME, or your own), the
 working folder and whether RetroFE restarts afterwards.
 
+**Add a launcher → Download an emulator** offers RetroArch, MAME, DuckStation,
+PCSX2, PPSSPP and Flycast on Windows. First, read where the downloads come
+from and turn on **I trust these downloads**, then **Turn on emulator downloads**.
+They come from each emulator's GitHub releases, or libretro's server for
+RetroArch. RetroFE doesn't check what they contain. No source is added until
+you agree.
+
+Pick an emulator, then **Install**. RetroFE puts it in `emulators/<name>/`
+and creates its launcher in `launchers.windows/`, leaving any launcher of
+the same name as it is. RetroArch needs a core for each system; core downloads
+come in a later update. Back returns to the list, then to Add a launcher.
+On a bare install, Back to Manage focuses **Add your first system** once a
+launcher exists.
+
+The same package screen offers **Update**, **Stop** and **Remove**. Updates
+keep settings, saves and BIOS files. Removal removes the files RetroFE
+installed and its launcher, keeping changed files and launchers still used
+by a system. Installed emulators also appear under **Installed from the Catalog**.
+
 A launcher's screen shows its program, arguments and working folder, with:
 
 - **Used by**: the systems and games that use it, each opening its screen.

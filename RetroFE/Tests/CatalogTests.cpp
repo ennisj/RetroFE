@@ -39,6 +39,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
@@ -436,11 +438,15 @@ void runCatalogTests()
         check(createEmulatorLauncher(root, catalog, manifest).find("left alone") != std::string::npos && manifest.launcherPath.empty(), "collection launcher name blocks creation");
         fs::remove_all(root + "/collections/DuckStation");
         auto message = createEmulatorLauncher(root, catalog, manifest);
-        check(message.find("Created") != std::string::npos, "created launcher: " + message);
+        checkEqual(message, ", with the launcher DuckStation.", "created launcher");
         auto launcher = root + "/launchers.windows/DuckStation.conf";
         auto content = readFile(launcher);
         check(content.find(R"(%RETROFE_PATH%\emulators\DuckStation\duckstation-qt-x64-ReleaseLTCG.exe)") != std::string::npos && content.find(R"(-batch -fullscreen -- "%ITEM_FILEPATH%")") != std::string::npos, "launcher executable and arguments");
-        check(createEmulatorLauncher(root, catalog, manifest).find("left alone") != std::string::npos && readFile(launcher) == content, "existing launcher skipped");
+        check(createEmulatorLauncher(root, catalog, manifest).find("left as it is") != std::string::npos && readFile(launcher) == content, "existing launcher skipped");
+        checkEqual(createEmulatorLauncher(root, catalog, manifest), "; a launcher called DuckStation already exists, so it was left as it is.", "existing launcher message");
+        Manifest retroarch;
+        retroarch.id = "emulator-retroarch";
+        checkEqual(createEmulatorLauncher(root, catalog, retroarch), " RetroArch needs a core for each system; core downloads come in a later update.", "RetroArch explains cores");
         writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "self-updated");
         package.version = "0.1.12084";
         check(installer.install(package, {zip}, error), "update");
@@ -563,8 +569,10 @@ void runCatalogTests()
         model.setCatalog(&service);
         model.setDefault("draft:emulatorsTrusted", "yes");
         check(!model.runAction("source.addEmulators").ok, "form default cannot grant trust");
+        checkEqual(model.runAction("source.addEmulators").message, "Confirm that you trust this source.", "trust refusal explains why");
         model.set("draft:emulatorsTrusted", "yes");
-        check(model.runAction("source.addEmulators").ok, "explicit trust adds source");
+        auto added = model.runAction("source.addEmulators");
+        check(added.ok && added.focus == "info:emulatorDownloads", "explicit trust adds source and focuses list");
         service.waitUntilIdle();
         check(service.sources().size() == 1 && service.sources()[0].type == "emulators", "configured source type");
         check(!model.runAction("source.addEmulators").ok, "second source refused");
@@ -1304,6 +1312,65 @@ void runCatalogTests()
     });
 
     if (currentPlatform().os == "windows") {
+    run("emulator downloads show checking, checksum, offline and rate-limit warnings", [&] {
+        auto root = makeRoot("emulator-download-status");
+        Configuration::absolutePath = root;
+        Configuration config;
+        class ReleasesHttp : public ServingHttp {
+        public:
+            std::promise<void> entered, resume;
+            bool first = true;
+            bool request(const std::string& url, const std::vector<std::string>&, Response& response) override {
+                if (first) {
+                    first = false;
+                    entered.set_value();
+                    resume.get_future().wait();
+                }
+                response = Response();
+                response.status = 200;
+                response.body = "[]";
+                if (url.find("libretro/RetroArch") != std::string::npos) response.body = R"([{"tag_name":"v1.22.2"}])";
+                if (url.find("mamedev/mame") != std::string::npos) {
+                    response.body = R"([{"tag_name":"mame0289","assets":[{"name":"mame0289b_x64.exe","browser_download_url":"https://github.com/mamedev/mame/releases/download/mame0289/mame0289b_x64.exe"}]}])";
+                }
+                if (url.find("stenzek/duckstation") != std::string::npos) {
+                    response.error = "Offline";
+                    return false;
+                }
+                if (url.find("hrydgard/ppsspp") != std::string::npos) {
+                    response.status = 403;
+                    response.headers["x-ratelimit-remaining"] = "0";
+                }
+                return true;
+            }
+        };
+        auto http = std::make_unique<ReleasesHttp>();
+        auto* fake = http.get();
+        auto entered = fake->entered.get_future();
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "source");
+        Service service(root + "/catalog", targetsUnder(root), std::move(http));
+        service.start();
+        ManagerModel model(config);
+        model.setCatalog(&service);
+        check(entered.wait_for(std::chrono::seconds(10)) == std::future_status::ready, "fake reading started");
+        auto rows = model.rows("info:emulatorDownloads", 50);
+        check(rows.items.size() == emulators().size() && rows.items[0].detail == "Checking...", "loading has named rows");
+        checkEqual(model.get("info:emulatorDownloadsStatus"), "Checking emulator releases...", "loading note");
+        fake->resume.set_value();
+        service.waitUntilIdle();
+        rows = model.rows("info:emulatorDownloads", 50);
+        checkEqual(rows.items[1].detail, "No checksum on this release", "checksum reason on MAME");
+        check(rows.items[2].detail.find("Offline") != std::string::npos, "offline reason on DuckStation");
+        check(rows.items[4].detail.find("limit") != std::string::npos, "rate limit reason");
+        check(model.list("info:emulatorDownloadsWarnings").size() >= 3, "source warnings shown");
+        model.setScreen("package", {{"id", "emulator-retroarch"}, {"listed", "yes"}});
+        checkEqual(model.get("package:noChecksum"), "yes", "RetroArch marks missing checksum");
+        checkEqual(model.get("package:checksum"), "libretro doesn't publish a checksum for this download.", "package notice");
+    });
+
     run("service emulator install creates launcher and signals a rescan", [&] {
         auto root = makeRoot("service-emulator");
         auto zip = root + "/server/duck.zip";
@@ -1331,7 +1398,8 @@ void runCatalogTests()
         service.waitUntilIdle();
         bool ok = false;
         std::string message;
-        check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("Created the launcher DuckStation") != std::string::npos, "service names created launcher: " + message);
+        check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("with the launcher DuckStation") != std::string::npos, "service names created launcher: " + message);
+        checkEqual(message, R"(DuckStation is installed in emulators\DuckStation, with the launcher DuckStation.)", "install names folder and launcher");
         Service::Changes changes;
         check(service.takeChanges(changes) && changes.libraryFiles, "library rescan signalled");
         Configuration::absolutePath = root;

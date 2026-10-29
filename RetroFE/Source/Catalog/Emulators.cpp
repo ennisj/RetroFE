@@ -120,13 +120,16 @@ std::string createEmulatorLauncher(const std::string& root, const std::string& c
 {
     std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
     const Emulator* entry = findEmulator(manifest.id);
-    if (!entry || entry->launcher.empty()) return "";
+    if (!entry) return "";
+    if (entry->launcher.empty()) return " RetroArch needs a core for each system; core downloads come in a later update.";
     Library::ScanOptions options;
     options.root = root;
     options.os = "windows";
     options.metadata = false;
     auto index = Library::buildIndex(options);
     if (!index) return " Could not read the library to create the launcher.";
+    if (index->findLauncher(Library::LauncherScope::Global, entry->launcher) >= 0)
+        return "; a launcher called " + entry->launcher + " already exists, so it was left as it is.";
     Library::Editor editor(root);
     Library::Editor::NewLauncher launcher;
     launcher.name = entry->launcher;
@@ -139,7 +142,7 @@ std::string createEmulatorLauncher(const std::string& root, const std::string& c
     manifest.launcherName = entry->launcher;
     std::string error;
     if (!writeManifest((std::filesystem::path(catalog) / "installed" / (manifest.id + ".json")).string(), manifest, error)) return " " + error;
-    return " Created the launcher " + entry->launcher + ".";
+    return ", with the launcher " + entry->launcher + ".";
 }
 
 std::string removeEmulatorLauncher(const std::string& root, const Manifest& manifest)

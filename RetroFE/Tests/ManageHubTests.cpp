@@ -20,6 +20,10 @@
 
 #include "TestSupport.h"
 #include "../Source/Catalog/Installer.h"
+#include "../Source/Catalog/Emulators.h"
+#include "../Source/Manager/HubProgress.h"
+#include "../Source/Manager/Emulators/EmulatorDownloads.h"
+#include "../Source/Manager/Navigator.h"
 #include "../Source/Catalog/Service.h"
 #include "../Source/Control/InputToken.h"
 #include "../Source/Database/Configuration.h"
@@ -33,6 +37,7 @@
 #include "minizip/zip.h"
 #include <algorithm>
 #include <filesystem>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
@@ -439,6 +444,115 @@ static Test::Suite manageHub("manage hub", [] {
         check(model.runAction("package.remove").ok, "removing");
         service.waitUntilIdle();
         check(service.installed().empty(), "removed");
+    });
+
+    run("emulator downloads: trust, forms, built-in order and package statuses", [&] {
+        std::string root = makeCatalogRoot("hub-emulator-downloads");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        model.setScreen("emulator-downloads", {});
+        checkEqual(model.get("info:hasEmulatorsSource"), "no", "trust section before adding source");
+        auto add = Forms::parse(Forms::builtinForm("emulator-new"), error);
+        auto downloads = Forms::parse(Forms::builtinForm("emulator-downloads"), error);
+        check(add && downloads, "both forms parse");
+        if (!add || !downloads) return;
+        check(add->fields.front().open == "emulator-downloads", "download is the first row");
+        const auto* trust = Forms::findField(*downloads, "draft:emulatorsTrusted");
+        check(trust && trust->type == Forms::FieldType::Toggle, "explicit trust toggle");
+        check(Forms::findField(*downloads, "source.addEmulators") && Forms::findField(*downloads, "info:emulatorDownloads"), "action and list bind");
+        checkEqual(model.get("draft:emulatorsTrusted"), "", "trust starts unset");
+        std::function<void(const std::vector<Forms::Field>&)> bindings = [&](const std::vector<Forms::Field>& fields) {
+            for (const auto& field : fields) {
+                if (!field.open.empty()) check(Forms::builtinForm(field.open) != nullptr, "link target exists: " + field.open);
+                if (!field.action.empty()) check(model.actionProblem(field.action).find("Unknown action") == std::string::npos, "action answered: " + field.action);
+                if (!field.visibleWhen.empty()) {
+                    std::string key = field.visibleWhen.front() == '!' ? field.visibleWhen.substr(1) : field.visibleWhen;
+                    check(model.get(key) == "yes" || model.get(key) == "no", "visibility answered: " + key);
+                }
+                bindings(field.children);
+            }
+        };
+        bindings(downloads->fields);
+        check(!Forms::isVisible(downloads->fields.back(), model), "no list before source");
+#ifdef _WIN32
+        checkEqual(model.get("info:emulatorDownloadsSupported"), "yes", "trust available on Windows");
+#else
+        checkEqual(model.get("info:emulatorDownloadsSupported"), "no", "Windows-only note elsewhere");
+#endif
+        Catalog::Manifest installed;
+        installed.id = "emulator-retroarch";
+        installed.name = "RetroArch";
+        installed.version = "1";
+        installed.source = "local";
+        installed.kind = "emulator";
+        check(Catalog::writeManifest(root + "/catalog/installed/" + installed.id + ".json", installed, error), "installed state");
+        installed.id = "emulator-mame";
+        installed.name = "MAME";
+        check(Catalog::writeManifest(root + "/catalog/installed/" + installed.id + ".json", installed, error), "update state");
+        Catalog::SourceConfig emulators;
+        emulators.name = "downloads";
+        emulators.type = "emulators";
+        emulators.enabled = false;
+        check(Catalog::saveSources(root + "/catalog/sources.conf", {emulators}, error), "fake source state");
+        Catalog::Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        service.waitUntilIdle();
+        model.setCatalog(&service);
+        checkEqual(model.get("info:hasEmulatorsSource"), "yes", "list replaces trust");
+        check(Forms::isVisible(downloads->fields.back(), model), "list section visible");
+        check(!Forms::isVisible(downloads->fields[1].children[0], model), "trust section hidden after source");
+        checkEqual(model.get("info:emulatorDownloadsStatus"), "Emulator downloads are off in sources.conf.", "source status answered");
+        auto rows = model.rows("info:emulatorDownloads", 50);
+        check(rows.items.size() == Catalog::emulators().size(), "one row per built-in emulator");
+        for (size_t i = 0; i < rows.items.size(); ++i) {
+            checkEqual(rows.items[i].label, Catalog::emulators()[i].name, "built-in order");
+            check(rows.items[i].params.at("listed") == "yes", "package Back returns to this list");
+        }
+        if (rows.items.size() >= 4) {
+            checkEqual(rows.items[0].detail, "Installed 1", "installed version");
+            checkEqual(rows.items[1].detail, "Installed 1", "installed without an offer");
+            check(!rows.items[3].detail.empty(), "not offered says why");
+        }
+        check(model.rows("info:emulatorDownloads", 2).items.size() == 2, "list limit");
+        check(model.list("info:emulatorDownloadsWarnings").empty(), "no warnings in fake source state");
+        check(model.actionProblem("catalog.refresh").empty(), "refresh action binds");
+        Catalog::Entry entry;
+        entry.package.version = "2.8.2";
+        auto status = [&](const Catalog::Entry* state, const std::vector<std::string>& warnings = {}, bool checking = false, bool supported = true) {
+            return Manager::emulatorDownloadRow(Catalog::emulators()[2], state, warnings, checking, supported).detail;
+        };
+        checkEqual(status(&entry), "2.8.2 available", "fake source offers release");
+        entry.installedVersion = "2.8.1";
+        entry.updateAvailable = true;
+        checkEqual(status(&entry), "Update to 2.8.2", "fake source offers update");
+        entry.updateAvailable = false;
+        checkEqual(status(&entry), "Installed 2.8.1", "installed status");
+        checkEqual(status(nullptr, {}, true), "Checking...", "loading");
+        checkEqual(status(nullptr, {}, false, false), "Windows only", "unsupported platform");
+        checkEqual(status(nullptr, {"DuckStation: no SHA-256 digest"}), "No checksum on this release", "checksum reason");
+        checkEqual(status(nullptr, {"GitHub's limit reached"}), "GitHub's rate limit reached", "rate limit reason");
+        checkEqual(status(nullptr, {"DuckStation: Offline"}), "DuckStation: Offline", "offline reason");
+        checkEqual(status(nullptr), "Not offered by this release", "no suitable release");
+    });
+
+    run("hub: launcher progress survives a download and package screen", [] {
+        Manager::HubProgress progress;
+        Navigator nav;
+        nav.open("manage");
+        check(!progress.focusSystem(true, false), "bare hub starts at launcher");
+        nav.push("emulator-new", {}, {});
+        nav.push("emulator-downloads", {}, {});
+        nav.push("package", {{"id", "emulator-duckstation"}}, {});
+        check(!progress.focusSystem(false, true), "install does not steal package focus");
+        nav.back();
+        nav.back();
+        check(!progress.focusSystem(false, true), "still below hub");
+        nav.back();
+        check(nav.current()->form == "manage" && progress.focusSystem(true, true), "Back to hub focuses Add your first system");
+        check(!progress.focusSystem(true, true), "only once");
+        progress.reset();
+        check(!progress.focusSystem(true, true), "existing launcher on a new visit does not move focus");
     });
 
     // --- Settings ----------------------------------------------------------------------
