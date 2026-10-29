@@ -376,6 +376,14 @@ void runCatalogTests()
             check(fs::path(theme.files[0].url).filename() == "theme.zip", "sidecar defaults to its archive");
         }
 
+        writeFile(root + "/theme.zip.package.json", R"({"id":"blue-theme","files":[{"url":"theme.zip","extract":false}]})");
+        contents = readSource(source, root + "/cache", nullptr);
+        check(contents.packages.size() == 2 && contents.packages[1].files[0].extract == false, "sidecar extraction override");
+        writeFile(root + "/theme.zip.package.json", R"({"id":"blue-theme","files":[{"url":"theme.zip","extract":"yes"}]})");
+        contents = readSource(source, root + "/cache", nullptr);
+        check(contents.packages.size() == 2 && !contents.packages[1].files[0].extract.has_value(), "invalid sidecar extract ignored");
+        check(contents.warnings.size() == 1 && contents.warnings[0].find("extract") != std::string::npos, "sidecar extract warning");
+
         writeFile(root + "/catalog.json", R"({ "packages": [ { "id": "x", "files": [ { "url": "theme.zip" } ] } ] })");
         contents = readSource(source, root + "/cache", nullptr);
         check(contents.packages.size() == 1 && contents.packages[0].id == "x", "catalog.json wins");
@@ -428,7 +436,9 @@ void runCatalogTests()
         Installer installer(root + "/catalog", targetsUnder(root));
         std::string fixtures = std::string(RETROFE_TEST_FIXTURES) + "/7z/";
         auto expected = nlohmann::json::parse(readFile(fixtures + "expected.json"));
-        check(installer.install(zipPackage("seven", "1", "published.7z", "collections", "Seven"), { fixtures + "plain.7z" }, error), error);
+        Package seven = zipPackage("seven", "1", "published.7z", "collections", "Seven");
+        seven.files[0].extract = true;
+        check(installer.install(seven, { fixtures + "plain.7z" }, error), error);
         auto manifests = installer.installed();
         check(manifests.count("seven") && manifests["seven"].files.size() == expected["files"].size(), "manifest file count");
         for (const auto& file : manifests["seven"].files) {
@@ -440,12 +450,63 @@ void runCatalogTests()
         }
         for (const char* bad : { "unsafe.7z", "corrupt.7z" }) {
             error.clear();
-            check(!installer.install(zipPackage("bad", "1", bad, "collections", "Bad"), { fixtures + bad }, error), "refused " + std::string(bad));
+            Package package = zipPackage("bad", "1", bad, "collections", "Bad");
+            package.files[0].extract = true;
+            check(!installer.install(package, { fixtures + bad }, error), "refused " + std::string(bad));
             check(error.find(std::string(bad) == "unsafe.7z" ? "safely" : "Damaged") != std::string::npos, "clear error: " + error);
             check(!fs::exists(root + "/collections/Bad") && !fs::exists(root + "/catalog/installed/bad.json"), "no files outside staging or manifest");
         }
         writeFile(root + "/fake", "not an archive");
-        check(!installer.install(zipPackage("fake", "1", "fake.7z", "root", ""), { root + "/fake" }, error) && error.find("Not an archive") != std::string::npos, "published archive must be an archive");
+        check(!installer.install(zipPackage("fake", "1", "fake.zip", "root", ""), { root + "/fake" }, error) && error.find("fake.zip isn't an archive RetroFE can unpack") != std::string::npos, "published archive must be an archive");
+    });
+
+    run("file extraction overrides and defaults", [&] {
+        std::string root = makeRoot("extract-policy");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        std::string archive = std::string(RETROFE_TEST_FIXTURES) + "/7z/plain.7z";
+        Package package = zipPackage("media", "1", "rom.7z", "media", "Copied");
+        package.kind = "media";
+        check(installer.install(package, { archive }, error), "media copied: " + error);
+        checkEqual(readFile(root + "/media/Copied/rom.7z"), readFile(archive), "byte-identical archive");
+        check(installer.installed()["media"].files.size() == 1, "one copied manifest entry");
+        package.id = "extracted";
+        package.files[0].path = "Extracted";
+        package.files[0].extract = true;
+        check(installer.install(package, { archive }, error), "explicit extraction: " + error);
+        check(installer.installed()["extracted"].files.size() > 1, "unpacked manifest entries");
+        package.id = "emulator";
+        package.kind = "emulator";
+        package.files[0].path = "Emulator";
+        package.files[0].extract.reset();
+        check(installer.install(package, { archive }, error), "emulator extraction: " + error);
+        check(installer.installed()["emulator"].files.size() > 1, "emulator unpacked");
+        writeFile(root + "/plain", "plain text");
+        package.files[0].extract = true;
+        check(!installer.install(package, { root + "/plain" }, error), "explicit extraction requires archive");
+        checkEqual(error, "rom.7z isn't an archive RetroFE can unpack", "names rejected file");
+        makeZip(root + "/copy.zip", { { "a.txt", "a" } });
+        package.id = "zip-copy";
+        package.files[0].url = "copy.zip";
+        package.files[0].path = "Zip";
+        package.files[0].extract = false;
+        check(installer.install(package, { root + "/copy.zip" }, error), "zip copied: " + error);
+        checkEqual(readFile(root + "/media/Zip/copy.zip"), readFile(root + "/copy.zip"), "zip bytes preserved");
+        check(installer.installed()["zip-copy"].files.size() == 1, "one zip manifest entry");
+    });
+
+    run("index extraction fields are optional booleans", [&] {
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        check(parseIndex(R"({"packages":[{"id":"p","files":[
+            {"url":"a.7z","extract":"yes"},{"url":"b","extract":true},
+            {"url":"c.zip","extract":false},{"url":"d"}]}]})",
+            "index.json", "s", packages, warnings, error), "parsed extraction fields");
+        check(warnings.size() == 1 && warnings[0].find("extract") != std::string::npos, "invalid extract warns");
+        check(packages.size() == 1, "invalid extract keeps package");
+        if (packages.empty()) return;
+        const auto& files = packages[0].files;
+        check(!files[0].extract.has_value() && !files[3].extract.has_value(), "invalid and absent use defaults");
+        check(files[1].extract == true && files[2].extract == false, "boolean overrides parsed");
     });
 
     run("updates replace files, drop old ones and keep changed ones", [&] {

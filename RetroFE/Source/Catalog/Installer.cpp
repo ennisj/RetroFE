@@ -421,7 +421,14 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
 
         uint64_t archiveOffset;
         std::string extension = lower(fs::u8path(publishedName(source.url)).extension().string());
-        if (Archive::detect(downloads[i], archiveOffset) != Archive::Form::None || extension == ".zip" || extension == ".7z") {
+        Archive::Form form = Archive::detect(downloads[i], archiveOffset);
+        bool extract = source.extract.value_or(extension == ".zip" || (package.kind == "emulator" &&
+            (form == Archive::Form::SevenZip || form == Archive::Form::SelfExtracting)));
+        if (extract) {
+            if (form == Archive::Form::None) {
+                error = publishedName(source.url) + " isn't an archive RetroFE can unpack";
+                return false;
+            }
             if (!extractArchive(downloads[i], staging, into, source, planned, stop_, error)) {
                 return false;
             }

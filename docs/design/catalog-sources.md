@@ -138,7 +138,15 @@ A JSON document (the format web hosting and archive.org already speak):
 | `files[].url` | Archive or single file, relative to the index or absolute. |
 | `files[].size`, `sha256` / `md5` | Checked after download. Archive.org gives MD5. |
 | `files[].target` | Which root it installs into (below). |
+| `files[].extract` | Optional boolean: `true` unpacks the file; `false` copies it as-is. Other types warn and are ignored. |
 | `files[].path` | Folder under the target to extract into. Empty means the target itself. |
+
+When `extract` is omitted, published names ending in `.zip` are unpacked. Emulator
+packages also unpack 7z and self-extracting 7z files by default. Everything else is
+copied as-is, even if its contents are an archive. Files selected for unpacking
+must contain a zip, 7z or self-extracting 7z archive; the contents determine which
+reader opens them. Use `extract: true` to unpack other names, or `extract: false`
+to keep an archive as one file (for example, a ROM or comic).
 
 ### Install targets
 

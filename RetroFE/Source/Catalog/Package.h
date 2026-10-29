@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,7 @@ namespace Catalog
         std::string sha256Url; // where the SHA-256 can be fetched when it isn't known yet (GitHub's <asset>.sha256)
         std::string target;    // root, collections, items, media, layouts or meta
         std::string path;      // folder under the target, "" for the target itself
+        std::optional<bool> extract; // unset uses the kind and published name
     };
 
     struct Requirement

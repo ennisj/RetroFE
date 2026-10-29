@@ -55,7 +55,7 @@ namespace
     }
 
     // Reads one package; returns "" if it's usable, otherwise why not
-    std::string readPackage(const json& entry, const std::string& location, const std::string& sourceName, Catalog::Package& package)
+    std::string readPackage(const json& entry, const std::string& location, const std::string& sourceName, Catalog::Package& package, std::vector<std::string>* warnings)
     {
         if (!entry.is_object()) {
             return "a package isn't a JSON object";
@@ -146,6 +146,14 @@ namespace
             }
             if (!Catalog::isKnownTarget(file.target)) {
                 return prefix + "unknown target \"" + file.target + "\"";
+            }
+            if (auto extract = entryFile.find("extract"); extract != entryFile.end()) {
+                if (extract->is_boolean()) {
+                    file.extract = extract->get<bool>();
+                }
+                else if (warnings) {
+                    warnings->push_back(prefix + url + ": extract isn't a boolean; ignored");
+                }
             }
             file.path = stringField(entryFile, "path");
             if (!Catalog::isSafeRelativePath(file.path)) {
@@ -323,7 +331,7 @@ bool parseIndex(const std::string& text, const std::string& location, const std:
     std::set<std::string> seen;
     for (const json& entry : document["packages"]) {
         Package package;
-        std::string problem = readPackage(entry, location, sourceName, package);
+        std::string problem = readPackage(entry, location, sourceName, package, &warnings);
         if (!problem.empty()) {
             warnings.push_back(problem);
             continue;
@@ -338,14 +346,14 @@ bool parseIndex(const std::string& text, const std::string& location, const std:
 }
 
 bool parsePackage(const std::string& text, const std::string& location, const std::string& sourceName,
-                  Package& package, std::string& error)
+                  Package& package, std::string& error, std::vector<std::string>* warnings)
 {
     json document = json::parse(text, nullptr, false);
     if (document.is_discarded()) {
         error = "Not valid JSON";
         return false;
     }
-    error = readPackage(document, location, sourceName, package);
+    error = readPackage(document, location, sourceName, package, warnings);
     return error.empty();
 }
 

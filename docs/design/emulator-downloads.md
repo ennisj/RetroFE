@@ -85,6 +85,9 @@ against a damaged download, not a tampered one.
 
 ## Installing
 
+Emulator packages unpack 7z and self-extracting 7z files by default, as well as
+files published as `.zip`. A file can override this with `files[].extract`.
+
 The Catalog's installer as it is (staging, `.ready`, recovery, manifest, backups), with:
 
 - **Archives:** `.zip` (minizip), `.7z`, and 7-Zip self-extracting `.exe` files, read with

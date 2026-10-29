@@ -158,7 +158,7 @@ namespace
                                                             { "size", fs::file_size(archive, ec) } } });
                 }
                 std::string error;
-                if (!Catalog::parsePackage(document.dump(), sidecar.string(), source.name, package, error)) {
+                if (!Catalog::parsePackage(document.dump(), sidecar.string(), source.name, package, error, &contents.warnings)) {
                     contents.warnings.push_back(sidecar.filename().string() + ": " + error);
                     continue;
                 }
