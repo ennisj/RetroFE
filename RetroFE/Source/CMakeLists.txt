@@ -9,6 +9,11 @@ set(RETROFE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(RETROFE_THIRD_PARTY_DIR "${RETROFE_DIR}/ThirdParty")
 list(APPEND CMAKE_MODULE_PATH "${RETROFE_DIR}/CMake")
 
+file(GLOB LZMA_SDK_SOURCES "${RETROFE_THIRD_PARTY_DIR}/lzma-sdk/*.c")
+add_library(retrofe_lzma STATIC ${LZMA_SDK_SOURCES})
+target_compile_definitions(retrofe_lzma PRIVATE Z7_PPMD_SUPPORT Z7_EXTRACT_ONLY)
+target_include_directories(retrofe_lzma PUBLIC "${RETROFE_THIRD_PARTY_DIR}/lzma-sdk")
+
 ##############################################################
 # Versioning
 # Ensure versioning.h is generated before compiling
@@ -439,7 +444,9 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Video/VideoFactory.cpp"
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Archive.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Emulators.cpp"
 	"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Http.cpp"
@@ -578,7 +585,9 @@ if(RETROFE_BUILD_TESTS)
 	endforeach()
 	set(RETROFE_TEST_ALL_SOURCES
 		${RETROFE_TEST_SOURCES}
+		"${RETROFE_DIR}/Source/Catalog/Archive.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Emulators.cpp"
 		"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
@@ -631,7 +640,8 @@ if(RETROFE_BUILD_TESTS)
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
 	# The theme editor tests read the bundled font and check the layout
 	# vocabulary against PageBuilder.cpp and Tween.cpp in the source tree
-	target_link_libraries(retrofe_tests retrofe_theme_editor)
+	target_link_libraries(retrofe_tests retrofe_theme_editor retrofe_lzma)
+	target_compile_definitions(retrofe_tests PRIVATE RETROFE_TEST_FIXTURES="${RETROFE_DIR}/Tests/fixtures" RETROFE_TEST_SDK="${RETROFE_THIRD_PARTY_DIR}/lzma-sdk")
 	target_compile_definitions(retrofe_tests PRIVATE
 		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
 		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
@@ -658,7 +668,7 @@ set(LIBRARY_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORC
 include_directories(${RETROFE_INCLUDE_DIRS})
 add_executable(retrofe  ${RETROFE_SOURCES} ${RETROFE_HEADERS})
 add_dependencies(retrofe GenerateVersioningHeader)
-target_link_libraries(retrofe retrofe_theme_editor)
+target_link_libraries(retrofe retrofe_theme_editor retrofe_lzma)
 
 # macOS links what its branch above found, frameworks or Homebrew's
 if(NOT APPLE)

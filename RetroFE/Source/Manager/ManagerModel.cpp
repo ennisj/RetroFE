@@ -15,8 +15,10 @@
  */
 #include "ManagerModel.h"
 #include "Setup.h"
+#include "Emulators/EmulatorDownloads.h"
 #include "../Builtin/Builtin.h"
 #include "../Catalog/Download.h"
+#include "../Catalog/Emulators.h"
 #include "../Catalog/GitHub.h"
 #include "../Catalog/Service.h"
 #include "../Database/Configuration.h"
@@ -357,7 +359,7 @@ void ManagerModel::setDefault(const std::string& key, const std::string& value)
     }
     else if (stripPrefix(key, "draft:", name) && drafts_[name].empty()) {
         // A layout's form can't pre-fill a source or vouch for one: the user adds sources
-        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath" || name == "retrofeTrusted") {
+        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath" || name == "retrofeTrusted" || name == "emulatorsTrusted") {
             return;
         }
         drafts_[name] = value;
@@ -443,6 +445,22 @@ std::string ManagerModel::get(const std::string& key)
     if (key == "info:hasCollections") {
         return collections_.empty() ? "no" : "yes";
     }
+    if (key == "info:emulatorDownloadsSupported") {
+#ifdef _WIN32
+        return "yes";
+#else
+        return "no";
+#endif
+    }
+    if (key == "info:hasEmulatorsSource" || key == "info:emulatorDownloadsStatus") {
+        if (catalog_) for (const auto& source : catalog_->sources()) {
+            if (source.type != "emulators") continue;
+            if (key == "info:hasEmulatorsSource") return "yes";
+            if (!source.enabled) return "Emulator downloads are off in sources.conf.";
+            return catalog_->refreshing() ? "Checking emulator releases..." : "";
+        }
+        return key == "info:hasEmulatorsSource" ? "no" : "";
+    }
     if (key == "info:hasRetroFESource") {
         return catalog_ && retrofeSource(catalog_->sources()) ? "yes" : "no";
     }
@@ -467,6 +485,7 @@ std::string ManagerModel::packageValue(const std::string& key)
     bool offered = catalog_->entry(package.id, offeredEntry);   // false: installed, but no source offers it now
 
     if (key == "name") return package.name;
+    if (key == "noChecksum") return package.noChecksum ? "yes" : "no";
     if (key == "description") return package.description;
     if (key == "canInstall") return !installed && !busy && offered ? "yes" : "no";
     if (key == "canUpdate") return installed && entry.updateAvailable && !busy ? "yes" : "no";
@@ -517,6 +536,7 @@ std::string ManagerModel::packageValue(const std::string& key)
         return text;
     }
     if (key == "checksum") {
+        if (package.noChecksum) return "libretro doesn't publish a checksum for this download.";
         if (!offered) return "";
         bool checked = std::any_of(package.files.begin(), package.files.end(), [](const Catalog::PackageFile& file) {
             return !file.sha256.empty() || !file.md5.empty() || !file.sha256Url.empty();
@@ -700,6 +720,15 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
     else if (key == "info:catalogWarnings") {
         values = catalog_->warnings();
     }
+    else if (key == "info:emulatorDownloadsWarnings") {
+        for (const auto& source : catalog_->sources()) {
+            if (source.type != "emulators") continue;
+            const std::string prefix = source.name + ": ";
+            for (const auto& warning : catalog_->warnings()) {
+                if (warning.compare(0, prefix.size(), prefix) == 0) values.push_back(warning.substr(prefix.size()));
+            }
+        }
+    }
     else if (key == "source:problems") {
         // Its own lines of the Catalog's warnings, without the name in front;
         // not the error the status line already gives
@@ -722,6 +751,17 @@ Forms::Rows ManagerModel::rows(const std::string& key, size_t limit)
     Forms::Rows rows;
     if (Manager::Provider* p = provider(key, ':', name)) {
         rows = p->rows(name, limit, screen_);
+    }
+    else if (catalog_ && key == "info:emulatorDownloads") {
+        std::string sourceName;
+        for (const auto& source : catalog_->sources()) if (source.type == "emulators") { sourceName = source.name; break; }
+        const auto warnings = list("info:emulatorDownloadsWarnings");
+        if (!sourceName.empty()) for (const auto& emulator : Catalog::emulators()) {
+            Catalog::Entry entry;
+            bool found = packageEntry(*catalog_, "emulator-" + emulator.id, entry);
+            rows.items.push_back(Manager::emulatorDownloadRow(emulator, found ? &entry : nullptr, warnings,
+                                 catalog_->refreshing(), get("info:emulatorDownloadsSupported") == "yes"));
+        }
     }
     else if (catalog_ && key == "info:sources") {
         // Each opens its own screen; the detail says what it offers or what's wrong
@@ -876,7 +916,7 @@ std::string ManagerModel::catalogProblem(const std::string& action)
 {
     bool known = action == "package.install" || action == "package.remove" || action == "package.cancel"
               || action == "package.removeInstalled" || action == "package.showInBrowse"
-              || action == "source.add" || action == "source.addRetroFE" || action == "source.remove"
+              || action == "source.add" || action == "source.addRetroFE" || action == "source.addEmulators" || action == "source.remove"
               || action == "source.removeThis" || action == "catalog.refresh" || action == "catalog.open";
     if (!known) {
         return "Unknown action " + action;
@@ -917,6 +957,10 @@ std::string ManagerModel::catalogProblem(const std::string& action)
     if (action == "source.add") {
         // Just added: the cleared form doesn't start nagging for the next one's name
         return sourceJustAdded_ ? "" : sourceAddProblem();
+    }
+    if (action == "source.addEmulators") {
+        for (const auto& source : catalog_->sources()) if (source.type == "emulators") return "Emulator downloads are already a source: " + source.name + ".";
+        return Forms::isTruthy(drafts_["emulatorsTrusted"]) ? "" : "Confirm that you trust this source.";
     }
     if (action == "source.addRetroFE") {
         // sources() returns a copy: keep it alive while existing points into it
@@ -1010,6 +1054,19 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
             drafts_["sourceTrusted"] = "no";
             sourceJustAdded_ = true;
             result.focus = "catalog.open";   // as soon as there's something to open
+        }
+    }
+    else if (action == "source.addEmulators") {
+        Catalog::SourceConfig source;
+        source.type = "emulators";
+        auto sources = catalog_->sources();
+        source.name = "emulators";
+        for (int n = 2; std::any_of(sources.begin(), sources.end(), [&](const Catalog::SourceConfig& existing) { return existing.name == source.name; }); ++n) source.name = "emulators-" + std::to_string(n);
+        result.ok = catalog_->addSource(source, result.message);
+        if (result.ok) {
+            result.message = "Added emulator downloads.";
+            result.focus = "info:emulatorDownloads";
+            drafts_["emulatorsTrusted"] = "no";
         }
     }
     else if (action == "source.addRetroFE") {

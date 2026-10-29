@@ -33,6 +33,7 @@
 #include "Media.h"
 #include <cstdint>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -40,6 +41,9 @@
 
 namespace Library
 {
+    // Serialises Editor and Backups calls, including Catalog launcher edits.
+    std::recursive_mutex& libraryWriteMutex();
+
     struct EditResult
     {
         bool ok = false;

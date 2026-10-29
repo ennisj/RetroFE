@@ -34,7 +34,7 @@
 // updates and removal go by. Removing a package puts back the files it
 // replaced, and keeps files changed since they were installed.
 //
-// Packages hold content, not programs: executables and scripts are refused,
+// Executables and scripts are refused except for built-in emulator downloads,
 // as is anything under a protected folder (the catalog itself, RetroFE's
 // program folder), whatever the target.
 namespace Catalog
@@ -48,6 +48,7 @@ namespace Catalog
         std::string media;      // artwork: baseMediaPath, or collections
         std::string layouts;
         std::string meta;
+        std::string emulators;
         std::vector<std::string> protectedFolders;   // never written, even inside a target
 
         // "" for an unknown target
@@ -60,6 +61,7 @@ namespace Catalog
         std::string path;       // under the target, '/' separated, UTF-8
         uint64_t size = 0;
         std::string sha256;
+        bool portable = false;
         std::string backup;     // the backups/<id>/ folder holding the file this replaced, if any
     };
 
@@ -74,6 +76,8 @@ namespace Catalog
         std::string version;
         std::string source;
         std::vector<InstalledFile> files;
+        std::string sourceType; // recorded from configuration, never from a package
+        std::string launcherPath, launcherSha256, launcherName;
     };
 
     class Installer
@@ -82,8 +86,10 @@ namespace Catalog
         Installer(const std::string& catalogFolder, const Targets& targets);
 
         // Installs from the downloaded files, one local path per package file
-        // in the same order. Zip archives are extracted; other files are copied.
+        // in the same order. Archives are detected by content; other files are copied.
         bool install(const Package& package, const std::vector<std::string>& downloads, std::string& error);
+
+        const std::string& installMessage() const { return installMessage_; }
 
         struct Removal
         {
@@ -108,8 +114,10 @@ namespace Catalog
         bool commit(const std::string& staging, std::string& error);
         std::string manifestPath(const std::string& id) const;
         // "" if a file may be written there, otherwise why not
-        std::string refusal(const InstalledFile& file) const;
+        std::string refusal(const InstalledFile& file, const std::string& id, const std::string& kind, bool trusted) const;
+        bool trustedEmulator(const std::string& id, const std::string& kind, const std::string& source) const;
 
+        std::string installMessage_;
         std::string catalog_;
         Targets targets_;
         const std::atomic<bool>* stop_ = nullptr;

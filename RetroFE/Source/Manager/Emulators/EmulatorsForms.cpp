@@ -99,6 +99,7 @@ const char* const emulatorUsersForm = R"(
 // A new launcher: param:name prefills the name, param:from copies a launcher
 const char* const emulatorNewForm = R"(
 <form id="emulator-new" title="Add a launcher">
+  <link label="Download an emulator" open="emulator-downloads" help="RetroArch, MAME, DuckStation and others: RetroFE downloads it into its emulators folder and makes the launcher."/>
   <note bind="emulator:newIntro" panel="yes"/>
   <text label="Name" bind="emulator:newName" hint="e.g. RetroArch SNES"
         help="Systems and games ask for it by this name, spelt exactly."/>
@@ -112,6 +113,26 @@ const char* const emulatorNewForm = R"(
   <toggle label="Restarts RetroFE" bind="emulator:newReboot" help="RetroFE restarts once the program exits, e.g. after one that switches the theme."/>
   <value label="Runs" bind="emulator:newCommand"/>
   <button label="Create launcher" action="emulator.create" primary="yes"/>
+</form>
+)";
+
+// The built-in downloads and the trust step that turns their source on
+const char* const emulatorDownloadsForm = R"(
+<form id="emulator-downloads" title="Download an emulator">
+  <note value="Emulator downloads are Windows-only for now." visibleWhen="!info:emulatorDownloadsSupported"/>
+  <section label="Emulator downloads" visibleWhen="info:emulatorDownloadsSupported">
+    <section label="Turn on downloads" visibleWhen="!info:hasEmulatorsSource">
+      <note value="Emulator downloads come from each emulator's own GitHub releases, or libretro's server for RetroArch. RetroFE doesn't check what they contain."/>
+      <toggle label="I trust these downloads" bind="draft:emulatorsTrusted"/>
+      <button label="Turn on emulator downloads" action="source.addEmulators"/>
+    </section>
+  </section>
+  <section label="Emulators" visibleWhen="info:hasEmulatorsSource">
+    <note bind="info:emulatorDownloadsStatus"/>
+    <list label="Problems" bind="info:emulatorDownloadsWarnings"/>
+    <results bind="info:emulatorDownloads" open="package" empty="Checking emulator releases..."/>
+    <button label="Check for updates" action="catalog.refresh"/>
+  </section>
 </form>
 )";
 
@@ -171,6 +192,7 @@ Forms::BuiltinTable Forms::emulatorsForms()
         { "emulator-users", emulatorUsersForm },
         { "emulator-file", emulatorFileForm },
         { "emulator-new", emulatorNewForm },
+        { "emulator-downloads", emulatorDownloadsForm },
         { "emulator-edit", emulatorEditForm },
         { "emulator-rename", emulatorRenameForm },
     };

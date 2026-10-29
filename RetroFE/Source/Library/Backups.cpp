@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Backups.h"
+#include "Edits.h"
 #include "Files.h"
 #include "../Utility/Log.h"
 #include <algorithm>
@@ -37,10 +38,12 @@ Backups::Backups(const std::string& root)
     : root_(normalPath(root))
     , folder_(narrow((fs::path(normalPath(root)) / "manage" / "backups").make_preferred()))
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
 }
 
 std::string Backups::backupPath(const std::string& path) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     fs::path target(normalPath(path));
     fs::path relative = target.lexically_relative(fs::path(root_));
     if (relative.empty() || *relative.begin() == "..") {
@@ -62,6 +65,7 @@ std::string Backups::backupPath(const std::string& path) const
 
 bool Backups::hasOriginal(const std::string& path) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::error_code ec;
     std::string backup = backupPath(path);
     return fs::exists(backup, ec) || fs::exists(backup + absentSuffix, ec);
@@ -69,6 +73,7 @@ bool Backups::hasOriginal(const std::string& path) const
 
 bool Backups::beforeChange(const std::string& path, std::string& error)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     if (hasOriginal(path)) {
         return true;
     }
@@ -136,6 +141,7 @@ namespace
 
 bool Backups::keepIfChanged(const std::string& path, std::string& error)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // The live file is about to go (deleted or overwritten). Once an original
     // is kept, it may go only if it's that original; anything else (an
     // earlier Manage change, a content update, a file copied in by hand) is
@@ -162,6 +168,7 @@ bool Backups::keepIfChanged(const std::string& path, std::string& error)
 
 void Backups::recordNumberedCopy(const std::string& copy)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     fs::path list = fs::path(copy).parent_path() / numberedList;
     std::string names;
     readFile(narrow(list), names);
@@ -173,6 +180,7 @@ void Backups::recordNumberedCopy(const std::string& copy)
 
 bool Backups::isNumberedCopy(const std::string& backupFile) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string names;
     if (!readFile(narrow(fs::path(backupFile).parent_path() / numberedList), names)) {
         return false;
@@ -198,6 +206,7 @@ bool Backups::isNumberedCopy(const std::string& backupFile) const
 
 bool Backups::isOriginal(const std::string& path) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::error_code ec;
     std::string backup = backupPath(path);
     return fs::exists(backup, ec) && sameContent(path, backup);
@@ -205,6 +214,7 @@ bool Backups::isOriginal(const std::string& path) const
 
 std::string Backups::numberedCopyPath(const std::string& path) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::error_code ec;
     fs::path original(backupPath(path));
     for (int n = 2; n < 10000; n++) {
@@ -219,6 +229,7 @@ std::string Backups::numberedCopyPath(const std::string& path) const
 
 bool Backups::removeKeepingOriginal(const std::string& path, std::string& error)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::error_code ec;
     if (!fs::exists(path, ec)) {
         return true;
@@ -251,6 +262,7 @@ bool Backups::removeKeepingOriginal(const std::string& path, std::string& error)
 
 bool Backups::restore(const std::string& path, std::string& error)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::error_code ec;
     std::string backup = backupPath(path);
     bool original = fs::exists(backup, ec);

@@ -18,6 +18,7 @@
 #include "Package.h"
 #include "Sources.h"
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,10 @@ namespace Catalog
     // says the limit is reached. now is seconds since 1970.
     void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now,
                     SourceContents& contents);
+
+    using ReleaseParser = std::function<bool(const std::string&, std::vector<Package>&, std::vector<std::string>&, std::string&)>;
+    void readGitHubReleases(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now,
+                            SourceContents& contents, const ReleaseParser& parse, const std::string& subfolder = "");
 
     // How long a fetched list is used without asking again
     constexpr int64_t gitHubRecheckSeconds = 60;

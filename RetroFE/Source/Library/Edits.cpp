@@ -119,10 +119,17 @@ namespace
     }
 }
 
+std::recursive_mutex& libraryWriteMutex()
+{
+    static std::recursive_mutex mutex;
+    return mutex;
+}
+
 Editor::Editor(const std::string& root)
     : root_(root)
     , backups_(root)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
 }
 
 // --- Games ---------------------------------------------------------------------
@@ -130,6 +137,7 @@ Editor::Editor(const std::string& root)
 EditResult Editor::setGameLauncher(const Index& index, const std::string& collection, const std::string& game,
                                    const std::string& launcher)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -208,6 +216,7 @@ EditResult Editor::setGameLauncher(const Index& index, const std::string& collec
 EditResult Editor::setMetadata(const Index& index, const std::string& collection, const std::string& game,
                                const std::string& field, const std::string& value)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -252,6 +261,7 @@ EditResult Editor::setMetadata(const Index& index, const std::string& collection
 EditResult Editor::clearMetadata(const Index& index, const std::string& collection, const std::string& game,
                                  const std::string& field)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     const MetadataOverrides::Field* info = MetadataOverrides::findField(field);
@@ -312,6 +322,7 @@ EditResult Editor::clearMetadata(const Index& index, const std::string& collecti
 
 void Editor::requestMetadataImport()
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // MetadataDatabase::needsRefresh re-imports when anything in the override
     // folder is newer than meta.db; make sure this marker is, whatever the file
     // system's time resolution (FAT keeps 2 s)
@@ -332,6 +343,7 @@ void Editor::requestMetadataImport()
 std::map<std::string, std::string> Editor::metadataOverrides(const Index& index, const std::string& collection,
                                                              const std::string& game) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -348,6 +360,7 @@ std::map<std::string, std::string> Editor::metadataOverrides(const Index& index,
 
 const std::vector<std::string>& Editor::editableSettings()
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     static const std::vector<std::string> keys = {
         "list.extensions", "list.menuSort", "list.includeMissingItems", "list.sortType", "launcher", "metadata.type", "layout",
         "cyclePlaylist",
@@ -357,6 +370,7 @@ const std::vector<std::string>& Editor::editableSettings()
 
 const std::vector<std::string>& Editor::editableInfo()
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // type: "videos" marks a video collection (this fork's Manage, DECISIONS M7);
     // play: "here" plays its videos in RetroFE, "launcher" with its launcher
     // (Collection/VideoCollections.h)
@@ -367,6 +381,7 @@ const std::vector<std::string>& Editor::editableInfo()
 std::string Editor::checkSetting(const Index& index, const std::string& collection, const std::string& key,
                                  const std::string& value)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     const auto& settings = editableSettings();
     const auto& info = editableInfo();
     bool isSetting = std::find(settings.begin(), settings.end(), key) != settings.end();
@@ -464,6 +479,7 @@ std::string Editor::checkSetting(const Index& index, const std::string& collecti
 EditResult Editor::setCollectionSetting(const Index& index, const std::string& collection, const std::string& key,
                                         const std::string& value)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -506,6 +522,7 @@ EditResult Editor::setCollectionSetting(const Index& index, const std::string& c
 
 EditResult Editor::removeCollectionSetting(const Index& index, const std::string& collection, const std::string& key)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -809,6 +826,7 @@ namespace
 
 std::string Editor::checkMenuParent(const Index& index, const std::string& parent)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string spelling;
     return checkParentMenu(index, parent, spelling);
 }
@@ -852,12 +870,14 @@ namespace
 
 EditResult Editor::createMenu(const Index& index, const std::string& name, const std::string& parent)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     return createListed(index, name, parent, "");
 }
 
 EditResult Editor::createMerged(const Index& index, const std::string& name, const std::string& parent,
                                 const std::string& source)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     if (source.empty()) {
         return EditResult::fail("Pick the system whose games it shows.");
     }
@@ -867,6 +887,7 @@ EditResult Editor::createMerged(const Index& index, const std::string& name, con
 EditResult Editor::createListed(const Index& index, const std::string& name, const std::string& parent,
                                 const std::string& source)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     bool merged = !source.empty();
     std::string problem = checkNewCollectionName(index, name);
     std::string parentName;
@@ -932,6 +953,7 @@ EditResult Editor::createListed(const Index& index, const std::string& name, con
 
 EditResult Editor::addSubSource(const Index& index, const std::string& merged, const std::string& source)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     const CollectionRecord* record = findRecord(index, merged, m);
     if (!record) {
@@ -965,6 +987,7 @@ EditResult Editor::addSubSource(const Index& index, const std::string& merged, c
 
 EditResult Editor::removeSubSource(const Index& index, const std::string& merged, const std::string& source)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     const CollectionRecord* record = findRecord(index, merged, m);
     if (!record) {
@@ -997,6 +1020,7 @@ EditResult Editor::removeSubSource(const Index& index, const std::string& merged
 
 EditResult Editor::respellSubSource(const Index& index, const std::string& merged, const std::string& source)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     const CollectionRecord* record = findRecord(index, merged, m);
     if (!record) {
@@ -1030,6 +1054,7 @@ EditResult Editor::respellSubSource(const Index& index, const std::string& merge
 
 std::string Editor::checkDeleteMenu(const Index& index, const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c = index.findCollection(name);
     if (c < 0) {
         return "There's no collection called \"" + name + "\".";
@@ -1107,6 +1132,7 @@ std::string Editor::checkDeleteMenu(const Index& index, const std::string& name)
 
 EditResult Editor::deleteMenu(const Index& index, const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem = checkDeleteMenu(index, name);
     if (problem.empty() && !fs::is_directory(index.collections[static_cast<size_t>(index.findCollection(name))].folder)) {
         problem = "There's no folder for " + name + ".";
@@ -1236,6 +1262,7 @@ EditResult Editor::deleteMenu(const Index& index, const std::string& name)
 
 EditResult Editor::addMenuChild(const Index& index, const std::string& menu, const std::string& child, int position)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     int c;
     const CollectionRecord* menuRecord = findRecord(index, menu, m);
@@ -1280,6 +1307,7 @@ EditResult Editor::addMenuChild(const Index& index, const std::string& menu, con
 
 EditResult Editor::removeMenuChild(const Index& index, const std::string& menu, const std::string& child)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     const CollectionRecord* menuRecord = findRecord(index, menu, m);
     if (!menuRecord) {
@@ -1299,6 +1327,7 @@ EditResult Editor::removeMenuChild(const Index& index, const std::string& menu, 
 
 EditResult Editor::moveMenuChild(const Index& index, const std::string& menu, const std::string& child, int position)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     const CollectionRecord* menuRecord = findRecord(index, menu, m);
     if (!menuRecord) {
@@ -1338,6 +1367,7 @@ namespace
 
 EditResult Editor::setGameHidden(const Index& index, const std::string& collection, const std::string& game, bool hidden)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record || !record->is(KindSystem)) {
@@ -1413,6 +1443,7 @@ namespace
 EditResult Editor::addToPlaylist(const Index& index, const std::string& collection, const std::string& playlist,
                                  const std::string& gameCollection, const std::string& game)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     int s;
     const CollectionRecord* record = findRecord(index, collection, c);
@@ -1459,6 +1490,7 @@ EditResult Editor::addToPlaylist(const Index& index, const std::string& collecti
 EditResult Editor::removeFromPlaylist(const Index& index, const std::string& collection, const std::string& playlist,
                                       const std::string& gameCollection, const std::string& game)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     int s;
     const CollectionRecord* record = findRecord(index, collection, c);
@@ -1497,6 +1529,7 @@ EditResult Editor::removeFromPlaylist(const Index& index, const std::string& col
 
 bool Editor::isReservedPlaylist(const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // all is the page itself; favorites and lastplayed are written by RetroFE
     // (CollectionInfoBuilder), so Manage leaves them alone. Index's
     // PlaylistInfo::reserved uses the same names.
@@ -1505,6 +1538,7 @@ bool Editor::isReservedPlaylist(const std::string& name)
 
 EditResult Editor::createPlaylist(const Index& index, const std::string& collection, const std::string& playlist)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -1531,6 +1565,7 @@ EditResult Editor::createPlaylist(const Index& index, const std::string& collect
 EditResult Editor::renamePlaylist(const Index& index, const std::string& collection, const std::string& playlist,
                                   const std::string& newName)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -1590,6 +1625,7 @@ EditResult Editor::renamePlaylist(const Index& index, const std::string& collect
 
 EditResult Editor::deletePlaylist(const Index& index, const std::string& collection, const std::string& playlist)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int c;
     const CollectionRecord* record = findRecord(index, collection, c);
     if (!record) {
@@ -1613,6 +1649,7 @@ EditResult Editor::deletePlaylist(const Index& index, const std::string& collect
 
 EditResult Editor::addToSub(const Index& index, const std::string& merged, const std::string& sourceName, const std::string& game)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     int s;
     const CollectionRecord* record = findRecord(index, merged, m);
@@ -1659,6 +1696,7 @@ EditResult Editor::addToSub(const Index& index, const std::string& merged, const
 
 EditResult Editor::removeFromSub(const Index& index, const std::string& merged, const std::string& sourceName, const std::string& game)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int m;
     int s;
     const CollectionRecord* record = findRecord(index, merged, m);
@@ -1705,6 +1743,7 @@ EditResult Editor::removeFromSub(const Index& index, const std::string& merged, 
 
 EditResult Editor::replaceMedia(const MediaSlot& slot, const std::string& file)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     if (slot.directory.empty() || slot.basename.empty()) {
         return EditResult::fail("This slot has no folder to put a file in.");
     }
@@ -1768,6 +1807,7 @@ EditResult Editor::replaceMedia(const MediaSlot& slot, const std::string& file)
 
 EditResult Editor::clearMedia(const MediaSlot& slot)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     if (!slot.own) {
         return EditResult::fail(slot.file.empty()
             ? "There's no " + slot.type + " to clear."
@@ -1855,6 +1895,7 @@ namespace
 
 EditResult Editor::addMediaFolderFile(const MediaSlot& slot, const std::string& file)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem;
     std::string folder = ownMediaFolder(slot, problem);
     if (folder.empty()) {
@@ -1900,6 +1941,7 @@ EditResult Editor::addMediaFolderFile(const MediaSlot& slot, const std::string& 
 
 EditResult Editor::removeMediaFolderFile(const MediaSlot& slot, const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem;
     std::string folder = ownMediaFolder(slot, problem);
     if (folder.empty()) {
@@ -1927,6 +1969,7 @@ EditResult Editor::removeMediaFolderFile(const MediaSlot& slot, const std::strin
 
 EditResult Editor::mediaFolderToFile(const MediaSlot& slot, const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem;
     std::string folder = ownMediaFolder(slot, problem);
     if (folder.empty()) {
@@ -1960,6 +2003,7 @@ EditResult Editor::mediaFolderToFile(const MediaSlot& slot, const std::string& n
 
 EditResult Editor::clearMediaFolder(const MediaSlot& slot)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem;
     std::string folder = ownMediaFolder(slot, problem);
     if (folder.empty()) {
@@ -1984,6 +2028,7 @@ EditResult Editor::clearMediaFolder(const MediaSlot& slot)
 
 std::vector<std::string> Editor::mediaFolderOriginals(const MediaSlot& slot) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::vector<std::string> live;
     if (!mediaFoldersApply(slot.kind) || slot.directory.empty() || slot.basename.empty()) {
         return live;
@@ -2021,6 +2066,7 @@ std::vector<std::string> Editor::mediaFolderOriginals(const MediaSlot& slot) con
 
 bool Editor::differsFromOriginal(const std::string& file) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::error_code ec;
     const std::string kept = backups_.backupPath(file);
     if (fs::is_regular_file(kept, ec)) {
@@ -2031,6 +2077,7 @@ bool Editor::differsFromOriginal(const std::string& file) const
 
 bool Editor::sameAsKept(const std::string& live, const std::string& kept) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // Screens ask this for every file of a folder of big videos: decided by
     // size and modification time, reading the files only when the times
     // differ (a copy that didn't keep its time), and then once per state
@@ -2071,22 +2118,12 @@ namespace
     {
         std::vector<int> users;
         games = 0;
-        for (const LauncherUse& use : index.launcherUses) {
-            if (use.launcher != launcher) {
-                continue;
-            }
+        for (const LauncherUse& use : index.usesOf(launcher)) {
             if (use.game.empty()) {
                 users.push_back(use.collection);
             }
             else {
                 games++;
-            }
-        }
-        for (size_t c = 0; c < index.collections.size(); c++) {
-            for (const std::string& alternative : index.collections[c].launcher.alternatives) {
-                if (index.findLauncher(alternative) == launcher) {
-                    users.push_back(static_cast<int>(c));
-                }
             }
         }
         std::sort(users.begin(), users.end());
@@ -2107,6 +2144,7 @@ namespace
 
 std::string Editor::checkLauncherName(const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem = checkFileName(name, "launcher");
     if (!problem.empty()) {
         return problem;
@@ -2141,6 +2179,7 @@ std::string Editor::checkLauncherName(const std::string& name)
 
 std::string Editor::checkNewLauncherName(const Index& index, const std::string& name)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string problem = checkLauncherName(name);
     if (!problem.empty()) {
         return problem;
@@ -2177,6 +2216,7 @@ std::string Editor::checkNewLauncherName(const Index& index, const std::string& 
 
 EditResult Editor::addLauncher(const Index& index, const NewLauncher& launcher)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     const std::string& name = launcher.name;
     std::string problem = checkNewLauncherName(index, name);
     if (!problem.empty()) {
@@ -2230,6 +2270,7 @@ EditResult Editor::addLauncher(const Index& index, const NewLauncher& launcher)
 
 EditResult Editor::removeLauncher(const Index& index, LauncherScope scope, const std::string& id)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int launcher = index.findLauncher(scope, id);
     if (launcher < 0) {
         return EditResult::fail("There's no launcher called \"" + id + "\".");
@@ -2265,6 +2306,7 @@ EditResult Editor::removeLauncher(const Index& index, LauncherScope scope, const
 
 EditResult Editor::editLauncher(const Index& index, LauncherScope scope, const std::string& id, const LauncherChange& change)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     int launcher = index.findLauncher(scope, id);
     if (launcher < 0) {
         return EditResult::fail("There's no launcher called \"" + id + "\".");
@@ -2360,6 +2402,7 @@ namespace
 
 Editor::RenameScan Editor::scanLauncherRename(const Index& index, const std::string& id) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     RenameScan scan;
     scan.id = id;
     int launcher = index.findLauncher(LauncherScope::Global, id);
@@ -2441,11 +2484,13 @@ Editor::RenameScan Editor::scanLauncherRename(const Index& index, const std::str
 
 Editor::RenamePlan Editor::planLauncherRename(const Index& index, const std::string& id, const std::string& newName) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     return planLauncherRename(index, scanLauncherRename(index, id), newName);
 }
 
 Editor::RenamePlan Editor::planLauncherRename(const Index& index, const RenameScan& scan, const std::string& newName) const
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     RenamePlan plan;
     const std::string& id = scan.id;
     std::string name = newName;
@@ -2497,6 +2542,7 @@ Editor::RenamePlan Editor::planLauncherRename(const Index& index, const RenameSc
 
 EditResult Editor::renameLauncher(const Index& index, const std::string& id, const std::string& newName)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     RenamePlan plan = planLauncherRename(index, id, newName);
     if (!plan.problem.empty()) {
         return EditResult::fail(plan.problem);
@@ -2587,6 +2633,7 @@ EditResult Editor::renameLauncher(const Index& index, const std::string& id, con
 
 EditResult Editor::writeMediaText(const MediaSlot& slot, const std::string& text)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     if (slot.kind != MediaKind::Text) {
         return EditResult::fail("The " + slot.type + " isn't a text slot.");
     }
@@ -2614,6 +2661,7 @@ EditResult Editor::writeMediaText(const MediaSlot& slot, const std::string& text
 
 EditResult Editor::restoreOriginal(const std::string& file)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     std::string error;
     if (!backups_.restore(file, error)) {
         return EditResult::fail(error);

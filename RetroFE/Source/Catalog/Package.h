@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,9 @@ namespace Catalog
         std::string sha256;    // lowercase hex, or ""
         std::string md5;       // lowercase hex, or ""
         std::string sha256Url; // where the SHA-256 can be fetched when it isn't known yet (GitHub's <asset>.sha256)
-        std::string target;    // root, collections, items, media, layouts or meta
+        std::string target;    // root, collections, items, media, layouts, meta or emulators
         std::string path;      // folder under the target, "" for the target itself
+        std::optional<bool> extract; // unset uses the kind and published name
     };
 
     struct Requirement
@@ -45,12 +47,14 @@ namespace Catalog
         std::string source;    // name of the source it came from
         std::string id;
         std::string name;
-        std::string kind;      // collection, layout, media, bundle or other
+        std::string kind;      // collection, layout, media, bundle, other, app or emulator
         std::string version;
         std::string description;
         std::map<std::string, std::string> artwork;   // type ("logo"...) -> absolute URL or path
         std::vector<Requirement> requirements;   // "requires" in the index
         std::vector<PackageFile> files;
+
+        bool noChecksum = false; // libretro does not publish a checksum
 
         uint64_t totalSize() const;
     };

@@ -885,12 +885,9 @@ namespace
         std::set<std::string> unresolved;
         for (size_t c = 0; c < index.collections.size(); c++) {
             CollectionRecord& record = index.collections[c];
-            bool hasGames = record.is(KindSystem) || !record.launcherOverrides.empty();
-            if (!hasGames) {
-                continue;
-            }
+            // Settings can name launchers even before a games folder is created.
             record.launcher = index.resolveLauncher(static_cast<int>(c));
-            if (record.is(KindSystem)) {
+            if (record.is(KindSystem) || !index.properties.sourceFile("collections." + record.name + ".launcher").empty()) {
                 index.launcherUses.push_back(LauncherUse{ static_cast<int>(c), "", record.launcher.via, record.launcher.launcher });
                 if (record.launcher.launcher < 0 && !record.launcher.name.empty()) {
                     unresolved.insert(record.launcher.name);
@@ -1305,6 +1302,21 @@ std::vector<LauncherUse> Index::usesOf(int launcher) const
     for (const LauncherUse& use : launcherUses) {
         if (use.launcher == launcher) {
             result.push_back(use);
+        }
+    }
+    // Keep explicit settings references too, including alternatives and defaults
+    // currently hidden by a collection launcher file.
+    for (size_t c = 0; c < collections.size(); c++) {
+        const LauncherResolution& resolution = collections[c].launcher;
+        bool named = !properties.sourceFile("collections." + collections[c].name + ".launcher").empty()
+            && !resolution.configured.empty() && findLauncher(resolution.configured) == launcher;
+        for (const std::string& alternative : resolution.alternatives) {
+            named |= findLauncher(alternative) == launcher;
+        }
+        if (named && std::none_of(result.begin(), result.end(), [&](const LauncherUse& use) {
+                return use.collection == static_cast<int>(c) && use.game.empty();
+            })) {
+            result.push_back(LauncherUse{ static_cast<int>(c), "", LauncherVia::Setting, launcher });
         }
     }
     return result;

@@ -280,7 +280,7 @@ namespace Library
         // A few map lookups: per-frame safe.
         LauncherResolution resolveLauncher(int collection, const std::string& game = "") const;
 
-        // Who uses a launcher (by index into launchers); a filter over launcherUses
+        // Who uses a launcher (by index into launchers); includes explicit settings and alternatives
         std::vector<LauncherUse> usesOf(int launcher) const;
 
         // Merged collections whose page shows a game, and playlists listing it.

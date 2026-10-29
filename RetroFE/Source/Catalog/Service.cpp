@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Service.h"
+#include "Emulators.h"
 #include "Download.h"
 #include "GitHub.h"
 #include "Index.h"
@@ -113,6 +114,7 @@ namespace Catalog
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
             sources_ = sources;
+            if (!error.empty()) sourceWarnings_.push_back(error);
             rebuildEntries();
         }
         worker_ = std::thread(&Service::run, this);
@@ -204,6 +206,7 @@ namespace Catalog
     {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::string> all = appWarnings_;
+        all.insert(all.end(), sourceWarnings_.begin(), sourceWarnings_.end());
         all.insert(all.end(), warnings_.begin(), warnings_.end());
         return all;
     }
@@ -639,11 +642,21 @@ namespace Catalog
             return;
         }
         downloader.discard(package.id);
+        std::string launcherMessage;
+        if (!updating && package.kind == "emulator") {
+            bool trusted = false;
+            for (const auto& source : sources()) if (source.name == package.source && source.type == "emulators") trusted = true;
+            Manifest manifest;
+            if (trusted && readManifest((fs::path(folder_) / "installed" / (package.id + ".json")).string(), manifest, error)) {
+                launcherMessage = createEmulatorLauncher(targets_.root, folder_, manifest);
+            }
+        }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
             rebuildEntries();
             changed_ = true;
+            changes_.libraryFiles = true;
             std::set<std::string> now;
             auto manifest = installed_.find(package.id);
             if (manifest != installed_.end()) {
@@ -663,7 +676,11 @@ namespace Catalog
             }
         }
         LOG_NOTICE("Catalog", "Installed " + package.id + " " + package.version);
-        finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + ".");
+        const Emulator* emulator = !updating && package.kind == "emulator" ? findEmulator(package.id) : nullptr;
+        std::string message = emulator ? package.name + " is installed in emulators\\" + emulator->folder
+                                      : (updating ? "Updated to " : "Installed ") + package.name + " " + package.version;
+        if (!emulator || launcherMessage.empty() || launcherMessage.front() == ' ') message += ".";
+        finish(id, true, message + launcherMessage + installer_.installMessage());
     }
 
     void Service::doUpdateApp(const Package& original)
@@ -804,6 +821,9 @@ namespace Catalog
             finish(id, false, "RetroFE can't remove itself.");
             return;
         }
+        Manifest manifest;
+        std::string ignored;
+        readManifest((fs::path(folder_) / "installed" / (id + ".json")).string(), manifest, ignored);
         Installer::Removal removal;
         std::string error;
         if (!installer_.remove(id, removal, error)) {
@@ -815,6 +835,7 @@ namespace Catalog
             installed_ = installer_.installed();
             rebuildEntries();
             changed_ = true;
+            changes_.libraryFiles = true;
             // Only collections that are gone; kept files keep the collection
             for (const std::string& collection : collections) {
                 std::error_code ec;
@@ -826,6 +847,7 @@ namespace Catalog
         }
         LOG_NOTICE("Catalog", "Removed " + id);
         std::string message = "Removed " + name + ".";
+        if (manifest.kind == "emulator") message += removeEmulatorLauncher(targets_.root, manifest);
         if (removal.restored > 0) {
             message += " Put back " + std::to_string(removal.restored) + (removal.restored == 1 ? " file" : " files") + " it had replaced.";
         }

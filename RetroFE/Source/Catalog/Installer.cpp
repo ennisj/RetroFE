@@ -14,11 +14,12 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Installer.h"
+#include "Emulators.h"
 #include "Hash.h"
 #include "Index.h"
 #include "JsonFields.h"
 #include "../Utility/Log.h"
-#include "minizip/unzip.h"
+#include "Archive.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
@@ -151,12 +152,6 @@ namespace
         return slash == std::string::npos ? name : name.substr(slash + 1);
     }
 
-    bool isZip(const std::string& url, const std::string& download)
-    {
-        return lower(fs::path(publishedName(url)).extension().string()) == ".zip"
-            || lower(fs::path(download).extension().string()) == ".zip";
-    }
-
     // A name for a backup folder from a version, which could contain anything
     std::string folderName(const std::string& text)
     {
@@ -168,89 +163,54 @@ namespace
         return name.empty() || name[0] == '.' ? "_" + name : name;
     }
 
-    bool extractZip(const std::string& archive, const fs::path& stagingRoot, const fs::path& into,
-                    const Catalog::PackageFile& source, std::vector<PlannedFile>& planned,
-                    const std::atomic<bool>* stop, std::string& error)
+    bool extractArchive(const std::string& path, const fs::path& stagingRoot, const fs::path& into,
+                        const Catalog::PackageFile& source, std::vector<PlannedFile>& planned,
+                        const std::atomic<bool>* stop, bool programs, const std::string& topFolder, std::string& error)
     {
-        unzFile zip = unzOpen64(archive.c_str());
-        if (!zip) {
-            error = "Not a zip archive: " + publishedName(source.url);
-            return false;
-        }
-
-        std::vector<char> buffer(1 << 16);
-        int result = unzGoToFirstFile(zip);
-        while (result == UNZ_OK) {
-            unz_file_info64 info;
-            char name[4096];
-            if (unzGetCurrentFileInfo64(zip, &info, name, sizeof(name), nullptr, 0, nullptr, 0) != UNZ_OK) {
-                error = "Damaged zip archive: " + publishedName(source.url);
-                unzClose(zip);
+        Catalog::Archive archive;
+        if (!archive.open(path, publishedName(source.url), error)) return false;
+        for (size_t i = 0; i < archive.entries().size(); ++i) {
+            if (stop && *stop) { error = "Stopped"; return false; }
+            const auto& entry = archive.entries()[i];
+            std::string name = entry.name;
+            if (entry.directory && !name.empty() && name.back() == '/') name.pop_back();
+            if (!Catalog::isSafeRelativePath(name)) {
+                error = publishedName(source.url) + " contains a file that can't be installed safely: " + name;
                 return false;
             }
-            std::string entry = name;
-            std::replace(entry.begin(), entry.end(), '\\', '/');
-
-            if (!entry.empty() && entry.back() != '/') {
-                // Nothing may land outside its target, or be a program
-                if (!Catalog::isSafeRelativePath(entry)) {
-                    error = publishedName(source.url) + " contains a file that can't be installed safely: " + entry;
-                    unzClose(zip);
-                    return false;
-                }
-                if (Catalog::isExecutableName(entry)) {
-                    error = publishedName(source.url) + " contains a program or script (" + entry + "), which packages may not install";
-                    unzClose(zip);
-                    return false;
-                }
-                bool isUtf8 = (info.flag & (1 << 11)) != 0;
-                fs::path entryPath = isUtf8 ? fs::u8path(entry) : fs::path(entry);
-                fs::path out = into / entryPath;
-
-                std::error_code ec;
-                fs::create_directories(out.parent_path(), ec);
-                if (unzOpenCurrentFile(zip) != UNZ_OK) {
-                    error = "Could not read " + entry + " from " + publishedName(source.url);
-                    unzClose(zip);
-                    return false;
-                }
-                std::ofstream file(out, std::ios::binary | std::ios::trunc);
-                Catalog::Sha256 hash;
-                uint64_t size = 0;
-                int read = 0;
-                while ((read = unzReadCurrentFile(zip, buffer.data(), static_cast<unsigned>(buffer.size()))) > 0) {
-                    file.write(buffer.data(), read);
-                    hash.update(buffer.data(), static_cast<size_t>(read));
-                    size += static_cast<uint64_t>(read);
-                    if (stop && *stop) {
-                        error = "Stopped";
-                        unzCloseCurrentFile(zip);
-                        unzClose(zip);
-                        return false;
-                    }
-                }
-                file.close();
-                // Closing checks the CRC
-                if (read < 0 || unzCloseCurrentFile(zip) != UNZ_OK || !file) {
-                    error = "Damaged file " + entry + " in " + publishedName(source.url);
-                    unzClose(zip);
-                    return false;
-                }
-
-                PlannedFile plannedFile;
-                plannedFile.staged = utf8(out.lexically_relative(stagingRoot));
-                plannedFile.file.target = source.target;
-                plannedFile.file.path = joinPath(source.path, utf8(entryPath));
-                plannedFile.file.size = size;
-                plannedFile.file.sha256 = hash.hex();
-                planned.push_back(plannedFile);
+            if (!topFolder.empty()) {
+                if (entry.directory && name + "/" == topFolder) continue;
+                if (name.rfind(topFolder, 0) != 0) { error = "Archive entry is outside " + topFolder + ": " + name; return false; }
+                name.erase(0, topFolder.size());
+                if (name.empty() || !Catalog::isSafeRelativePath(name)) { error = "Invalid archive entry"; return false; }
             }
-            result = unzGoToNextFile(zip);
-        }
-        unzClose(zip);
-        if (result != UNZ_END_OF_LIST_OF_FILE) {
-            error = "Damaged zip archive: " + publishedName(source.url);
-            return false;
+            if (!programs && Catalog::isExecutableName(name)) {
+                error = publishedName(source.url) + " contains a program or script (" + name + "), which packages may not install";
+                return false;
+            }
+            if (entry.directory) continue;
+            fs::path entryPath = fs::u8path(name);
+            fs::path out = into / entryPath;
+            std::error_code ec;
+            fs::create_directories(out.parent_path(), ec);
+            std::ofstream file(out, std::ios::binary | std::ios::trunc);
+            Catalog::Sha256 hash;
+            uint64_t size = 0;
+            if (!archive.extract(i, [&](const void* data, size_t count) {
+                file.write(static_cast<const char*>(data), static_cast<std::streamsize>(count));
+                hash.update(data, count);
+                size += count;
+                return static_cast<bool>(file);
+            }, stop, error)) return false;
+            file.close();
+            if (!file || size != entry.size) { error = "Damaged file " + name + " in " + publishedName(source.url); return false; }
+            PlannedFile plannedFile;
+            plannedFile.staged = utf8(out.lexically_relative(stagingRoot));
+            plannedFile.file.target = source.target;
+            plannedFile.file.path = joinPath(source.path, utf8(entryPath));
+            plannedFile.file.size = size;
+            plannedFile.file.sha256 = hash.hex();
+            planned.push_back(plannedFile);
         }
         return true;
     }
@@ -261,6 +221,7 @@ namespace
         if (!file.backup.empty()) {
             value["backup"] = file.backup;
         }
+        if (file.portable) value["portable"] = true;
         return value;
     }
 
@@ -273,6 +234,7 @@ namespace
         J::count(value, "size", file.size);
         file.sha256 = J::text(value, "sha256");
         file.backup = J::text(value, "backup");
+        file.portable = J::flag(value, "portable");
         return Catalog::isKnownTarget(file.target) && !file.path.empty() && Catalog::isSafeRelativePath(file.path)
             && (file.backup.empty() || folderName(file.backup) == file.backup);
     }
@@ -322,6 +284,7 @@ std::string Targets::resolve(const std::string& target) const
     if (target == "media") return media;
     if (target == "layouts") return layouts;
     if (target == "meta") return meta;
+    if (target == "emulators") return emulators.empty() ? (fs::path(root) / "emulators").string() : emulators;
     return "";
 }
 
@@ -343,6 +306,10 @@ bool readManifest(const std::string& file, Manifest& manifest, std::string& erro
     manifest.kind = J::text(document, "kind");
     manifest.version = J::text(document, "version");
     manifest.source = J::text(document, "source");
+    manifest.sourceType = J::text(document, "sourceType");
+    manifest.launcherPath = J::text(document, "launcherPath");
+    manifest.launcherSha256 = J::text(document, "launcherSha256");
+    manifest.launcherName = J::text(document, "launcherName");
     if (auto files = document.find("files"); files != document.end() && files->is_array()) {
         for (const json& value : *files) {
             InstalledFile installedFile;
@@ -366,6 +333,10 @@ bool writeManifest(const std::string& file, const Manifest& manifest, std::strin
     }
     json document = { { "id", manifest.id }, { "name", manifest.name }, { "kind", manifest.kind },
                       { "version", manifest.version }, { "source", manifest.source }, { "files", files } };
+    document["sourceType"] = manifest.sourceType;
+    document["launcherPath"] = manifest.launcherPath;
+    document["launcherSha256"] = manifest.launcherSha256;
+    document["launcherName"] = manifest.launcherName;
     return writeText(file, document.dump(2), error);
 }
 
@@ -382,7 +353,19 @@ std::string Installer::manifestPath(const std::string& id) const
     return (fs::path(catalog_) / "installed" / (id + ".json")).string();
 }
 
-std::string Installer::refusal(const InstalledFile& file) const
+bool Installer::trustedEmulator(const std::string& id, const std::string& kind, const std::string& source) const
+{
+    if (kind != "emulator" || !findEmulator(id)) return false;
+    std::vector<SourceConfig> sources;
+    std::string error;
+    if (!loadSources((fs::path(catalog_) / "sources.conf").string(), sources, error)) return false;
+    for (const auto& config : sources) {
+        if (config.name == source && config.type == "emulators" && config.url.empty() && config.path.empty() && config.repo.empty()) return true;
+    }
+    return false;
+}
+
+std::string Installer::refusal(const InstalledFile& file, const std::string& id, const std::string& kind, bool trusted) const
 {
     fs::path root = targets_.resolve(file.target);
     fs::path destination = root / fromUtf8(file.path);
@@ -395,7 +378,11 @@ std::string Installer::refusal(const InstalledFile& file) const
         (isInside(fs::path(targets_.root), root) || fs::path(targets_.root).lexically_normal() == root.lexically_normal())) {
         return "Refusing to install layouts: the layouts folder (" + root.string() + ") holds RetroFE's own folder";
     }
-    if (isExecutableName(file.path)) {
+    const Emulator* entry = findEmulator(id);
+    bool programs = (trusted && kind == "emulator") && file.target == "emulators" && entry
+        && file.path.rfind(entry->folder + "/", 0) == 0;
+    if (file.target == "emulators" && !programs) return "Only built-in emulator downloads may use the emulators target";
+    if (isExecutableName(file.path) && !programs) {
         return "Packages may not install programs or scripts: " + file.path;
     }
     for (const std::string& folder : targets_.protectedFolders) {
@@ -426,6 +413,8 @@ std::map<std::string, Manifest> Installer::installed() const
 
 bool Installer::install(const Package& package, const std::vector<std::string>& downloads, std::string& error)
 {
+    error.clear();
+    installMessage_.clear();
     if (!isValidId(package.id)) {
         error = "Invalid package id";
         return false;
@@ -435,6 +424,20 @@ bool Installer::install(const Package& package, const std::vector<std::string>& 
         return false;
     }
 
+    const Emulator* entry = trustedEmulator(package.id, package.kind, package.source) ? findEmulator(package.id) : nullptr;
+    if (entry) {
+        Manifest old;
+        std::string ignored;
+        std::error_code ec;
+        bool owns = readManifest(manifestPath(package.id), old, ignored)
+            && std::any_of(old.files.begin(), old.files.end(), [&](const InstalledFile& file) {
+                return file.target == "emulators" && file.path.rfind(entry->folder + "/", 0) == 0;
+            });
+        if (!owns && fs::exists(fs::path(targets_.resolve("emulators")) / entry->folder / entry->program, ec)) {
+            error = "emulators/" + entry->folder + " is already there. Rename it, or add a launcher for it instead.";
+            return false;
+        }
+    }
     std::string staging = (fs::path(catalog_) / "staging" / package.id).string();
     std::error_code ec;
     fs::remove_all(staging, ec);
@@ -458,16 +461,31 @@ bool Installer::install(const Package& package, const std::vector<std::string>& 
 bool Installer::stage(const Package& package, const std::vector<std::string>& downloads, const std::string& staging, std::string& error)
 {
     std::vector<PlannedFile> planned;
+    const bool trusted = trustedEmulator(package.id, package.kind, package.source);
+    const Emulator* emulator = trusted ? findEmulator(package.id) : nullptr;
     for (size_t i = 0; i < package.files.size(); i++) {
         const PackageFile& source = package.files[i];
         if (targets_.resolve(source.target).empty()) {
             error = "Unknown target " + source.target;
             return false;
         }
+        if (source.target == "emulators" && (!emulator || source.path != emulator->folder)) {
+            error = "Only built-in emulator downloads may use the emulators target";
+            return false;
+        }
         fs::path into = fs::path(staging) / "files" / std::to_string(i);
 
-        if (isZip(source.url, downloads[i])) {
-            if (!extractZip(downloads[i], staging, into, source, planned, stop_, error)) {
+        uint64_t archiveOffset;
+        std::string extension = lower(fs::u8path(publishedName(source.url)).extension().string());
+        Archive::Form form = Archive::detect(downloads[i], archiveOffset);
+        bool extract = emulator || source.extract.value_or(extension == ".zip" || (package.kind == "emulator" &&
+            (form == Archive::Form::SevenZip || form == Archive::Form::SelfExtracting)));
+        if (extract) {
+            if (form == Archive::Form::None) {
+                error = publishedName(source.url) + " isn't an archive RetroFE can unpack";
+                return false;
+            }
+            if (!extractArchive(downloads[i], staging, into, source, planned, stop_, emulator && source.target == "emulators", emulator ? emulator->topFolder : "", error)) {
                 return false;
             }
         }
@@ -494,6 +512,28 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
         }
     }
 
+    if (emulator) {
+        if (std::none_of(planned.begin(), planned.end(), [&](const PlannedFile& file) {
+            return file.file.target == "emulators" && file.file.path == emulator->folder + "/" + emulator->program;
+        })) {
+            error = package.name + " archive does not contain " + emulator->program;
+            return false;
+        }
+        for (const auto& name : emulator->portableFiles) {
+            std::string path = emulator->folder + "/" + name;
+            std::error_code ec;
+            if (fs::exists(fs::path(targets_.resolve("emulators")) / path, ec)) continue;
+            fs::path staged = fs::path(staging) / "files" / "portable" / name;
+            if (!writeText(staged, "", error)) return false;
+            PlannedFile file;
+            file.staged = utf8(staged.lexically_relative(staging));
+            file.file.target = "emulators";
+            file.file.path = path;
+            file.file.sha256 = sha256File(staged);
+            file.file.portable = true;
+            planned.push_back(file);
+        }
+    }
     // If two files land in the same place, the later one wins
     std::vector<PlannedFile> unique;
     std::set<std::string> seen;
@@ -506,7 +546,7 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
     // Refuse the whole package before anything is moved
     json files = json::array();
     for (const PlannedFile& plannedFile : unique) {
-        std::string problem = refusal(plannedFile.file);
+        std::string problem = refusal(plannedFile.file, package.id, package.kind, trusted);
         if (!problem.empty()) {
             error = problem;
             return false;
@@ -535,6 +575,8 @@ bool Installer::commit(const std::string& staging, std::string& error)
     manifest.kind = J::text(plan, "kind");
     manifest.version = J::text(plan, "version");
     manifest.source = J::text(plan, "source");
+    const bool trusted = trustedEmulator(manifest.id, manifest.kind, manifest.source);
+    if (trusted) manifest.sourceType = "emulators";
     if (!isValidId(manifest.id) || manifest.id != fs::path(staging).filename().string()) {
         error = "The staged install has no valid package id";
         return false;
@@ -556,13 +598,14 @@ bool Installer::commit(const std::string& staging, std::string& error)
         fs::path destination;
     };
     std::vector<Step> steps;
+    int changed = 0;
     for (const json& entry : J::list(plan, "files")) {
         Step step;
         if (!fromJson(entry, step.file)) {
             error = "The staged install has an invalid file";
             return false;
         }
-        std::string problem = refusal(step.file);
+        std::string problem = refusal(step.file, manifest.id, manifest.kind, trusted);
         if (!problem.empty()) {
             error = problem;
             return false;
@@ -575,6 +618,13 @@ bool Installer::commit(const std::string& staging, std::string& error)
         }
         step.staged = fs::path(staging) / fromUtf8(staged);
         step.destination = fs::path(targets_.resolve(step.file.target)) / fromUtf8(step.file.path);
+        auto old = previousFiles.find(fileKey(step.file));
+        if (manifest.sourceType == "emulators" && old != previousFiles.end()) {
+            std::error_code ec;
+            if (fs::exists(step.destination, ec) && sha256File(step.destination) != old->second.sha256) {
+                changed++;
+            }
+        }
         steps.push_back(step);
     }
 
@@ -654,6 +704,14 @@ bool Installer::commit(const std::string& staging, std::string& error)
         manifest.files.push_back(step.file);
     }
 
+    if (updating) {
+        manifest.launcherPath = previous.launcherPath;
+        manifest.launcherSha256 = previous.launcherSha256;
+        manifest.launcherName = previous.launcherName;
+        for (const auto& old : previous.files) {
+            if (old.portable && std::none_of(manifest.files.begin(), manifest.files.end(), [&](const InstalledFile& file) { return fileKey(file) == fileKey(old); })) manifest.files.push_back(old);
+        }
+    }
     if (!writeManifest(manifestPath(manifest.id), manifest, error)) {
         rollBack();
         error += ". Nothing was changed.";
@@ -667,7 +725,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
         newFiles.insert(fileKey(file));
     }
     for (const InstalledFile& old : previous.files) {
-        if (newFiles.count(fileKey(old)) || !refusal(old).empty()) continue;
+        if (newFiles.count(fileKey(old)) || !refusal(old, manifest.id, manifest.kind, trusted).empty()) continue;
         fs::path root = targets_.resolve(old.target);
         fs::path path = root / fromUtf8(old.path);
         if (!fs::exists(path, ec) || sha256File(path) != old.sha256) continue;
@@ -692,6 +750,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
         }
     }
 
+    if (changed) installMessage_ = " Replaced " + std::to_string(changed) + (changed == 1 ? " changed file; backups are in " : " changed files; backups are in ") + backups.string() + ".";
     fs::remove_all(staging, ec);
     LOG_NOTICE("Catalog", "Installed " + manifest.id + " " + manifest.version + " (" + std::to_string(manifest.files.size()) + " files)");
     return true;
@@ -705,9 +764,10 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
         return false;
     }
     fs::path packageBackups = fs::path(catalog_) / "backups" / id;
+    const bool trusted = manifest.sourceType == "emulators" || trustedEmulator(manifest.id, manifest.kind, manifest.source);
     bool allRestored = true;
     for (const InstalledFile& file : manifest.files) {
-        if (!refusal(file).empty()) {
+        if (!refusal(file, manifest.id, manifest.kind, trusted).empty()) {
             continue;
         }
         fs::path root = targets_.resolve(file.target);

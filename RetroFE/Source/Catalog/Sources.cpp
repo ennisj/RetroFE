@@ -14,7 +14,9 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Sources.h"
+#include "../Utility/Log.h"
 #include "GitHub.h"
+#include "Emulators.h"
 #include "Http.h"
 #include "Index.h"
 #include <nlohmann/json.hpp>
@@ -158,7 +160,7 @@ namespace
                                                             { "size", fs::file_size(archive, ec) } } });
                 }
                 std::string error;
-                if (!Catalog::parsePackage(document.dump(), sidecar.string(), source.name, package, error)) {
+                if (!Catalog::parsePackage(document.dump(), sidecar.string(), source.name, package, error, &contents.warnings)) {
                     contents.warnings.push_back(sidecar.filename().string() + ": " + error);
                     continue;
                 }
@@ -248,6 +250,7 @@ namespace Catalog
 
 bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, std::string& error)
 {
+    error.clear();
     sources.clear();
     std::error_code ec;
     if (!fs::exists(file, ec)) {
@@ -311,11 +314,39 @@ bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, st
             it->enabled = !(v == "no" || v == "false" || v == "off" || v == "0");
         }
     }
+    std::vector<SourceConfig> checked;
+    for (const auto& source : sources) {
+        std::string problem;
+        for (const auto& previous : checked) {
+            if (lower(previous.name) == lower(source.name)) problem = "duplicate source name";
+        }
+        if (problem.empty() && source.type == "emulators") problem = validateSource(source, checked);
+        if (!problem.empty()) {
+            if (!error.empty()) error += "\n";
+            error += source.name + ": " + problem;
+            LOG_WARNING("Catalog", source.name + ": " + problem);
+            continue;
+        }
+        checked.push_back(source);
+    }
+    sources = checked;
     return true;
 }
 
 bool saveSources(const std::string& file, const std::vector<SourceConfig>& sources, std::string& error)
 {
+    error.clear();
+    std::vector<SourceConfig> checked;
+    for (const auto& source : sources) {
+        for (const auto& previous : checked) {
+            if (lower(previous.name) == lower(source.name)) { error = "Duplicate source name: " + source.name; return false; }
+        }
+        if (source.type == "emulators") {
+            error = validateSource(source, checked);
+            if (!error.empty()) return false;
+        }
+        checked.push_back(source);
+    }
     std::ostringstream out;
     out << "# Catalog sources, one block per source: sources.<name>.<setting>\n"
         << "# Written by RetroFE; Manage > Sources adds and removes them.\n";
@@ -365,6 +396,11 @@ std::string validateSource(const SourceConfig& source, const std::vector<SourceC
         if (lower(other.name) == lower(source.name)) {
             return "There's already a source called " + other.name + ".";
         }
+    }
+    if (source.type == "emulators") {
+        if (!source.url.empty() || !source.path.empty() || !source.repo.empty()) return "Emulator downloads have no address.";
+        for (const auto& other : existing) if (other.type == "emulators") return "Emulator downloads are already a source: " + other.name + ".";
+        return "";
     }
     if (source.type == "index") {
         if (source.url.empty()) {
@@ -416,6 +452,9 @@ SourceContents readSource(const SourceConfig& source, const std::string& cacheFo
     }
     else if (source.type == "github") {
         readGitHub(source, cacheFolder, http, static_cast<int64_t>(std::time(nullptr)), contents);
+    }
+    else if (source.type == "emulators") {
+        readEmulators(source, cacheFolder, http, contents);
     }
     else {
         contents.error = "Unknown source type \"" + source.type + "\"";

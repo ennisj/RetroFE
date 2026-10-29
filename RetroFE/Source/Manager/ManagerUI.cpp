@@ -227,6 +227,7 @@ void ManagerUI::startCatalog()
     targets.root = Configuration::absolutePath;
     targets.collections = Utils::combinePath(Configuration::absolutePath, "collections");
     targets.layouts = Configuration::layoutsPath();   // baseLayoutPath when set (OneSauce)
+    targets.emulators = Utils::combinePath(Configuration::absolutePath, "emulators");
     targets.meta = Utils::combinePath(Configuration::absolutePath, "meta");
     if (!config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, targets.items)) {
         targets.items = targets.collections;
@@ -265,6 +266,7 @@ bool ManagerUI::takeCatalogChanges()
     if (!catalog_ || !catalog_->takeChanges(changes)) {
         return false;
     }
+    if (changes.libraryFiles && library_) library_->changed("Catalog changed library files");
     // Installed collections show under Browse, like ones made in Manage
     std::string error;
     if (!changes.addedCollections.empty() && !model_.ensureSettingsFile(error)) {
@@ -504,6 +506,7 @@ void ManagerUI::show()
         }
     }
     model_.setScreen(frame->form, frame->params);
+    bool focusSystem = hubProgress_.focusSystem(frame->form == "manage", model_.get("info:hasLaunchers") == "yes");
     const Forms::Form* shown = form(frame->form);
     if (shown) {
         Forms::applyDefaults(*shown, model_);
@@ -523,6 +526,7 @@ void ManagerUI::show()
     }
     else {
         widget_->restoreFocus(frame->focus);
+        if (focusSystem) widget_->focusOn("system-add");
     }
 
     // Controls held while opening (e.g. the Select that chose it) must be released first
@@ -536,6 +540,7 @@ void ManagerUI::close()
     browserOpening_.reset();
     mouseUse_.reset();
     nav_.clear();
+    hubProgress_.reset();
     leave_.reset();
     capture_.clear();
     if (!open_) {
@@ -1041,6 +1046,10 @@ void ManagerUI::update(float dt)
     retired_.clear();
     if (!open_) {
         return;
+    }
+    if (takeCatalogChanges()) reloadWhenClosed_ = true;
+    if (open_ && nav_.current() && hubProgress_.focusSystem(nav_.current()->form == "manage", model_.get("info:hasLaunchers") == "yes")) {
+        if (widget_) widget_->focusOn("system-add");
     }
     if (launchReturn_ && Manager::LaunchReturnWait::ready(library_ && library_->index(),
         library_ && library_->status().state == Library::Indexer::State::Building)) {

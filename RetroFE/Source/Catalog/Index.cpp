@@ -55,7 +55,7 @@ namespace
     }
 
     // Reads one package; returns "" if it's usable, otherwise why not
-    std::string readPackage(const json& entry, const std::string& location, const std::string& sourceName, Catalog::Package& package)
+    std::string readPackage(const json& entry, const std::string& location, const std::string& sourceName, Catalog::Package& package, std::vector<std::string>* warnings)
     {
         if (!entry.is_object()) {
             return "a package isn't a JSON object";
@@ -77,9 +77,11 @@ namespace
             package.kind = "other";
         }
         // Only GitHub sources update RetroFE itself, which nothing else may pretend to be
+        if (package.kind == "emulator") return prefix + "emulators only come from the emulators source";
         if (package.kind == "app") {
             return prefix + "updates RetroFE itself (kind \"app\"), which only GitHub sources may offer";
         }
+        if (lower(package.id).rfind("emulator-", 0) == 0) return prefix + "emulator ids only come from the emulators source";
         if (lower(package.id) == Catalog::appPackageId) {
             return prefix + "the id \"" + package.id + "\" is RetroFE's own";
         }
@@ -144,8 +146,17 @@ namespace
             if (file.target.empty()) {
                 file.target = defaultTarget(package.kind);
             }
+            if (file.target == "emulators") return prefix + "the emulators target is only for built-in emulator downloads";
             if (!Catalog::isKnownTarget(file.target)) {
                 return prefix + "unknown target \"" + file.target + "\"";
+            }
+            if (auto extract = entryFile.find("extract"); extract != entryFile.end()) {
+                if (extract->is_boolean()) {
+                    file.extract = extract->get<bool>();
+                }
+                else if (warnings) {
+                    warnings->push_back(prefix + url + ": extract isn't a boolean; ignored");
+                }
             }
             file.path = stringField(entryFile, "path");
             if (!Catalog::isSafeRelativePath(file.path)) {
@@ -323,7 +334,7 @@ bool parseIndex(const std::string& text, const std::string& location, const std:
     std::set<std::string> seen;
     for (const json& entry : document["packages"]) {
         Package package;
-        std::string problem = readPackage(entry, location, sourceName, package);
+        std::string problem = readPackage(entry, location, sourceName, package, &warnings);
         if (!problem.empty()) {
             warnings.push_back(problem);
             continue;
@@ -338,14 +349,14 @@ bool parseIndex(const std::string& text, const std::string& location, const std:
 }
 
 bool parsePackage(const std::string& text, const std::string& location, const std::string& sourceName,
-                  Package& package, std::string& error)
+                  Package& package, std::string& error, std::vector<std::string>* warnings)
 {
     json document = json::parse(text, nullptr, false);
     if (document.is_discarded()) {
         error = "Not valid JSON";
         return false;
     }
-    error = readPackage(document, location, sourceName, package);
+    error = readPackage(document, location, sourceName, package, warnings);
     return error.empty();
 }
 

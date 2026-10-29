@@ -57,5 +57,5 @@ namespace Catalog
 
     // Parses a single package description, as used by .package.json sidecar files
     bool parsePackage(const std::string& json, const std::string& location, const std::string& sourceName,
-                      Package& package, std::string& error);
+                      Package& package, std::string& error, std::vector<std::string>* warnings = nullptr);
 }

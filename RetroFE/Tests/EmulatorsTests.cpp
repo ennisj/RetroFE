@@ -160,6 +160,17 @@ static Test::Suite emulators("emulators", [] {
         }
     });
 
+    run("emulators: hub sees launchers after a catalog rescan", [] {
+        auto root = makeRoot("emu-hub-rescan");
+        Fixture f(root);
+        checkEqual(f.model->get("info:hasLaunchers"), "no", "bare install");
+        writeFile(root + "/launchers." + os() + "/Downloaded.conf", "executable = emulators/program.exe\n");
+        f.indexer.changed("Catalog changed library files");
+        check(f.indexer.wait(10000), "rescan finished");
+        checkEqual(f.model->get("info:hasLaunchers"), "yes", "hub sees downloaded launcher");
+        check(f.row("emulator:search", "Downloaded") != nullptr, "launcher screen sees it too");
+    });
+
     run("emulators: the list shows where each launcher is, its program and who uses it", [] {
         Fixture f(makeInstall("emu-list"));
         f.model->setScreen("emulators", {});
@@ -169,7 +180,7 @@ static Test::Suite emulators("emulators", [] {
 
         const Forms::Row* retro = f.row("emulator:search", "retro", "global");
         check(retro && contains(retro->detail, "Global") && contains(retro->detail, "retroarch.exe")
-              && contains(retro->detail, "1 system") && !contains(retro->detail, "missing"),
+              && contains(retro->detail, "2 systems") && !contains(retro->detail, "missing"),
               "retro: where, program and users");
         const Forms::Row* notepad = f.row("emulator:search", "notepad", "global");
         check(notepad && contains(notepad->detail, "missing.exe (missing)") && contains(notepad->detail, "1 system, 1 game"),
@@ -233,10 +244,10 @@ static Test::Suite emulators("emulators", [] {
                    "# RetroArch\nexecutable = %RETROFE_PATH%/emu/retroarch.exe\narguments = -L cores/fceumm.dll \"%ITEM_FILEPATH%\"",
                    "the file verbatim, comments too, a note line per line");
         f.model->setScreen("emulator", { { "id", "retro" }, { "scope", "global" } });
-        checkEqual(f.model->get("emulator:usersSummary"), "The default of 1 system.", "summary");
+        checkEqual(f.model->get("emulator:usersSummary"), "The default of 2 systems.", "summary");
         Forms::Rows systems = f.model->rows("emulator:systems", 200);
-        check(systems.items.size() == 1 && systems.items[0].id == "Arcade" && systems.items[0].detail == "Default",
-              "Arcade uses it by default; NES's own file wins over its setting");
+        check(systems.items.size() == 2 && systems.items[0].id == "Arcade" && systems.items[1].id == "NES",
+              "both explicit settings keep retro, including NES whose own launcher file currently wins");
 
         f.model->setScreen("emulator", { { "id", "notepad" }, { "scope", "global" } });
         check(contains(f.model->get("emulator:executableStatus"), "won't start"), "a missing program is flagged");
@@ -490,6 +501,26 @@ static Test::Suite emulators("emulators", [] {
         f.model->setScreen("emulators", {});
         check(!f.row("emulator:search", "Tools", "collection") && !f.row("emulator:search", "NES.unused", "local"),
               "both gone from the list at once");
+    });
+
+    run("emulators: settings-only collections keep named launchers", [] {
+        std::string root = makeInstall("emu-delete-settings-only");
+        for (const std::string& setting : { std::string("spare"), std::string("Other, spare") }) {
+            writeFile(root + "/collections/Empty/settings.conf", "launcher = " + setting + "\n");
+            Fixture f(root);
+            auto index = f.indexer.index();
+            int collection = index->findCollection("Empty");
+            check(collection >= 0 && !index->collections[static_cast<size_t>(collection)].is(Library::KindSystem),
+                  "settings alone do not make a system");
+            check(!fs::exists(root + "/collections/Empty/roms"), "no games folder");
+            check(!index->usesOf(index->findLauncher(Library::LauncherScope::Global, "spare")).empty(),
+                  "shared usage query includes settings-only collections");
+            f.model->setScreen("emulator", { { "id", "spare" }, { "scope", "global" } });
+            check(!f.model->actionProblem("emulator.delete").empty(), "Delete launcher shows the user");
+            auto result = f.editor.removeLauncher(*index, Library::LauncherScope::Global, "spare");
+            check(!result.ok && fs::exists(root + "/launchers." + os() + "/spare.conf"),
+                  "Delete launcher keeps a named launcher: " + result.message);
+        }
     });
 
     run("emulators: restoring the original of a created or deleted launcher", [] {
