@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 14 — set up from nothing: launchers and emulator downloads (2026-10-29)
 
-Unit tests: 7,728 → 8,128 checks (Windows CI). Choices in M25 and C2 of
+Unit tests: 7,728 → 8,224 checks (Windows CI). Choices in M25 and C2 of
 [DECISIONS.md](DECISIONS.md); the folder spec is [FOLDERS.md](FOLDERS.md).
 
 - **Launchers first.** Manage says "Launchers" again. On a bare install
@@ -17,6 +17,10 @@ Unit tests: 7,728 → 8,128 checks (Windows CI). Choices in M25 and C2 of
   PPSSPP and Flycast with their versions. Install puts the emulator in
   `emulators\<name>`, makes it portable where it can be, and creates its
   launcher; Update and Remove work like any Catalog package.
+- **RetroArch cores.** With RetroArch installed, a Cores screen (filtered
+  by system) installs libretro's cores, each checked against libretro's
+  list and given a launcher such as "RetroArch Genesis Plus GX". Nightly
+  core updates show only there.
 - **7-Zip archives** (and MAME's self-extracting ones) are read, for
   emulator downloads.
 - **The mouse isn't captured** unless Settings' new "Capture mouse" is on.

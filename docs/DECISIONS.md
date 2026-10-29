@@ -616,7 +616,11 @@ Made while building the design review (M22); the option not taken in brackets.
   files are installed whole.
 - **Checksums:** GitHub downloads must have GitHub's SHA-256; RetroArch's
   download from libretro has none, which its screen says; RetroArch cores
-  (next) are checked against libretro's CRC list.
+  are checked against libretro's CRC list (of the DLL inside each zip).
+- **Cores come from libretro's nightly builds**, one zip each, offered only
+  once RetroArch is installed; each makes a "RetroArch <core>" launcher.
+  Nightly updates show only on the Cores screen, not as Catalog updates,
+  and RetroArch can't be removed while cores are installed.
 - **Each install makes its launcher** (`%RETROFE_PATH%` paths), unless one
   of that name exists. Removal keeps a launcher that was changed or that a
   system uses, and says which systems.
