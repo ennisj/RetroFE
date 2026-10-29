@@ -22,6 +22,7 @@ def main():
     args = parser.parse_args()
     try:
         import smbclient
+        from smbclient import shutil as smbshutil
     except ImportError:
         sys.exit('smbprotocol is missing: pip install smbprotocol')
 
@@ -57,7 +58,7 @@ def main():
         # Unpacked under a temporary name first, so Install-TestBuild.ps1 never sees half a build
         partial = target + '.partial'
         if smbclient.path.isdir(partial):
-            smbclient.rmtree(partial)
+            smbshutil.rmtree(partial)
         for name in names:
             path = partial + '\\' + name.replace('/', '\\')
             smbclient.makedirs(path.rsplit('\\', 1)[0], exist_ok=True)
@@ -73,7 +74,7 @@ def main():
     # Folder names start with the commit's date, so the newest sort last
     done = sorted(e.name for e in smbclient.scandir(builds) if e.is_dir() and not e.name.endswith('.partial'))
     for old in done[:-args.keep] if args.keep > 0 else []:
-        smbclient.rmtree(builds + '\\' + old)
+        smbshutil.rmtree(builds + '\\' + old)
         print(f'Removed {old}')
 
 if __name__ == '__main__':
