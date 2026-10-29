@@ -165,7 +165,9 @@ bool Catalog::Archive::open(const std::string& path, const std::string& publishe
             unz64_file_pos position{};
             if (unzGetFilePos64(p.zip, &position) != UNZ_OK) return p.fail(SZ_ERROR_ARCHIVE, error);
             p.zipPositions.push_back(position);
-            p.entries.push_back({ entry, info.uncompressed_size, !entry.empty() && entry.back() == '/' });
+            bool directory = (!entry.empty() && entry.back() == '/') || (info.external_fa & 0x10) != 0
+                || ((info.external_fa >> 16) & 0170000) == 0040000;
+            p.entries.push_back({ entry, info.uncompressed_size, directory, static_cast<uint32_t>(info.crc) });
             result = unzGoToNextFile(p.zip);
         }
         return result == UNZ_END_OF_LIST_OF_FILE || p.fail(SZ_ERROR_ARCHIVE, error);

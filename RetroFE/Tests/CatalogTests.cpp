@@ -17,6 +17,8 @@
 // Tests for the Catalog: hashes, versions, index parsing, sources and installing.
 
 #include "TestSupport.h"
+#include "../Source/Manager/Emulators/EmulatorDownloads.h"
+#include "../Source/Forms/BuiltinForms.h"
 #include "../Source/Catalog/Download.h"
 #include "../Source/Catalog/Emulators.h"
 #include "../Source/Catalog/GitHub.h"
@@ -54,13 +56,14 @@ using namespace Catalog;
 namespace
 {
     // Writes a zip archive with these (name, content) entries
-    bool makeZip(const std::string& path, const std::vector<std::pair<std::string, std::string>>& entries)
+    bool makeZip(const std::string& path, const std::vector<std::pair<std::string, std::string>>& entries, unsigned long attributes = 0)
     {
         fs::create_directories(fs::path(path).parent_path());
         zipFile zip = zipOpen64(path.c_str(), APPEND_STATUS_CREATE);
         if (!zip) return false;
         for (const auto& [name, content] : entries) {
             zip_fileinfo info{};
+            info.external_fa = attributes;
             if (zipOpenNewFileInZip64(zip, name.c_str(), &info, nullptr, 0, nullptr, 0, nullptr, Z_DEFLATED, Z_DEFAULT_COMPRESSION, 0) != ZIP_OK) {
                 zipClose(zip, nullptr);
                 return false;
@@ -223,6 +226,162 @@ void runCatalogTests()
 {
     std::string error;
 
+    run("core index metadata, dates and pinned downloads", [&] {
+        auto root = makeRoot("core-index");
+        writeFile(root + "/emulators/RetroArch/info/genesis_plus_gx_libretro.info", "corename = \"Genesis Plus GX\"\nsystemname = \"Sega Mega Drive\"\ndisplay_name = \"Sega (Genesis Plus GX)\"\n");
+        std::vector<Package> packages;
+        parseCoreIndex("2026-10-28 3fa4ba35 genesis_plus_gx_libretro.dll.zip\n2026-10-29 ABCDEF01 unknown_libretro.dll.zip\n"
+                       "2026-02-30 00000000 bad_libretro.dll.zip\n2026-13-01 00000000 bad_libretro.dll.zip\n"
+                       "junk\n2026-10-29 xyz bad_libretro.dll.zip\n2026-10-29 12345678 ../bad_libretro.dll.zip\n"
+                       "2026-10-29 12345678 https://evil/core_libretro.dll.zip\n", "downloads", root, packages);
+        check(packages.size() == 2, "junk, unsafe names and invalid dates skipped");
+        checkEqual(packages[0].name, "Genesis Plus GX", "installed info name");
+        checkEqual(packages[0].system, "Sega Mega Drive", "info system");
+        checkEqual(packages[1].name, "unknown", "missing info uses stem");
+        check(packages[0].files[0].crc32 == 0x3fa4ba35 && packages[1].files[0].crc32 == 0xabcdef01, "CRC hex");
+        checkEqual(packages[0].files[0].url, "https://buildbot.libretro.com/nightly/windows/x86_64/latest/genesis_plus_gx_libretro.dll.zip", "pinned URL");
+        check(packages[0].requirements[0].id == "emulator-retroarch" && packages[0].totalSize() == 0, "requires RetroArch and unknown size");
+        check(compareVersions(packages[1].version, packages[0].version) > 0, "nightly date ordering");
+    });
+
+    run("core list requires RetroArch and caches Last-Modified", [&] {
+        auto root = makeRoot("core-cache");
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        FakeHttp http;
+        const std::string url = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/.index-extended";
+        http.responses[url] = { 200, "2026-10-28 3fa4ba35 genesis_plus_gx_libretro.dll.zip\n", {{"last-modified", "Wed, 28 Oct 2026 12:00:00 GMT"}}, "" };
+        SourceContents none;
+        readCores(source, root + "/catalog/cache", root, &http, none);
+        check(none.packages.empty() && none.warnings == std::vector<std::string>{"Install RetroArch first"} && http.sentHeaders.empty(), "no core request without manifest");
+        Manifest retroarch;
+        retroarch.id = "emulator-retroarch";
+        retroarch.name = "RetroArch";
+        retroarch.kind = "emulator";
+        retroarch.version = "1.22.2";
+        check(writeManifest(root + "/catalog/installed/emulator-retroarch.json", retroarch, error), "manifest");
+        SourceContents first;
+        readCores(source, root + "/catalog/cache", root, &http, first);
+        check(first.packages.size() == 1 && !first.fromCache, "fresh list");
+        http.responses[url] = {304, "", {}, ""};
+        SourceContents cached;
+        readCores(source, root + "/catalog/cache", root, &http, cached);
+        check(cached.packages.size() == 1 && http.sentHeaders.back() == std::vector<std::string>{"If-Modified-Since: Wed, 28 Oct 2026 12:00:00 GMT"}, "304 uses cache and conditional date");
+    });
+
+    run("core ZIP checks, trust, launchers and removal", [&] {
+        auto root = makeRoot("core-install");
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "trusted source");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        Manifest retroarch;
+        retroarch.id = "emulator-retroarch";
+        retroarch.name = "RetroArch";
+        retroarch.kind = "emulator";
+        retroarch.version = "1.22.2";
+        retroarch.source = source.name;
+        writeFile(root + "/emulators/RetroArch/retroarch.exe", "program");
+        std::vector<Package> packages;
+        // CRC-32 of "hello".
+        parseCoreIndex("2026-10-28 3610a686 genesis_plus_gx_libretro.dll.zip\n", source.name, root, packages);
+        auto package = packages[0];
+        package.name = "Genesis Plus GX";
+        std::string archive = root + "/core.zip";
+        check(makeZip(archive, {{"genesis_plus_gx_libretro.dll", "hello"}}), "zip");
+        check(!installer.install(package, {archive}, error), "requires RetroArch manifest");
+        check(writeManifest(root + "/catalog/installed/emulator-retroarch.json", retroarch, error), "RetroArch manifest");
+        auto bad = package;
+        bad.files[0].crc32 = 0;
+        check(!installer.install(bad, {archive}, error) && error == "The core doesn't match libretro's list", "CRC mismatch refused");
+        bad = package;
+        bad.files[0].url = "https://evil/core.zip";
+        check(!installer.install(bad, {archive}, error), "foreign URL refused");
+        bad = package;
+        bad.source = "untrusted";
+        check(!installer.install(bad, {archive}, error), "package fields cannot grant trust");
+        for (const auto& entries : std::vector<std::vector<std::pair<std::string, std::string>>>{
+            {{"genesis_plus_gx_libretro.dll", "hello"}, {"extra.txt", "extra"}},
+            {{"wrong_libretro.dll", "hello"}}, {{"folder/", ""}} }) {
+            check(makeZip(archive, entries), "bad zip");
+            check(!installer.install(package, {archive}, error), "multiple, misnamed and directory entries refused");
+        }
+        for (unsigned long attributes : { 0x10ul, 0040000ul << 16 }) {
+            check(makeZip(archive, {{"genesis_plus_gx_libretro.dll", "hello"}}, attributes), "directory attributes zip");
+            check(!installer.install(package, {archive}, error), "directory attributes refused without a trailing slash");
+        }
+        check(makeZip(archive, {{"genesis_plus_gx_libretro.dll", "hello"}}), "valid zip");
+        check(installer.install(package, {archive}, error), "core installed: " + error);
+        checkEqual(readFile(root + "/emulators/RetroArch/cores/genesis_plus_gx_libretro.dll"), "hello", "only core destination");
+        auto manifest = installer.installed().at(package.id);
+        check(createEmulatorLauncher(root, root + "/catalog", manifest).find("with the launcher RetroArch Genesis Plus GX") != std::string::npos, "launcher created");
+        auto launcher = readFile(root + "/launchers.windows/RetroArch Genesis Plus GX.conf");
+        check(launcher.find("-L \"%RETROFE_PATH%\\emulators\\RetroArch\\cores\\genesis_plus_gx_libretro.dll\" \"%ITEM_FILEPATH%\"") != std::string::npos, "portable core arguments");
+        check(createEmulatorLauncher(root, root + "/catalog", manifest).find("already exists") != std::string::npos, "existing launcher left alone");
+        const auto launcherPath = root + "/launchers.windows/RetroArch Genesis Plus GX.conf";
+        writeFile(launcherPath, launcher + "# changed\n");
+        check(removeEmulatorLauncher(root, manifest).find("changed") != std::string::npos && fs::exists(launcherPath), "changed core launcher stays");
+        writeFile(launcherPath, launcher);
+        writeFile(root + "/collections/Genesis/settings.conf", "launcher = RetroArch Genesis Plus GX\nlist.extensions = md\n");
+        check(removeEmulatorLauncher(root, manifest).find("Genesis") != std::string::npos && fs::exists(launcherPath), "used core launcher stays and names its system");
+        fs::remove_all(root + "/collections/Genesis");
+        Installer::Removal removal;
+        check(!installer.remove("emulator-retroarch", removal, error) && error == "Remove its cores first: Genesis Plus GX", "parent removal refused");
+        check(installer.remove(package.id, removal, error) && fs::exists(root + "/emulators/RetroArch/retroarch.exe"), "core removal keeps RetroArch");
+        check(removeEmulatorLauncher(root, manifest).find("Removed launcher") != std::string::npos, "unused launcher removed");
+        auto name = coreLauncherName("  A=,;%/\\:*?\"<>|# B  " + std::string(90, 'x'));
+        check(name.size() <= 64 && Library::Editor::checkLauncherName(name).empty() && name.find("  ") == std::string::npos, "sanitised launcher name fits editor rules");
+    });
+
+    run("core rows filter systems and keep installed first", [&] {
+        Entry a, b, c;
+        a.package.id = "core-a"; a.package.kind = "core"; a.package.name = "A"; a.package.system = "Sega"; a.package.version = "2026-10-29";
+        b = a; b.package.id = "core-b"; b.package.name = "B"; b.installedVersion = "2026-10-28";
+        c = a; c.package.id = "core-c"; c.package.name = "C"; c.package.system = "Nintendo"; c.installedVersion = c.package.version;
+        auto rows = Manager::coreDownloadRows({a,b,c}, "all");
+        check(rows.size() == 3 && rows[0].id == "core-b" && rows[1].id == "core-c", "installed first");
+        checkEqual(rows[0].detail, "Newer build from 2026-10-29", "newer nightly detail");
+        checkEqual(rows[1].detail, "Installed 2026-10-29", "installed date");
+        checkEqual(rows[2].detail, "Not installed", "available detail");
+        rows = Manager::coreDownloadRows({a,b,c}, "Sega");
+        check(rows.size() == 2 && rows[0].id == "core-b" && rows[1].id == "core-a", "system filter");
+        auto root = makeRoot("core-form");
+        Configuration::absolutePath = root;
+        writeFile(root + "/emulators/RetroArch/info/a_libretro.info", "systemname = \"Sega\"\n");
+        writeFile(root + "/emulators/RetroArch/info/b_libretro.info", "systemname = \"Nintendo\"\n");
+        Configuration config;
+        ManagerModel model(config);
+        model.setScreen("retroarch-cores", {});
+        auto form = Forms::parse(Forms::builtinForm("retroarch-cores"), error);
+        check(form && form->id == "retroarch-cores", "Cores form parses");
+        auto options = model.options("info:coreSystems");
+        check(options.size() == 3 && options[0] == std::make_pair(std::string("all"), std::string("All systems")), "system choices from all installed info files");
+        model.set("draft:coreSystem", "Sega");
+        checkEqual(model.get("draft:coreSystem"), "Sega", "controller choice binding");
+        checkEqual(model.get("info:coresNote"), "Install RetroArch first", "missing parent note binding");
+    });
+
+    run("core kind cannot enter through an index or sidecar", [&] {
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        auto document = nlohmann::json{{"packages", nlohmann::json::array({{{"id", "ordinary"}, {"kind", "core"}, {"files", nlohmann::json::array({{{"url", "https://example.org/core.zip"}, {"target", "root"}}})}}})}};
+        check(parseIndex(document.dump(), "https://example.org/index.json", "untrusted", packages, warnings, error) && packages.empty() && !warnings.empty(), "core kind refused in index");
+        auto root = makeRoot("core-sidecar-kind");
+        check(makeZip(root + "/data.zip", {{"data.txt", "data"}}), "archive");
+        writeFile(root + "/data.zip.package.json", R"({"id":"ordinary","kind":"core"})");
+        SourceConfig source;
+        source.name = "usb"; source.type = "folder"; source.path = root;
+        auto contents = readSource(source, root + "/cache", nullptr);
+        check(contents.packages.empty() && !contents.warnings.empty(), "core kind refused in sidecar");
+        document["packages"][0]["kind"] = "other";
+        document["packages"][0]["files"][0]["crc32"] = "3610a686";
+        packages.clear(); warnings.clear();
+        check(parseIndex(document.dump(), "https://example.org/index.json", "untrusted", packages, warnings, error) &&
+              packages.size() == 1 && !packages[0].files[0].crc32, "indexes cannot supply the unpacked CRC");
+    });
+
     run("emulator release rules", [&] {
         const std::vector<std::string> tags = { "v1.22.2", "mame0289", "v0.1-12083", "v2.8.2", "v1.20.4", "v2.7" };
         const std::vector<std::string> versions = { "1.22.2", "0.289", "0.1.12083", "2.8.2", "1.20.4", "2.7" };
@@ -367,7 +526,7 @@ void runCatalogTests()
             SourceContents contents;
             auto before = http.sentHeaders.size();
             readEmulators(source, makeRoot("emulator-one-limit-warning"), &http, contents);
-            check(http.sentHeaders.size() == before + 1 && contents.warnings.size() == 1, "one source-wide request and warning on rate limit");
+            check(http.sentHeaders.size() == before + 1 && std::count_if(contents.warnings.begin(), contents.warnings.end(), [](const std::string& warning) { return warning.find("GitHub's limit") != std::string::npos; }) == 1, "one source-wide request and warning on rate limit");
         }
     });
 
@@ -446,7 +605,7 @@ void runCatalogTests()
         checkEqual(createEmulatorLauncher(root, catalog, manifest), "; a launcher called DuckStation already exists, so it was left as it is.", "existing launcher message");
         Manifest retroarch;
         retroarch.id = "emulator-retroarch";
-        checkEqual(createEmulatorLauncher(root, catalog, retroarch), " RetroArch needs a core for each system; core downloads come in a later update.", "RetroArch explains cores");
+        checkEqual(createEmulatorLauncher(root, catalog, retroarch), " Add a core next from Cores.", "RetroArch explains cores");
         writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "self-updated");
         package.version = "0.1.12084";
         check(installer.install(package, {zip}, error), "update");
@@ -678,7 +837,7 @@ void runCatalogTests()
     });
 
     run("emulator ids are reserved in indexes and sidecars", [&] {
-        for (const auto& id : {"emulator-duckstation", "Emulator-unknown"}) {
+        for (const auto& id : {"emulator-duckstation", "Emulator-unknown", "core-genesis_plus_gx", "Core-unknown"}) {
             std::vector<Package> packages;
             std::vector<std::string> warnings;
             auto document = nlohmann::json{{"packages", nlohmann::json::array({{{"id", id}, {"files", nlohmann::json::array({{{"url", "https://example.org/data.zip"}, {"target", "root"}}})}}})}};
@@ -1312,6 +1471,61 @@ void runCatalogTests()
     });
 
     if (currentPlatform().os == "windows") {
+    run("core updates stay in Cores and package screens", [&] {
+        auto root = makeRoot("core-service-updates");
+        Configuration::absolutePath = root;
+        Configuration config;
+        SourceConfig source;
+        source.name = "downloads"; source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "source");
+        Manifest manifest;
+        manifest.id = "emulator-retroarch"; manifest.kind = "emulator"; manifest.name = "RetroArch";
+        manifest.source = source.name; manifest.version = "1.22.2";
+        check(writeManifest(root + "/catalog/installed/emulator-retroarch.json", manifest, error), "parent manifest");
+        manifest.id = "core-genesis_plus_gx"; manifest.kind = "core"; manifest.name = "Genesis Plus GX"; manifest.version = "2026-10-28";
+        check(writeManifest(root + "/catalog/installed/core-genesis_plus_gx.json", manifest, error), "core manifest");
+        writeFile(root + "/emulators/RetroArch/info/genesis_plus_gx_libretro.info", "corename = \"Genesis Plus GX\"\nsystemname = \"Sega\"\n");
+        class CoresHttp : public ServingHttp {
+        public:
+            bool get(const std::string& url, std::string& body, std::string& error) override {
+                if (url == "https://buildbot.libretro.com/nightly/windows/x86_64/latest/.index-extended") {
+                    body = "2026-10-29 3610a686 genesis_plus_gx_libretro.dll.zip\n";
+                    return true;
+                }
+                error = "offline";
+                return false;
+            }
+        };
+        auto http = std::make_unique<CoresHttp>();
+        check(makeZip(root + "/core.zip", {{"genesis_plus_gx_libretro.dll", "hello"}}), "core zip");
+        http->files["https://buildbot.libretro.com/nightly/windows/x86_64/latest/genesis_plus_gx_libretro.dll.zip"] = readFile(root + "/core.zip");
+        writeFile(root + "/emulators/RetroArch/retroarch.exe", "program");
+        Service service(root + "/catalog", targetsUnder(root), std::move(http));
+        service.start(); service.waitUntilIdle();
+        Entry entry;
+        check(service.entry(manifest.id, entry) && !entry.updateAvailable, "core update not counted globally");
+        ManagerModel model(config); model.setCatalog(&service);
+        model.setScreen("package", {{"id", manifest.id}});
+        checkEqual(model.get("package:canUpdate"), "yes", "package offers Update");
+        checkEqual(model.get("package:installedStatus"), "Newer build from 2026-10-29", "new build date");
+        model.set("draft:coreSystem", "Sega");
+        auto rows = model.rows("info:cores", 500);
+        check(rows.items.size() == 1 && rows.items[0].detail == "Newer build from 2026-10-29", "Cores binding");
+        model.set("draft:coreSystem", "Nintendo");
+        check(model.rows("info:cores", 500).items.empty(), "model system filter");
+        model.setScreen("source", {{"id", source.name}});
+        check(model.rows("source:packages", 500).items.empty(), "core absent from source package list");
+        auto downloads = model.rows("info:emulatorDownloads", 50);
+        check(downloads.items.size() == emulators().size(), "emulator list excludes cores");
+        service.remove(manifest.id); service.waitUntilIdle();
+        service.install(manifest.id); service.waitUntilIdle();
+        bool ok = false;
+        std::string message;
+        check(service.outcome(manifest.id, ok, message) && ok, "core service install: " + message);
+        checkEqual(message, "Genesis Plus GX is installed, with the launcher RetroArch Genesis Plus GX.", "core install names launcher");
+        check(fs::exists(root + "/launchers.windows/RetroArch Genesis Plus GX.conf"), "service creates core launcher");
+    });
+
     run("emulator downloads show checking, checksum, offline and rate-limit warnings", [&] {
         auto root = makeRoot("emulator-download-status");
         Configuration::absolutePath = root;

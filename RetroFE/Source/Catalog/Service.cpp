@@ -144,7 +144,7 @@ namespace Catalog
                 entry.installedSource = installed->second.source;
                 // Only the source it came from can update it
                 bool sameSource = entry.installedSource.empty() || entry.installedSource == package.source;
-                entry.updateAvailable = sameSource && compareVersions(package.version, entry.installedVersion) > 0;
+                entry.updateAvailable = package.kind != "core" && sameSource && compareVersions(package.version, entry.installedVersion) > 0;
             }
             entries_.push_back(std::move(entry));
         }
@@ -485,7 +485,7 @@ namespace Catalog
 
         for (const SourceConfig& source : sources) {
             if (!source.enabled) continue;
-            SourceContents contents = readSource(source, cacheFolder(), http_.get());
+            SourceContents contents = readSource(source, cacheFolder(), http_.get(), targets_.root);
             SourceStatus& status = statuses[source.name];
             status.checked = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
@@ -643,7 +643,7 @@ namespace Catalog
         }
         downloader.discard(package.id);
         std::string launcherMessage;
-        if (!updating && package.kind == "emulator") {
+        if (!updating && (package.kind == "emulator" || package.kind == "core")) {
             bool trusted = false;
             for (const auto& source : sources()) if (source.name == package.source && source.type == "emulators") trusted = true;
             Manifest manifest;
@@ -680,7 +680,12 @@ namespace Catalog
         std::string message = emulator ? package.name + " is installed in emulators\\" + emulator->folder
                                       : (updating ? "Updated to " : "Installed ") + package.name + " " + package.version;
         if (!emulator || launcherMessage.empty() || launcherMessage.front() == ' ') message += ".";
+        if (!updating && package.kind == "core") {
+            message = package.name + " is installed";
+            if (launcherMessage.empty() || launcherMessage.front() == ' ') message += ".";
+        }
         finish(id, true, message + launcherMessage + installer_.installMessage());
+        if (package.id == "emulator-retroarch") refresh();
     }
 
     void Service::doUpdateApp(const Package& original)
@@ -847,7 +852,7 @@ namespace Catalog
         }
         LOG_NOTICE("Catalog", "Removed " + id);
         std::string message = "Removed " + name + ".";
-        if (manifest.kind == "emulator") message += removeEmulatorLauncher(targets_.root, manifest);
+        if (manifest.kind == "emulator" || manifest.kind == "core") message += removeEmulatorLauncher(targets_.root, manifest);
         if (removal.restored > 0) {
             message += " Put back " + std::to_string(removal.restored) + (removal.restored == 1 ? " file" : " files") + " it had replaced.";
         }
@@ -855,6 +860,7 @@ namespace Catalog
             message += " Kept " + std::to_string(removal.kept) + (removal.kept == 1 ? " file" : " files") + " you changed.";
         }
         finish(id, true, message);
+        if (id == "emulator-retroarch") refresh();
     }
 
     void Service::finish(const std::string& id, bool ok, const std::string& message)

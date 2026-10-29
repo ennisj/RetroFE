@@ -441,7 +441,7 @@ std::string validateSource(const SourceConfig& source, const std::vector<SourceC
     return "Choose what kind of source it is.";
 }
 
-SourceContents readSource(const SourceConfig& source, const std::string& cacheFolder, Http* http)
+SourceContents readSource(const SourceConfig& source, const std::string& cacheFolder, Http* http, const std::string& root)
 {
     SourceContents contents;
     if (source.type == "folder") {
@@ -454,7 +454,7 @@ SourceContents readSource(const SourceConfig& source, const std::string& cacheFo
         readGitHub(source, cacheFolder, http, static_cast<int64_t>(std::time(nullptr)), contents);
     }
     else if (source.type == "emulators") {
-        readEmulators(source, cacheFolder, http, contents);
+        readEmulators(source, cacheFolder, http, contents, root);
     }
     else {
         contents.error = "Unknown source type \"" + source.type + "\"";

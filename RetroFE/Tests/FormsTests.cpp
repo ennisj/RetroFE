@@ -238,7 +238,7 @@ void runFormsTests()
     run("built-in forms parse", [&] {
         std::vector<std::string> ids = Forms::builtinFormIds();
         for (const char* id : { "settings", "manage", "sources", "package",
-                                "games", "menus", "systems", "videos", "emulators", "themes" }) {
+                                "games", "menus", "systems", "videos", "emulators", "themes", "retroarch-cores" }) {
             check(std::find(ids.begin(), ids.end(), id) != ids.end(), std::string(id) + " is built in");
         }
         for (const std::string& id : ids) {

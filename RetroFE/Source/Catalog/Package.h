@@ -29,6 +29,7 @@ namespace Catalog
         std::string url;       // absolute: http(s):// or a local path
         uint64_t size = 0;     // 0 if unknown
         std::string sha256;    // lowercase hex, or ""
+        std::optional<uint32_t> crc32; // unpacked core CRC, set only by the emulators source
         std::string md5;       // lowercase hex, or ""
         std::string sha256Url; // where the SHA-256 can be fetched when it isn't known yet (GitHub's <asset>.sha256)
         std::string target;    // root, collections, items, media, layouts, meta or emulators
@@ -47,9 +48,10 @@ namespace Catalog
         std::string source;    // name of the source it came from
         std::string id;
         std::string name;
-        std::string kind;      // collection, layout, media, bundle, other, app or emulator
+        std::string kind;      // collection, layout, media, bundle, other, app, emulator or core
         std::string version;
         std::string description;
+        std::string system; // installed RetroArch info systemname
         std::map<std::string, std::string> artwork;   // type ("logo"...) -> absolute URL or path
         std::vector<Requirement> requirements;   // "requires" in the index
         std::vector<PackageFile> files;

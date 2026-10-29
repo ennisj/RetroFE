@@ -3702,6 +3702,7 @@ CollectionInfo* RetroFE::getCatalogCollection()
 	};
 	for (const Catalog::Entry& entry : catalog->entries())
 	{
+		if (entry.package.kind == "core") continue;
 		Item* item = addItem(entry.package.id, entry.package.name);
 		item->genre = entry.package.kind;
 		item->manufacturer = entry.package.source;

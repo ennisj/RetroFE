@@ -47,7 +47,7 @@ namespace Catalog
         Package package;
         std::string installedVersion;   // "" if not installed
         std::string installedSource;    // the source it was installed from
-        bool updateAvailable = false;   // a newer version, from the same source
+        bool updateAvailable = false;   // a newer version, from the same source; core nightlies are shown only in Cores
     };
 
     // The collections/ folders an installed package put files in

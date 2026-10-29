@@ -1,6 +1,6 @@
 # Emulator downloads
 
-**Status:** step 2 screens and backend built, 2026-10-29. Builds on [catalog-sources.md](catalog-sources.md) and
+**Status:** emulator and core downloads built, 2026-10-29. Builds on [catalog-sources.md](catalog-sources.md) and
 [FOLDERS.md](../FOLDERS.md).
 
 On a bare install, a system needs a launcher, and a launcher needs an emulator program.
@@ -78,7 +78,7 @@ is reached). It makes one package per emulator:
 
 GitHub records a SHA-256 for every release asset, and the Catalog requires it for GitHub
 downloads, as for RetroFE's own updates. Libretro's server publishes none for
-`RetroArch.7z`, and only a CRC-32 per core. Those are allowed for libretro's server only,
+`RetroArch.7z`, and only a CRC-32 per core (checked against the unpacked DLL). Those are allowed for libretro's server only,
 over HTTPS, and the package screen says "libretro doesn't publish a checksum for this
 download". The 7-Zip and zip formats check their own CRCs as they're unpacked, which guards
 against a damaged download, not a tampered one.
@@ -97,7 +97,9 @@ The Catalog's installer as it is (staging, `.ready`, recovery, manifest, backups
   RetroArch's `.7z` uses LZMA2, LZMA and BCJ2; PCSX2's and MAME's use LZMA2. All are in
   the SDK's decoder.
 - **Programs are allowed** for `emulator` packages from the `emulators` source, and only
-  under `emulators/<folder>/`. Every other source still has programs and scripts refused.
+  under `emulators/<folder>/`. Cores from that same configured source may write
+  only their own `RetroArch/cores/<core>_libretro.dll`. Every other source still
+  has programs and scripts refused.
 - **The folder must be the Catalog's.** If `emulators/<folder>/` exists and wasn't
   installed by the Catalog, the install stops: "emulators/MAME is already there. Rename it,
   or add a launcher for it instead."
@@ -129,15 +131,29 @@ Cores come from libretro's nightly builds, one zip each:
 in `.index-extended` beside them (`<date> <crc32> <file>` per line, about 250 cores).
 
 - Each core is a package of kind `core`, id `core-<core>`, version its date, `requires`
-  `emulator-retroarch`, installed to `emulators/RetroArch/cores/`. Its name, the systems it
-  runs and the extensions it reads come from RetroArch's own `info/<core>_libretro.info`
-  (`display_name`, `systemname`, `supported_extensions`, `firmware*`), installed with
+  `emulator-retroarch`, installed to `emulators/RetroArch/cores/`. Its name and the systems it
+  runs come from RetroArch's own `info/<core>_libretro.info`
+  (`corename`, falling back to the file stem; `systemname` for the filter,
+  `display_name` for its description), installed with
   RetroArch.
-- Cores aren't shown in the main Catalog list. RetroArch's package screen and launcher
-  screen have **Cores**: a list filtered by system, with installed ones first.
+- Cores aren't shown in the main Catalog list. RetroArch's installed package screen has **Cores**, and Download an emulator
+  has **RetroArch cores**: a list filtered by system, with installed ones first.
 - Installing a core creates the launcher `RetroArch <core name>` (e.g. "RetroArch Genesis
   Plus GX") with `-L "%RETROFE_PATH%\emulators\RetroArch\cores\<core>_libretro.dll"
   "%ITEM_FILEPATH%"`.
+- The list is cached at `cache/<source>/cores.index` with its Last-Modified value
+  in `cores.modified`. Requests send `If-Modified-Since`; 304 uses the cached list.
+  RetroArch's installed manifest is required; otherwise the screen says
+  "Install RetroArch first". Downloads remain Windows x64 only.
+- The index CRC-32 belongs to the unpacked DLL, not the ZIP. Only this source sets
+  `files[].crc32`. A core ZIP must have exactly one entry, the expected DLL,
+  with that stored CRC; extraction also checks the data against the ZIP CRC.
+- Core launchers use printable ASCII names, collapse spaces, remove launcher-forbidden
+  characters and stop at 64 characters. Existing names stay. The manifest records
+  created launchers; changed launchers and those used by systems or games stay on removal.
+- RetroArch cannot be removed while core manifests remain. Removing a core leaves
+  RetroArch alone. Core nightly updates appear only in Cores and their package screens,
+  never as general Catalog updates. The installed package list still allows removal.
 - Adding a system then offers launchers and cores together, filtered by the folder's file
   extensions (the next round).
 
@@ -152,7 +168,7 @@ in `.index-extended` beside them (`<date> <crc32> <file>` per line, about 250 co
    The model action is `source.addEmulators`, requiring `draft:emulatorsTrusted`;
    forms cannot pre-fill that trust toggle. `package:noChecksum` exposes the
    libretro checksum notice. No emulator source is added automatically.
-3. **RetroArch cores.**
+3. **RetroArch cores. Built.**
 4. **Adding a system** picks a launcher or a core (next round).
 
 ## Decisions

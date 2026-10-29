@@ -21,6 +21,7 @@
 
 namespace Manager
 {
+    std::vector<Forms::Row> coreDownloadRows(const std::vector<Catalog::Entry>& entries, const std::string& system);
     Forms::Row emulatorDownloadRow(const Catalog::Emulator& emulator, const Catalog::Entry* entry,
                                   const std::vector<std::string>& warnings, bool checking, bool supported);
 }

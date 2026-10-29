@@ -130,6 +130,8 @@ const char* const emulatorDownloadsForm = R"(
   <section label="Emulators" visibleWhen="info:hasEmulatorsSource">
     <note bind="info:emulatorDownloadsStatus"/>
     <list label="Problems" bind="info:emulatorDownloadsWarnings"/>
+    <link label="RetroArch cores" open="retroarch-cores" visibleWhen="info:hasRetroArch"/>
+    <note bind="info:coresNote"/>
     <results bind="info:emulatorDownloads" open="package" empty="Checking emulator releases..."/>
     <button label="Check for updates" action="catalog.refresh"/>
   </section>
@@ -193,6 +195,12 @@ Forms::BuiltinTable Forms::emulatorsForms()
         { "emulator-file", emulatorFileForm },
         { "emulator-new", emulatorNewForm },
         { "emulator-downloads", emulatorDownloadsForm },
+        { "retroarch-cores", R"(<form id="retroarch-cores" title="Cores">
+  <note bind="info:coresNote"/>
+  <choice label="System" bind="draft:coreSystem" options="info:coreSystems"/>
+  <results bind="info:cores" open="package" limit="500" empty="No cores for this system."/>
+  <button label="Check for updates" action="catalog.refresh"/>
+</form>)" },
         { "emulator-edit", emulatorEditForm },
         { "emulator-rename", emulatorRenameForm },
     };

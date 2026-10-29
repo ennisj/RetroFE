@@ -141,6 +141,7 @@ const char* const sourceForm = R"(
 // Manage (installed packages, a source's), not from the Catalog page.
 const char* const packageForm = R"(
 <form id="package" title="Package" bind="package:name">
+  <link label="Cores" open="retroarch-cores" visibleWhen="package:hasCores"/>
   <note bind="package:summary"/>
   <note bind="package:notice"/>
   <note bind="package:description"/>

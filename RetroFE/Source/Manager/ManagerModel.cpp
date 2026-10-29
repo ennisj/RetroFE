@@ -28,6 +28,8 @@
 #include <algorithm>
 #include <ctime>
 #include <filesystem>
+#include <set>
+#include "../Library/RetroArch.h"
 
 namespace fs = std::filesystem;
 
@@ -232,6 +234,10 @@ void ManagerModel::restoreView(const ViewState& state)
 
 void ManagerModel::setScreen(const std::string& form, const Forms::Params& params)
 {
+    if (form == "retroarch-cores") {
+        if (drafts_["coreSystem"].empty()) drafts_["coreSystem"] = "all";
+        if (catalog_) catalog_->refresh();
+    }
     screen_.form = form;
     screen_.params = params;
     // Systems added or deleted on the screen before count straight away (the
@@ -445,6 +451,11 @@ std::string ManagerModel::get(const std::string& key)
     if (key == "info:hasCollections") {
         return collections_.empty() ? "no" : "yes";
     }
+    if (key == "info:hasRetroArch" || key == "info:coresNote") {
+        bool installed = false;
+        if (catalog_) for (const auto& manifest : catalog_->installed()) if (manifest.id == "emulator-retroarch") installed = true;
+        return key == "info:hasRetroArch" ? (installed ? "yes" : "no") : (installed ? "" : "Install RetroArch first");
+    }
     if (key == "info:emulatorDownloadsSupported") {
 #ifdef _WIN32
         return "yes";
@@ -480,6 +491,8 @@ std::string ManagerModel::packageValue(const std::string& key)
     const Catalog::Package& package = entry.package;
     bool installed = !entry.installedVersion.empty();
     bool busy = catalog_->isQueued(package.id);
+    if (package.kind == "core") entry.updateAvailable = (entry.installedSource.empty() || entry.installedSource == package.source) && !entry.installedVersion.empty() && Catalog::compareVersions(package.version, entry.installedVersion) > 0;
+    if (key == "hasCores") return package.id == "emulator-retroarch" && !entry.installedVersion.empty() ? "yes" : "no";
     bool isApp = package.kind == "app";
     Catalog::Entry offeredEntry;
     bool offered = catalog_->entry(package.id, offeredEntry);   // false: installed, but no source offers it now
@@ -516,6 +529,7 @@ std::string ManagerModel::packageValue(const std::string& key)
         if (!entry.installedSource.empty() && entry.installedSource != package.source) {
             return "Version " + entry.installedVersion + " is installed from " + entry.installedSource + ".";
         }
+        if (entry.updateAvailable && package.kind == "core") return "Newer build from " + package.version;
         if (entry.updateAvailable) return "Version " + entry.installedVersion + " is installed. " + package.version + " is available.";
         if (entry.installedVersion == package.version) {
             // Just installed: the outcome ("Installed Pack 1.0.") already says so
@@ -536,6 +550,7 @@ std::string ManagerModel::packageValue(const std::string& key)
         return text;
     }
     if (key == "checksum") {
+        if (package.kind == "core") return "The core's CRC-32 is checked against libretro's list.";
         if (package.noChecksum) return "libretro doesn't publish a checksum for this download.";
         if (!offered) return "";
         bool checked = std::any_of(package.files.begin(), package.files.end(), [](const Catalog::PackageFile& file) {
@@ -725,7 +740,7 @@ std::vector<std::string> ManagerModel::list(const std::string& key)
             if (source.type != "emulators") continue;
             const std::string prefix = source.name + ": ";
             for (const auto& warning : catalog_->warnings()) {
-                if (warning.compare(0, prefix.size(), prefix) == 0) values.push_back(warning.substr(prefix.size()));
+                if (warning.compare(0, prefix.size(), prefix) == 0 && warning.substr(prefix.size()) != "Install RetroArch first") values.push_back(warning.substr(prefix.size()));
             }
         }
     }
@@ -751,6 +766,9 @@ Forms::Rows ManagerModel::rows(const std::string& key, size_t limit)
     Forms::Rows rows;
     if (Manager::Provider* p = provider(key, ':', name)) {
         rows = p->rows(name, limit, screen_);
+    }
+    else if (catalog_ && key == "info:cores") {
+        rows.items = Manager::coreDownloadRows(catalog_->entries(), get("draft:coreSystem"));
     }
     else if (catalog_ && key == "info:emulatorDownloads") {
         std::string sourceName;
@@ -794,7 +812,7 @@ Forms::Rows ManagerModel::rows(const std::string& key, size_t limit)
     }
     else if (catalog_ && key == "source:packages") {
         for (const Catalog::Entry& entry : catalog_->entries()) {
-            if (entry.package.source != screen_.param("id")) continue;
+            if (entry.package.kind == "core" || entry.package.source != screen_.param("id")) continue;
             Forms::Row row;
             row.id = entry.package.id;
             row.label = entry.package.name;
@@ -819,6 +837,18 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
 {
     std::vector<std::pair<std::string, std::string>> result;
     std::string name;
+    if (source == "info:coreSystems") {
+        result.push_back({ "all", "All systems" });
+        std::set<std::string> systems;
+        std::error_code ec;
+        for (const auto& file : fs::directory_iterator(fs::path(Configuration::absolutePath) / "emulators/RetroArch/info", ec)) {
+            if (file.path().extension() != ".info") continue;
+            auto info = Library::RetroArch::readConfigFile(file.path().string());
+            if (!info["systemname"].empty()) systems.insert(info["systemname"]);
+        }
+        for (const auto& system : systems) result.push_back({ system, system });
+        return result;
+    }
     if (Manager::Provider* p = provider(source, ':', name)) {
         return p->options(name, screen_);
     }
@@ -939,6 +969,8 @@ std::string ManagerModel::catalogProblem(const std::string& action)
         if (!packageEntry(*catalog_, screen_.param("id"), entry)) {
             return "This package isn't offered by any source any more.";
         }
+        if (entry.package.kind == "core") entry.updateAvailable = (entry.installedSource.empty() || entry.installedSource == entry.package.source) &&
+            !entry.installedVersion.empty() && Catalog::compareVersions(entry.package.version, entry.installedVersion) > 0;
         bool busy = catalog_->isQueued(screen_.param("id"));
         bool installed = !entry.installedVersion.empty();
         if (action == "package.cancel") return busy ? "" : "Nothing to stop.";
