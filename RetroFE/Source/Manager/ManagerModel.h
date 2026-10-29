@@ -34,6 +34,7 @@ namespace Catalog { class Service; }
 //   draft:<key>            unsaved form input; a field's default is its initial value
 //   param:<name>           the current screen's parameters
 //   info:collections       the collection folders (list)
+//   info:hasLaunchers      whether the Launchers screen lists any, for visibleWhen
 //   info:hasCollections    whether there are any, for visibleWhen
 //   info:romCount          matching files in draft:romPath
 //   info:source:<binding>  the file a settings: value comes from, when it isn't settings.conf

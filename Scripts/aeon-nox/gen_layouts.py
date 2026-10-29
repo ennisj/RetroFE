@@ -569,7 +569,7 @@ TEXT = {
         'Your controls, window or full screen and the screen size, which theme to use, whether RetroFE starts here on Home, and video playback. '
         'The Settings key opens it from anywhere, too.',
     'collections/Home/medium_artwork/description/Manage.txt':
-        'Games, menus, systems, videos, emulators and themes: add, change and hide what RetroFE shows and how it starts it. '
+        'Games, menus, systems, videos, launchers and themes: add, change and hide what RetroFE shows and how it starts it. '
         'See what the Catalog has installed, and the sources it uses.',
     'collections/Home/medium_artwork/description/Browse.txt':
         'Your collections, as set up in Manage or installed from the Catalog. Back brings you here again.',

@@ -131,6 +131,35 @@ namespace
 }
 
 static Test::Suite emulators("emulators", [] {
+    run("hub: launcher presence follows the Launchers list, including new launchers", [] {
+        std::string root = makeRoot("hub-first-launcher");
+        Fixture f(root);
+        f.model->setScreen("manage", {});
+        checkEqual(f.model->get("info:hasLaunchers"), "no", "empty install");
+        writeFile(root + "/emu/program.exe", "x");
+        f.model->setScreen("emulator-new", {});
+        f.model->set("emulator:newName", "First");
+        f.model->set("emulator:newExecutable", root + "/emu/program.exe");
+        Forms::Model::Result created = f.model->runAction("emulator.create");
+        check(created.ok && created.back, "created and returns to the previous screen: " + created.message);
+        f.model->setScreen("manage", {});
+        checkEqual(f.model->get("info:hasLaunchers"), "yes", "one global launcher, before a rebuild");
+        checkEqual(f.model->get("info:hasCollections"), "no", "the first system is still needed");
+        check(f.model->rows("emulator:search", 200).total == 1, "the Launchers list agrees");
+    });
+
+    run("hub: collection and local launchers count without a global launcher", [] {
+        for (const std::string& file : { "launcher.conf", "launchers.local/only.conf" }) {
+            std::string root = makeRoot(file == "launcher.conf" ? "hub-collection-launcher" : "hub-local-launcher");
+            writeFile(root + "/collections/Only/settings.conf", "list.extensions = zip\n");
+            writeFile(root + "/collections/Only/" + file, "executable = program.exe\n");
+            Fixture f(root);
+            f.model->setScreen("manage", {});
+            checkEqual(f.model->get("info:hasLaunchers"), "yes", file);
+            check(f.model->rows("emulator:search", 200).total == 1, "the Launchers list agrees: " + file);
+        }
+    });
+
     run("emulators: the list shows where each launcher is, its program and who uses it", [] {
         Fixture f(makeInstall("emu-list"));
         f.model->setScreen("emulators", {});

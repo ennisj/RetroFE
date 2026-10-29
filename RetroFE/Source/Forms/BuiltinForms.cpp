@@ -44,7 +44,8 @@ const char* const settingsForm = R"(
     <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <text label="Height" bind="settings:vertical" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <toggle label="Hide mouse" bind="settings:hideMouse" default="no"/>
-    <note value="Fullscreen and screen size apply the next time RetroFE starts. Hide mouse applies when you save; RetroFE reloads."/>
+    <toggle label="Capture mouse" bind="settings:captureMouse" default="no" help="Keeps the mouse pointer inside RetroFE's window."/>
+    <note value="Fullscreen and screen size apply the next time RetroFE starts. Hide mouse and Capture mouse apply when you save; RetroFE reloads."/>
   </section>
   <section label="Menus">
     <choice label="Theme" bind="settings:layout" options="layouts"/>
@@ -61,13 +62,14 @@ const char* const settingsForm = R"(
 </form>
 )";
 
-// The hub: on a bare install the way to the first system, then applying
+// The hub: on a bare install the first launcher and system, then applying
 // what's waiting, one link per section, and the Catalog. Each package
 // installed from the Catalog opens its own screen, which can remove it.
 const char* const manageForm = R"(
 <form id="manage" title="Manage">
   <note visibleWhen="!info:hasCollections" panel="yes"
-        value="Welcome! Nothing is set up yet. Add your first system: point RetroFE at a folder of games and the emulator that runs them. Or install one from the Catalog: add a source under Sources."/>
+        value="Welcome! First add a launcher (the emulator program that runs the games), then a system (a folder of games and the launcher that starts them). Or install from the Catalog via Sources."/>
+  <link label="Add your first launcher/emulator" open="emulator-new" visibleWhen="!info:hasLaunchers"/>
   <link label="Add your first system" open="system-add" visibleWhen="!info:hasCollections"/>
   <button label="Apply changes now" action="changes.apply" visibleWhen="info:hasPendingChanges"/>
   <link label="Games" open="games"
@@ -76,7 +78,7 @@ const char* const manageForm = R"(
   <link label="Systems" open="systems"
         help="Add a system (a folder of games and the emulator that runs them), or change one's settings, launcher and art."/>
   <link label="Videos" open="videos" help="Collections of videos RetroFE plays, and how each one plays."/>
-  <link label="Emulators" open="emulators"
+  <link label="Launchers" open="emulators"
         help="The launchers that start games: the program, its arguments, and which systems and games use each one."/>
   <link label="Themes" open="themes" help="How RetroFE looks: choose a theme, or change one with the theme and layout editors."/>
   <section label="Catalog">

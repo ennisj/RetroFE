@@ -40,6 +40,7 @@ For all `BOOLEAN` types, the following values are accepted: `yes`, `no`, `true`,
 | `windowResize` | `false` | `BOOLEAN` | Allow window to be resized | |
 | `fps` | `60` | `INTEGER` | Requested FPS while in an active state | |
 | `fpsIdle` | `60` | `INTEGER` | Request FPS while in an idle state | |
+| `captureMouse` | `false` | `BOOLEAN` | Keeps the mouse pointer inside RetroFE's window | |
 | `hideMouse` | `true` | `BOOLEAN` | Defines whether the mouse cursor is hidden | |
 | `animateDuringGame` | `true` | `BOOLEAN` | Pause animated marquees while in the game | ✅ |
 

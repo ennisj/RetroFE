@@ -44,6 +44,7 @@
 #define OPTION_WINDOWRESIZE          "windowResize"
 #define OPTION_FPS                   "fps"
 #define OPTION_FPSIDLE               "fpsIdle"
+#define OPTION_CAPTUREMOUSE          "captureMouse"
 #define OPTION_HIDEMOUSE             "hideMouse"
 #define OPTION_ANIMATEDURINGGAME     "animateDuringGame"
 

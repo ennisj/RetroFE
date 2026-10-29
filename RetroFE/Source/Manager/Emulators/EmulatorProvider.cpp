@@ -607,6 +607,9 @@ Forms::Model::Result EmulatorProvider::rename(const Manager::Screen& screen)
 
 std::string EmulatorProvider::get(const std::string& key, const Manager::Screen& screen)
 {
+    if (key == "hasLaunchers") {
+        return current() && !entries_.empty() ? "yes" : "no";
+    }
     if (key == "query") {
         return query_;
     }
