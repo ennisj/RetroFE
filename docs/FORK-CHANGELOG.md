@@ -4,9 +4,9 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
-## Round 15 — adding a system from a launcher (2026-10-29)
+## Round 15 — a system and its games, from a launcher (2026-10-29)
 
-Unit tests: 8,224 → 8,276 checks (Windows CI). Choices in M26 of
+Unit tests: 8,224 → 8,317 checks (Windows CI). Choices in M26 of
 [DECISIONS.md](DECISIONS.md).
 
 - **Add a system starts from the launcher:** a Left/Right choice of every
@@ -17,8 +17,13 @@ Unit tests: 8,224 → 8,276 checks (Windows CI). Choices in M26 of
   (or `<baseItemPath>\<Name>`), made when you add the system.
 - **Programs inside the install** are written as `%RETROFE_PATH%\...`, so a
   moved install keeps working.
-- **The hub's next step:** with one system and no games yet, it says where
-  to put them.
+- **Add games:** a system's screen (and the hub, for an empty first system)
+  copies your game files from a folder you pick into its games folder:
+  only files matching its extensions, plus the files a `.cue`, `.gdi` or
+  `.m3u` refers to, after a free-space check, with progress and Stop.
+  Games already there are skipped, never overwritten; your files are never
+  moved or deleted. "Use this folder instead" points the system at the
+  folder without copying.
 
 ## Round 14 — set up from nothing: launchers and emulator downloads (2026-10-29)
 

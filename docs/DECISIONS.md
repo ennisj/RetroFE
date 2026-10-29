@@ -588,6 +588,12 @@ Made while building the design review (M22); the option not taken in brackets.
   Dreamcast; MAME: Arcade) fill Name and Extensions until you type in them.
 - **Default games folder per FOLDERS.md**, created on Add; `list.path` is
   written only for another folder.
+- **Add games copies, never moves** (your answer: games are your own
+  files; Catalog game packs come later). Existing names are skipped, not
+  overwritten; companions of `.cue`/`.gdi`/`.m3u` come along, but only from
+  the picked folder or below. Subfolders are kept only when the system's
+  games are read from subfolders; otherwise games are copied flat so
+  Browse finds them. Leaving the screen stops the copy cleanly.
 
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
