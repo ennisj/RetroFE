@@ -54,9 +54,13 @@ static Test::Suite imports("game imports", [] {
         GameImport::Request r;
         r.from = root + "/source"; r.into = root + "/roms"; r.extensions = { "cue" };
         std::atomic<bool> stop{ false };
-        std::string notes = " Missing: " + (r.from / "missing.bin").string() + " Kept " + (r.into / "b.cue").string() + "; skipped " + (r.from / "b.cue").string();
-        checkEqual(GameImport::run(r, true, stop).message, "Copied 1 game into " + r.into.string()
-            + "; 1 has the name of a different file already there, so it was skipped; 1 file a game refers to is missing." + notes, "singular skipped and missing with filenames");
+        r.destinationLabel = "collections\\CD\\roms";
+        // The notes name files with the system's own separators, so only their names are checked
+        std::string message = GameImport::run(r, true, stop).message;
+        std::string summary = "Copied 1 game into collections\\CD\\roms; 1 has the name of a different file already there, so it was skipped; 1 file a game refers to is missing.";
+        checkEqual(message.substr(0, summary.size()), summary, "singular skipped and missing");
+        check(message.find(" Missing: ") != std::string::npos && message.find("missing.bin") != std::string::npos
+            && message.find(" Kept ") != std::string::npos && message.find("b.cue") != std::string::npos, "notes name the files: " + message);
         r.into = root + "/plural-roms";
         writeFile(root + "/source/a.cue", "FILE missing.bin BINARY\nFILE absent.bin BINARY\n");
         writeFile(root + "/source/c.cue", "new");
