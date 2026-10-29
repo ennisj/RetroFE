@@ -563,6 +563,21 @@ Made while building the design review (M22); the option not taken in brackets.
 - **Settings wording:** fullscreen and screen size apply the next time
   RetroFE starts (a reload keeps the window); Hide mouse applies on Save.
 
+### M25. Round 14 choices — Decided (2026-10-29)
+- **"Launchers" again** in Manage, not "Emulators" (your request); form ids
+  and bindings keep their old names.
+- **Launcher before system on a bare install:** "Add your first
+  launcher/emulator" sits above "Add your first system" until a launcher
+  exists. Once one does (created, or installed with an emulator, however
+  many screens deep), the way back to the hub focuses "Add your first
+  system".
+- **The mouse is free by default:** `captureMouse` (default no) is the only
+  thing that makes RetroFE grab the pointer [grabbing it always, as
+  upstream does]. Settings has a toggle; it applies on Save.
+- **One folder spec:** [FOLDERS.md](FOLDERS.md) is where everything goes;
+  emulator programs live in `emulators/<name>/`, which the Catalog installs
+  into.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
@@ -582,6 +597,32 @@ Made while building the design review (M22); the option not taken in brackets.
 - **Deferred (your answer, 2026-10-24):** a release will come eventually,
   but nothing is published at this early stage. Creating it (pushing a tag)
   stays with you.
+
+### C2. Emulator downloads — Decided (2026-10-29)
+- **A built-in list of six emulators** (RetroArch, MAME, DuckStation,
+  PCSX2, PPSSPP, Flycast) behind one `emulators` source the user turns on
+  with "I trust these downloads" [a GitHub source per emulator added by
+  hand: a bare repository doesn't say which file is the program, its
+  arguments or how to make it portable]. Design:
+  [design/emulator-downloads.md](design/emulator-downloads.md).
+- **Programs are installed only from that source**, only into
+  `emulators/<name>/`, decided from `sources.conf`, never from what a
+  package or download says. Every other source still can't install
+  programs. `emulator-` and `core-` ids are reserved for it.
+- **7-Zip is read** with the LZMA SDK's decoder (public domain), because
+  RetroArch, PCSX2 and MAME only publish 7-Zip (MAME as a self-extracting
+  `.exe`, opened as an archive, never run) [ZIP only]. Only emulator
+  packages, or files marked `"extract": true`, are unpacked; other `.7z`
+  files are installed whole.
+- **Checksums:** GitHub downloads must have GitHub's SHA-256; RetroArch's
+  download from libretro has none, which its screen says; RetroArch cores
+  (next) are checked against libretro's CRC list.
+- **Each install makes its launcher** (`%RETROFE_PATH%` paths), unless one
+  of that name exists. Removal keeps a launcher that was changed or that a
+  system uses, and says which systems.
+- **Updates replace every file the emulator shipped**, backing up the ones
+  that changed (emulators update themselves; mixed versions break). Files
+  the emulator wrote (settings, saves, BIOS) are never touched.
 
 ## Working method
 

@@ -4,6 +4,28 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 14 — set up from nothing: launchers and emulator downloads (2026-10-29)
+
+Unit tests: 7,728 → 8,128 checks (Windows CI). Choices in M25 and C2 of
+[DECISIONS.md](DECISIONS.md); the folder spec is [FOLDERS.md](FOLDERS.md).
+
+- **Launchers first.** Manage says "Launchers" again. On a bare install
+  the hub offers "Add your first launcher/emulator" above "Add your first
+  system", and comes back to "Add your first system" once a launcher exists.
+- **Download an emulator.** Add a launcher starts with it: after one "I
+  trust these downloads", it lists RetroArch, MAME, DuckStation, PCSX2,
+  PPSSPP and Flycast with their versions. Install puts the emulator in
+  `emulators\<name>`, makes it portable where it can be, and creates its
+  launcher; Update and Remove work like any Catalog package.
+- **7-Zip archives** (and MAME's self-extracting ones) are read, for
+  emulator downloads.
+- **The mouse isn't captured** unless Settings' new "Capture mouse" is on.
+- **A launcher named by a system's settings counts as used** even before
+  the system has games, so Delete launcher doesn't remove it.
+- **Test builds:** each passing CI run on `feature/management-ui` is
+  published as the `management-ui-latest` pre-release and copied to the PC
+  ([Scripts/test-build](../Scripts/test-build/README.md)).
+
 ## Round 13 — fifth QA pass, back from a game (2026-10-28)
 
 Unit tests: 7,571 → 7,728 checks (Windows CI). Fixes from
