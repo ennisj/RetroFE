@@ -22,6 +22,74 @@ using namespace Test;
 using Manager::GameImport;
 
 static Test::Suite imports("game imports", [] {
+    run("add games: copied message", [] {
+        std::string root = makeRoot("import-message-copied");
+        writeFile(root + "/source/a.md", "a");
+        GameImport::Request r;
+        r.from = root + "/source"; r.into = root + "/roms"; r.extensions = { "md" };
+        r.destinationLabel = "collections\\Genesis\\roms";
+        std::atomic<bool> stop{ false };
+        checkEqual(GameImport::run(r, true, stop).message, "Copied 1 game into " + r.destinationLabel + ".", "singular copied with no zero counts");
+        r.into = root + "/more-roms";
+        writeFile(root + "/source/b.md", "b");
+        checkEqual(GameImport::run(r, true, stop).message, "Copied 2 games into " + r.destinationLabel + ".", "plural copied");
+    });
+    run("add games: copied and already there message", [] {
+        std::string root = makeRoot("import-message-already");
+        writeFile(root + "/source/a.md", "a");
+        writeFile(root + "/source/b.md", "b");
+        writeFile(root + "/roms/a.md", "a");
+        GameImport::Request r;
+        r.from = root + "/source"; r.into = root + "/roms"; r.extensions = { "md" };
+        std::atomic<bool> stop{ false };
+        checkEqual(GameImport::run(r, true, stop).message, "Copied 1 game into " + r.into.string() + "; 1 was already there.", "singular already there");
+        writeFile(root + "/source/c.md", "c");
+        checkEqual(GameImport::run(r, true, stop).message, "Copied 1 game into " + r.into.string() + "; 2 were already there.", "plural already there");
+    });
+    run("add games: skipped and missing message with notes", [] {
+        std::string root = makeRoot("import-message-notes");
+        writeFile(root + "/source/a.cue", "FILE missing.bin BINARY\n");
+        writeFile(root + "/source/b.cue", "new");
+        writeFile(root + "/roms/b.cue", "existing");
+        GameImport::Request r;
+        r.from = root + "/source"; r.into = root + "/roms"; r.extensions = { "cue" };
+        std::atomic<bool> stop{ false };
+        std::string notes = " Missing: " + (r.from / "missing.bin").string() + " Kept " + (r.into / "b.cue").string() + "; skipped " + (r.from / "b.cue").string();
+        checkEqual(GameImport::run(r, true, stop).message, "Copied 1 game into " + r.into.string()
+            + "; 1 has the name of a different file already there, so it was skipped; 1 file a game refers to is missing." + notes, "singular skipped and missing with filenames");
+        r.into = root + "/plural-roms";
+        writeFile(root + "/source/a.cue", "FILE missing.bin BINARY\nFILE absent.bin BINARY\n");
+        writeFile(root + "/source/c.cue", "new");
+        writeFile((r.into / "b.cue").string(), "existing");
+        writeFile((r.into / "c.cue").string(), "existing");
+        auto done = GameImport::run(r, true, stop);
+        check(done.message.find("; 2 have the names of different files already there, so they were skipped; 2 files games refer to are missing.") != std::string::npos, "plural skipped and missing");
+    });
+    run("add games: stopped message", [] {
+        std::string root = makeRoot("import-message-stopped");
+        writeFile(root + "/source/a.md", "a");
+        writeFile(root + "/source/b.md", "b");
+        GameImport::Request r;
+        r.from = root + "/source"; r.into = root + "/roms"; r.extensions = { "md" };
+        std::atomic<bool> stop{ false };
+        auto done = GameImport::run(r, true, stop, {}, [&](const std::string&) {
+            if (fs::exists(r.into / "a.md")) stop = true;
+        });
+        checkEqual(done.message, "Stopped. Copied 1 game into " + r.into.string() + ".", "stopped after one finished game");
+    });
+    run("add games: no new games message", [] {
+        std::string root = makeRoot("import-message-no-new");
+        GameImport::Request r;
+        r.from = root + "/source"; r.into = root + "/roms"; r.extensions = { "md" };
+        std::atomic<bool> stop{ false };
+        for (int i = 0; i < 12; ++i) {
+            std::string name = std::to_string(i) + ".md";
+            writeFile((r.from / name).string(), "a");
+            writeFile((r.into / name).string(), "a");
+            if (i == 0) checkEqual(GameImport::run(r, true, stop).message, "No new games: 1 is already in " + r.into.string() + ".", "one already there");
+        }
+        checkEqual(GameImport::run(r, true, stop).message, "No new games: all 12 are already in " + r.into.string() + ".", "all already there");
+    });
     run("add games: count, defaults, collisions and hierarchy", [] {
         std::string root = makeRoot("import-count");
         writeFile(root + "/source/a.md", "abc");
@@ -74,6 +142,6 @@ static Test::Suite imports("game imports", [] {
         });
         check(done.changed && fs::exists(r.into / "a.cue"), "Stop keeps finished file");
         check(!fs::exists(r.into / "tracks/audio.bin") && !fs::exists(r.into / "tracks/audio.bin.retrofe-part"), "Stop removes partial file");
-        check(done.message.find("Stopped") != std::string::npos, "Stop reported");
+        check(done.message.find("Stopped. Copied 2 games into " + r.into.string() + "; 1 file a game refers to is missing.") == 0, "Stop and missing file reported");
     });
 });

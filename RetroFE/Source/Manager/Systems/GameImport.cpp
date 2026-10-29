@@ -260,9 +260,21 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
             result.changed = true;
             if (file.game) result.copied++;
         }
-        result.message = std::string(stop ? "Stopped. " : "") + "Copied " + std::to_string(result.copied) + (result.copied == 1 ? " game into " : " games into ") + (r.destinationLabel.empty() ? r.into.string() : r.destinationLabel)
-            + "; " + std::to_string(result.already) + (result.already == 1 ? " was already there; " : " were already there; ") + std::to_string(result.conflicts)
-            + " conflicts; " + std::to_string(result.missing) + " missing references.";
+        std::string destination = r.destinationLabel.empty() ? r.into.string() : r.destinationLabel;
+        if (!stop && result.copied == 0 && result.already > 0 && result.conflicts == 0 && result.missing == 0) {
+            result.message = "No new games: " + (result.already == 1 ? std::string("1 is") : "all " + std::to_string(result.already) + " are")
+                + " already in " + destination + ".";
+        }
+        else {
+            result.message = std::string(stop ? "Stopped. " : "") + "Copied " + std::to_string(result.copied)
+                + (result.copied == 1 ? " game into " : " games into ") + destination;
+            if (result.already > 0) result.message += "; " + std::to_string(result.already) + (result.already == 1 ? " was already there" : " were already there");
+            if (result.conflicts > 0) result.message += "; " + std::to_string(result.conflicts)
+                + (result.conflicts == 1 ? " has the name of a different file already there, so it was skipped" : " have the names of different files already there, so they were skipped");
+            if (result.missing > 0) result.message += "; " + std::to_string(result.missing)
+                + (result.missing == 1 ? " file a game refers to is missing" : " files games refer to are missing");
+            result.message += ".";
+        }
     }
     catch (const std::exception& e) {
         result.message = e.what();
