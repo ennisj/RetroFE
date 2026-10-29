@@ -14,7 +14,6 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 | Item | Question |
 |------|----------|
 | [M22](#m22-design-review-choices-round-12--decided-the-look-is-yours-to-judge) | Round 12 has landed: does the two-pane Manage look in Aeon Nox (list left, help/art right) work for you, at 16:9 and 4:3, and do the other design-review choices feel right in use? VERIFY.md "Manage look (round 12)" lists what to look at. |
-| [W5](#w5-agents-without-the-windows-desktop--decided-2026-10-28) | Rounds 12–13 are on `\\JOHN-DESKTOP\retrofe\management-ui\builds\2026-10-28-38454b9a`. Install them over `E:\Storage\OneSauce` with `powershell -ExecutionPolicy Bypass -File \\JOHN-DESKTOP\retrofe\management-ui\Install-TestBuild.ps1` (it backs up what it replaces), then work through VERIFY.md. |
 
 Behaviour that still needs a check on a real setup is tracked in
 [VERIFY.md](VERIFY.md).
