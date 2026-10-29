@@ -466,6 +466,37 @@ layout. Values set in an override file say so ("Set in settings1.conf").
 
 ### Systems and Videos
 
+**Add games**, near the top of a system's screen, adds files you already own.
+On a new install, the games hint for the one empty system opens it directly.
+Up/Down and Select reach every field and button; Back returns to the system.
+
+- **From** opens the folder browser. Its count uses the system's extensions,
+  including their case, just like Browse. **Include subfolders** starts on;
+  changing it counts again on a worker thread.
+- **Into** shows the games folder: `list.path` (the first folder if several),
+  otherwise `<baseItemPath>/<system>`, otherwise `collections/<system>/roms`.
+- **Copy games** makes that folder if needed and copies matching files without
+  changing the originals. When `list.romHierarchy` is on (or RetroFE uses a ROM
+  hierarchy for this system), it keeps subfolders. Otherwise it puts games in
+  one folder, since Browse would not find games below it. Disc and playlist
+  companions keep their paths relative to their `.cue`, `.gdi` or `.m3u` file;
+  only references within that file's folder or below are copied. Missing
+  references are reported. Files whose extensions are not in the system's list
+  can still be copied as companions.
+- An existing name with the same size is counted as already there. A different
+  size is a conflict: the existing file stays and the new file is skipped.
+  The result counts conflicts and missing references and names the first few.
+  Free space is checked for the games and companions before any copying.
+- Copying runs in the background with progress and **Stop**. Stop, Back or
+  closing Manage stops the job, removes its partial file and keeps completed
+  files. The result stays on the screen. The Library rescans after copies,
+  including stopped jobs that finished some files; Browse updates when Manage
+  closes and RetroFE reloads. The hub hint disappears once games are found.
+- **Use this folder instead** asks for confirmation, copies nothing and saves
+  `list.path` through the settings editor. The old settings are backed up in
+  `manage/backups`; paths inside the root use `%RETROFE_PATH%` so the install
+  can be moved. This does not change whether Browse reads subfolders.
+
 **Systems** lists every collection with games of its own: search by name or
 title, or pick a menu to see only the systems below it. Each row shows the
 game count and the launcher. **Add a system** starts with a compact **Launcher**
@@ -488,8 +519,8 @@ you add the system. It is `<baseItemPath>/<Name>` when `baseItemPath` is set, ot
 Choosing an existing folder still counts matching files and warns about extensions
 that differ only in case. Videos keep their existing add form and require a folder.
 
-With exactly one system and no games in it, the hub offers **Put your games in
-<folder>, or add them with Add games**. For now it opens that system's screen.
+With exactly one system and no games in it, the hub offers **Add games to
+<system>**, opening Add games for that system.
 The first-system link disappears once a system exists.
 
 A system's screen shows the menus it's in, its games folder and extensions,

@@ -127,7 +127,7 @@ static Test::Suite manageHub("manage hub", [] {
         check(system && system->visibleWhen == "!system:hasSystems", "only until a system exists");
         const Forms::Field* games = Forms::findField(*form, "system:firstGames");
         check(games && system && games < system && games->visibleWhen == "system:hasFirstEmptySystem"
-              && games->open == "system", "games hint comes before the first system link and opens its screen");
+              && games->open == "system-add-games", "games hint comes before the first system link and opens its screen");
         auto launchers = Forms::parse(Forms::builtinForm("emulators"), error);
         check(launchers && launchers->title == "Launchers", "screen name, with its existing id");
     });

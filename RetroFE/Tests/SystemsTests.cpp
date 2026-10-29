@@ -25,6 +25,8 @@
 #include "../Source/Manager/Systems/SystemProvider.h"
 #include "../Source/Utility/Utils.h"
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -614,6 +616,42 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:addExtensions"), "chd", "typed extensions stay");
     });
 
+    run("systems: Add games binds, uses a portable folder and keeps a backup", [] {
+        Fixture f("sys-import-folder");
+        f.open("system-add-games", { { "id", "Empty" } });
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("system-add-games"), error);
+        check(form && Forms::findField(*form, "system:importFrom"), "folder field parses and binds");
+        checkEqual(f.model.get("system:importSubfolders"), "yes", "subfolders default on");
+        std::string chosen = f.root + "/my-games";
+        writeFile(chosen + "/game.zip", "game");
+        f.model.set("system:importFrom", chosen);
+        auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (f.model.get("system:importRunning") == "yes" && std::chrono::steady_clock::now() < until)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        checkEqual(f.model.get("system:importMessage"), "1 game found", "worker count bound to screen");
+        check(f.model.runAction("system.copyGames").ok, "copy starts through the form action");
+        until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (f.model.get("system:importRunning") == "yes" && std::chrono::steady_clock::now() < until) {
+            f.model.update(0.01f);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        f.model.update(0.01f);
+        f.settle();
+        int copiedSystem = f.indexer.index()->findCollection("Empty");
+        check(copiedSystem >= 0 && f.indexer.index()->collections[static_cast<size_t>(copiedSystem)].gameCount == 1,
+              "finished copy requests a rescan");
+        std::string settings = f.root + "/collections/Empty/settings.conf";
+        std::string before = readFile(settings);
+        auto result = f.model.runAction("system.useGamesFolder");
+        check(result.ok, "use folder saved: " + result.message);
+        check(contains(readFile(settings), "%RETROFE_PATH%"), "inside root is portable");
+        checkEqual(readFile(f.root + "/manage/backups/collections/Empty/settings.conf"), before, "original settings backed up");
+        f.settle();
+        int c = f.indexer.index()->findCollection("Empty");
+        check(c >= 0 && f.indexer.index()->collections[static_cast<size_t>(c)].gameCount == 1, "rescan sees selected folder games");
+    });
+
     run("hub: games hint only for one empty system and opens that system", [] {
         Fixture f("sys-hub-games");
         checkEqual(f.model.get("system:hasFirstEmptySystem"), "no", "several systems hide hint");
@@ -631,7 +669,7 @@ static void runSystemsTests()
         std::string error;
         auto hub = Forms::parse(Forms::builtinForm("manage"), error);
         const auto* hint = hub ? Forms::findField(*hub, "system:firstGames") : nullptr;
-        check(hint && hint->open == "system", "link opens system screen");
+        check(hint && hint->open == "system-add-games", "link opens system screen");
         writeFile(f.root + "/collections/Genesis/roms/sonic.md", "x");
         f.rescan();
         checkEqual(f.model.get("system:hasFirstEmptySystem"), "no", "adding games hides hint");

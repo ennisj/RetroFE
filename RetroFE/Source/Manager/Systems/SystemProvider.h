@@ -17,6 +17,7 @@
 
 #include "../EditBuffer.h"
 #include "../Provider.h"
+#include "GameImport.h"
 #include "../../Library/Index.h"
 #include "../../Library/Media.h"
 #include "../../Library/Search.h"
@@ -79,6 +80,7 @@ namespace Manager
         Forms::Params saveView() const override;
         void restoreView(const Forms::Params& state) override;
         void refresh() override;
+        void update(float) override { updateImport(); }
         void enter(const Screen& screen) override;
         std::string leaving(const Screen& screen) override;
         void discard(const Screen& screen) override;
@@ -213,6 +215,13 @@ namespace Manager
         Buffer playlistName_;
         std::string playlistQuery_;
         Library::Search candidates_;
+
+        GameImport import_;
+        std::string importFolder_, importSystem_;
+        bool importSubfolders_ = true;
+        unsigned importObserved_ = 0;
+        void updateImport();
+        GameImport::Request importRequest(const Screen& screen) const;
 
         // adding
         IndexPtr menuIndex_;
