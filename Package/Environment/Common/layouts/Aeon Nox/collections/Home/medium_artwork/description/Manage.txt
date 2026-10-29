@@ -1,1 +1,1 @@
-Games, menus, systems, videos, emulators and themes: add, change and hide what RetroFE shows and how it starts it. See what the Catalog has installed, and the sources it uses.
+Games, menus, systems, videos, launchers and themes: add, change and hide what RetroFE shows and how it starts it. See what the Catalog has installed, and the sources it uses.
