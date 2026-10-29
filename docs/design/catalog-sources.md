@@ -548,11 +548,13 @@ Copied deliberately, with One Saucier itself unchanged:
 1. **The index format is JSON.**
 2. **The catalog folder is configurable** with `catalogPath`, defaulting to
    `catalog/` under the root.
-3. **No 7-Zip for now.** ZIP only.
+3. **No 7-Zip for now.** ZIP only. *Superseded:* 7-Zip is read for emulator
+   downloads ([emulator-downloads.md](emulator-downloads.md)).
 4. **Sources can't suggest other sources, for now** (option A below). Every
    source is added by hand; suggestions can be revisited later.
 5. **No emulator packages yet.** Phase 1 covers collections, layouts and
-   media; emulators come later.
+   media; emulators come later. *Superseded:* emulators from a built-in list are
+   packages ([emulator-downloads.md](emulator-downloads.md)).
 6. **OnesaUCE content keeps its `version.txt` markers** when installed
    through the `archiveorg` adapter.
 7. **RetroFE updates itself only from `github` sources** (kind `app`, id
