@@ -26,7 +26,7 @@ namespace
 // names asked for but not defined: inline when there are a few, else a link
 // with their count to a screen of their own
 const char* const emulatorsForm = R"(
-<form id="emulators" title="Emulators">
+<form id="emulators" title="Launchers">
   <note bind="emulator:status"/>
   <link label="Add a launcher" open="emulator-new"/>
   <text label="Search" bind="emulator:query" live="yes" hint="Launcher, program or system"/>

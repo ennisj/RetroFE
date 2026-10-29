@@ -12,7 +12,7 @@ With `homeMenu = yes` RetroFE starts on **Home**:
 |----------|--------------|
 | Catalog  | Packages you can install from your sources (see [The Catalog](#the-catalog)) |
 | Settings | Display, menu and video settings, and [Controls](#controls) |
-| Manage   | Games, menus, systems, videos, emulators and themes, plus what the Catalog installed and its sources |
+| Manage   | Games, menus, systems, videos, launchers and themes, plus what the Catalog installed and its sources |
 | Browse   | Opens `firstCollection`, your usual top menu. Back returns to Home. |
 
 `homeMenu` is on for a bare install and in the `settings.conf` the setup
@@ -195,10 +195,11 @@ has to load show "after it reloads, when you close Manage".
 **Settings** starts with **Controls** (see [Controls](#controls)), then
 Display (Fullscreen; **Screen size**: the screen's size, 1920 x 1080,
 1280 x 720 and other common sizes, or Custom, which shows Width and Height;
-Hide mouse), Menus (**Theme**, which sets `layout`; Start on Home; Browse
+Hide mouse; Capture mouse), Menus (**Theme**, which sets `layout`; Start on Home; Browse
 opens) and Video, then Save. A size that isn't in the list shows as Custom.
-Save reloads RetroFE. Hide mouse applies then; fullscreen and screen size
-apply the next time RetroFE starts.
+Save reloads RetroFE. Hide mouse and Capture mouse apply then; fullscreen and screen size
+apply the next time RetroFE starts. Capture mouse (`captureMouse`, off by default)
+keeps the pointer inside RetroFE's window.
 
 ### Choosing a folder or a file
 
@@ -260,12 +261,14 @@ Statuses that need a look are colored: amber for a warning ("Won't start",
 "Missing", a launcher "which isn't installed"), red for something broken.
 
 **Manage** links to a screen for each part of your setup: Games, Menus,
-Systems, Videos, Emulators and Themes, then the Catalog (its Sources, and
+Systems, Videos, Launchers and Themes, then the Catalog (its Sources, and
 each package it installed).
 
-- On a bare install it says so and starts on **Add your first system**. Once
-  a system exists (added on another screen, before any reload) the welcome
-  and that link are gone.
+- On a bare install start with **Add your first launcher/emulator**, then
+  **Add your first system**. Creating the launcher from the hub returns there
+  and focuses the first system link. The launcher link disappears once any global, collection
+  or local launcher exists. The welcome and system link disappear once a system exists.
+  Or install from the Catalog via Sources.
 - Changes Manage saves show after RetroFE reloads, when you close Manage.
   Every screen says how many are waiting at the right of its title ("2
   changes apply when you close Manage"): each different thing saved counts
@@ -311,7 +314,7 @@ with a screen for each thing you can change:
   system's (which removes `collections/<system>/launchers/<game>.conf`, the
   **Saved in** file). When the game won't start, one line says why, and each
   launcher name it asks for that isn't defined gets an **Add a launcher called
-  <name>** link, which opens Emulators' Add a launcher with the name filled in.
+  <name>** link, which opens Launchers' Add a launcher with the name filled in.
 - **RetroArch** (only for a game whose launcher runs RetroArch): see
   [RetroArch settings](#retroarch-settings).
 - **Media**: every kind of art, video and text in two lists, **Shown** (with
@@ -558,9 +561,9 @@ the player with `player.xml` there (`player 4x3.xml` for 4:3), and RetroFE has
 built-in pages when no layout is installed. A layout can give one collection
 its own pages in `collections/<name>/layout/` (`layout.xml`, `player.xml`).
 
-### Emulators
+### Launchers
 
-**Manage → Emulators** starts with **Add a launcher**, then lists every
+**Manage → Launchers** starts with **Add a launcher**, then lists every
 launcher (the global ones in `launchers.<os>`, a system's own launcher file, a
 system's local launchers) with where it's defined, its program (flagged when
 missing) and how many systems and games use it, then the names systems or
@@ -604,7 +607,7 @@ reloads, after you close Manage.
 ### RetroArch settings
 
 A game or system whose launcher runs RetroArch, and such a launcher on
-Emulators, gets a **RetroArch** link.
+Launchers, gets a **RetroArch** link.
 A launcher runs RetroArch when its program is `retroarch` (`retroarch.exe`),
 when its arguments load a core (`-L <core>`, `--libretro <core>`), or when it
 hands RetroArch a `*_libretro` core through another program (a script, the
@@ -985,7 +988,8 @@ Removing a package or a source asks you to confirm first.
   `info:installed` are also `results`, a row per source or package, opening
   `source` or `package`), `info:romCount`, `info:catalogStatus`,
   `info:removalStatus`, `info:pendingChanges` (the changes waiting for a
-  reload, or nothing), and `info:hasCollections` (counting systems added since
+  reload, or nothing), `info:hasLaunchers` (the Launchers list, including newly
+  created launchers), and `info:hasCollections` (counting systems added since
   Manage opened), `info:hasSources`, `info:hasInstalled`,
   `info:sourceIsFolder`, `info:hasPendingChanges` and `info:canOpenCatalog`
   for `visibleWhen`.

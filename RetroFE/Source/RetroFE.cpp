@@ -268,8 +268,10 @@ void RetroFE::launchExit()
 	SDL_RestoreWindow(SDL::getWindow(0));
 	if (!SDL::staysInBackground()) {
 		SDL_RaiseWindow(SDL::getWindow(0));
-		SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
 	}
+	bool captureMouse = false;
+	config_.getProperty(OPTION_CAPTUREMOUSE, captureMouse);
+	SDL_SetWindowGrab(SDL::getWindow(0), captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
 
 	// Empty event queue, but handle joystick add/remove events
 	SDL_Event e;
@@ -301,9 +303,9 @@ void RetroFE::launchExit()
 #ifdef WIN32
 	Utils::postMessage("MediaplayerHiddenWindow", 0x8001, 76, 0);
 #endif
-	// If on MacOS enable relative mouse mode
+	// If on MacOS enable relative mouse mode when capturing the pointer
 #ifdef __APPLE__
-	SDL_SetRelativeMouseMode(SDL_TRUE);
+	SDL_SetRelativeMouseMode(captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
 #endif
 }
 
@@ -458,8 +460,13 @@ bool RetroFE::run()
 	SDL_RestoreWindow(SDL::getWindow(0));
 	if (!SDL::staysInBackground()) {
 		SDL_RaiseWindow(SDL::getWindow(0));
-		SDL_SetWindowGrab(SDL::getWindow(0), SDL_TRUE);
 	}
+	bool captureMouse = false;
+	config_.getProperty(OPTION_CAPTUREMOUSE, captureMouse);
+	SDL_SetWindowGrab(SDL::getWindow(0), captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
+#ifdef __APPLE__
+	SDL_SetRelativeMouseMode(captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
+#endif
 #ifdef WIN32
 	if (!PacInitialize()) {  //attempt to enable ServoStik
 		config_.setProperty(OPTION_SERVOSTIKENABLED, false);

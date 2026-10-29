@@ -23,6 +23,7 @@
 #include "../Source/Catalog/Service.h"
 #include "../Source/Control/InputToken.h"
 #include "../Source/Database/Configuration.h"
+#include "../Source/Database/GlobalOpts.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Graphics/Component/ListIndex.h"
 #include "../Source/Manager/AfterReload.h"
@@ -107,6 +108,30 @@ static Test::Suite manageHub("manage hub", [] {
     std::string error;
 
     // --- Changes waiting for a reload --------------------------------------------
+
+    run("hub: the first launcher comes before the first system", [] {
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("manage"), error);
+        check(form != nullptr, "hub parses: " + error);
+        if (!form) return;
+        const Forms::Field* launcher = Forms::findField(*form, "emulator-new");
+        const Forms::Field* system = Forms::findField(*form, "system-add");
+        check(launcher && system && launcher < system, "launcher link comes first");
+        check(launcher && launcher->label == "Add your first launcher/emulator"
+              && launcher->visibleWhen == "!info:hasLaunchers", "only until a launcher exists");
+        check(system && system->visibleWhen == "!info:hasCollections", "system keeps its rule");
+        auto launchers = Forms::parse(Forms::builtinForm("emulators"), error);
+        check(launchers && launchers->title == "Launchers", "screen name, with its existing id");
+    });
+
+    run("settings: captureMouse is a registered boolean, off by default", [] {
+        const global_options::options_entry* capture = nullptr;
+        for (const auto* option = global_options::s_option_entries; option->description; ++option) {
+            if (option->name && std::string(option->name) == OPTION_CAPTUREMOUSE) capture = option;
+        }
+        check(capture && capture->type == global_options::option_type::BOOLEAN, "registered as BOOLEAN");
+        check(capture && std::string(capture->defvalue) == "false", "default false");
+    });
 
     run("hub: pending changes count each different change once", [] {
         Manager::PendingChanges none;

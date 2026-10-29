@@ -1,4 +1,4 @@
-# Design: Manage screens for games, menus, systems, videos, emulators and themes
+# Design: Manage screens for games, menus, systems, videos, launchers and themes
 
 Status: draft, round 1 in progress. Decisions and open questions are tracked
 in [../DECISIONS.md](../DECISIONS.md); what each round delivered is in
@@ -14,7 +14,7 @@ Manage becomes a hub for the things a RetroFE install is made of:
 | **Menus** | The top menu (Browse) and every menu below it: menus of menus and sub-collections |
 | **Systems** | Collections of games: where the games are, which extensions, which emulator, media |
 | **Videos** | Collections of videos instead of games |
-| **Emulators** | Installed emulators and the launchers that start them |
+| **Launchers** | Installed emulators and the launchers that start them |
 | **Themes** | Installed layouts; opens the theme editor (ported from One Saucier) |
 
 The functionality is modelled on One Saucier's Manage and details screens,
@@ -66,7 +66,7 @@ the screen authors, is in [manage-library.md](manage-library.md).
 These carry over from One Saucier, where they were learned the hard way:
 
 - **An explicit list of what each screen may change.** Paths, `executable` and
-  `arguments` are shown, never edited (the one exception is the Emulators edit
+  `arguments` are shown, never edited (the one exception is the Launchers edit
   screen, which changes a launcher's own file, validated, warning who it
   reaches), and nothing outside the list is written.
 - **Back up the original before the first change**, and offer **Reset**.
@@ -212,7 +212,7 @@ either RetroFE uses the built-in player page. A video that hasn't started
 after 10 seconds is skipped, and each video that starts is counted like a
 launch (last played and play count).
 
-### Emulators (launchers)
+### Launchers
 
 RetroFE has no separate emulator entity: a launcher is an executable plus
 arguments. The screen lists launchers from `launchers.<os>/`, collection
@@ -363,7 +363,7 @@ RetroArch reads these files at every start.
 The system screen's "reaches" note lists the systems whose default launcher
 resolves to the same library and config folder.
 
-A launcher's own RetroArch screens (Emulators, `emulator-retroarch`...) are
+A launcher's own RetroArch screens (Launchers, `emulator-retroarch`...) are
 the system's, keyed by the launcher (`id` + `scope`) instead of a system.
 
 Not modelled: `--appendconfig`, One Saucier's button labels and
@@ -474,7 +474,7 @@ There are no releases yet: CI uploads build artifacts only. The plan:
 | Round | Work (parallel where listed together) |
 |-------|---------------------------------------|
 | 1 | Forms foundation (navigation, providers, new elements, Manage hub) · Aeon Nox as the default layout · library data layer · Catalog GitHub source and self-update · theme editor core port (model, generator, widget audit, storage, export) |
-| 2 | Games · Menus and Systems (Videos as a preset of Systems) · Emulators · Themes list and theme editor screen · Aeon Nox styling of the new elements |
+| 2 | Games · Menus and Systems (Videos as a preset of Systems) · Launchers · Themes list and theme editor screen · Aeon Nox styling of the new elements |
 | 3 | Theme editor editing (drag, properties, templates) · media replacement, playlists and other editing extras · end-to-end checks on OnesaUCE-shaped data (read-only copy) |
 | 4+ | Later items from each entity, the open decisions you've answered |
 

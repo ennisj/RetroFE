@@ -6,7 +6,7 @@ argued in full at the end of this page.
 
 `RetroFE/Source/Library/` (namespace `Library`) reads a RetroFE install the
 way RetroFE reads it and writes changes the way RetroFE expects them. The
-Games, Menus, Systems, Videos, Emulators and Themes screens are built on it.
+Games, Menus, Systems, Videos, Launchers and Themes screens are built on it.
 It has no SDL or `Configuration` dependency: it takes the root folder and
 reads everything itself, so it runs on a worker thread and in the unit tests.
 
@@ -176,7 +176,7 @@ OneSauce's include and exclude files are honoured, 12 MB meta.db, read only):
   games, then those from each `.sub`.
 - **Art:** `collectionMedia(index, collection, type, kind)` reads `system_artwork/<type>.*`.
 
-### Emulators and launchers
+### Launchers
 - **The launchers:** `index->launchers` holds a `LauncherDef` per launcher:
   - `id`, the name a launch looks up: `<name>`, `<collection>`, or `<collection>.<name>` for a local launcher;
   - `scope`: Global, Collection or Local;
@@ -340,7 +340,7 @@ Safety rules that hold for all of these:
 - **Never edited:** `list.path` and any other path key of a collection. A
   launcher's `executable`, `arguments`, `currentDirectory` and `reboot` are
   written only by `addLauncher` (a new file, whole) and `editLauncher` (the
-  Emulators edit screen, validated). Menu lines are only ever added, removed or moved one at a time.
+  Launchers edit screen, validated). Menu lines are only ever added, removed or moved one at a time.
 - **Atomic and durable:** writes go to a temp file. It's flushed to the disk
   (`FlushFileBuffers`, or `fsync`) and then renamed into place
   (`MOVEFILE_WRITE_THROUGH`, or rename plus an fsync of the folder). A power cut

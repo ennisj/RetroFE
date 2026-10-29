@@ -1200,8 +1200,13 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
     }
     // After success an action can move to another screen, which then shows its message
     if (result.ok && result.back) {
+        bool createdLauncher = nav_.current() && nav_.current()->form == "emulator-new"
+            && model_.get("emulator:hasLaunchers") == "yes";
         if (!requestBack()) {
             return;   // it says why
+        }
+        if (createdLauncher && nav_.current() && nav_.current()->form == "manage" && widget_) {
+            widget_->focusOn("system-add");
         }
     }
     else if (result.ok && result.replace && !result.open.empty() && this->form(result.open)) {

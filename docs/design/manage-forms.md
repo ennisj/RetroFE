@@ -1,7 +1,7 @@
 # Manage screens: adding a section
 
 How to build one of the Manage sections (Games, Menus, Systems, Videos,
-Emulators, Themes) on top of the forms layer. User-facing behaviour, every
+Launchers, Themes) on top of the forms layer. User-facing behaviour, every
 form element and the built-in bindings are in [../MANAGER.md](../MANAGER.md).
 
 ## How a screen works
@@ -409,7 +409,7 @@ a reload, even though ManagerUI and its providers are recreated. Restore runs
 after `refresh()` and before showing the saved screen; subsequent `enter()`
 calls must keep the restored choices. Save values and any parameter sentinel
 needed to preserve them on Back, rather than caches or unsaved edit buffers.
-Games, Systems/Videos, Menus and Emulators implement these hooks for their
+Games, Systems/Videos, Menus and Launchers implement these hooks for their
 searches, filters and list choices. `LaunchReturn` validates the frames against
 the refreshed library and available forms before replacing the stack; a missing
 record or form keeps the usual Manage > Games > game return path. New routes to

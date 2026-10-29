@@ -328,7 +328,9 @@ bool SDL::initialize(Configuration& config)
 #ifdef __APPLE__
 				// If MacOS, warp cursor to center to prevent hot corner activation
 				SDL::warpMouse(window_[screenNum], windowWidth_[screenNum] / 2, windowHeight_[screenNum] / 2);
-				SDL_SetRelativeMouseMode(SDL_TRUE);
+				bool captureMouse = false;
+				config.getProperty(OPTION_CAPTUREMOUSE, captureMouse);
+				SDL_SetRelativeMouseMode(captureMouse ? SDL_TRUE : SDL_FALSE);
 #endif
 			}
 			bool vSync = false;
