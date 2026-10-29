@@ -39,7 +39,7 @@ const char* const listForm = R"(
 const char* const detailsForm = R"(
 <form id="{p}" title="{Noun}" bind="{p}:title">
   <note bind="{p}:status"/>
-  <image bind="{p}:image" rows="4"/>
+  {addGamesLink}<image bind="{p}:image" rows="4"/>
   <value label="Folder" bind="{p}:name"/>
   <value label="In menus" bind="{p}:menus"/>
   <value label="{Items} folder" bind="{p}:gamesFolder"/>
@@ -61,7 +61,7 @@ const char* const detailsForm = R"(
 const char* const settingsForm = R"(
 <form id="{p}-settings" title="Settings" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <value label="{Items} folder" bind="{p}:gamesFolder" help="Shown here, changed by hand only."/>
+  <value label="{Items} folder" bind="{p}:gamesFolder" help="The folder RetroFE reads."/>
   <text label="Extensions" bind="{p}:extensions" hint="e.g. {exts}" help="Comma separated, without dots. Case matters: RetroFE only lists files whose extension matches exactly."/>
   <toggle label="Sort by title" bind="{p}:menuSort"/>
   <toggle label="Show missing {items}" bind="{p}:includeMissing" help="Lists the {items} named in include.txt even when their file isn't there."/>
@@ -257,10 +257,27 @@ const char* const systemAddForm = R"(
 </form>
 )";
 
+const char* const addGamesForm = R"(
+<form id="{p}-add-games" title="Add games" bind="{p}:screenTitle">
+  <note bind="{p}:status"/>
+  <folder label="From" bind="{p}:importFrom" status="{p}:importCount" hint="Choose a folder" enabledWhen="!{p}:importRunning"/>
+  <toggle label="Include subfolders" bind="{p}:importSubfolders" enabledWhen="!{p}:importRunning"/>
+  <value label="Into" bind="{p}:importInto"/>
+  <note bind="{p}:importLayout"/>
+  <note bind="{p}:importMessage"/>
+  <actions>
+    <button label="Copy games" action="{p}.copyGames" primary="yes"/>
+    <button label="Use this folder instead" action="{p}.useGamesFolder" confirm="Read games from this folder instead? No files are copied. The previous settings are kept in manage/backups."/>
+    <button label="Stop" action="{p}.stopImport" visibleWhen="{p}:importRunning"/>
+  </actions>
+</form>
+)";
+
 const char* const templates[][2] = {
     { "s", listForm },
     { "", detailsForm },
     { "-settings", settingsForm },
+    { "-add-games", addGamesForm },
     { "-launcher", launcherForm },
     { "-info", infoForm },
     { "-media", mediaForm },
@@ -288,6 +305,7 @@ Words systemWords()
         { "{launcherLabel}", "Launcher" }, { "{programLabel}", "Emulator" },
         { "{programHelp}", "The program that runs the games, e.g. an emulator's .exe." },
         { "{launcherLink}", "Launcher" }, { "{defaultLauncherLabel}", "Default launcher" },
+        { "{addGamesLink}", "<link label=\"Add games\" open=\"system-add-games\"/>" },
         { "{playsValue}", "" }, { "{playChoice}", "" }, { "{addPlayChoice}", "" },
         // The core-wide RetroArch screens (Manager/Games/RetroArchForms.cpp)
         { "{raLink}", "<link label=\"RetroArch\" open=\"system-retroarch\" status=\"retroarch:status\" visibleWhen=\"retroarch:runs\"/>\n  " },
@@ -307,6 +325,7 @@ Words videoWords()
         { "{launcherLabel}", "Video player" }, { "{programLabel}", "Player program" },
         { "{programHelp}", "A video player such as VLC (vlc.exe) or mpv (mpv.exe). It becomes the launcher VideoPlayer." },
         { "{launcherLink}", "Playback" }, { "{defaultLauncherLabel}", "Video player" },
+        { "{addGamesLink}", "" },
         { "{playsValue}", "<value label=\"Plays\" bind=\"video:playsText\"/>\n  " },
         { "{playChoice}", "<choice label=\"Plays\" bind=\"video:play\" options=\"video:plays\" help=\"In RetroFE: full screen on its player page. With an external player: its launcher starts, e.g. VLC. Kept in its info.conf as play = here or play = launcher.\"/>\n  " },
         { "{addPlayChoice}", "<choice label=\"Plays\" bind=\"video:addPlay\" options=\"video:plays\" help=\"In RetroFE needs no player program (one can be added later in Playback). With an external player, choose it below.\"/>\n  " },
@@ -334,6 +353,7 @@ struct Table
     {
         std::string base = words.front().second;
         for (const auto& entry : templates) {
+            if (base == "video" && std::string(entry[0]) == "-add-games") continue;
             ids.push_back(base + entry[0]);
             const char* source = base == "system" && std::string(entry[0]) == "-add" ? systemAddForm : entry[1];
             xml.push_back(expand(source, words));

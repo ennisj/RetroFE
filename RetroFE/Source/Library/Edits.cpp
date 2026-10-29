@@ -362,7 +362,7 @@ const std::vector<std::string>& Editor::editableSettings()
 {
     std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     static const std::vector<std::string> keys = {
-        "list.extensions", "list.menuSort", "list.includeMissingItems", "list.sortType", "launcher", "metadata.type", "layout",
+        "list.path", "list.extensions", "list.menuSort", "list.includeMissingItems", "list.sortType", "launcher", "metadata.type", "layout",
         "cyclePlaylist",
     };
     return keys;
@@ -394,7 +394,14 @@ std::string Editor::checkSetting(const Index& index, const std::string& collecti
         return problem;
     }
     std::string v = Utils::trimEnds(value);
-    if (key == "list.extensions") {
+    if (key == "list.path") {
+        std::string folder = v;
+        size_t at = folder.find("%RETROFE_PATH%");
+        if (at != std::string::npos) folder.replace(at, 14, index.options.root);
+        std::error_code ec;
+        if (v.empty() || v.find(';') != std::string::npos || !fs::is_directory(folder, ec)) return "Choose a folder that can be read.";
+    }
+    else if (key == "list.extensions") {
         std::vector<std::string> parts;
         Utils::listToVector(v, parts, ',');
         if (parts.empty()) {

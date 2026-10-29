@@ -609,6 +609,12 @@ void SystemProvider::enter(const Screen& screen)
     if (isForm(screen, "-playlist")) {
         playlistName_.from = nullptr;   // the name it has now
     }
+    if (isForm(screen, "-add-games") && importSystem_ != screen.param("id")) {
+        import_.stop(); updateImport();
+        import_.reset();
+        importFolder_.clear(); importSubfolders_ = true;
+        importSystem_ = screen.param("id");
+    }
     if (!videos_ && isForm(screen, "-add")) syncAddLaunchers();
     syncBuffers(screen);
 }
@@ -710,6 +716,7 @@ std::map<std::string, std::string> SystemProvider::readInfo(const CollectionReco
 
 std::string SystemProvider::leaving(const Screen& screen)
 {
+    if (isForm(screen, "-add-games")) { import_.stop(); updateImport(); }
     Buffer* buffer = bufferFor(screen);
     if (buffer && buffer != &playlistName_ && buffer->edits.isDirty()) {
         return "You have unsaved changes. Save them, or leave again to discard them.";
@@ -1339,6 +1346,20 @@ Forms::Rows SystemProvider::listRows(size_t limit)
 
 std::string SystemProvider::get(const std::string& key, const Screen& screen)
 {
+    if (key == "importFrom") return importFolder_;
+    if (key == "importSubfolders") return yesNo(importSubfolders_);
+    if (key == "importRunning") return yesNo(import_.status().running);
+    if (key == "importCount") {
+        auto state = import_.status();
+        if (importFolder_.empty()) return "";
+        if (state.running && !state.copying) return "Counting games...";
+        return count(state.found, "game found", "games found");
+    }
+    if (key == "importMessage") return import_.status().message;
+    if (key == "importInto") return importRequest(screen).destinationLabel;
+    if (key == "importLayout") return importRequest(screen).hierarchy
+        ? "Subfolders are kept. Leaving this screen stops copying and keeps finished files."
+        : "Games are put in one folder because this system does not read subfolders. Companion paths are kept. Leaving this screen stops copying and keeps finished files.";
     if (key == "status") return status(screen);
     if (key == "screenTitle") return screenTitle(screen);
     if (key == "query") return query_;
@@ -1520,6 +1541,14 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 
 void SystemProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
+    if (key == "importFrom" || key == "importSubfolders") {
+        updateImport();
+        if (import_.status().running && import_.status().copying) return;
+        if (key == "importFrom") importFolder_ = value;
+        else importSubfolders_ = iequals(value, "yes") || iequals(value, "true");
+        import_.start(importRequest(screen), false);
+        return;
+    }
     if (key == "query") { query_ = value; return; }
     if (key == "menu") { menu_ = value; return; }
     if (key == "extensions" || key == "menuSort" || key == "includeMissing" || key == "metadataType") {
@@ -1575,7 +1604,7 @@ Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Scr
             if (r.reserved || !r.is(Library::KindSystem) || isVideoCollection(r)) continue;
             Forms::Row row;
             row.id = r.name;
-            row.label = "Put your games in " + idx->properties.collectionPath(r.name) + ", or add them with Add games";
+            row.label = "Add games to " + r.name;
             rows.items.push_back(row);
             rows.total = 1;
         }
@@ -1705,6 +1734,17 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
     if (!idx || !services_.editor) {
         return idx ? "Changes can't be saved here." : "Still reading your collections...";
     }
+    if (action == "stopImport") return import_.status().running ? "" : "Nothing is running.";
+    if (action == "copyGames" || action == "useGamesFolder") {
+        const auto* r = record(*idx, screen);
+        if (!r || !belongs(*r)) return "Choose a system first.";
+        if (r->extensions.empty()) return "Set this system's extensions in Settings first.";
+        if (import_.status().running) return "Wait for the folder count, or stop the current job.";
+        if (importFolder_.empty()) return "Choose the folder your games are in.";
+        if (action == "useGamesFolder") return Library::Editor::checkSetting(*idx, screen.param("id"), "list.path",
+            Emulators::portablePath(root(), importFolder_, idx->options.os));
+        return "";
+    }
     if (action == "create") {
         return addProblem();
     }
@@ -1824,6 +1864,23 @@ Forms::Model::Result SystemProvider::runAction(const std::string& action, const 
     Forms::Model::Result result;
     result.message = actionProblem(action, screen);
     if (!result.message.empty()) {
+        return result;
+    }
+    if (action == "stopImport") { import_.stop(); updateImport(); result.ok = true; return result; }
+    if (action == "copyGames") {
+        updateImport();
+        importSystem_ = screen.param("id");
+        import_.start(importRequest(screen), true);
+        result.ok = true;
+        return result;
+    }
+    if (action == "useGamesFolder") {
+        auto idx = index();
+        auto edit = services_.editor->setCollectionSetting(*idx, screen.param("id"), "list.path",
+            Emulators::portablePath(root(), importFolder_, idx->options.os));
+        result.ok = edit.ok;
+        result.message = edit.message;
+        if (edit.ok) changed("games folder of " + screen.param("id"));
         return result;
     }
     if (action == "create") return create();
@@ -2497,6 +2554,36 @@ Forms::Model::Result SystemProvider::remove(const Screen& screen)
         + " Its settings, art and playlists are kept in " + kept + "."
         + (r.launcher.via == Library::LauncherVia::Setting && r.launcher.launcher >= 0 ? " The launcher " + r.launcher.name + " stays installed." : "");
     return result;
+}
+
+GameImport::Request SystemProvider::importRequest(const Screen& screen) const
+{
+    GameImport::Request request;
+    request.from = importFolder_;
+    request.subfolders = importSubfolders_;
+    auto idx = index();
+    const auto* r = idx ? record(*idx, screen) : nullptr;
+    if (r) {
+        request.into = r->listPaths.empty() ? idx->properties.collectionPath(r->name) : r->listPaths.front();
+        fs::path relative = request.into.lexically_normal().lexically_relative(fs::path(root()).lexically_normal());
+        bool inside = !relative.empty();
+        for (const auto& part : relative) if (part == "..") inside = false;
+        request.destinationLabel = (inside ? relative : request.into).make_preferred().string();
+        request.extensions = r->extensions;
+        request.hierarchy = r->romHierarchy;
+    }
+    return request;
+}
+
+void SystemProvider::updateImport()
+{
+    auto state = import_.status();
+    if (state.generation == importObserved_) return;
+    importObserved_ = state.generation;
+    changes_++;
+    if (!state.running && state.changed) {
+        changed("games of " + importSystem_);
+    }
 }
 
 }

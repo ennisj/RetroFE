@@ -22,7 +22,8 @@
 // rebuilds the index in the background and marks "changes pending").
 // RetroFE itself only sees changes after it reloads.
 //
-// Never written here: list.path or any other path key of a collection, and
+// list.path is changed only by Add games. Other collection path keys stay as
+// they are, and
 // menu lines are only added, removed or moved one at a time. A launcher's
 // executable, arguments, currentDirectory and reboot are written only by
 // addLauncher (a new file, whole) and editLauncher (the Emulators edit form,
