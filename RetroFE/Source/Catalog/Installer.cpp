@@ -355,7 +355,7 @@ std::string Installer::manifestPath(const std::string& id) const
 
 bool Installer::trustedEmulator(const std::string& id, const std::string& kind, const std::string& source) const
 {
-    if (kind != "emulator" || !findEmulator(id)) return false;
+    if (!(kind == "emulator" && findEmulator(id)) && !(kind == "core" && isCoreId(id))) return false;
     std::vector<SourceConfig> sources;
     std::string error;
     if (!loadSources((fs::path(catalog_) / "sources.conf").string(), sources, error)) return false;
@@ -381,6 +381,9 @@ std::string Installer::refusal(const InstalledFile& file, const std::string& id,
     const Emulator* entry = findEmulator(id);
     bool programs = (trusted && kind == "emulator") && file.target == "emulators" && entry
         && file.path.rfind(entry->folder + "/", 0) == 0;
+    programs = programs || (trusted && kind == "core" && isCoreId(id) && file.target == "emulators"
+        && file.path == "RetroArch/cores/" + id.substr(5) + "_libretro.dll");
+    if (kind == "core" && !programs) return "Cores may only write their own RetroArch core DLL";
     if (file.target == "emulators" && !programs) return "Only built-in emulator downloads may use the emulators target";
     if (isExecutableName(file.path) && !programs) {
         return "Packages may not install programs or scripts: " + file.path;
@@ -463,13 +466,37 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
     std::vector<PlannedFile> planned;
     const bool trusted = trustedEmulator(package.id, package.kind, package.source);
     const Emulator* emulator = trusted ? findEmulator(package.id) : nullptr;
+    const bool core = trusted && package.kind == "core" && isCoreId(package.id);
+    if (package.kind == "core" || package.id.rfind("core-", 0) == 0) {
+        if (!core) { error = "Only trusted core downloads may install cores"; return false; }
+        const std::string url = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/" + package.id.substr(5) + "_libretro.dll.zip";
+        if (package.files.size() != 1 || package.files[0].url != url || !package.files[0].crc32 ||
+            package.files[0].target != "emulators" || package.files[0].path != "RetroArch/cores" ||
+            !installed().count("emulator-retroarch")) {
+            error = "Only trusted core downloads with RetroArch installed may install cores";
+            return false;
+        }
+        uint64_t offset = 0;
+        if (Archive::detect(downloads[0], offset) != Archive::Form::Zip) { error = "A core download must be a ZIP archive"; return false; }
+        Archive archive;
+        if (!archive.open(downloads[0], url, error)) return false;
+        const auto& entries = archive.entries();
+        if (entries.size() != 1 || entries[0].directory || entries[0].name != package.id.substr(5) + "_libretro.dll") {
+            error = "A core archive must contain only its core DLL";
+            return false;
+        }
+        if (entries[0].crc32 != *package.files[0].crc32) {
+            error = "The core doesn't match libretro's list";
+            return false;
+        }
+    }
     for (size_t i = 0; i < package.files.size(); i++) {
         const PackageFile& source = package.files[i];
         if (targets_.resolve(source.target).empty()) {
             error = "Unknown target " + source.target;
             return false;
         }
-        if (source.target == "emulators" && (!emulator || source.path != emulator->folder)) {
+        if (source.target == "emulators" && (!core && (!emulator || source.path != emulator->folder))) {
             error = "Only built-in emulator downloads may use the emulators target";
             return false;
         }
@@ -478,14 +505,14 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
         uint64_t archiveOffset;
         std::string extension = lower(fs::u8path(publishedName(source.url)).extension().string());
         Archive::Form form = Archive::detect(downloads[i], archiveOffset);
-        bool extract = emulator || source.extract.value_or(extension == ".zip" || (package.kind == "emulator" &&
+        bool extract = core || emulator || source.extract.value_or(extension == ".zip" || (package.kind == "emulator" &&
             (form == Archive::Form::SevenZip || form == Archive::Form::SelfExtracting)));
         if (extract) {
             if (form == Archive::Form::None) {
                 error = publishedName(source.url) + " isn't an archive RetroFE can unpack";
                 return false;
             }
-            if (!extractArchive(downloads[i], staging, into, source, planned, stop_, emulator && source.target == "emulators", emulator ? emulator->topFolder : "", error)) {
+            if (!extractArchive(downloads[i], staging, into, source, planned, stop_, (core || emulator) && source.target == "emulators", emulator ? emulator->topFolder : "", error)) {
                 return false;
             }
         }
@@ -759,6 +786,14 @@ bool Installer::commit(const std::string& staging, std::string& error)
 bool Installer::remove(const std::string& id, Removal& removal, std::string& error)
 {
     removal = Removal();
+    if (id == "emulator-retroarch") {
+        std::string names;
+        for (const auto& item : installed()) if (item.second.kind == "core") {
+            if (!names.empty()) names += ", ";
+            names += item.second.name;
+        }
+        if (!names.empty()) { error = "Remove its cores first: " + names; return false; }
+    }
     Manifest manifest;
     if (!readManifest(manifestPath(id), manifest, error)) {
         return false;

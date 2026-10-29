@@ -35,5 +35,9 @@ namespace Catalog
                                std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error);
     std::string createEmulatorLauncher(const std::string& root, const std::string& catalog, Manifest& manifest);
     std::string removeEmulatorLauncher(const std::string& root, const Manifest& manifest);
-    void readEmulators(const SourceConfig& source, const std::string& cacheFolder, Http* http, SourceContents& contents);
+    bool isCoreId(const std::string& id);
+    std::string coreLauncherName(const std::string& name);
+    void parseCoreIndex(const std::string& text, const std::string& source, const std::string& root, std::vector<Package>& packages);
+    void readCores(const SourceConfig& source, const std::string& cacheFolder, const std::string& root, Http* http, SourceContents& contents);
+    void readEmulators(const SourceConfig& source, const std::string& cacheFolder, Http* http, SourceContents& contents, const std::string& root = "");
 }

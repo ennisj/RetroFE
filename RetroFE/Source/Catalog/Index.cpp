@@ -77,6 +77,7 @@ namespace
             package.kind = "other";
         }
         // Only GitHub sources update RetroFE itself, which nothing else may pretend to be
+        if (package.kind == "core" || lower(package.id).rfind("core-", 0) == 0) return prefix + "cores only come from the emulators source";
         if (package.kind == "emulator") return prefix + "emulators only come from the emulators source";
         if (package.kind == "app") {
             return prefix + "updates RetroFE itself (kind \"app\"), which only GitHub sources may offer";

@@ -650,3 +650,25 @@ The options:
 decided: when a USB stick or folder has a `sources.conf` (or an index file) at
 its top level, Manage → Sources could offer "Add sources from E:\". That works
 without any network and without suggestions. It isn't part of phase 1.
+
+## RetroArch core downloads
+
+The built-in `emulators` source also offers `kind = core`, `id = core-<stem>`
+when RetroArch's installed manifest exists. These packages require
+`emulator-retroarch`, use the nightly build date as their version, and write only
+`emulators/RetroArch/cores/<stem>_libretro.dll`. Names and system filters come
+from the installed `info/<stem>_libretro.info` files.
+
+`files[].crc32` is an optional expected CRC-32 of the unpacked core DLL, supplied
+only by this adapter from libretro's `.index-extended`. It is not an index or
+sidecar field. The ZIP must contain exactly that DLL and its stored CRC must
+match; unpacking verifies the file data too. Core URLs are pinned to libretro's
+HTTPS Windows x64 nightly folder. This checksum detects mismatches; it is not a
+signature. The list uses Last-Modified conditional caching under the source cache.
+
+Trust is granted by the configured source type `emulators`, never by package
+fields. Indexes and sidecars cannot offer `kind = core` or IDs beginning `core-`
+(case insensitive), just as emulator IDs are reserved. Core nightly updates are
+shown only in Cores and the selected package screen, excluded from general
+Catalog update flags and lists. RetroArch removal requires removing its cores
+first; core launchers follow emulator launcher ownership and removal rules.

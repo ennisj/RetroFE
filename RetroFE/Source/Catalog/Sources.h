@@ -57,5 +57,5 @@ namespace Catalog
     // Reads a source's packages. Index and GitHub sources are cached in
     // cacheFolder, and the cache is used when they can't be fetched. http may
     // be null, in which case only local sources can be read.
-    SourceContents readSource(const SourceConfig& source, const std::string& cacheFolder, Http* http);
+    SourceContents readSource(const SourceConfig& source, const std::string& cacheFolder, Http* http, const std::string& root = "");
 }

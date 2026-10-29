@@ -34,6 +34,7 @@ namespace Catalog
             std::string name;
             uint64_t size;
             bool directory;
+            uint32_t crc32 = 0;
         };
         using Writer = std::function<bool(const void*, size_t)>;
 

@@ -25,12 +25,100 @@
 #include <regex>
 #include <set>
 #include <ctime>
+#include <fstream>
+#include <sstream>
+#include "Http.h"
+#include "../Library/RetroArch.h"
 
 using nlohmann::json;
 namespace J = Catalog::JsonFields;
 
 namespace Catalog
 {
+bool isCoreId(const std::string& id)
+{
+    return std::regex_match(id, std::regex("core-[a-z0-9_][a-z0-9_-]*"));
+}
+
+std::string coreLauncherName(const std::string& name)
+{
+    std::string result = "RetroArch";
+    bool space = true;
+    for (unsigned char c : name) {
+        if (c <= 32 || c > 126 || std::string("\\/:*?\"<>|#=,;%").find(c) != std::string::npos) { space = true; continue; }
+        if (space && result.size() < 64) result += ' ';
+        if (result.size() < 64) result += static_cast<char>(c);
+        space = false;
+    }
+    while (!result.empty() && (result.back() == ' ' || result.back() == '.')) result.pop_back();
+    return result;
+}
+
+void parseCoreIndex(const std::string& text, const std::string& source, const std::string& root, std::vector<Package>& packages)
+{
+    std::istringstream lines(text);
+    std::string line;
+    std::set<std::string> seen;
+    const std::regex pattern(R"(^([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9a-fA-F]{8}) ([a-z0-9_][a-z0-9_-]*)_libretro\.dll\.zip\r?$)");
+    while (std::getline(lines, line)) {
+        std::smatch m;
+        if (!std::regex_match(line, m, pattern)) continue;
+        int year = std::stoi(m[1]), month = std::stoi(m[2]), day = std::stoi(m[3]);
+        const int days[] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+        if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month-1] + (month == 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0))) continue;
+        std::string stem = m[5];
+        if (!seen.insert(stem).second) continue;
+        auto info = Library::RetroArch::readConfigFile((std::filesystem::path(root) / "emulators/RetroArch/info" / (stem + "_libretro.info")).string());
+        Package package;
+        package.id = "core-" + stem;
+        package.kind = "core";
+        package.source = source;
+        package.name = info["corename"].empty() ? stem : info["corename"];
+        package.system = info["systemname"];
+        package.description = info["display_name"];
+        package.version = m[1].str() + "-" + m[2].str() + "-" + m[3].str();
+        package.requirements.push_back({ "emulator-retroarch", "" });
+        PackageFile file;
+        file.url = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/" + stem + "_libretro.dll.zip";
+        file.target = "emulators";
+        file.path = "RetroArch/cores";
+        file.crc32 = static_cast<uint32_t>(std::stoul(m[4], nullptr, 16));
+        package.files.push_back(file);
+        packages.push_back(package);
+    }
+}
+
+void readCores(const SourceConfig& source, const std::string& cacheFolder, const std::string& root, Http* http, SourceContents& contents)
+{
+    Manifest manifest;
+    std::string error;
+    if (!readManifest((std::filesystem::path(cacheFolder).parent_path() / "installed/emulator-retroarch.json").string(), manifest, error)) {
+        contents.warnings.push_back("Install RetroArch first");
+        return;
+    }
+    auto folder = std::filesystem::path(cacheFolder) / source.name;
+    std::error_code ec;
+    std::filesystem::create_directories(folder, ec);
+    auto read = [](const std::filesystem::path& path) {
+        std::ifstream file(path, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(file), {});
+    };
+    std::string text = read(folder / "cores.index"), modified = read(folder / "cores.modified");
+    Http::Response response;
+    std::vector<std::string> headers;
+    if (!modified.empty()) headers.push_back("If-Modified-Since: " + modified);
+    if (http && http->request("https://buildbot.libretro.com/nightly/windows/x86_64/latest/.index-extended", headers, response) && response.status == 200) {
+        text = response.body;
+        std::ofstream(folder / "cores.index", std::ios::binary) << text;
+        std::ofstream(folder / "cores.modified", std::ios::binary) << response.headers["last-modified"];
+    }
+    else if (response.status != 304) {
+        contents.fromCache = true;
+        contents.warnings.push_back("Could not read libretro's core list; using the last copy");
+    }
+    parseCoreIndex(text, source.name, root, contents.packages);
+}
+
 const std::vector<Emulator>& emulators()
 {
     static const std::vector<Emulator> entries = {
@@ -120,8 +208,16 @@ std::string createEmulatorLauncher(const std::string& root, const std::string& c
 {
     std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
     const Emulator* entry = findEmulator(manifest.id);
+    Emulator core;
+    if (manifest.kind == "core" && isCoreId(manifest.id)) {
+        core.folder = "RetroArch";
+        core.program = "retroarch.exe";
+        core.launcher = coreLauncherName(manifest.name);
+        core.arguments = "-L \"%RETROFE_PATH%\\emulators\\RetroArch\\cores\\" + manifest.id.substr(5) + "_libretro.dll\" \"%ITEM_FILEPATH%\"";
+        entry = &core;
+    }
     if (!entry) return "";
-    if (entry->launcher.empty()) return " RetroArch needs a core for each system; core downloads come in a later update.";
+    if (entry->launcher.empty()) return " Add a core next from Cores.";
     Library::ScanOptions options;
     options.root = root;
     options.os = "windows";
@@ -150,6 +246,13 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
     if (manifest.launcherPath.empty()) return "";
     std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
     const Emulator* entry = findEmulator(manifest.id);
+    Emulator core;
+    if (manifest.kind == "core" && isCoreId(manifest.id) &&
+        (manifest.launcherName == "RetroArch" || manifest.launcherName.rfind("RetroArch ", 0) == 0) &&
+        Library::Editor::checkLauncherName(manifest.launcherName).empty()) {
+        core.launcher = manifest.launcherName;
+        entry = &core;
+    }
     if (!entry || entry->launcher.empty() || manifest.launcherPath != "launchers.windows/" + entry->launcher + ".conf") return "";
     auto path = std::filesystem::path(root) / manifest.launcherPath;
     std::error_code ec;
@@ -176,12 +279,13 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
     return result.ok ? " Removed launcher " + entry->launcher + "." : " Kept launcher " + entry->launcher + ": " + result.message;
 }
 
-void readEmulators(const SourceConfig& source, const std::string& cacheFolder, Http* http, SourceContents& contents)
+void readEmulators(const SourceConfig& source, const std::string& cacheFolder, Http* http, SourceContents& contents, const std::string& root)
 {
 #ifndef _WIN32
-    (void)source; (void)cacheFolder; (void)http;
+    (void)source; (void)cacheFolder; (void)http; (void)root;
     contents.error = "Emulator downloads are Windows-only for now";
 #else
+    readCores(source, cacheFolder, root.empty() ? std::filesystem::path(cacheFolder).parent_path().parent_path().string() : root, http, contents);
     bool limitWarning = false;
     for (const auto& entry : emulators()) {
         SourceConfig github;

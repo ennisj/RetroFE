@@ -134,7 +134,7 @@ The Catalog installs into these targets, never into a full path:
 | `media` | `baseMediaPath`, else `collections/` |
 | `layouts` | the layouts folder (`baseLayoutPath`, else `layouts/`) |
 | `meta` | `meta/` |
-| `emulators` | `emulators/` (built-in emulator downloads only) |
+| `emulators` | `emulators/` (built-in emulator and RetroArch core downloads only) |
 
 It never writes into `catalog/` itself or the `retrofe/` program folder, except when
 updating RetroFE.

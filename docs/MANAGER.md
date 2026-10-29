@@ -583,8 +583,13 @@ you agree.
 
 Pick an emulator, then **Install**. RetroFE puts it in `emulators/<name>/`
 and creates its launcher in `launchers.windows/`, leaving any launcher of
-the same name as it is. RetroArch needs a core for each system; core downloads
-come in a later update. Back returns to the list, then to Add a launcher.
+the same name as it is. For RetroArch, choose **Cores** on its package screen,
+or **RetroArch cores** on Download an emulator. Choose a **System** (or
+**All systems**), then a core and **Install**. Installed cores come first.
+Each core creates a launcher such as **RetroArch Genesis Plus GX**.
+A newer nightly says **Newer build from <date>** and offers **Update** on
+its package screen; these builds do not count as general Catalog updates.
+Remove RetroArch’s cores before removing RetroArch. Back returns to the list, then to Add a launcher.
 On a bare install, Back to Manage focuses **Add your first system** once a
 launcher exists.
 
