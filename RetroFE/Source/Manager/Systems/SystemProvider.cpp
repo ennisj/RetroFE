@@ -14,6 +14,9 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "SystemProvider.h"
+#include "../../Catalog/Emulators.h"
+#include "../../Library/RetroArch.h"
+#include "../Emulators/Launchers.h"
 #include "../../Collection/VideoCollections.h"
 #include "../../Library/Backups.h"
 #include "../../Library/ConfFile.h"
@@ -582,6 +585,7 @@ void SystemProvider::refresh()
     playlistKey_.clear();
     playlistsKey_.clear();
     menuIndex_.reset();
+    suggestionIndex_.reset();
     settings_.from = launcher_.from = info_.from = playlistName_.from = nullptr;
 }
 
@@ -1464,6 +1468,17 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         return screen.param("game") == "*" ? "This line lists every " + item_ + " of " + source + "." : "";
     }
 
+    if (key == "hasFirstEmptySystem" || key == "hasSystems") {
+        IndexPtr idx = index();
+        const CollectionRecord* only = nullptr;
+        if (idx) for (const auto& r : idx->collections) {
+            if (r.reserved || !r.is(Library::KindSystem) || isVideoCollection(r)) continue;
+            if (only) return key == "hasSystems" ? "yes" : "no";
+            only = &r;
+        }
+        return yesNo(only && (key == "hasSystems" || only->gameCount == 0));
+    }
+
     // Adding
     if (key == "addMenu") {
         auto found = add_.find(key);
@@ -1475,7 +1490,19 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         auto found = add_.find(key);
         if (found != add_.end()) return found->second;
         IndexPtr idx = index();
-        return videos_ && idx && idx->findLauncher(videoPlayerLauncher) >= 0 ? videoPlayerLauncher : "";
+        if (videos_) return idx && idx->findLauncher(videoPlayerLauncher) >= 0 ? videoPlayerLauncher : "";
+        if (idx) for (const auto& def : idx->launchers) {
+            if (def.scope == Library::LauncherScope::Global) return def.id;
+        }
+        return "@download";
+    }
+    if (!videos_ && (key == "addName" || key == "addExtensions")) suggestLauncher();
+    if (key == "addLauncherNote") {
+        IndexPtr idx = index();
+        bool any = idx && std::any_of(idx->launchers.begin(), idx->launchers.end(), [](const auto& def) {
+            return def.scope == Library::LauncherScope::Global;
+        });
+        return any ? "" : "A system needs a launcher first.";
     }
     if (key == "addIsNewLauncher") return yesNo(addIsNewLauncher());
     if (key == "addFolderCount") return addFolderCount();
@@ -1524,6 +1551,8 @@ void SystemProvider::set(const std::string& key, const std::string& value, const
             }
         }
         add_[key] = value;
+        if (!videos_ && (key == "addName" || key == "addExtensions")) addTyped_[key] = true;
+        if (!videos_ && key == "addLauncher") suggestLauncher();
     }
 }
 
@@ -1536,6 +1565,36 @@ void SystemProvider::setDefault(const std::string& key, const std::string& value
 
 Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Screen& screen)
 {
+    if (key == "addLauncherChoices" && !videos_) {
+        Forms::Rows rows;
+        auto choices = options("addLaunchers", screen);
+        std::string selected = get("addLauncher", screen);
+        for (const auto& choice : choices) {
+            if (rows.items.size() >= limit) break;
+            Forms::Row row;
+            row.id = choice.first.empty() ? "@program" : choice.first;
+            row.label = choice.second;
+            row.detail = choice.first == selected ? "Selected" : "";
+            row.action = "system.chooseLauncher:" + choice.first;
+            row.link = choice.first == "@download";
+            rows.items.push_back(row);
+        }
+        rows.total = choices.size();
+        return rows;
+    }
+    if (key == "firstGames") {
+        Forms::Rows rows;
+        IndexPtr idx = index();
+        if (get("hasFirstEmptySystem", screen) == "yes" && idx) for (const auto& r : idx->collections) {
+            if (r.reserved || !r.is(Library::KindSystem) || isVideoCollection(r)) continue;
+            Forms::Row row;
+            row.id = r.name;
+            row.label = "Put your games in " + idx->properties.collectionPath(r.name) + ", or add them with Add games";
+            rows.items.push_back(row);
+            rows.total = 1;
+        }
+        return rows;
+    }
     if (key == "search") return listRows(limit);
     if (key == "playlists") return playlistRows(screen);
     if (key == "entries") return entryRows(screen);
@@ -1639,12 +1698,16 @@ std::vector<std::pair<std::string, std::string>> SystemProvider::options(const s
         }
     }
     else if (key == "addLaunchers") {
-        result.emplace_back("", videos_ ? "A new video player..." : "A new emulator program...");
+        if (videos_) result.emplace_back("", "A new video player...");
         for (const Library::LauncherDef& def : idx->launchers) {
             if (def.scope == Library::LauncherScope::Global) {
                 result.emplace_back(def.id, def.id);
             }
         }
+    }
+    if (key == "addLaunchers" && !videos_) {
+        result.emplace_back("@download", "Download an emulator...");
+        result.emplace_back("", "A program on the drive...");
     }
     return result;
 }
@@ -1657,6 +1720,7 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
     if (!idx || !services_.editor) {
         return idx ? "Changes can't be saved here." : "Still reading your collections...";
     }
+    if (!videos_ && action.rfind("chooseLauncher:", 0) == 0) return "";
     if (action == "create") {
         return addProblem();
     }
@@ -1776,6 +1840,14 @@ Forms::Model::Result SystemProvider::runAction(const std::string& action, const 
     Forms::Model::Result result;
     result.message = actionProblem(action, screen);
     if (!result.message.empty()) {
+        return result;
+    }
+    if (!videos_ && action.rfind("chooseLauncher:", 0) == 0) {
+        std::string choice = action.substr(15);
+        set("addLauncher", choice, screen);
+        result.ok = true;
+        if (choice == "@download") result.open = "emulator-downloads";
+        else result.info = true;
         return result;
     }
     if (action == "create") return create();
@@ -2086,7 +2158,8 @@ bool SystemProvider::addIsNewLauncher() const
         return found->second.empty();
     }
     IndexPtr idx = index();
-    return !(videos_ && idx && idx->findLauncher(videoPlayerLauncher) >= 0);
+    if (!videos_) return false;
+    return !(idx && idx->findLauncher(videoPlayerLauncher) >= 0);
 }
 
 Forms::Severity SystemProvider::severity(const std::string& key, const Screen& screen)
@@ -2108,9 +2181,55 @@ Forms::Severity SystemProvider::severity(const std::string& key, const Screen& s
     return Severity::None;
 }
 
+std::string SystemProvider::defaultGamesFolder()
+{
+    IndexPtr idx = index();
+    return idx ? idx->properties.collectionPath(Utils::trimEnds(add_["addName"])) : "";
+}
+
+void SystemProvider::suggestLauncher()
+{
+    std::string launcher = get("addLauncher", Screen{});
+    IndexPtr idx = index();
+    if (suggestionIndex_ == idx && suggestedLauncher_ == launcher) return;
+    suggestionIndex_ = idx;
+    suggestedLauncher_ = launcher;
+    std::string name, extensions;
+    for (const auto& entry : Catalog::emulators()) {
+        if (!entry.launcher.empty() && entry.launcher == launcher) {
+            name = entry.system;
+            extensions = entry.extensions;
+        }
+    }
+    std::string catalog;
+    if (!idx || !idx->properties.getAbsolutePath("catalogPath", catalog) || catalog.empty()) {
+        catalog = Utils::combinePath(root(), "catalog");
+    }
+    std::error_code ec;
+    for (const auto& file : fs::directory_iterator(fs::path(catalog) / "installed", ec)) {
+        Catalog::Manifest manifest;
+        std::string error;
+        if (!Catalog::readManifest(file.path().string(), manifest, error) || manifest.kind != "core"
+            || !Catalog::isCoreId(manifest.id)) continue;
+        std::string coreLauncher = manifest.launcherName.empty() ? Catalog::coreLauncherName(manifest.name) : manifest.launcherName;
+        if (coreLauncher != launcher) continue;
+        auto info = Library::RetroArch::readConfigFile(Utils::combinePath(root(), "emulators/RetroArch/info",
+                                                       manifest.id.substr(5) + "_libretro.info"));
+        name = info["systemname"];
+        extensions = info["supported_extensions"];
+        std::replace(extensions.begin(), extensions.end(), '|', ',');
+        break;
+    }
+    if (!addTyped_["addName"]) add_["addName"] = name;
+    if (!addTyped_["addExtensions"]) add_["addExtensions"] = extensions;
+}
+
 std::string SystemProvider::addFolderCount()
 {
     std::string folder = Utils::trimEnds(add_["addFolder"]);
+    if (folder.empty()) {
+        return videos_ ? "" : defaultGamesFolder() + ", made when you add it";
+    }
     std::string extensions = normaliseExtensions(add_["addExtensions"]);
     std::string key = folder + "\n" + extensions;
     if (key == countedKey_) {
@@ -2118,9 +2237,6 @@ std::string SystemProvider::addFolderCount()
     }
     countedKey_ = key;
     countText_.clear();
-    if (folder.empty()) {
-        return countText_;
-    }
     std::error_code ec;
     if (!fs::is_directory(folder, ec)) {
         countText_ = "Folder not found";
@@ -2191,7 +2307,7 @@ std::string SystemProvider::addProblem()
         return menu + " isn't a menu.";
     }
     std::string folder = Utils::trimEnds(add_["addFolder"]);
-    if (folder.empty() || !fs::is_directory(folder, ec)) {
+    if ((videos_ && folder.empty()) || (!folder.empty() && !fs::is_directory(folder, ec))) {
         return "Choose the folder your " + items_ + " are in.";
     }
     std::string extensions = normaliseExtensions(add_["addExtensions"]);
@@ -2229,6 +2345,9 @@ std::string SystemProvider::addProblem()
             return "Paths and arguments can't contain #.";
         }
     }
+    else if (!videos_ && get("addLauncher", Screen{}) == "@download") {
+        return "Download an emulator or choose a program on the drive first.";
+    }
     else if (idx->findLauncher(get("addLauncher", Screen{})) < 0) {
         return "There's no launcher called \"" + get("addLauncher", Screen{}) + "\".";
     }
@@ -2257,8 +2376,16 @@ Forms::Model::Result SystemProvider::create()
     std::string collection = Utils::combinePath(root(), "collections", name);
     std::string error;
 
+    std::string defaultFolder = defaultGamesFolder();
+    if (!videos_ && folder.empty()) folder = defaultFolder;
+    if (!videos_) {
+        std::error_code ec;
+        fs::create_directories(folder, ec);
+        if (ec) { result.message = "Could not make the games folder: " + ec.message(); return result; }
+        program = Emulators::portablePath(root(), program, os);
+    }
     std::string settings = std::string(createdHeader) + nl
-        + "list.path = " + folder + nl
+        + (videos_ || fs::path(folder).lexically_normal() != fs::path(defaultFolder).lexically_normal() ? "list.path = " + folder + nl : "")
         + "list.extensions = " + extensions + nl
         + "list.includeMissingItems = false" + nl
         + "list.menuSort = yes" + nl;
@@ -2314,6 +2441,8 @@ Forms::Model::Result SystemProvider::create()
         return result;
     }
     changed("systems: " + name);
+    addTyped_.clear();
+    suggestionIndex_.reset();
     for (const char* key : { "addName", "addFolder", "addProgram" }) {
         add_.erase(key);
     }

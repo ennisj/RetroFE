@@ -124,21 +124,21 @@ const std::vector<Emulator>& emulators()
     static const std::vector<Emulator> entries = {
         { "retroarch", "RetroArch", "RetroArch", "libretro/RetroArch", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "https://buildbot.libretro.com/stable/<version>/windows/x86_64/RetroArch.7z", "7z", "RetroArch-Win64/",
-          "retroarch.exe", {}, "", "", "Runs games through libretro cores." },
+          "retroarch.exe", {}, "", "", "Runs games through libretro cores.", "", "" },
         { "mame", "MAME", "MAME", "mamedev/mame", R"(^mame0([0-9]+)$)", "<tag>b_x64.exe", "sfx", "",
-          "mame.exe", {}, "MAME", R"(%ITEM_NAME% -rompath "%ITEM_DIRECTORY%.")", "Arcade machine emulator." },
+          "mame.exe", {}, "MAME", R"(%ITEM_NAME% -rompath "%ITEM_DIRECTORY%.")", "Arcade machine emulator.", "Arcade", "zip,7z,chd" },
         { "duckstation", "DuckStation", "DuckStation", "stenzek/duckstation", R"(^v(0\.1-[0-9]+)$)",
           "duckstation-windows-x64-release.zip", "zip", "", "duckstation-qt-x64-ReleaseLTCG.exe", { "portable.txt" },
-          "DuckStation", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation emulator." },
+          "DuckStation", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation emulator.", "PlayStation", "cue,chd,bin,img,iso,m3u,pbp,ecm,mds,psexe,psf,minipsf" },
         { "pcsx2", "PCSX2", "PCSX2", "PCSX2/pcsx2", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "pcsx2-v<version>-windows-x64-Qt.7z", "7z", "", "pcsx2-qt.exe", { "portable.txt" },
-          "PCSX2", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation 2 emulator." },
+          "PCSX2", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation 2 emulator.", "PlayStation 2", "iso,chd,cso,zso,gz,elf,irx,m3u,cue,bin,img,mdf,nrg,dump" },
         { "ppsspp", "PPSSPP", "PPSSPP", "hrydgard/ppsspp", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "PPSSPP-v<version>-Windows-x64.zip", "zip", "", "PPSSPPWindows64.exe", {},
-          "PPSSPP", R"(--fullscreen "%ITEM_FILEPATH%")", "Sony PSP emulator." },
+          "PPSSPP", R"(--fullscreen "%ITEM_FILEPATH%")", "Sony PSP emulator.", "PSP", "iso,cso,chd,pbp,elf,prx" },
         { "flycast", "Flycast", "Flycast", "flyinghead/flycast", R"(^v([0-9]+\.[0-9]+(?:\.[0-9]+)?)$)",
           "flycast-win64-<version>.zip", "zip", "", "flycast.exe", {},
-          "Flycast", R"("%ITEM_FILEPATH%")", "Sega Dreamcast and NAOMI emulator." }
+          "Flycast", R"("%ITEM_FILEPATH%")", "Sega Dreamcast and NAOMI emulator.", "Dreamcast", "chd,cdi,gdi,cue,m3u,elf,dat,zip,7z,lst" }
     };
     return entries;
 }

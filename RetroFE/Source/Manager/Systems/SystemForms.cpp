@@ -240,6 +240,22 @@ const char* const addForm = R"(
 </form>
 )";
 
+const char* const systemAddForm = R"(
+<form id="system-add" title="Add a system">
+  <note bind="system:status"/>
+  <note value="Choose the launcher that runs your games, then name the system. RetroFE shows it after it reloads, when you close Manage." panel="yes"/>
+  <results label="Launcher" bind="system:addLauncherChoices" limit="2147483647"/>
+  <note bind="system:addLauncherNote"/>
+  <file label="Program" bind="system:addProgram" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd" visibleWhen="system:addIsNewLauncher"/>
+  <text label="Arguments" bind="system:addArguments" default="&quot;%ITEM_FILEPATH%&quot;" visibleWhen="system:addIsNewLauncher" help="%ITEM_FILEPATH% is replaced with the game's file"/>
+  <text label="Name" bind="system:addName" hint="e.g. Arcade"/>
+  <choice label="List it in" bind="system:addMenu" options="system:addMenus"/>
+  <folder label="Games folder" bind="system:addFolder" matching="system:addExtensions" hint="Default folder" status="system:addFolderCount"/>
+  <text label="Extensions" bind="system:addExtensions" hint="e.g. zip,7z"/>
+  <button label="Add system" action="system.create" primary="yes"/>
+</form>
+)";
+
 const char* const templates[][2] = {
     { "s", listForm },
     { "", detailsForm },
@@ -318,7 +334,8 @@ struct Table
         std::string base = words.front().second;
         for (const auto& entry : templates) {
             ids.push_back(base + entry[0]);
-            xml.push_back(expand(entry[1], words));
+            const char* source = base == "system" && std::string(entry[0]) == "-add" ? systemAddForm : entry[1];
+            xml.push_back(expand(source, words));
         }
         for (size_t i = 0; i < ids.size(); i++) {
             table.push_back({ ids[i].c_str(), xml[i].c_str() });

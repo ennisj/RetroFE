@@ -27,6 +27,7 @@ namespace Catalog
         std::string program;
         std::vector<std::string> portableFiles;
         std::string launcher, arguments, description;
+        std::string system, extensions;
     };
 
     const std::vector<Emulator>& emulators();

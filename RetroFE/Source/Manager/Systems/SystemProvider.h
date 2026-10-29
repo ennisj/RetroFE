@@ -148,6 +148,8 @@ namespace Manager
         std::string addProblem();
         Forms::Model::Result create();
         std::string addFolderCount();
+        std::string defaultGamesFolder();
+        void suggestLauncher();
         bool addIsNewLauncher() const;
         // A system, or a video collection added to play with an external player
         bool addUsesLauncher() const;
@@ -215,6 +217,9 @@ namespace Manager
         IndexPtr menuIndex_;
         std::string defaultMenu_;
         std::map<std::string, std::string> add_;
+        std::map<std::string, bool> addTyped_;
+        IndexPtr suggestionIndex_;
+        std::string suggestedLauncher_;
         std::string countedKey_;
         std::string countText_;
     };
