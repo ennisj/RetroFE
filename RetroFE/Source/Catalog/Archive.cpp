@@ -150,6 +150,9 @@ bool Catalog::Archive::open(const std::string& path, const std::string& publishe
                 && length == 22 + end[20] + (end[21] << 8)) return true;
             return p.fail(SZ_ERROR_ARCHIVE, error);
         }
+        unz_global_info64 global{};
+        if (unzGetGlobalInfo64(p.zip, &global) != UNZ_OK) return p.fail(SZ_ERROR_ARCHIVE, error);
+        if (global.number_entry == 0) return true;
         int result = unzGoToFirstFile(p.zip);
         while (result == UNZ_OK) {
             unz_file_info64 info{};

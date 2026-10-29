@@ -23,6 +23,7 @@
 #include "JsonFields.h"
 #include <nlohmann/json.hpp>
 #include <regex>
+#include <set>
 #include <ctime>
 
 using nlohmann::json;
@@ -80,7 +81,7 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry, const
             if (at != std::string::npos) wanted.replace(at, replacement.first.size(), replacement.second);
         }
         PackageFile file;
-        bool libretro = entry.id == "retroarch" && wanted.rfind("https://buildbot.libretro.com/", 0) == 0;
+        bool libretro = entry.id == "retroarch";
         if (libretro) file.url = wanted;
         else for (const auto& asset : J::list(release, "assets")) {
             if (J::text(asset, "name") != wanted || (asset.contains("state") && J::text(asset, "state") != "uploaded")) continue;
@@ -91,7 +92,13 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry, const
             J::count(asset, "size", file.size);
             break;
         }
-        if (file.url.rfind("https://", 0) != 0 || !isAllowedLocation(file.url)) continue;
+        std::string origin = libretro ? "https://buildbot.libretro.com/stable/"
+            : "https://github.com/" + entry.repo + "/releases/download/";
+        if (!file.url.empty() && (file.url.rfind(origin, 0) != 0 || !isAllowedLocation(file.url))) {
+            warnings.push_back(entry.name + " " + tag + ": download URL is outside its release origin");
+            continue;
+        }
+        if (file.url.empty()) continue;
         if (!best.version.empty() && compareVersions(version, best.version) <= 0) continue;
         file.target = "emulators";
         file.path = entry.folder;
@@ -111,6 +118,7 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry, const
 
 std::string createEmulatorLauncher(const std::string& root, const std::string& catalog, Manifest& manifest)
 {
+    std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
     const Emulator* entry = findEmulator(manifest.id);
     if (!entry || entry->launcher.empty()) return "";
     Library::ScanOptions options;
@@ -137,6 +145,7 @@ std::string createEmulatorLauncher(const std::string& root, const std::string& c
 std::string removeEmulatorLauncher(const std::string& root, const Manifest& manifest)
 {
     if (manifest.launcherPath.empty()) return "";
+    std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
     const Emulator* entry = findEmulator(manifest.id);
     if (!entry || entry->launcher.empty() || manifest.launcherPath != "launchers.windows/" + entry->launcher + ".conf") return "";
     auto path = std::filesystem::path(root) / manifest.launcherPath;
@@ -150,12 +159,22 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
     auto index = Library::buildIndex(options);
     if (!index) return " Kept launcher " + entry->launcher + ": could not read its users.";
     int launcher = index->findLauncher(Library::LauncherScope::Global, entry->launcher);
+    if (launcher < 0) return "";
     std::string users;
+    std::set<std::string> named;
     for (const auto& use : index->usesOf(launcher)) {
         if (use.collection < 0 || static_cast<size_t>(use.collection) >= index->collections.size()) continue;
+        named.insert(index->collections[static_cast<size_t>(use.collection)].name);
         if (!users.empty()) users += ", ";
         users += index->collections[static_cast<size_t>(use.collection)].name;
         if (!use.game.empty()) users += "/" + use.game;
+    }
+    for (const auto& collection : index->collections) {
+        for (const auto& alternative : collection.launcher.alternatives) {
+            if (index->findLauncher(alternative) != launcher || !named.insert(collection.name).second) continue;
+            if (!users.empty()) users += ", ";
+            users += collection.name;
+        }
     }
     if (!users.empty()) return " Kept launcher " + entry->launcher + ": used by " + users + ".";
     Library::Editor editor(root);
@@ -169,6 +188,7 @@ void readEmulators(const SourceConfig& source, const std::string& cacheFolder, H
     (void)source; (void)cacheFolder; (void)http;
     contents.error = "Emulator downloads are Windows-only for now";
 #else
+    bool limitWarning = false;
     for (const auto& entry : emulators()) {
         SourceConfig github;
         github.name = source.name;
@@ -179,8 +199,15 @@ void readEmulators(const SourceConfig& source, const std::string& cacheFolder, H
                 return parseEmulatorReleases(text, entry, source.name, packages, warnings, error);
             }, entry.id);
         contents.packages.insert(contents.packages.end(), one.packages.begin(), one.packages.end());
-        contents.warnings.insert(contents.warnings.end(), one.warnings.begin(), one.warnings.end());
-        if (!one.error.empty()) contents.warnings.push_back(entry.name + ": " + one.error);
+        auto warn = [&](const std::string& message) {
+            if (message.find("GitHub's limit") != std::string::npos) {
+                if (limitWarning) return;
+                limitWarning = true;
+            }
+            contents.warnings.push_back(message);
+        };
+        for (const auto& warning : one.warnings) warn(warning);
+        if (!one.error.empty()) warn(entry.name + ": " + one.error);
         contents.fromCache = contents.fromCache || one.fromCache;
     }
 #endif

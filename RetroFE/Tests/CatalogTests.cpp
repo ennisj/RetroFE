@@ -30,6 +30,9 @@
 #include "../Source/Database/Configuration.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Setup.h"
+#include "../Source/Library/Indexer.h"
+#include "../Source/Library/Edits.h"
+#include "../Source/Manager/Emulators/EmulatorProvider.h"
 #include "minizip/zip.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -71,6 +74,16 @@ namespace
     {
     public:
         std::map<std::string, std::string> documents;
+        std::map<std::string, Response> responses;
+        std::vector<std::vector<std::string>> sentHeaders;
+        bool request(const std::string& url, const std::vector<std::string>& headers, Response& response) override
+        {
+            sentHeaders.push_back(headers);
+            auto found = responses.find(url);
+            if (found != responses.end()) { response = found->second; return true; }
+            return Http::request(url, headers, response);
+        }
+
 
         bool get(const std::string& url, std::string& body, std::string& error) override
         {
@@ -221,7 +234,7 @@ void runCatalogTests()
         for (size_t i = 0; i < emulators().size(); ++i) {
             nlohmann::json list = nlohmann::json::array();
             nlohmann::json release = { { "tag_name", tags[i] }, { "assets", nlohmann::json::array() } };
-            for (const auto& name : assets[i]) release["assets"].push_back({ { "name", name }, { "browser_download_url", "https://github.com/download/" + name }, { "size", 12345 }, { "digest", "sha256:" + std::string(64, 'a') } });
+            for (const auto& name : assets[i]) release["assets"].push_back({ { "name", name }, { "browser_download_url", "https://github.com/" + emulators()[i].repo + "/releases/download/" + tags[i] + "/" + name }, { "size", 12345 }, { "digest", "sha256:" + std::string(64, 'a') } });
             list.push_back(release);
             auto bad = release;
             bad["prerelease"] = true;
@@ -242,6 +255,24 @@ void runCatalogTests()
             check(parseEmulatorReleases(list.dump(), emulators()[i], "trusted", packages, warnings, error), "parses " + tags[i]);
             check(packages.size() == 1, "one package");
             if (packages.empty()) continue;
+            if (i != 0) {
+                auto hostile = release;
+                for (auto& asset : hostile["assets"]) asset["browser_download_url"] = "https://evil.example/program.zip";
+                std::vector<Package> refused;
+                std::vector<std::string> notes;
+                check(parseEmulatorReleases(nlohmann::json::array({hostile}).dump(), emulators()[i], "trusted", refused, notes, error) && refused.empty() && !notes.empty(), "download origin pinned");
+                auto cache = makeRoot("origin-cache-" + emulators()[i].id);
+                writeFile(cache + "/trusted/" + emulators()[i].id + "/releases.json", nlohmann::json::array({hostile}).dump());
+                SourceConfig config;
+                config.name = "trusted";
+                config.repo = emulators()[i].repo;
+                SourceContents cached;
+                readGitHubReleases(config, cache, nullptr, 1000, cached,
+                    [&](const std::string& text, std::vector<Package>& found, std::vector<std::string>& notes, std::string& problem) {
+                        return parseEmulatorReleases(text, emulators()[i], "trusted", found, notes, problem);
+                    }, emulators()[i].id);
+                check(cached.packages.empty() && !cached.warnings.empty(), "hostile cached download origin refused");
+            }
             const auto& package = packages[0];
             checkEqual(package.version, versions[i], "version");
             checkEqual(package.id, "emulator-" + emulators()[i].id, "id");
@@ -252,7 +283,7 @@ void runCatalogTests()
                 check(package.noChecksum && package.files[0].sha256.empty(), "explicit checksum exception");
             }
             else {
-                checkEqual(package.files[0].url, "https://github.com/download/" + assets[i].back(), "exact asset");
+                checkEqual(package.files[0].url, "https://github.com/" + emulators()[i].repo + "/releases/download/" + tags[i] + "/" + assets[i].back(), "exact asset");
                 check(package.files[0].size == 12345 && package.files[0].sha256 == std::string(64, 'a'), "size and digest");
                 release["assets"].back()["digest"] = nullptr;
                 packages.clear();
@@ -285,6 +316,59 @@ void runCatalogTests()
         }
     });
 
+    run("RetroArch download origin is pinned", [&] {
+        auto entry = emulators()[0];
+        entry.assetRule = "https://buildbot.libretro.com/other/RetroArch.7z";
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        check(parseEmulatorReleases(R"([{"tag_name":"v1.22.2"}])", entry, "downloads", packages, warnings, error) && packages.empty() && !warnings.empty(), "buildbot outside stable refused");
+    });
+
+    run("emulator entry ETags and shared rate limit", [&] {
+        auto root = makeRoot("emulator-etags");
+        FakeHttp http;
+        SourceConfig source;
+        source.name = "downloads";
+        for (const auto& entry : emulators()) {
+            source.repo = entry.repo;
+            auto url = "https://api.github.com/repos/" + entry.repo + "/releases?per_page=30";
+            Http::Response response;
+            response.status = 200;
+            response.body = "[]";
+            response.headers["etag"] = entry.id;
+            http.responses[url] = response;
+            auto parse = [&](const std::string& text, std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& problem) {
+                return parseEmulatorReleases(text, entry, source.name, packages, warnings, problem);
+            };
+            SourceContents first, second;
+            readGitHubReleases(source, root, &http, 1000, first, parse, entry.id);
+            http.responses[url].status = 304;
+            readGitHubReleases(source, root, &http, 1100, second, parse, entry.id);
+            check(second.error.empty(), "304 uses entry cache");
+            check(std::find(http.sentHeaders.back().begin(), http.sentHeaders.back().end(), "If-None-Match: " + entry.id) != http.sentHeaders.back().end(), "entry ETag sent");
+        }
+        source.repo = emulators()[0].repo;
+        auto url = "https://api.github.com/repos/" + source.repo + "/releases?per_page=30";
+        http.responses[url].status = 429;
+        http.responses[url].headers["retry-after"] = "600";
+        auto parse = [](const std::string&, std::vector<Package>&, std::vector<std::string>&, std::string&) { return true; };
+        SourceContents limited;
+        readGitHubReleases(source, root, &http, 1200, limited, parse, emulators()[0].id);
+        auto requests = http.sentHeaders.size();
+        for (const auto& entry : emulators()) {
+            source.repo = entry.repo;
+            SourceContents blocked;
+            readGitHubReleases(source, root, &http, 1300, blocked, parse, entry.id);
+        }
+        check(http.sentHeaders.size() == requests, "rate limit shared across entries");
+        if (currentPlatform().os == "windows") {
+            SourceContents contents;
+            auto before = http.sentHeaders.size();
+            readEmulators(source, makeRoot("emulator-one-limit-warning"), &http, contents);
+            check(http.sentHeaders.size() == before + 1 && contents.warnings.size() == 1, "one source-wide request and warning on rate limit");
+        }
+    });
+
     run("emulator sources round trip and singleton", [&] {
         auto root = makeRoot("emulator-sources");
         SourceConfig source;
@@ -299,7 +383,7 @@ void runCatalogTests()
         check(!validateSource(second, sources).empty(), "second refused");
         check(!saveSources(root + "/sources.conf", {source, second}, error), "duplicate not saved");
         writeFile(root + "/duplicate.conf", "sources.one.type = emulators\nsources.two.type = emulators\n");
-        check(!loadSources(root + "/duplicate.conf", sources, error), "duplicate configuration refused");
+        check(loadSources(root + "/duplicate.conf", sources, error) && sources.size() == 1 && !error.empty(), "duplicate configuration skipped with warning");
         source.url = "https://example.org";
         check(!validateSource(source, {}).empty(), "address refused");
 #ifndef _WIN32
@@ -307,6 +391,23 @@ void runCatalogTests()
         auto contents = readSource(source, root, nullptr);
         check(contents.packages.empty() && contents.error == "Emulator downloads are Windows-only for now", "Windows-only message");
 #endif
+    });
+
+    run("bad emulator sources preserve good sources on add", [&] {
+        auto root = makeRoot("emulator-source-preserve");
+        writeFile(root + "/catalog/sources.conf", "sources.good.type = index\nsources.good.url = https://example.org/index.json\nsources.downloads.type = emulators\nsources.second.type = emulators\nsources.GOOD.type = index\nsources.GOOD.url = https://example.org/other.json\n");
+        Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        service.waitUntilIdle();
+        check(service.sources().size() == 2 && !service.warnings().empty(), "good index and one emulator kept, warning reported");
+        SourceConfig added;
+        added.name = "new";
+        added.type = "index";
+        added.url = "https://example.org/new.json";
+        check(service.addSource(added, error), "add after invalid config");
+        service.waitUntilIdle();
+        std::vector<SourceConfig> saved;
+        check(loadSources(root + "/catalog/sources.conf", saved, error) && saved.size() == 3, "all good sources saved");
     });
 
     run("emulator installation trust, portable files and launchers", [&] {
@@ -324,9 +425,9 @@ void runCatalogTests()
         package.source = "untrusted";
         check(!installer.install(package, {zip}, error), "unconfigured source refused");
         package.source = "trusted";
-        fs::create_directories(root + "/emulators/DuckStation");
+        writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "manual");
         check(!installer.install(package, {zip}, error) && error == "emulators/DuckStation is already there. Rename it, or add a launcher for it instead.", "unowned folder refused");
-        fs::remove(root + "/emulators/DuckStation");
+        fs::remove_all(root + "/emulators/DuckStation");
         check(installer.install(package, {zip}, error), "install: " + error);
         check(fs::exists(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "program installed");
         check(fs::exists(root + "/emulators/DuckStation/portable.txt") && fs::file_size(root + "/emulators/DuckStation/portable.txt") == 0, "portable marker");
@@ -343,7 +444,9 @@ void runCatalogTests()
         writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "self-updated");
         package.version = "0.1.12084";
         check(installer.install(package, {zip}, error), "update");
-        checkEqual(readFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "self-updated", "changed program kept during update");
+        checkEqual(readFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "program", "changed program replaced during update");
+        check(installer.installMessage().find("Replaced 1 changed file") != std::string::npos, "changed replacement reported");
+        checkEqual(readFile(catalog + "/backups/" + package.id + "/0.1.12083/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "self-updated", "changed file backed up");
         writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "program");
         manifest = installer.installed().at(package.id);
         check(!manifest.launcherSha256.empty() && fs::exists(root + "/emulators/DuckStation/portable.txt"), "update preserves launcher and portable ownership");
@@ -357,6 +460,10 @@ void runCatalogTests()
         Installer::Removal removal;
         check(installer.remove(package.id, removal, error), "remove");
         check(!fs::exists(root + "/emulators/DuckStation/portable.txt") && !fs::exists(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "program and empty portable file removed");
+        writeFile(root + "/emulators/DuckStation/settings.ini", "settings");
+        writeFile(root + "/emulators/DuckStation/data/readme.txt", "changed leftover");
+        check(installer.install(package, {zip}, error), "reinstall into leftovers: " + error);
+        checkEqual(readFile(root + "/emulators/DuckStation/settings.ini"), "settings", "settings untouched");
         source.type = "index";
         source.url = root + "/index.json";
         check(saveSources(catalog + "/sources.conf", {source}, error), "change source type");
@@ -364,6 +471,36 @@ void runCatalogTests()
         package.files[0].target = "root";
         package.files[0].path = "elsewhere";
         check(!installer.install(package, {zip}, error) && error.find("program") != std::string::npos, "index source refused program");
+    });
+
+    run("emulator updates replace shipped files and preserve unrelated files", [&] {
+        auto root = makeRoot("emulator-update-tree");
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "trust");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        auto zip = root + "/archive.zip";
+        check(makeZip(zip, {{"pcsx2-qt.exe", "v1"}, {"qt.dll", "v1"}, {"dropped.dll", "old"}}), "v1 archive");
+        auto package = zipPackage("emulator-pcsx2", "1", zip, "emulators", "PCSX2");
+        package.kind = "emulator";
+        package.source = source.name;
+        check(installer.install(package, {zip}, error), "v1 installed");
+        writeFile(root + "/emulators/PCSX2/qt.dll", "self-updated");
+        writeFile(root + "/emulators/PCSX2/settings.ini", "settings");
+        check(makeZip(zip, {{"pcsx2-qt.exe", "v2"}, {"qt.dll", "v2"}}), "v2 archive");
+        package.version = "2";
+        check(installer.install(package, {zip}, error), "v2 installed");
+        checkEqual(readFile(root + "/emulators/PCSX2/pcsx2-qt.exe"), "v2", "unchanged shipped program replaced");
+        checkEqual(readFile(root + "/emulators/PCSX2/qt.dll"), "v2", "changed shipped library replaced");
+        check(!fs::exists(root + "/emulators/PCSX2/dropped.dll"), "dropped file removed");
+        checkEqual(readFile(root + "/emulators/PCSX2/settings.ini"), "settings", "settings stay");
+        checkEqual(readFile(root + "/catalog/backups/emulator-pcsx2/1/emulators/PCSX2/qt.dll"), "self-updated", "changed library backed up");
+        writeFile(root + "/emulators/PCSX2/qt.dll", "changed again");
+        Installer::Removal removal;
+        check(installer.remove(package.id, removal, error) && removal.kept == 1, "remove keeps changed file");
+        check(installer.install(package, {zip}, error), "reinstall with changed leftovers succeeds");
+        checkEqual(readFile(root + "/emulators/PCSX2/settings.ini"), "settings", "reinstall preserves settings");
     });
 
     run("RetroArch strips its top folder and refuses outside entries", [&] {
@@ -380,6 +517,13 @@ void runCatalogTests()
         package.source = "trusted";
         check(installer.install(package, {zip}, error), "install: " + error);
         check(fs::exists(root + "/emulators/RetroArch/retroarch.exe") && !fs::exists(root + "/emulators/RetroArch/RetroArch-Win64"), "top folder removed");
+        for (const auto& name : { "RetroArch-Win64/../escape.txt", "RetroArch-Win64", "RetroArch-Win64/dir\\escape.txt", "RetroArch-Win64/" }) {
+            check(makeZip(zip, {{name, "bad"}}), "hostile archive");
+            check(!installer.install(package, {zip}, error), std::string("hostile entry refused: ") + name);
+        }
+        writeFile(zip, "not an archive");
+        package.files[0].extract = false;
+        check(!installer.install(package, {zip}, error) && error.find("isn't an archive RetroFE can unpack") != std::string::npos, "trusted download must unpack");
         check(makeZip(zip, { { "outside.txt", "bad" } }), "outside archive");
         check(!installer.install(package, {zip}, error) && error.find("outside") != std::string::npos, "outside entry refused");
     });
@@ -523,6 +667,24 @@ void runCatalogTests()
         check(genesis.requirements.size() == 2 && genesis.requirements[1].version == ">=1.0", "requires");
         checkEqual(packages[1].name, "theme", "name defaults to id");
         checkEqual(packages[1].files[0].target, "layouts", "layout target");
+    });
+
+    run("emulator ids are reserved in indexes and sidecars", [&] {
+        for (const auto& id : {"emulator-duckstation", "Emulator-unknown"}) {
+            std::vector<Package> packages;
+            std::vector<std::string> warnings;
+            auto document = nlohmann::json{{"packages", nlohmann::json::array({{{"id", id}, {"files", nlohmann::json::array({{{"url", "https://example.org/data.zip"}, {"target", "root"}}})}}})}};
+            check(parseIndex(document.dump(), "https://example.org/index.json", "untrusted", packages, warnings, error) && packages.empty() && !warnings.empty(), "index reserved id refused");
+            auto root = makeRoot(std::string("reserved-") + id);
+            check(makeZip(root + "/data.zip", {{"data.txt", "data"}}), "archive");
+            writeFile(root + "/data.zip.package.json", nlohmann::json{{"id", id}}.dump());
+            SourceConfig source;
+            source.name = "usb";
+            source.type = "folder";
+            source.path = root;
+            auto contents = readSource(source, root + "/cache", nullptr);
+            check(contents.packages.empty() && !contents.warnings.empty(), "sidecar reserved id refused");
+        }
     });
 
     run("a broken index is an error", [&] {
@@ -1141,6 +1303,64 @@ void runCatalogTests()
         checkEqual(readFile(root + "/collections/Pack/settings.conf"), "list.extensions = zip", "installed content");
     });
 
+    if (currentPlatform().os == "windows") {
+    run("service emulator install creates launcher and signals a rescan", [&] {
+        auto root = makeRoot("service-emulator");
+        auto zip = root + "/server/duck.zip";
+        check(makeZip(zip, {{"duckstation-qt-x64-ReleaseLTCG.exe", "program"}}), "archive");
+        class EmulatorHttp : public ServingHttp {
+        public:
+            std::string release;
+            bool get(const std::string& url, std::string& body, std::string&) override {
+                body = url.find("stenzek/duckstation") != std::string::npos ? release : "[]";
+                return true;
+            }
+        };
+        auto http = std::make_unique<EmulatorHttp>();
+        auto url = "https://github.com/stenzek/duckstation/releases/download/v0.1-12083/duckstation-windows-x64-release.zip";
+        http->files[url] = readFile(zip);
+        http->release = nlohmann::json::array({{{"tag_name", "v0.1-12083"}, {"assets", nlohmann::json::array({{{"name", "duckstation-windows-x64-release.zip"}, {"browser_download_url", url}, {"digest", "sha256:" + sha256File(zip)}}})}}}).dump();
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "trust");
+        Service service(root + "/catalog", targetsUnder(root), std::move(http));
+        service.start();
+        service.waitUntilIdle();
+        service.install("emulator-duckstation");
+        service.waitUntilIdle();
+        bool ok = false;
+        std::string message;
+        check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("Created the launcher DuckStation") != std::string::npos, "service names created launcher: " + message);
+        Service::Changes changes;
+        check(service.takeChanges(changes) && changes.libraryFiles, "library rescan signalled");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        Library::ScanOptions scan;
+        scan.root = root;
+        scan.os = "windows";
+        Library::Indexer indexer(scan);
+        Library::Editor editor(root);
+        Manager::Services services{config};
+        services.library = &indexer;
+        services.editor = &editor;
+        model.addProvider(std::make_unique<EmulatorProvider>(services));
+        indexer.changed("Catalog changed library files");
+        check(indexer.wait(10000), "rescan");
+        checkEqual(model.get("info:hasLaunchers"), "yes", "hub sees launcher after rescan");
+        service.remove("emulator-duckstation");
+        service.waitUntilIdle();
+        check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("Removed launcher DuckStation") != std::string::npos, "service removes launcher: " + message);
+        service.install("emulator-duckstation");
+        service.waitUntilIdle();
+        writeFile(root + "/collections/PlayStation/settings.conf", "launcher = Other, DuckStation\n");
+        service.remove("emulator-duckstation");
+        service.waitUntilIdle();
+        check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("PlayStation") != std::string::npos && fs::exists(root + "/launchers.windows/DuckStation.conf"), "service keeps alternative launcher and names its user");
+    });
+    }
+
     // --- The Catalog service and its screens ---------------------------------------
 
     // A catalog folder with a local index offering two packages, one needing the other
@@ -1190,7 +1410,7 @@ void runCatalogTests()
         Entry base;
         check(service.entry("base", base) && base.installedVersion == "1.0" && !base.updateAvailable, "shown as installed");
         Service::Changes changes;
-        check(service.takeChanges(changes) && !service.takeChanges(changes), "changes reported once");
+        check(service.takeChanges(changes) && changes.libraryFiles && !service.takeChanges(changes), "changes reported once");
 
         service.install("pack");
         service.waitUntilIdle();

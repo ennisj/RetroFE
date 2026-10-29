@@ -365,7 +365,7 @@ bool Installer::trustedEmulator(const std::string& id, const std::string& kind, 
     return false;
 }
 
-std::string Installer::refusal(const InstalledFile& file, const std::string& id, const std::string& kind, const std::string& source, bool installedAuthority) const
+std::string Installer::refusal(const InstalledFile& file, const std::string& id, const std::string& kind, bool trusted) const
 {
     fs::path root = targets_.resolve(file.target);
     fs::path destination = root / fromUtf8(file.path);
@@ -379,7 +379,7 @@ std::string Installer::refusal(const InstalledFile& file, const std::string& id,
         return "Refusing to install layouts: the layouts folder (" + root.string() + ") holds RetroFE's own folder";
     }
     const Emulator* entry = findEmulator(id);
-    bool programs = (trustedEmulator(id, kind, source) || (installedAuthority && kind == "emulator")) && file.target == "emulators" && entry
+    bool programs = (trusted && kind == "emulator") && file.target == "emulators" && entry
         && file.path.rfind(entry->folder + "/", 0) == 0;
     if (file.target == "emulators" && !programs) return "Only built-in emulator downloads may use the emulators target";
     if (isExecutableName(file.path) && !programs) {
@@ -413,6 +413,8 @@ std::map<std::string, Manifest> Installer::installed() const
 
 bool Installer::install(const Package& package, const std::vector<std::string>& downloads, std::string& error)
 {
+    error.clear();
+    installMessage_.clear();
     if (!isValidId(package.id)) {
         error = "Invalid package id";
         return false;
@@ -427,11 +429,11 @@ bool Installer::install(const Package& package, const std::vector<std::string>& 
         Manifest old;
         std::string ignored;
         std::error_code ec;
-        bool owns = readManifest(manifestPath(package.id), old, ignored) && old.source == package.source
+        bool owns = readManifest(manifestPath(package.id), old, ignored)
             && std::any_of(old.files.begin(), old.files.end(), [&](const InstalledFile& file) {
                 return file.target == "emulators" && file.path.rfind(entry->folder + "/", 0) == 0;
             });
-        if (!owns && fs::exists(fs::path(targets_.resolve("emulators")) / entry->folder, ec)) {
+        if (!owns && fs::exists(fs::path(targets_.resolve("emulators")) / entry->folder / entry->program, ec)) {
             error = "emulators/" + entry->folder + " is already there. Rename it, or add a launcher for it instead.";
             return false;
         }
@@ -459,7 +461,8 @@ bool Installer::install(const Package& package, const std::vector<std::string>& 
 bool Installer::stage(const Package& package, const std::vector<std::string>& downloads, const std::string& staging, std::string& error)
 {
     std::vector<PlannedFile> planned;
-    const Emulator* emulator = trustedEmulator(package.id, package.kind, package.source) ? findEmulator(package.id) : nullptr;
+    const bool trusted = trustedEmulator(package.id, package.kind, package.source);
+    const Emulator* emulator = trusted ? findEmulator(package.id) : nullptr;
     for (size_t i = 0; i < package.files.size(); i++) {
         const PackageFile& source = package.files[i];
         if (targets_.resolve(source.target).empty()) {
@@ -475,7 +478,7 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
         uint64_t archiveOffset;
         std::string extension = lower(fs::u8path(publishedName(source.url)).extension().string());
         Archive::Form form = Archive::detect(downloads[i], archiveOffset);
-        bool extract = source.extract.value_or(extension == ".zip" || (package.kind == "emulator" &&
+        bool extract = emulator || source.extract.value_or(extension == ".zip" || (package.kind == "emulator" &&
             (form == Archive::Form::SevenZip || form == Archive::Form::SelfExtracting)));
         if (extract) {
             if (form == Archive::Form::None) {
@@ -510,6 +513,12 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
     }
 
     if (emulator) {
+        if (std::none_of(planned.begin(), planned.end(), [&](const PlannedFile& file) {
+            return file.file.target == "emulators" && file.file.path == emulator->folder + "/" + emulator->program;
+        })) {
+            error = package.name + " archive does not contain " + emulator->program;
+            return false;
+        }
         for (const auto& name : emulator->portableFiles) {
             std::string path = emulator->folder + "/" + name;
             std::error_code ec;
@@ -537,7 +546,7 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
     // Refuse the whole package before anything is moved
     json files = json::array();
     for (const PlannedFile& plannedFile : unique) {
-        std::string problem = refusal(plannedFile.file, package.id, package.kind, package.source);
+        std::string problem = refusal(plannedFile.file, package.id, package.kind, trusted);
         if (!problem.empty()) {
             error = problem;
             return false;
@@ -566,7 +575,8 @@ bool Installer::commit(const std::string& staging, std::string& error)
     manifest.kind = J::text(plan, "kind");
     manifest.version = J::text(plan, "version");
     manifest.source = J::text(plan, "source");
-    if (trustedEmulator(manifest.id, manifest.kind, manifest.source)) manifest.sourceType = "emulators";
+    const bool trusted = trustedEmulator(manifest.id, manifest.kind, manifest.source);
+    if (trusted) manifest.sourceType = "emulators";
     if (!isValidId(manifest.id) || manifest.id != fs::path(staging).filename().string()) {
         error = "The staged install has no valid package id";
         return false;
@@ -588,13 +598,14 @@ bool Installer::commit(const std::string& staging, std::string& error)
         fs::path destination;
     };
     std::vector<Step> steps;
+    int changed = 0;
     for (const json& entry : J::list(plan, "files")) {
         Step step;
         if (!fromJson(entry, step.file)) {
             error = "The staged install has an invalid file";
             return false;
         }
-        std::string problem = refusal(step.file, manifest.id, manifest.kind, manifest.source);
+        std::string problem = refusal(step.file, manifest.id, manifest.kind, trusted);
         if (!problem.empty()) {
             error = problem;
             return false;
@@ -610,10 +621,8 @@ bool Installer::commit(const std::string& staging, std::string& error)
         auto old = previousFiles.find(fileKey(step.file));
         if (manifest.sourceType == "emulators" && old != previousFiles.end()) {
             std::error_code ec;
-            if (fs::exists(step.destination, ec) && sha256File(step.destination) != old->second.sha256
-                && sha256File(step.destination) != step.file.sha256) {
-                manifest.files.push_back(old->second);
-                continue;
+            if (fs::exists(step.destination, ec) && sha256File(step.destination) != old->second.sha256) {
+                changed++;
             }
         }
         steps.push_back(step);
@@ -716,7 +725,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
         newFiles.insert(fileKey(file));
     }
     for (const InstalledFile& old : previous.files) {
-        if (newFiles.count(fileKey(old)) || !refusal(old, manifest.id, manifest.kind, manifest.source).empty()) continue;
+        if (newFiles.count(fileKey(old)) || !refusal(old, manifest.id, manifest.kind, trusted).empty()) continue;
         fs::path root = targets_.resolve(old.target);
         fs::path path = root / fromUtf8(old.path);
         if (!fs::exists(path, ec) || sha256File(path) != old.sha256) continue;
@@ -741,6 +750,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
         }
     }
 
+    if (changed) installMessage_ = " Replaced " + std::to_string(changed) + (changed == 1 ? " changed file; backups are in " : " changed files; backups are in ") + backups.string() + ".";
     fs::remove_all(staging, ec);
     LOG_NOTICE("Catalog", "Installed " + manifest.id + " " + manifest.version + " (" + std::to_string(manifest.files.size()) + " files)");
     return true;
@@ -754,9 +764,10 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
         return false;
     }
     fs::path packageBackups = fs::path(catalog_) / "backups" / id;
+    const bool trusted = manifest.sourceType == "emulators" || trustedEmulator(manifest.id, manifest.kind, manifest.source);
     bool allRestored = true;
     for (const InstalledFile& file : manifest.files) {
-        if (!refusal(file, manifest.id, manifest.kind, manifest.source, manifest.sourceType == "emulators").empty()) {
+        if (!refusal(file, manifest.id, manifest.kind, trusted).empty()) {
             continue;
         }
         fs::path root = targets_.resolve(file.target);

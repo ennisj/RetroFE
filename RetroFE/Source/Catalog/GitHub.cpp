@@ -434,6 +434,9 @@ void readGitHubReleases(const SourceConfig& source, const std::string& cacheFold
     fs::path cacheFile = folder / "releases.json";
     fs::path stateFile = folder / "state.json";
     FetchState state = readState(stateFile);
+    fs::path limitFile = fs::path(cacheFolder) / source.name / "rate-limit.json";
+    FetchState limit = readState(limitFile);
+    if (!subfolder.empty()) state.blockedUntil = std::max(state.blockedUntil, limit.blockedUntil);
     std::string cached;
     bool haveCache = readFile(cacheFile, cached);
 
@@ -504,14 +507,14 @@ void readGitHubReleases(const SourceConfig& source, const std::string& cacheFold
         return;
     }
 
-    int64_t remaining = number(response.headers, "x-ratelimit-remaining");
     int64_t retryAfter = number(response.headers, "retry-after");
-    if (response.status == 429 || (response.status == 403 && (remaining == 0 || retryAfter >= 0))) {
+    if (response.status == 429 || response.status == 403) {
         // Don't ask again until GitHub says to (or for a while, if it doesn't say)
         int64_t reset = number(response.headers, "x-ratelimit-reset");
         int64_t until = retryAfter >= 0 ? now + retryAfter : reset > now ? reset : now + 15 * 60;
         state.blockedUntil = std::min(until, now + 2 * 3600);
         writeState(stateFile, state);
+        if (!subfolder.empty()) writeState(limitFile, state);
         useCache("GitHub's limit of 60 checks an hour has been reached; RetroFE checks again after " + clock(state.blockedUntil));
         return;
     }

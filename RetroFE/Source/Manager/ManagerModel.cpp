@@ -437,6 +437,10 @@ std::string ManagerModel::get(const std::string& key)
     if (key == "info:sourceIsFolder") {
         return drafts_["sourceType"] == "folder" ? "yes" : "no";
     }
+    if (key == "info:hasLaunchers") {
+        auto found = providers_.find("emulator");
+        return found != providers_.end() ? found->second->get("hasLaunchers", screen_) : "no";
+    }
     if (key == "info:hasCollections") {
         return collections_.empty() ? "no" : "yes";
     }

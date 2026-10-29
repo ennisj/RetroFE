@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Sources.h"
+#include "../Utility/Log.h"
 #include "GitHub.h"
 #include "Emulators.h"
 #include "Http.h"
@@ -249,6 +250,7 @@ namespace Catalog
 
 bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, std::string& error)
 {
+    error.clear();
     sources.clear();
     std::error_code ec;
     if (!fs::exists(file, ec)) {
@@ -314,19 +316,31 @@ bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, st
     }
     std::vector<SourceConfig> checked;
     for (const auto& source : sources) {
-        if (source.type == "emulators") {
-            error = validateSource(source, checked);
-            if (!error.empty()) { sources.clear(); return false; }
+        std::string problem;
+        for (const auto& previous : checked) {
+            if (lower(previous.name) == lower(source.name)) problem = "duplicate source name";
+        }
+        if (problem.empty() && source.type == "emulators") problem = validateSource(source, checked);
+        if (!problem.empty()) {
+            if (!error.empty()) error += "\n";
+            error += source.name + ": " + problem;
+            LOG_WARNING("Catalog", source.name + ": " + problem);
+            continue;
         }
         checked.push_back(source);
     }
+    sources = checked;
     return true;
 }
 
 bool saveSources(const std::string& file, const std::vector<SourceConfig>& sources, std::string& error)
 {
+    error.clear();
     std::vector<SourceConfig> checked;
     for (const auto& source : sources) {
+        for (const auto& previous : checked) {
+            if (lower(previous.name) == lower(source.name)) { error = "Duplicate source name: " + source.name; return false; }
+        }
         if (source.type == "emulators") {
             error = validateSource(source, checked);
             if (!error.empty()) return false;

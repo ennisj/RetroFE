@@ -114,6 +114,7 @@ namespace Catalog
             std::lock_guard<std::mutex> lock(mutex_);
             installed_ = installer_.installed();
             sources_ = sources;
+            if (!error.empty()) sourceWarnings_.push_back(error);
             rebuildEntries();
         }
         worker_ = std::thread(&Service::run, this);
@@ -205,6 +206,7 @@ namespace Catalog
     {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::string> all = appWarnings_;
+        all.insert(all.end(), sourceWarnings_.begin(), sourceWarnings_.end());
         all.insert(all.end(), warnings_.begin(), warnings_.end());
         return all;
     }
@@ -654,6 +656,7 @@ namespace Catalog
             installed_ = installer_.installed();
             rebuildEntries();
             changed_ = true;
+            changes_.libraryFiles = true;
             std::set<std::string> now;
             auto manifest = installed_.find(package.id);
             if (manifest != installed_.end()) {
@@ -673,7 +676,7 @@ namespace Catalog
             }
         }
         LOG_NOTICE("Catalog", "Installed " + package.id + " " + package.version);
-        finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + "." + launcherMessage);
+        finish(id, true, (updating ? "Updated to " : "Installed ") + package.name + " " + package.version + "." + installer_.installMessage() + launcherMessage);
     }
 
     void Service::doUpdateApp(const Package& original)
@@ -828,6 +831,7 @@ namespace Catalog
             installed_ = installer_.installed();
             rebuildEntries();
             changed_ = true;
+            changes_.libraryFiles = true;
             // Only collections that are gone; kept files keep the collection
             for (const std::string& collection : collections) {
                 std::error_code ec;

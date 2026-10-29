@@ -266,6 +266,7 @@ bool ManagerUI::takeCatalogChanges()
     if (!catalog_ || !catalog_->takeChanges(changes)) {
         return false;
     }
+    if (changes.libraryFiles && library_) library_->changed("Catalog changed library files");
     // Installed collections show under Browse, like ones made in Manage
     std::string error;
     if (!changes.addedCollections.empty() && !model_.ensureSettingsFile(error)) {
@@ -1043,6 +1044,7 @@ void ManagerUI::update(float dt)
     if (!open_) {
         return;
     }
+    if (takeCatalogChanges()) reloadWhenClosed_ = true;
     if (launchReturn_ && Manager::LaunchReturnWait::ready(library_ && library_->index(),
         library_ && library_->status().state == Library::Indexer::State::Building)) {
         auto returning = std::move(*launchReturn_);

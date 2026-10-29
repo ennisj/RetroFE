@@ -109,6 +109,7 @@ namespace Catalog
         // What installs and removals changed
         struct Changes
         {
+            bool libraryFiles = false;
             std::set<std::string> addedCollections;     // collections/ folders installed into
             std::set<std::string> removedCollections;   // collections/ folders that are now gone
         };
@@ -176,6 +177,7 @@ namespace Catalog
         std::map<std::string, Manifest> installed_;
         std::vector<Entry> entries_;               // packages_ and installed_ combined, sorted
         std::map<std::string, size_t> entryIndex_; // id -> position in entries_
+        std::vector<std::string> sourceWarnings_;
         std::vector<std::string> warnings_;
         std::vector<std::string> appWarnings_;     // about RetroFE's own last update, shown first
         std::map<std::string, std::pair<bool, std::string>> outcomes_;

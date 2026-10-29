@@ -113,10 +113,11 @@ files it leaves behind.
 
 ## Updating and removing
 
-As for other packages: an update backs up and replaces the files the previous version
-installed, removes those the new one no longer has, and keeps files the user changed. An
-emulator's own updater (DuckStation has one) changes files under the Catalog; the Catalog
-then sees them as changed and keeps them, and the package screen says the files differ.
+An update replaces every file shipped by the new version, including files changed by
+an emulator's own updater. Changed files are backed up and the result names their count
+and backup folder. Unchanged files dropped by the new version are removed; changed
+dropped files stay. Files outside the installed manifest, including settings, saves and
+BIOS files, are never touched.
 
 Removing an emulator removes its files and the launcher it created, unless a system still
 uses that launcher: then the launcher stays and the message names the systems.

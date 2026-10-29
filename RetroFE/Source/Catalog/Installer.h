@@ -89,6 +89,8 @@ namespace Catalog
         // in the same order. Archives are detected by content; other files are copied.
         bool install(const Package& package, const std::vector<std::string>& downloads, std::string& error);
 
+        const std::string& installMessage() const { return installMessage_; }
+
         struct Removal
         {
             int kept = 0;       // changed since they were installed, so left alone
@@ -112,9 +114,10 @@ namespace Catalog
         bool commit(const std::string& staging, std::string& error);
         std::string manifestPath(const std::string& id) const;
         // "" if a file may be written there, otherwise why not
-        std::string refusal(const InstalledFile& file, const std::string& id, const std::string& kind, const std::string& source, bool installedAuthority = false) const;
+        std::string refusal(const InstalledFile& file, const std::string& id, const std::string& kind, bool trusted) const;
         bool trustedEmulator(const std::string& id, const std::string& kind, const std::string& source) const;
 
+        std::string installMessage_;
         std::string catalog_;
         Targets targets_;
         const std::atomic<bool>* stop_ = nullptr;

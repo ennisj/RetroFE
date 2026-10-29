@@ -607,6 +607,10 @@ Forms::Model::Result EmulatorProvider::rename(const Manager::Screen& screen)
 
 std::string EmulatorProvider::get(const std::string& key, const Manager::Screen& screen)
 {
+    if (key == "hasLaunchers") {
+        auto index = services_.library ? services_.library->index() : nullptr;
+        return index && !index->launchers.empty() ? "yes" : "no";
+    }
     if (key == "query") {
         return query_;
     }

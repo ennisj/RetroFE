@@ -131,6 +131,17 @@ namespace
 }
 
 static Test::Suite emulators("emulators", [] {
+    run("emulators: hub sees launchers after a catalog rescan", [] {
+        auto root = makeRoot("emu-hub-rescan");
+        Fixture f(root);
+        checkEqual(f.model->get("info:hasLaunchers"), "no", "bare install");
+        writeFile(root + "/launchers." + os() + "/Downloaded.conf", "executable = emulators/program.exe\n");
+        f.indexer.changed("Catalog changed library files");
+        check(f.indexer.wait(10000), "rescan finished");
+        checkEqual(f.model->get("info:hasLaunchers"), "yes", "hub sees downloaded launcher");
+        check(f.row("emulator:search", "Downloaded") != nullptr, "launcher screen sees it too");
+    });
+
     run("emulators: the list shows where each launcher is, its program and who uses it", [] {
         Fixture f(makeInstall("emu-list"));
         f.model->setScreen("emulators", {});

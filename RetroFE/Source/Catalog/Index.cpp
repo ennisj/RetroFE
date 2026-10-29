@@ -81,6 +81,7 @@ namespace
         if (package.kind == "app") {
             return prefix + "updates RetroFE itself (kind \"app\"), which only GitHub sources may offer";
         }
+        if (lower(package.id).rfind("emulator-", 0) == 0) return prefix + "emulator ids only come from the emulators source";
         if (lower(package.id) == Catalog::appPackageId) {
             return prefix + "the id \"" + package.id + "\" is RetroFE's own";
         }

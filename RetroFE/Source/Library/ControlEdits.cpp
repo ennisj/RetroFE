@@ -60,6 +60,7 @@ namespace
 
 std::vector<std::string> Editor::controlsFileNames()
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // RetroFE::run's order: later files win, key by key
     std::vector<std::string> names = { "controls.conf" };
     for (int i = 1; i < 10; i++) {
@@ -70,6 +71,7 @@ std::vector<std::string> Editor::controlsFileNames()
 
 std::string Editor::checkControls(const std::map<std::string, std::string>& changes)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     // Only what changes: a control the files already leave empty on purpose
     // (back = on a kiosk) doesn't hold up other changes
     for (const auto& [name, value] : changes) {
@@ -82,6 +84,7 @@ std::string Editor::checkControls(const std::map<std::string, std::string>& chan
 }
 EditResult Editor::setControls(const std::map<std::string, std::string>& values)
 {
+    std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
     if (values.empty()) {
         return EditResult::fail("Nothing to save.");
     }
