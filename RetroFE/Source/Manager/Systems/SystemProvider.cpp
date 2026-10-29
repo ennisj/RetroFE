@@ -609,6 +609,7 @@ void SystemProvider::enter(const Screen& screen)
     if (isForm(screen, "-playlist")) {
         playlistName_.from = nullptr;   // the name it has now
     }
+    if (!videos_ && isForm(screen, "-add")) syncAddLaunchers();
     syncBuffers(screen);
 }
 
@@ -1486,6 +1487,8 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         IndexPtr idx = index();
         return idx ? defaultMenu(*idx) : "";
     }
+    if (!videos_ && key.compare(0, 3, "add") == 0) syncAddLaunchers();
+    if (key == "addHasLaunchers") return yesNo(!addLauncherIds_.empty());
     if (key == "addLauncher") {
         auto found = add_.find(key);
         if (found != add_.end()) return found->second;
@@ -1494,7 +1497,7 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         if (idx) for (const auto& def : idx->launchers) {
             if (def.scope == Library::LauncherScope::Global) return def.id;
         }
-        return "@download";
+        return "";
     }
     if (!videos_ && (key == "addName" || key == "addExtensions")) suggestLauncher();
     if (key == "addLauncherNote") {
@@ -1565,23 +1568,6 @@ void SystemProvider::setDefault(const std::string& key, const std::string& value
 
 Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Screen& screen)
 {
-    if (key == "addLauncherChoices" && !videos_) {
-        Forms::Rows rows;
-        auto choices = options("addLaunchers", screen);
-        std::string selected = get("addLauncher", screen);
-        for (const auto& choice : choices) {
-            if (rows.items.size() >= limit) break;
-            Forms::Row row;
-            row.id = choice.first.empty() ? "@program" : choice.first;
-            row.label = choice.second;
-            row.detail = choice.first == selected ? "Selected" : "";
-            row.action = "system.chooseLauncher:" + choice.first;
-            row.link = choice.first == "@download";
-            rows.items.push_back(row);
-        }
-        rows.total = choices.size();
-        return rows;
-    }
     if (key == "firstGames") {
         Forms::Rows rows;
         IndexPtr idx = index();
@@ -1706,7 +1692,6 @@ std::vector<std::pair<std::string, std::string>> SystemProvider::options(const s
         }
     }
     if (key == "addLaunchers" && !videos_) {
-        result.emplace_back("@download", "Download an emulator...");
         result.emplace_back("", "A program on the drive...");
     }
     return result;
@@ -1720,7 +1705,6 @@ std::string SystemProvider::actionProblem(const std::string& action, const Scree
     if (!idx || !services_.editor) {
         return idx ? "Changes can't be saved here." : "Still reading your collections...";
     }
-    if (!videos_ && action.rfind("chooseLauncher:", 0) == 0) return "";
     if (action == "create") {
         return addProblem();
     }
@@ -1840,14 +1824,6 @@ Forms::Model::Result SystemProvider::runAction(const std::string& action, const 
     Forms::Model::Result result;
     result.message = actionProblem(action, screen);
     if (!result.message.empty()) {
-        return result;
-    }
-    if (!videos_ && action.rfind("chooseLauncher:", 0) == 0) {
-        std::string choice = action.substr(15);
-        set("addLauncher", choice, screen);
-        result.ok = true;
-        if (choice == "@download") result.open = "emulator-downloads";
-        else result.info = true;
         return result;
     }
     if (action == "create") return create();
@@ -2158,7 +2134,9 @@ bool SystemProvider::addIsNewLauncher() const
         return found->second.empty();
     }
     IndexPtr idx = index();
-    if (!videos_) return false;
+    if (!videos_) return !idx || std::none_of(idx->launchers.begin(), idx->launchers.end(), [](const auto& def) {
+        return def.scope == Library::LauncherScope::Global;
+    });
     return !(idx && idx->findLauncher(videoPlayerLauncher) >= 0);
 }
 
@@ -2185,6 +2163,23 @@ std::string SystemProvider::defaultGamesFolder()
 {
     IndexPtr idx = index();
     return idx ? idx->properties.collectionPath(Utils::trimEnds(add_["addName"])) : "";
+}
+
+void SystemProvider::syncAddLaunchers()
+{
+    IndexPtr idx = index();
+    if (!idx || addLauncherIndex_ == idx) return;
+    std::vector<std::string> ids, added;
+    for (const auto& def : idx->launchers) {
+        if (def.scope != Library::LauncherScope::Global) continue;
+        ids.push_back(def.id);
+        if (std::find(addLauncherIds_.begin(), addLauncherIds_.end(), def.id) == addLauncherIds_.end()) {
+            added.push_back(def.id);
+        }
+    }
+    if (addLauncherIndex_ && added.size() == 1) add_["addLauncher"] = added.front();
+    addLauncherIds_ = std::move(ids);
+    addLauncherIndex_ = idx;
 }
 
 void SystemProvider::suggestLauncher()
@@ -2344,9 +2339,6 @@ std::string SystemProvider::addProblem()
         if (program.find('#') != std::string::npos || add_["addArguments"].find('#') != std::string::npos) {
             return "Paths and arguments can't contain #.";
         }
-    }
-    else if (!videos_ && get("addLauncher", Screen{}) == "@download") {
-        return "Download an emulator or choose a program on the drive first.";
     }
     else if (idx->findLauncher(get("addLauncher", Screen{})) < 0) {
         return "There's no launcher called \"" + get("addLauncher", Screen{}) + "\".";

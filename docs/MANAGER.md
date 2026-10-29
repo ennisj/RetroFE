@@ -468,11 +468,13 @@ layout. Values set in an override file say so ("Set in settings1.conf").
 
 **Systems** lists every collection with games of its own: search by name or
 title, or pick a menu to see only the systems below it. Each row shows the
-game count and the launcher. **Add a system** starts with every global launcher,
-including RetroArch core launchers, then **Download an emulator...** and **A program
-on the drive...**. Select downloads to open the emulator downloads screen; Back
-returns to the form with newly installed launchers included. Without launchers,
-downloads is selected first and a note explains that a system needs a launcher.
+game count and the launcher. **Add a system** starts with a compact **Launcher**
+choice: use Left/Right to choose any global launcher, including RetroArch core
+launchers, or **A program on the drive...**. The **Download an emulator** link
+immediately below opens emulator downloads. Back returns with installed launchers
+included and selects the newly created launcher when exactly one was added.
+Without launchers, the choice shows only the program option, focus starts on the
+Download link, and a note explains that a system needs a launcher first.
 Choosing a program shows Program and Arguments; paths inside the root are written
 with `%RETROFE_PATH%` in the system's own `launcher.<os>.conf`.
 

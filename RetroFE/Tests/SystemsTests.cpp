@@ -529,17 +529,22 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:canDelete"), "yes", "made here, so it can be deleted");
     });
 
-    run("systems: launcher first, downloads and programs are controller rows; videos keep their form", [] {
+    run("systems: compact launcher choice and download link; videos keep their form", [] {
         Fixture f("sys-launcher-first");
+        for (int i = 0; i < 100; i++) {
+            writeFile(f.root + "/launchers." + os() + "/Extra" + std::to_string(i) + ".conf", "executable = extra.exe\n");
+        }
+        f.rescan();
         f.open("system-add", {});
-        auto rows = f.model.rows("system:addLauncherChoices", 100);
-        check(rows.items.size() >= 4 && rows.items.front().detail == "Selected", "installed launcher selected first");
-        check(rows.items[rows.items.size() - 2].label == "Download an emulator..." && rows.items.back().label == "A program on the drive...", "special choices last");
-        check(f.model.runAction(rows.items[rows.items.size() - 2].action).open == "emulator-downloads", "download opens its screen");
-        check(f.model.runAction(rows.items.back().action).ok && f.model.get("system:addIsNewLauncher") == "yes", "program fields become visible");
+        auto choices = f.model.options("system:addLaunchers");
+        check(choices.size() >= 103 && choices.back().second == "A program on the drive...", "all launchers and program available");
+        checkEqual(f.model.get("system:addLauncher"), choices.front().first, "first launcher selected");
+        f.model.set("system:addLauncher", "");
+        checkEqual(f.model.get("system:addIsNewLauncher"), "yes", "program fields become visible");
         std::string error;
         auto form = Forms::parse(Forms::builtinForm("system-add"), error);
-        check(form && form->fields[2].bind == "system:addLauncherChoices", "launcher immediately after intro");
+        check(form && form->fields[2].bind == "system:addLauncher" && form->fields[2].type == Forms::FieldType::Choice, "compact launcher immediately after intro");
+        check(form->fields[3].label == "Download an emulator" && form->fields[3].open == "emulator-downloads", "download link immediately below choice");
         auto video = Forms::parse(Forms::builtinForm("video-add"), error);
         check(video && video->fields[2].bind == "video:addName", "video still starts with Name");
         check(Forms::findField(*video, "video:addLauncher") && !Forms::findField(*video, "video:addLauncherChoices"), "video keeps its choice field");
@@ -553,13 +558,25 @@ static void runSystemsTests()
         fs::remove_all(bare.root + "/launchers." + os());
         bare.rescan();
         bare.open("system-add", {});
-        checkEqual(bare.model.get("system:addLauncher"), "@download", "no-launcher default");
+        checkEqual(bare.model.get("system:addLauncher"), "", "no-launcher program default");
         checkEqual(bare.model.get("system:addLauncherNote"), "A system needs a launcher first.", "explains why");
-        auto choices = bare.model.rows("system:addLauncherChoices", 100);
-        check(choices.items.size() == 2 && choices.items.front().detail == "Selected", "download starts focused on a bare install");
+        auto bareChoices = bare.model.options("system:addLaunchers");
+        check(bareChoices.size() == 1 && bareChoices.front().second == "A program on the drive...", "only program choice on bare install");
+        check(!Forms::isEnabled(form->fields[2], bare.model) && Forms::isEnabled(form->fields[3], bare.model), "download is first focusable control");
+        checkEqual(bare.model.get("system:addIsNewLauncher"), "yes", "program fields shown without launchers");
         writeFile(bare.root + "/launchers." + os() + "/DuckStation.conf", "executable = duck.exe\n");
         bare.rescan();
-        check(bare.model.rows("system:addLauncherChoices", 100).items.front().id == "DuckStation", "returning includes a newly installed launcher");
+        bare.open("system-add", {});
+        check(bare.model.options("system:addLaunchers").front().first == "DuckStation", "return includes installed launcher");
+        checkEqual(bare.model.get("system:addLauncher"), "DuckStation", "sole new launcher selected");
+        checkEqual(bare.model.get("system:addName"), "PlayStation", "new launcher's suggestion");
+        bare.model.set("system:addName", "My console");
+        writeFile(bare.root + "/launchers." + os() + "/NewOne.conf", "executable = one.exe\n");
+        writeFile(bare.root + "/launchers." + os() + "/NewTwo.conf", "executable = two.exe\n");
+        bare.rescan();
+        bare.open("system-add", {});
+        checkEqual(bare.model.get("system:addLauncher"), "DuckStation", "several new launchers preserve selection");
+        checkEqual(bare.model.get("system:addName"), "My console", "typed name survives return");
     });
 
     run("systems: launcher suggestions use installed core info and preserve typed fields", [] {
@@ -579,7 +596,8 @@ static void runSystemsTests()
                   "systemname = \"Genesis\"\nsupported_extensions = \"md|gen|zip\"\n");
         f.rescan();
         f.open("system-add", {});
-        check(has(f.ids("system:addLauncherChoices"), "RetroArch Genesis Plus GX"), "core launcher included with global launchers");
+        auto launchers = f.model.options("system:addLaunchers");
+        check(std::any_of(launchers.begin(), launchers.end(), [](const auto& choice) { return choice.first == "RetroArch Genesis Plus GX"; }), "core launcher included with global launchers");
         f.model.set("system:addLauncher", "mame");
         checkEqual(f.model.get("system:addName"), "", "other launcher has no suggested name");
         checkEqual(f.model.get("system:addExtensions"), "", "other launcher has no suggested extensions");

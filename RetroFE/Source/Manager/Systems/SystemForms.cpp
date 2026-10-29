@@ -244,7 +244,8 @@ const char* const systemAddForm = R"(
 <form id="system-add" title="Add a system">
   <note bind="system:status"/>
   <note value="Choose the launcher that runs your games, then name the system. RetroFE shows it after it reloads, when you close Manage." panel="yes"/>
-  <results label="Launcher" bind="system:addLauncherChoices" limit="2147483647"/>
+  <choice label="Launcher" bind="system:addLauncher" options="system:addLaunchers" enabledWhen="system:addHasLaunchers"/>
+  <link label="Download an emulator" open="emulator-downloads"/>
   <note bind="system:addLauncherNote"/>
   <file label="Program" bind="system:addProgram" hint="Not chosen yet" filter="Programs" pattern="*.exe;*.bat;*.cmd" visibleWhen="system:addIsNewLauncher"/>
   <text label="Arguments" bind="system:addArguments" default="&quot;%ITEM_FILEPATH%&quot;" visibleWhen="system:addIsNewLauncher" help="%ITEM_FILEPATH% is replaced with the game's file"/>
