@@ -14,7 +14,7 @@ Status: **Decided** (chosen, can be revisited), **Open** (needs your input),
 | Item | Question |
 |------|----------|
 | [M22](#m22-design-review-choices-round-12--decided-the-look-is-yours-to-judge) | Round 12 has landed: does the two-pane Manage look in Aeon Nox (list left, help/art right) work for you, at 16:9 and 4:3, and do the other design-review choices feel right in use? VERIFY.md "Manage look (round 12)" lists what to look at. |
-| [W5](#w5-agents-without-the-windows-desktop--decided-2026-10-28) | Round 12 isn't deployed to `E:\Storage\OneSauce` (it was built and tested on Windows CI only). Build and deploy it there when convenient. Optionally, rebuild the CoinOPS worker image on Unraid (`sh /mnt/user/development/agent-harness/rebuild-worker.sh coinops binhex-code-server-r2`) so agents can build RetroFE fully on Linux. |
+| [W5](#w5-agents-without-the-windows-desktop--decided-2026-10-28) | Rounds 12–13 are on `\\JOHN-DESKTOP\retrofe\management-ui\builds\2026-10-28-38454b9a`. Install them over `E:\Storage\OneSauce` with `powershell -ExecutionPolicy Bypass -File \\JOHN-DESKTOP\retrofe\management-ui\Install-TestBuild.ps1` (it backs up what it replaces), then work through VERIFY.md. |
 
 Behaviour that still needs a check on a real setup is tracked in
 [VERIFY.md](VERIFY.md).
@@ -614,11 +614,19 @@ Made while building the design review (M22); the option not taken in brackets.
 - **Windows CI is the build and test of record.** Branches are pushed as
   `ci/<name>` to run it; the job repeats build errors, failing checks and
   the check count as annotations, which can be read without a GitHub login.
-  The worker compiles the SDL-free tests on Linux with g++ for a quick
-  check. Once its image has the RetroFE packages (Dockerfile updated; the
-  rebuild needs root on Unraid), it can build everything on Linux too.
+  The worker's image has RetroFE's Linux packages (rebuilt 2026-10-28), so
+  it configures, builds and runs the tests with CMake on Linux before
+  Windows CI runs.
+- **Test builds reach the PC through a share.** Each passing Windows run on
+  `feature/management-ui` publishes the `management-ui-latest` pre-release
+  (the exe and Aeon Nox, without DLLs; docs/CI.md). An agent copies it to
+  `\\JOHN-DESKTOP\retrofe\management-ui\builds` with
+  `Scripts/test-build/push_to_share.py`, using a share-only local account
+  [Guest, which Windows disables and would open the share to the network].
+  You install it with `Install-TestBuild.ps1`, which backs up each file it
+  replaces and deletes nothing (Scripts/test-build/README.md).
 - What needs your desktop (GUI checks, screenshots at 16:9 and 4:3,
-  deploying to `E:\Storage\OneSauce`) is listed in VERIFY.md instead.
+  installing a test build) is listed in VERIFY.md instead.
 
 ### W3. CI: two macOS builds, Xcode project left unused — Decided
 - `build.yml` builds macOS with Homebrew's libraries (quick, like a
