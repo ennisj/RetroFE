@@ -14,6 +14,9 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "SystemProvider.h"
+#include "../../Catalog/Emulators.h"
+#include "../../Library/RetroArch.h"
+#include "../Emulators/Launchers.h"
 #include "../../Collection/VideoCollections.h"
 #include "../../Library/Backups.h"
 #include "../../Library/ConfFile.h"
@@ -582,6 +585,7 @@ void SystemProvider::refresh()
     playlistKey_.clear();
     playlistsKey_.clear();
     menuIndex_.reset();
+    suggestionIndex_.reset();
     settings_.from = launcher_.from = info_.from = playlistName_.from = nullptr;
 }
 
@@ -605,6 +609,7 @@ void SystemProvider::enter(const Screen& screen)
     if (isForm(screen, "-playlist")) {
         playlistName_.from = nullptr;   // the name it has now
     }
+    if (!videos_ && isForm(screen, "-add")) syncAddLaunchers();
     syncBuffers(screen);
 }
 
@@ -1464,6 +1469,17 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         return screen.param("game") == "*" ? "This line lists every " + item_ + " of " + source + "." : "";
     }
 
+    if (key == "hasFirstEmptySystem" || key == "hasSystems") {
+        IndexPtr idx = index();
+        const CollectionRecord* only = nullptr;
+        if (idx) for (const auto& r : idx->collections) {
+            if (r.reserved || !r.is(Library::KindSystem) || isVideoCollection(r)) continue;
+            if (only) return key == "hasSystems" ? "yes" : "no";
+            only = &r;
+        }
+        return yesNo(only && (key == "hasSystems" || only->gameCount == 0));
+    }
+
     // Adding
     if (key == "addMenu") {
         auto found = add_.find(key);
@@ -1471,11 +1487,25 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
         IndexPtr idx = index();
         return idx ? defaultMenu(*idx) : "";
     }
+    if (!videos_ && key.compare(0, 3, "add") == 0) syncAddLaunchers();
+    if (key == "addHasLaunchers") return yesNo(!addLauncherIds_.empty());
     if (key == "addLauncher") {
         auto found = add_.find(key);
         if (found != add_.end()) return found->second;
         IndexPtr idx = index();
-        return videos_ && idx && idx->findLauncher(videoPlayerLauncher) >= 0 ? videoPlayerLauncher : "";
+        if (videos_) return idx && idx->findLauncher(videoPlayerLauncher) >= 0 ? videoPlayerLauncher : "";
+        if (idx) for (const auto& def : idx->launchers) {
+            if (def.scope == Library::LauncherScope::Global) return def.id;
+        }
+        return "";
+    }
+    if (!videos_ && (key == "addName" || key == "addExtensions")) suggestLauncher();
+    if (key == "addLauncherNote") {
+        IndexPtr idx = index();
+        bool any = idx && std::any_of(idx->launchers.begin(), idx->launchers.end(), [](const auto& def) {
+            return def.scope == Library::LauncherScope::Global;
+        });
+        return any ? "" : "A system needs a launcher first.";
     }
     if (key == "addIsNewLauncher") return yesNo(addIsNewLauncher());
     if (key == "addFolderCount") return addFolderCount();
@@ -1524,6 +1554,8 @@ void SystemProvider::set(const std::string& key, const std::string& value, const
             }
         }
         add_[key] = value;
+        if (!videos_ && (key == "addName" || key == "addExtensions")) addTyped_[key] = true;
+        if (!videos_ && key == "addLauncher") suggestLauncher();
     }
 }
 
@@ -1536,6 +1568,19 @@ void SystemProvider::setDefault(const std::string& key, const std::string& value
 
 Forms::Rows SystemProvider::rows(const std::string& key, size_t limit, const Screen& screen)
 {
+    if (key == "firstGames") {
+        Forms::Rows rows;
+        IndexPtr idx = index();
+        if (get("hasFirstEmptySystem", screen) == "yes" && idx) for (const auto& r : idx->collections) {
+            if (r.reserved || !r.is(Library::KindSystem) || isVideoCollection(r)) continue;
+            Forms::Row row;
+            row.id = r.name;
+            row.label = "Put your games in " + idx->properties.collectionPath(r.name) + ", or add them with Add games";
+            rows.items.push_back(row);
+            rows.total = 1;
+        }
+        return rows;
+    }
     if (key == "search") return listRows(limit);
     if (key == "playlists") return playlistRows(screen);
     if (key == "entries") return entryRows(screen);
@@ -1639,12 +1684,15 @@ std::vector<std::pair<std::string, std::string>> SystemProvider::options(const s
         }
     }
     else if (key == "addLaunchers") {
-        result.emplace_back("", videos_ ? "A new video player..." : "A new emulator program...");
+        if (videos_) result.emplace_back("", "A new video player...");
         for (const Library::LauncherDef& def : idx->launchers) {
             if (def.scope == Library::LauncherScope::Global) {
                 result.emplace_back(def.id, def.id);
             }
         }
+    }
+    if (key == "addLaunchers" && !videos_) {
+        result.emplace_back("", "A program on the drive...");
     }
     return result;
 }
@@ -2086,7 +2134,10 @@ bool SystemProvider::addIsNewLauncher() const
         return found->second.empty();
     }
     IndexPtr idx = index();
-    return !(videos_ && idx && idx->findLauncher(videoPlayerLauncher) >= 0);
+    if (!videos_) return !idx || std::none_of(idx->launchers.begin(), idx->launchers.end(), [](const auto& def) {
+        return def.scope == Library::LauncherScope::Global;
+    });
+    return !(idx && idx->findLauncher(videoPlayerLauncher) >= 0);
 }
 
 Forms::Severity SystemProvider::severity(const std::string& key, const Screen& screen)
@@ -2108,9 +2159,72 @@ Forms::Severity SystemProvider::severity(const std::string& key, const Screen& s
     return Severity::None;
 }
 
+std::string SystemProvider::defaultGamesFolder()
+{
+    IndexPtr idx = index();
+    return idx ? idx->properties.collectionPath(Utils::trimEnds(add_["addName"])) : "";
+}
+
+void SystemProvider::syncAddLaunchers()
+{
+    IndexPtr idx = index();
+    if (!idx || addLauncherIndex_ == idx) return;
+    std::vector<std::string> ids, added;
+    for (const auto& def : idx->launchers) {
+        if (def.scope != Library::LauncherScope::Global) continue;
+        ids.push_back(def.id);
+        if (std::find(addLauncherIds_.begin(), addLauncherIds_.end(), def.id) == addLauncherIds_.end()) {
+            added.push_back(def.id);
+        }
+    }
+    if (addLauncherIndex_ && added.size() == 1) add_["addLauncher"] = added.front();
+    addLauncherIds_ = std::move(ids);
+    addLauncherIndex_ = idx;
+}
+
+void SystemProvider::suggestLauncher()
+{
+    std::string launcher = get("addLauncher", Screen{});
+    IndexPtr idx = index();
+    if (suggestionIndex_ == idx && suggestedLauncher_ == launcher) return;
+    suggestionIndex_ = idx;
+    suggestedLauncher_ = launcher;
+    std::string name, extensions;
+    for (const auto& entry : Catalog::emulators()) {
+        if (!entry.launcher.empty() && entry.launcher == launcher) {
+            name = entry.system;
+            extensions = entry.extensions;
+        }
+    }
+    std::string catalog;
+    if (!idx || !idx->properties.getAbsolutePath("catalogPath", catalog) || catalog.empty()) {
+        catalog = Utils::combinePath(root(), "catalog");
+    }
+    std::error_code ec;
+    for (const auto& file : fs::directory_iterator(fs::path(catalog) / "installed", ec)) {
+        Catalog::Manifest manifest;
+        std::string error;
+        if (!Catalog::readManifest(file.path().string(), manifest, error) || manifest.kind != "core"
+            || !Catalog::isCoreId(manifest.id)) continue;
+        std::string coreLauncher = manifest.launcherName.empty() ? Catalog::coreLauncherName(manifest.name) : manifest.launcherName;
+        if (coreLauncher != launcher) continue;
+        auto info = Library::RetroArch::readConfigFile(Utils::combinePath(root(), "emulators/RetroArch/info",
+                                                       manifest.id.substr(5) + "_libretro.info"));
+        name = info["systemname"];
+        extensions = info["supported_extensions"];
+        std::replace(extensions.begin(), extensions.end(), '|', ',');
+        break;
+    }
+    if (!addTyped_["addName"]) add_["addName"] = name;
+    if (!addTyped_["addExtensions"]) add_["addExtensions"] = extensions;
+}
+
 std::string SystemProvider::addFolderCount()
 {
     std::string folder = Utils::trimEnds(add_["addFolder"]);
+    if (folder.empty()) {
+        return videos_ ? "" : defaultGamesFolder() + ", made when you add it";
+    }
     std::string extensions = normaliseExtensions(add_["addExtensions"]);
     std::string key = folder + "\n" + extensions;
     if (key == countedKey_) {
@@ -2118,9 +2232,6 @@ std::string SystemProvider::addFolderCount()
     }
     countedKey_ = key;
     countText_.clear();
-    if (folder.empty()) {
-        return countText_;
-    }
     std::error_code ec;
     if (!fs::is_directory(folder, ec)) {
         countText_ = "Folder not found";
@@ -2191,7 +2302,7 @@ std::string SystemProvider::addProblem()
         return menu + " isn't a menu.";
     }
     std::string folder = Utils::trimEnds(add_["addFolder"]);
-    if (folder.empty() || !fs::is_directory(folder, ec)) {
+    if ((videos_ && folder.empty()) || (!folder.empty() && !fs::is_directory(folder, ec))) {
         return "Choose the folder your " + items_ + " are in.";
     }
     std::string extensions = normaliseExtensions(add_["addExtensions"]);
@@ -2257,8 +2368,16 @@ Forms::Model::Result SystemProvider::create()
     std::string collection = Utils::combinePath(root(), "collections", name);
     std::string error;
 
+    std::string defaultFolder = defaultGamesFolder();
+    if (!videos_ && folder.empty()) folder = defaultFolder;
+    if (!videos_) {
+        std::error_code ec;
+        fs::create_directories(folder, ec);
+        if (ec) { result.message = "Could not make the games folder: " + ec.message(); return result; }
+        program = Emulators::portablePath(root(), program, os);
+    }
     std::string settings = std::string(createdHeader) + nl
-        + "list.path = " + folder + nl
+        + (videos_ || fs::path(folder).lexically_normal() != fs::path(defaultFolder).lexically_normal() ? "list.path = " + folder + nl : "")
         + "list.extensions = " + extensions + nl
         + "list.includeMissingItems = false" + nl
         + "list.menuSort = yes" + nl;
@@ -2314,6 +2433,8 @@ Forms::Model::Result SystemProvider::create()
         return result;
     }
     changed("systems: " + name);
+    addTyped_.clear();
+    suggestionIndex_.reset();
     for (const char* key : { "addName", "addFolder", "addProgram" }) {
         add_.erase(key);
     }

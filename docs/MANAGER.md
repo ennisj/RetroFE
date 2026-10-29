@@ -468,11 +468,29 @@ layout. Values set in an override file say so ("Set in settings1.conf").
 
 **Systems** lists every collection with games of its own: search by name or
 title, or pick a menu to see only the systems below it. Each row shows the
-game count and the launcher. **Add a system** asks for a name, the menu to
-list it in, the games folder (with a count of matching files, and a warning
-when files differ only in the case of their extension), the extensions, and
-either an installed launcher or a new emulator program (written as the
-system's own `launcher.<os>.conf`, as before).
+game count and the launcher. **Add a system** starts with a compact **Launcher**
+choice: use Left/Right to choose any global launcher, including RetroArch core
+launchers, or **A program on the drive...**. The **Download an emulator** link
+immediately below opens emulator downloads. Back returns with installed launchers
+included and selects the newly created launcher when exactly one was added.
+Without launchers, the choice shows only the program option, focus starts on the
+Download link, and a note explains that a system needs a launcher first.
+Choosing a program shows Program and Arguments; paths inside the root are written
+with `%RETROFE_PATH%` in the system's own `launcher.<os>.conf`.
+
+A known emulator launcher suggests its system name and extensions. A Catalog-installed
+RetroArch core uses `systemname` and `supported_extensions` from its `.info` file.
+Suggestions can change with the launcher until you type in a field; typed values stay.
+Other launchers have no suggestions. Then choose Name, List it in, Games folder and
+Extensions. Games folder is optional: its status shows the default folder, made when
+you add the system. It is `<baseItemPath>/<Name>` when `baseItemPath` is set, otherwise
+`collections/<Name>/roms`. Only a different chosen folder writes `list.path`.
+Choosing an existing folder still counts matching files and warns about extensions
+that differ only in case. Videos keep their existing add form and require a folder.
+
+With exactly one system and no games in it, the hub offers **Put your games in
+<folder>, or add them with Add games**. For now it opens that system's screen.
+The first-system link disappears once a system exists.
 
 A system's screen shows the menus it's in, its games folder and extensions,
 with a link to each part (Games shows its count; the Launcher link names the

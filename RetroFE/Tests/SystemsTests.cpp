@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "TestSupport.h"
+#include "../Source/Catalog/Emulators.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Library/Edits.h"
@@ -507,7 +508,7 @@ static void runSystemsTests()
         writeFile(f.root + "/roms/Genesis/sonic.md", "x");
         f.open("system-add", {});
         checkEqual(f.model.get("system:addMenu"), "Main", "the top menu by default");
-        checkEqual(f.model.get("system:addIsNewLauncher"), "yes", "a new emulator by default");
+        checkEqual(f.model.get("system:addIsNewLauncher"), "no", "an installed launcher by default");
         f.model.set("system:addName", "Arcade");
         check(contains(f.model.actionProblem("system.create"), "already"), "an existing name is refused");
         f.model.set("system:addName", "Genesis");
@@ -520,11 +521,154 @@ static void runSystemsTests()
         Forms::Model::Result created = f.model.runAction("system.create");
         check(created.ok && created.open == "system" && created.replace && created.params["id"] == "Genesis", "created, in place of the add form: " + created.message);
         std::string settings = readFile(f.root + "/collections/Genesis/settings.conf");
+        check(contains(settings, "list.path = " + Utils::combinePath(f.root, "roms", "Genesis")), "non-default path written");
         check(contains(settings, "list.extensions = md") && contains(settings, "launcher = mame"), "settings: " + settings);
         check(contains(readFile(f.root + "/collections/Consoles/menu.txt"), "Genesis"), "listed under Consoles");
         f.open("system", { { "id", "Genesis" } });
         checkEqual(f.model.get("system:gameCount"), "1 game", "indexed");
         checkEqual(f.model.get("system:canDelete"), "yes", "made here, so it can be deleted");
+    });
+
+    run("systems: compact launcher choice and download link; videos keep their form", [] {
+        Fixture f("sys-launcher-first");
+        for (int i = 0; i < 100; i++) {
+            writeFile(f.root + "/launchers." + os() + "/Extra" + std::to_string(i) + ".conf", "executable = extra.exe\n");
+        }
+        f.rescan();
+        f.open("system-add", {});
+        auto choices = f.model.options("system:addLaunchers");
+        check(choices.size() >= 103 && choices.back().second == "A program on the drive...", "all launchers and program available");
+        checkEqual(f.model.get("system:addLauncher"), choices.front().first, "first launcher selected");
+        f.model.set("system:addLauncher", "");
+        checkEqual(f.model.get("system:addIsNewLauncher"), "yes", "program fields become visible");
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("system-add"), error);
+        check(form && form->fields[2].bind == "system:addLauncher" && form->fields[2].type == Forms::FieldType::Choice, "compact launcher immediately after intro");
+        check(form->fields[3].label == "Download an emulator" && form->fields[3].open == "emulator-downloads", "download link immediately below choice");
+        auto video = Forms::parse(Forms::builtinForm("video-add"), error);
+        check(video && video->fields[2].bind == "video:addName", "video still starts with Name");
+        check(Forms::findField(*video, "video:addLauncher") && !Forms::findField(*video, "video:addLauncherChoices"), "video keeps its choice field");
+        f.open("video-add", {});
+        f.model.set("video:addName", "Music");
+        f.model.set("video:addExtensions", "mp4");
+        checkEqual(f.model.actionProblem("video.create"), "Choose the folder your videos are in.", "video still requires a chosen folder");
+        fs::remove_all(f.root + "/launchers." + os());
+        f.rescan();
+        Fixture bare("sys-no-launcher");
+        fs::remove_all(bare.root + "/launchers." + os());
+        bare.rescan();
+        bare.open("system-add", {});
+        checkEqual(bare.model.get("system:addLauncher"), "", "no-launcher program default");
+        checkEqual(bare.model.get("system:addLauncherNote"), "A system needs a launcher first.", "explains why");
+        auto bareChoices = bare.model.options("system:addLaunchers");
+        check(bareChoices.size() == 1 && bareChoices.front().second == "A program on the drive...", "only program choice on bare install");
+        check(!Forms::isEnabled(form->fields[2], bare.model) && Forms::isEnabled(form->fields[3], bare.model), "download is first focusable control");
+        checkEqual(bare.model.get("system:addIsNewLauncher"), "yes", "program fields shown without launchers");
+        writeFile(bare.root + "/launchers." + os() + "/DuckStation.conf", "executable = duck.exe\n");
+        bare.rescan();
+        bare.open("system-add", {});
+        check(bare.model.options("system:addLaunchers").front().first == "DuckStation", "return includes installed launcher");
+        checkEqual(bare.model.get("system:addLauncher"), "DuckStation", "sole new launcher selected");
+        checkEqual(bare.model.get("system:addName"), "PlayStation", "new launcher's suggestion");
+        bare.model.set("system:addName", "My console");
+        writeFile(bare.root + "/launchers." + os() + "/NewOne.conf", "executable = one.exe\n");
+        writeFile(bare.root + "/launchers." + os() + "/NewTwo.conf", "executable = two.exe\n");
+        bare.rescan();
+        bare.open("system-add", {});
+        checkEqual(bare.model.get("system:addLauncher"), "DuckStation", "several new launchers preserve selection");
+        checkEqual(bare.model.get("system:addName"), "My console", "typed name survives return");
+    });
+
+    run("systems: launcher suggestions use installed core info and preserve typed fields", [] {
+        Fixture f("sys-suggestions");
+        writeFile(f.root + "/launchers." + os() + "/DuckStation.conf", "executable = duck.exe\n");
+        writeFile(f.root + "/launchers." + os() + "/RetroArch Genesis Plus GX.conf", "executable = retroarch.exe\n");
+        Catalog::Manifest manifest;
+        manifest.id = "core-genesis_plus_gx";
+        manifest.kind = "core";
+        manifest.name = "Genesis Plus GX";
+        manifest.version = "1";
+        manifest.source = "emulators";
+        manifest.launcherName = "RetroArch Genesis Plus GX";
+        std::string error;
+        check(Catalog::writeManifest(f.root + "/catalog/installed/" + manifest.id + ".json", manifest, error), "fake installed core: " + error);
+        writeFile(f.root + "/emulators/RetroArch/info/genesis_plus_gx_libretro.info",
+                  "systemname = \"Genesis\"\nsupported_extensions = \"md|gen|zip\"\n");
+        f.rescan();
+        f.open("system-add", {});
+        auto launchers = f.model.options("system:addLaunchers");
+        check(std::any_of(launchers.begin(), launchers.end(), [](const auto& choice) { return choice.first == "RetroArch Genesis Plus GX"; }), "core launcher included with global launchers");
+        f.model.set("system:addLauncher", "mame");
+        checkEqual(f.model.get("system:addName"), "", "other launcher has no suggested name");
+        checkEqual(f.model.get("system:addExtensions"), "", "other launcher has no suggested extensions");
+        f.model.set("system:addLauncher", "RetroArch Genesis Plus GX");
+        checkEqual(f.model.get("system:addName"), "Genesis", "core systemname");
+        checkEqual(f.model.get("system:addExtensions"), "md,gen,zip", "core extensions converted to commas");
+        f.model.set("system:addLauncher", "DuckStation");
+        checkEqual(f.model.get("system:addName"), "PlayStation", "built-in system");
+        checkEqual(f.model.get("system:addExtensions"), Catalog::findEmulator("emulator-duckstation")->extensions, "built-in extensions");
+        f.model.set("system:addName", "My console");
+        f.model.set("system:addExtensions", "chd");
+        f.model.set("system:addLauncher", "RetroArch Genesis Plus GX");
+        checkEqual(f.model.get("system:addName"), "My console", "typed name stays");
+        checkEqual(f.model.get("system:addExtensions"), "chd", "typed extensions stay");
+    });
+
+    run("hub: games hint only for one empty system and opens that system", [] {
+        Fixture f("sys-hub-games");
+        checkEqual(f.model.get("system:hasFirstEmptySystem"), "no", "several systems hide hint");
+        fs::remove_all(f.root + "/collections");
+        f.rescan();
+        checkEqual(f.model.get("system:hasFirstEmptySystem"), "no", "no systems hide hint");
+        checkEqual(f.model.get("system:hasSystems"), "no", "first system link visible");
+        writeFile(f.root + "/collections/Genesis/settings.conf", "list.extensions = md\nlauncher = mame\n");
+        f.rescan();
+        checkEqual(f.model.get("system:hasFirstEmptySystem"), "yes", "one empty system shows hint");
+        checkEqual(f.model.get("system:hasSystems"), "yes", "first system link disappears");
+        auto rows = f.model.rows("system:firstGames", 10);
+        check(rows.items.size() == 1 && rows.items.front().id == "Genesis"
+              && contains(rows.items.front().label, "Genesis") && contains(rows.items.front().label, "Add games"), "hint names folder and target");
+        std::string error;
+        auto hub = Forms::parse(Forms::builtinForm("manage"), error);
+        const auto* hint = hub ? Forms::findField(*hub, "system:firstGames") : nullptr;
+        check(hint && hint->open == "system", "link opens system screen");
+        writeFile(f.root + "/collections/Genesis/roms/sonic.md", "x");
+        f.rescan();
+        checkEqual(f.model.get("system:hasFirstEmptySystem"), "no", "adding games hides hint");
+    });
+
+    run("systems: optional default folders and portable programs", [] {
+        for (bool split : { false, true }) {
+            Fixture f(split ? "sys-default-split" : "sys-default-stock");
+            if (split) {
+                writeFile(f.root + "/settings.conf", "firstCollection = Main\nbaseItemPath = %RETROFE_PATH%/games\n");
+                f.rescan();
+            }
+            f.open("system-add", {});
+            f.model.set("system:addName", "Genesis");
+            f.model.set("system:addExtensions", "md");
+            f.model.set("system:addLauncher", "");
+            f.model.set("system:addProgram", f.root + "/mame.exe");
+            std::string folder = f.root + (split ? "/games/Genesis" : "/collections/Genesis/roms");
+            check(contains(f.model.get("system:addFolderCount"), "made when you add it"), "default status");
+            check(!fs::exists(folder), "not made until Add");
+            checkEqual(f.model.actionProblem("system.create"), "", "optional folder accepted");
+            auto created = f.model.runAction("system.create");
+            check(created.ok && fs::is_directory(folder), "games folder made: " + created.message);
+            check(!contains(readFile(f.root + "/collections/Genesis/settings.conf"), "list.path"), "default path omitted");
+            check(contains(readFile(f.root + "/collections/Genesis/launcher." + os() + ".conf"), "%RETROFE_PATH%"), "program portable inside root");
+        }
+        Fixture f("sys-explicit-default");
+        writeFile(f.root + "/settings.conf", "firstCollection = Main\nbaseItemPath = %RETROFE_PATH%/games\n");
+        fs::create_directories(f.root + "/games/New");
+        f.rescan();
+        f.open("system-add", {});
+        f.model.set("system:addName", "New");
+        f.model.set("system:addExtensions", "zip");
+        f.model.set("system:addLauncher", "mame");
+        f.model.set("system:addFolder", f.root + "/games/New");
+        check(f.model.runAction("system.create").ok, "explicit default accepted");
+        check(!contains(readFile(f.root + "/collections/New/settings.conf"), "list.path"), "explicit default also omitted");
     });
 
     run("videos: adding a video collection with an external player makes a VideoPlayer launcher", [] {

@@ -70,7 +70,8 @@ const char* const manageForm = R"(
   <note visibleWhen="!info:hasCollections" panel="yes"
         value="Welcome! First add a launcher (the emulator program that runs the games), then a system (a folder of games and the launcher that starts them). Or install from the Catalog via Sources."/>
   <link label="Add your first launcher/emulator" open="emulator-new" visibleWhen="!info:hasLaunchers"/>
-  <link label="Add your first system" open="system-add" visibleWhen="!info:hasCollections"/>
+  <results bind="system:firstGames" open="system" visibleWhen="system:hasFirstEmptySystem"/>
+  <link label="Add your first system" open="system-add" visibleWhen="!system:hasSystems"/>
   <button label="Apply changes now" action="changes.apply" visibleWhen="info:hasPendingChanges"/>
   <link label="Games" open="games"
         help="Find a game to change its title and details, art and video, how it starts, its saves and playlists, or to start or hide it."/>

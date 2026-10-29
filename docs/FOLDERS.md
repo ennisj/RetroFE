@@ -112,8 +112,11 @@ And for a game's media of type `<type>` (logo, screenshot, video...):
 3. `<baseMediaPath>/<system>/medium_artwork/<type>/` if `baseMediaPath` is set;
 4. `collections/<system>/medium_artwork/<type>/`.
 
-`system_artwork/` follows the same rules. **Manage puts a new system's games and media in
-the defaults** (3 and 4), unless you point it at a folder you already have.
+`system_artwork/` follows the same rules. **Manage uses these defaults for a new system's games and media**, unless you point
+it at a games folder you already have. Leave Games folder unset to use
+`<baseItemPath>/<Name>` when `baseItemPath` is set, otherwise
+`collections/<Name>/roms`. Add makes that games folder. It writes `list.path` only
+when you choose a different folder.
 
 ### What Manage and the Catalog keep
 
@@ -176,8 +179,6 @@ program path is relative to the root; elsewhere, use `%RETROFE_PATH%`.
 
 Places that don't follow this yet:
 
-- Adding a system with a new emulator program writes the program's full path, not
-  `%RETROFE_PATH%/...`, when it's inside the root.
 - The Windows package ships sample launchers in `launchers/`, which RetroFE doesn't read.
 - GETTING_STARTED.md, LAUNCHERS.md and COLLECTIONS.md disagree with this page in places
   (the `launchers/` folder, `%RETROFE_EXEC_PATH%`, `%ITEM_DIRECTORY%`, a missing

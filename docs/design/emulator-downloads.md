@@ -43,6 +43,27 @@ now ([DECISIONS.md](../DECISIONS.md) W4); on other systems the screen says so an
 | PPSSPP | GitHub `hrydgard/ppsspp` | tag `v1.20.4` | `PPSSPP-v<version>-Windows-x64.zip` | `PPSSPPWindows64.exe` | by default | `--fullscreen "%ITEM_FILEPATH%"` |
 | Flycast | GitHub `flyinghead/flycast` | tag `v2.7` | `flycast-win64-<version>.zip` | `flycast.exe` | by default | `"%ITEM_FILEPATH%"` |
 
+Add a system lists global launchers first, including core launchers, followed by
+Download an emulator and A program on the drive. Downloads opens this screen; Back
+returns to the form, whose launcher list includes anything just installed. The selected
+launcher suggests Name and Extensions until the user types in those fields.
+
+| Launcher | Suggested system | Extensions |
+|---|---|---|
+| DuckStation | PlayStation | `cue,chd,bin,img,iso,m3u,pbp,ecm,mds,psexe,psf,minipsf` |
+| PCSX2 | PlayStation 2 | `iso,chd,cso,zso,gz,elf,irx,m3u,cue,bin,img,mdf,nrg,dump` |
+| PPSSPP | PSP | `iso,cso,chd,pbp,elf,prx` |
+| Flycast | Dreamcast | `chd,cdi,gdi,cue,m3u,elf,dat,zip,7z,lst` |
+| MAME | Arcade | `zip,7z,chd` |
+| RetroArch core installed by the Catalog | Its info file's `systemname` | Its `supported_extensions`, with pipes changed to commas |
+
+These are file types the emulators accept, including executables and playlists;
+a disc's track files may also be listed beside its cue sheet. References: [DuckStation's README](https://github.com/stenzek/duckstation/blob/master/README.md),
+[PCSX2's disc guide](https://github.com/PCSX2/pcsx2-net-www/blob/main/docs/setup/discs.md),
+[PPSSPP's game guide](https://www.ppsspp.org/docs/getting-started/how-to-get-games/),
+[Flycast](https://github.com/flyinghead/flycast), and
+[MAME's ROM sets](https://docs.mamedev.org/usingmame/aboutromsets.html).
+
 Each entry says: id and display name, folder name under `emulators/`, where releases come
 from, how a tag becomes a version (and which tags count), how to pick the asset, the
 archive's form (zip, 7z or self-extracting 7z, and a top folder to remove), the program,
