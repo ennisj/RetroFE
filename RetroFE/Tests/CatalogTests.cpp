@@ -1425,6 +1425,7 @@ void runCatalogTests()
         check(service.outcome("emulator-duckstation", ok, message) && ok, "service reinstalls: " + message);
         check(fs::exists(root + "/launchers.windows/DuckStation.conf"), "reinstall recreates the launcher: " + message);
         writeFile(root + "/collections/PlayStation/settings.conf", "launcher = Other, DuckStation\n");
+        check(!fs::exists(root + "/collections/PlayStation/roms"), "settings-only collection has no games folder");
         service.remove("emulator-duckstation");
         service.waitUntilIdle();
         check(service.outcome("emulator-duckstation", ok, message) && ok, "service removes again: " + message);

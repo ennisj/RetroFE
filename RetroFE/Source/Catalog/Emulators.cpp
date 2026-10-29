@@ -164,20 +164,11 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
     int launcher = index->findLauncher(Library::LauncherScope::Global, entry->launcher);
     if (launcher < 0) return "";
     std::string users;
-    std::set<std::string> named;
     for (const auto& use : index->usesOf(launcher)) {
         if (use.collection < 0 || static_cast<size_t>(use.collection) >= index->collections.size()) continue;
-        named.insert(index->collections[static_cast<size_t>(use.collection)].name);
         if (!users.empty()) users += ", ";
         users += index->collections[static_cast<size_t>(use.collection)].name;
         if (!use.game.empty()) users += "/" + use.game;
-    }
-    for (const auto& collection : index->collections) {
-        for (const auto& alternative : collection.launcher.alternatives) {
-            if (index->findLauncher(alternative) != launcher || !named.insert(collection.name).second) continue;
-            if (!users.empty()) users += ", ";
-            users += collection.name;
-        }
     }
     if (!users.empty()) return " Kept launcher " + entry->launcher + ": used by " + users + ".";
     Library::Editor editor(root);

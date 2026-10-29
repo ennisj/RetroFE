@@ -219,8 +219,9 @@ namespace
         }
         for (size_t c = 0; c < index.collections.size(); c++) {
             const Library::CollectionRecord& record = index.collections[c];
-            if (!record.is(Library::KindSystem)) {
-                continue;
+            if (!record.launcher.configured.empty() && record.launcher.name != record.launcher.configured) {
+                found(static_cast<int>(c), std::string(), false, record.launcher.configured,
+                    index.findLauncher(record.launcher.configured));
             }
             for (const std::string& alternative : record.launcher.alternatives) {
                 found(static_cast<int>(c), std::string(), true, alternative, index.findLauncher(alternative));

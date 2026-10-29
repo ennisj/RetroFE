@@ -2118,22 +2118,12 @@ namespace
     {
         std::vector<int> users;
         games = 0;
-        for (const LauncherUse& use : index.launcherUses) {
-            if (use.launcher != launcher) {
-                continue;
-            }
+        for (const LauncherUse& use : index.usesOf(launcher)) {
             if (use.game.empty()) {
                 users.push_back(use.collection);
             }
             else {
                 games++;
-            }
-        }
-        for (size_t c = 0; c < index.collections.size(); c++) {
-            for (const std::string& alternative : index.collections[c].launcher.alternatives) {
-                if (index.findLauncher(alternative) == launcher) {
-                    users.push_back(static_cast<int>(c));
-                }
             }
         }
         std::sort(users.begin(), users.end());
