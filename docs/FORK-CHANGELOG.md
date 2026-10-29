@@ -4,6 +4,22 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 15 — adding a system from a launcher (2026-10-29)
+
+Unit tests: 8,224 → 8,276 checks (Windows CI). Choices in M26 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Add a system starts from the launcher:** a Left/Right choice of every
+  launcher, with **Download an emulator** right under it (coming back, the
+  new launcher is selected). Name and Extensions are suggested from the
+  chosen RetroArch core or emulator, without overwriting what you typed.
+- **The games folder is optional:** left empty, it's `collections\<Name>\roms`
+  (or `<baseItemPath>\<Name>`), made when you add the system.
+- **Programs inside the install** are written as `%RETROFE_PATH%\...`, so a
+  moved install keeps working.
+- **The hub's next step:** with one system and no games yet, it says where
+  to put them.
+
 ## Round 14 — set up from nothing: launchers and emulator downloads (2026-10-29)
 
 Unit tests: 7,728 → 8,224 checks (Windows CI). Choices in M25 and C2 of

@@ -578,6 +578,17 @@ Made while building the design review (M22); the option not taken in brackets.
   emulator programs live in `emulators/<name>/`, which the Catalog installs
   into.
 
+### M26. Round 15 choices — Decided (2026-10-29)
+- **Add a system: launcher first, as a choice** (Left/Right) with a
+  separate "Download an emulator" link [a row per launcher, which on an
+  install with many launchers or cores pushed the other fields off screen].
+- **Suggestions from the launcher:** a core's info file (`systemname`,
+  `supported_extensions`) or the built-in emulator's system and extensions
+  (DuckStation: PlayStation; PCSX2: PlayStation 2; PPSSPP: PSP; Flycast:
+  Dreamcast; MAME: Arcade) fill Name and Extensions until you type in them.
+- **Default games folder per FOLDERS.md**, created on Add; `list.path` is
+  written only for another folder.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
