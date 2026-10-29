@@ -29,6 +29,7 @@
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Setup.h"
 #include "minizip/zip.h"
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -420,6 +421,31 @@ void runCatalogTests()
             check(!manifest.files.empty() && manifest.files[0].sha256.size() == 64, "hashed");
         }
         check(!fs::exists(root + "/catalog/staging/genesis"), "staging cleaned up");
+    });
+
+    run("7z packages install with manifests and refuse unsafe or damaged archives", [&] {
+        std::string root = makeRoot("install-7z");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        std::string fixtures = std::string(RETROFE_TEST_FIXTURES) + "/7z/";
+        auto expected = nlohmann::json::parse(readFile(fixtures + "expected.json"));
+        check(installer.install(zipPackage("seven", "1", "published.7z", "collections", "Seven"), { fixtures + "plain.7z" }, error), error);
+        auto manifests = installer.installed();
+        check(manifests.count("seven") && manifests["seven"].files.size() == expected["files"].size(), "manifest file count");
+        for (const auto& file : manifests["seven"].files) {
+            std::string name = file.path.substr(6);
+            check(expected["files"].contains(name), "manifest name");
+            if (!expected["files"].contains(name)) continue;
+            check(file.size == expected["files"][name]["size"] && file.sha256 == expected["files"][name]["sha256"], "manifest size and hash");
+            check(sha256File(fs::u8path(root + "/collections/" + file.path)) == file.sha256, "installed bytes");
+        }
+        for (const char* bad : { "unsafe.7z", "corrupt.7z" }) {
+            error.clear();
+            check(!installer.install(zipPackage("bad", "1", bad, "collections", "Bad"), { fixtures + bad }, error), "refused " + std::string(bad));
+            check(error.find(std::string(bad) == "unsafe.7z" ? "safely" : "Damaged") != std::string::npos, "clear error: " + error);
+            check(!fs::exists(root + "/collections/Bad") && !fs::exists(root + "/catalog/installed/bad.json"), "no files outside staging or manifest");
+        }
+        writeFile(root + "/fake", "not an archive");
+        check(!installer.install(zipPackage("fake", "1", "fake.7z", "root", ""), { root + "/fake" }, error) && error.find("Not an archive") != std::string::npos, "published archive must be an archive");
     });
 
     run("updates replace files, drop old ones and keep changed ones", [&] {

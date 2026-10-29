@@ -182,6 +182,10 @@ own progress and a Stop button, which keeps the partial download.
 
 ## Install
 
+`Catalog/Archive` reads ZIP, 7-Zip and 7-Zip self-extracting archives by
+content. Self-extracting programs are only read, never executed. Programs
+and scripts inside packages remain refused.
+
 - **Stage, then swap.** Extract to `catalog/staging/<id>/`, write a `.ready`
   marker, then move into place; on startup, finish or roll back any staged
   install (One Saucier's `recover_staged_installs`). A crash or power cut
@@ -207,7 +211,8 @@ own progress and a Stop button, which keeps the partial download.
   their folder is gone), and a bare install gets its `settings.conf`.
 
 Formats: ZIP (including ZIP64) through the minizip already in the tree.
-7-Zip is left out for now; it would need another library.
+7-Zip and 7-Zip self-extracting archives are read by the LZMA SDK decoder;
+self-extracting programs are never run.
 
 Updates, uninstall and repair all come from the manifest: replace the files
 it lists, delete them, or re-check their hashes. Files a user changed after
@@ -514,7 +519,9 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
 - **JSON:** nlohmann/json (MIT, single header). Archive.org's metadata is
   JSON anyway, so the `archiveorg` adapter needs a JSON parser regardless of
   the index format.
-- **ZIP:** minizip, already in the tree.
+- **Archives:** `Catalog/Archive` uses minizip for ZIP and the public-domain
+  LZMA SDK C decoder in `ThirdParty/lzma-sdk` for 7-Zip, including
+  self-extracting archives.
 
 ## What carries over from One Saucier
 

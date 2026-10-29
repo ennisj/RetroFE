@@ -18,7 +18,7 @@
 #include "Index.h"
 #include "JsonFields.h"
 #include "../Utility/Log.h"
-#include "minizip/unzip.h"
+#include "Archive.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
@@ -151,12 +151,6 @@ namespace
         return slash == std::string::npos ? name : name.substr(slash + 1);
     }
 
-    bool isZip(const std::string& url, const std::string& download)
-    {
-        return lower(fs::path(publishedName(url)).extension().string()) == ".zip"
-            || lower(fs::path(download).extension().string()) == ".zip";
-    }
-
     // A name for a backup folder from a version, which could contain anything
     std::string folderName(const std::string& text)
     {
@@ -168,89 +162,48 @@ namespace
         return name.empty() || name[0] == '.' ? "_" + name : name;
     }
 
-    bool extractZip(const std::string& archive, const fs::path& stagingRoot, const fs::path& into,
-                    const Catalog::PackageFile& source, std::vector<PlannedFile>& planned,
-                    const std::atomic<bool>* stop, std::string& error)
+    bool extractArchive(const std::string& path, const fs::path& stagingRoot, const fs::path& into,
+                        const Catalog::PackageFile& source, std::vector<PlannedFile>& planned,
+                        const std::atomic<bool>* stop, std::string& error)
     {
-        unzFile zip = unzOpen64(archive.c_str());
-        if (!zip) {
-            error = "Not a zip archive: " + publishedName(source.url);
-            return false;
-        }
-
-        std::vector<char> buffer(1 << 16);
-        int result = unzGoToFirstFile(zip);
-        while (result == UNZ_OK) {
-            unz_file_info64 info;
-            char name[4096];
-            if (unzGetCurrentFileInfo64(zip, &info, name, sizeof(name), nullptr, 0, nullptr, 0) != UNZ_OK) {
-                error = "Damaged zip archive: " + publishedName(source.url);
-                unzClose(zip);
+        Catalog::Archive archive;
+        if (!archive.open(path, publishedName(source.url), error)) return false;
+        for (size_t i = 0; i < archive.entries().size(); ++i) {
+            if (stop && *stop) { error = "Stopped"; return false; }
+            const auto& entry = archive.entries()[i];
+            std::string name = entry.name;
+            if (entry.directory && !name.empty() && name.back() == '/') name.pop_back();
+            if (!Catalog::isSafeRelativePath(name)) {
+                error = publishedName(source.url) + " contains a file that can't be installed safely: " + name;
                 return false;
             }
-            std::string entry = name;
-            std::replace(entry.begin(), entry.end(), '\\', '/');
-
-            if (!entry.empty() && entry.back() != '/') {
-                // Nothing may land outside its target, or be a program
-                if (!Catalog::isSafeRelativePath(entry)) {
-                    error = publishedName(source.url) + " contains a file that can't be installed safely: " + entry;
-                    unzClose(zip);
-                    return false;
-                }
-                if (Catalog::isExecutableName(entry)) {
-                    error = publishedName(source.url) + " contains a program or script (" + entry + "), which packages may not install";
-                    unzClose(zip);
-                    return false;
-                }
-                bool isUtf8 = (info.flag & (1 << 11)) != 0;
-                fs::path entryPath = isUtf8 ? fs::u8path(entry) : fs::path(entry);
-                fs::path out = into / entryPath;
-
-                std::error_code ec;
-                fs::create_directories(out.parent_path(), ec);
-                if (unzOpenCurrentFile(zip) != UNZ_OK) {
-                    error = "Could not read " + entry + " from " + publishedName(source.url);
-                    unzClose(zip);
-                    return false;
-                }
-                std::ofstream file(out, std::ios::binary | std::ios::trunc);
-                Catalog::Sha256 hash;
-                uint64_t size = 0;
-                int read = 0;
-                while ((read = unzReadCurrentFile(zip, buffer.data(), static_cast<unsigned>(buffer.size()))) > 0) {
-                    file.write(buffer.data(), read);
-                    hash.update(buffer.data(), static_cast<size_t>(read));
-                    size += static_cast<uint64_t>(read);
-                    if (stop && *stop) {
-                        error = "Stopped";
-                        unzCloseCurrentFile(zip);
-                        unzClose(zip);
-                        return false;
-                    }
-                }
-                file.close();
-                // Closing checks the CRC
-                if (read < 0 || unzCloseCurrentFile(zip) != UNZ_OK || !file) {
-                    error = "Damaged file " + entry + " in " + publishedName(source.url);
-                    unzClose(zip);
-                    return false;
-                }
-
-                PlannedFile plannedFile;
-                plannedFile.staged = utf8(out.lexically_relative(stagingRoot));
-                plannedFile.file.target = source.target;
-                plannedFile.file.path = joinPath(source.path, utf8(entryPath));
-                plannedFile.file.size = size;
-                plannedFile.file.sha256 = hash.hex();
-                planned.push_back(plannedFile);
+            if (Catalog::isExecutableName(name)) {
+                error = publishedName(source.url) + " contains a program or script (" + name + "), which packages may not install";
+                return false;
             }
-            result = unzGoToNextFile(zip);
-        }
-        unzClose(zip);
-        if (result != UNZ_END_OF_LIST_OF_FILE) {
-            error = "Damaged zip archive: " + publishedName(source.url);
-            return false;
+            if (entry.directory) continue;
+            fs::path entryPath = fs::u8path(name);
+            fs::path out = into / entryPath;
+            std::error_code ec;
+            fs::create_directories(out.parent_path(), ec);
+            std::ofstream file(out, std::ios::binary | std::ios::trunc);
+            Catalog::Sha256 hash;
+            uint64_t size = 0;
+            if (!archive.extract(i, [&](const void* data, size_t count) {
+                file.write(static_cast<const char*>(data), static_cast<std::streamsize>(count));
+                hash.update(data, count);
+                size += count;
+                return static_cast<bool>(file);
+            }, stop, error)) return false;
+            file.close();
+            if (!file || size != entry.size) { error = "Damaged file " + name + " in " + publishedName(source.url); return false; }
+            PlannedFile plannedFile;
+            plannedFile.staged = utf8(out.lexically_relative(stagingRoot));
+            plannedFile.file.target = source.target;
+            plannedFile.file.path = joinPath(source.path, utf8(entryPath));
+            plannedFile.file.size = size;
+            plannedFile.file.sha256 = hash.hex();
+            planned.push_back(plannedFile);
         }
         return true;
     }
@@ -466,8 +419,10 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
         }
         fs::path into = fs::path(staging) / "files" / std::to_string(i);
 
-        if (isZip(source.url, downloads[i])) {
-            if (!extractZip(downloads[i], staging, into, source, planned, stop_, error)) {
+        uint64_t archiveOffset;
+        std::string extension = lower(fs::u8path(publishedName(source.url)).extension().string());
+        if (Archive::detect(downloads[i], archiveOffset) != Archive::Form::None || extension == ".zip" || extension == ".7z") {
+            if (!extractArchive(downloads[i], staging, into, source, planned, stop_, error)) {
                 return false;
             }
         }

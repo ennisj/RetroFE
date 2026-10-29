@@ -140,7 +140,7 @@ in `.index-extended` beside them (`<date> <crc32> <file>` per line, about 250 co
 ## Steps
 
 1. **Archives:** the LZMA SDK in ThirdParty, `.7z` and self-extracting `.7z` in the
-   installer, with tests.
+   installer, with tests. **Built.**
 2. **The `emulators` source and packages:** the built-in list, the source and its trust
    screen, the `emulators` target, programs allowed there, portable files, launcher
    creation, update and removal rules, and the Download an emulator screen.

@@ -82,7 +82,7 @@ namespace Catalog
         Installer(const std::string& catalogFolder, const Targets& targets);
 
         // Installs from the downloaded files, one local path per package file
-        // in the same order. Zip archives are extracted; other files are copied.
+        // in the same order. Archives are detected by content; other files are copied.
         bool install(const Package& package, const std::vector<std::string>& downloads, std::string& error);
 
         struct Removal
