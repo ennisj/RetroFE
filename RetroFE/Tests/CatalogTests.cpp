@@ -1422,10 +1422,14 @@ void runCatalogTests()
         check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("Removed launcher DuckStation") != std::string::npos, "service removes launcher: " + message);
         service.install("emulator-duckstation");
         service.waitUntilIdle();
+        check(service.outcome("emulator-duckstation", ok, message) && ok, "service reinstalls: " + message);
+        check(fs::exists(root + "/launchers.windows/DuckStation.conf"), "reinstall recreates the launcher: " + message);
         writeFile(root + "/collections/PlayStation/settings.conf", "launcher = Other, DuckStation\n");
         service.remove("emulator-duckstation");
         service.waitUntilIdle();
-        check(service.outcome("emulator-duckstation", ok, message) && ok && message.find("PlayStation") != std::string::npos && fs::exists(root + "/launchers.windows/DuckStation.conf"), "service keeps alternative launcher and names its user");
+        check(service.outcome("emulator-duckstation", ok, message) && ok, "service removes again: " + message);
+        check(message.find("PlayStation") != std::string::npos, "service names the alternative launcher's user: " + message);
+        check(fs::exists(root + "/launchers.windows/DuckStation.conf"), "service keeps alternative launcher: " + message);
     });
     }
 
