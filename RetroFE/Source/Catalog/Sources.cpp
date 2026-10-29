@@ -15,6 +15,7 @@
  */
 #include "Sources.h"
 #include "GitHub.h"
+#include "Emulators.h"
 #include "Http.h"
 #include "Index.h"
 #include <nlohmann/json.hpp>
@@ -311,11 +312,27 @@ bool loadSources(const std::string& file, std::vector<SourceConfig>& sources, st
             it->enabled = !(v == "no" || v == "false" || v == "off" || v == "0");
         }
     }
+    std::vector<SourceConfig> checked;
+    for (const auto& source : sources) {
+        if (source.type == "emulators") {
+            error = validateSource(source, checked);
+            if (!error.empty()) { sources.clear(); return false; }
+        }
+        checked.push_back(source);
+    }
     return true;
 }
 
 bool saveSources(const std::string& file, const std::vector<SourceConfig>& sources, std::string& error)
 {
+    std::vector<SourceConfig> checked;
+    for (const auto& source : sources) {
+        if (source.type == "emulators") {
+            error = validateSource(source, checked);
+            if (!error.empty()) return false;
+        }
+        checked.push_back(source);
+    }
     std::ostringstream out;
     out << "# Catalog sources, one block per source: sources.<name>.<setting>\n"
         << "# Written by RetroFE; Manage > Sources adds and removes them.\n";
@@ -365,6 +382,11 @@ std::string validateSource(const SourceConfig& source, const std::vector<SourceC
         if (lower(other.name) == lower(source.name)) {
             return "There's already a source called " + other.name + ".";
         }
+    }
+    if (source.type == "emulators") {
+        if (!source.url.empty() || !source.path.empty() || !source.repo.empty()) return "Emulator downloads have no address.";
+        for (const auto& other : existing) if (other.type == "emulators") return "Emulator downloads are already a source: " + other.name + ".";
+        return "";
     }
     if (source.type == "index") {
         if (source.url.empty()) {
@@ -416,6 +438,9 @@ SourceContents readSource(const SourceConfig& source, const std::string& cacheFo
     }
     else if (source.type == "github") {
         readGitHub(source, cacheFolder, http, static_cast<int64_t>(std::time(nullptr)), contents);
+    }
+    else if (source.type == "emulators") {
+        readEmulators(source, cacheFolder, http, contents);
     }
     else {
         contents.error = "Unknown source type \"" + source.type + "\"";

@@ -446,6 +446,7 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Main.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Archive.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+	"${RETROFE_DIR}/Source/Catalog/Emulators.cpp"
 	"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 	"${RETROFE_DIR}/Source/Catalog/Http.cpp"
@@ -586,6 +587,7 @@ if(RETROFE_BUILD_TESTS)
 		${RETROFE_TEST_SOURCES}
 		"${RETROFE_DIR}/Source/Catalog/Archive.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
+		"${RETROFE_DIR}/Source/Catalog/Emulators.cpp"
 		"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
 		"${RETROFE_DIR}/Source/Catalog/Http.cpp"

@@ -77,6 +77,7 @@ namespace
             package.kind = "other";
         }
         // Only GitHub sources update RetroFE itself, which nothing else may pretend to be
+        if (package.kind == "emulator") return prefix + "emulators only come from the emulators source";
         if (package.kind == "app") {
             return prefix + "updates RetroFE itself (kind \"app\"), which only GitHub sources may offer";
         }
@@ -144,6 +145,7 @@ namespace
             if (file.target.empty()) {
                 file.target = defaultTarget(package.kind);
             }
+            if (file.target == "emulators") return prefix + "the emulators target is only for built-in emulator downloads";
             if (!Catalog::isKnownTarget(file.target)) {
                 return prefix + "unknown target \"" + file.target + "\"";
             }

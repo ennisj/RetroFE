@@ -227,6 +227,7 @@ void ManagerUI::startCatalog()
     targets.root = Configuration::absolutePath;
     targets.collections = Utils::combinePath(Configuration::absolutePath, "collections");
     targets.layouts = Configuration::layoutsPath();   // baseLayoutPath when set (OneSauce)
+    targets.emulators = Utils::combinePath(Configuration::absolutePath, "emulators");
     targets.meta = Utils::combinePath(Configuration::absolutePath, "meta");
     if (!config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, targets.items)) {
         targets.items = targets.collections;

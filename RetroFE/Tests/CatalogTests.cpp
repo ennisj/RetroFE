@@ -18,6 +18,8 @@
 
 #include "TestSupport.h"
 #include "../Source/Catalog/Download.h"
+#include "../Source/Catalog/Emulators.h"
+#include "../Source/Catalog/GitHub.h"
 #include "../Source/Catalog/Hash.h"
 #include "../Source/Catalog/Http.h"
 #include "../Source/Catalog/Index.h"
@@ -205,6 +207,224 @@ namespace
 void runCatalogTests()
 {
     std::string error;
+
+    run("emulator release rules", [&] {
+        const std::vector<std::string> tags = { "v1.22.2", "mame0289", "v0.1-12083", "v2.8.2", "v1.20.4", "v2.7" };
+        const std::vector<std::string> versions = { "1.22.2", "0.289", "0.1.12083", "2.8.2", "1.20.4", "2.7" };
+        const std::vector<std::vector<std::string>> assets = {
+            {}, { "mame0289b_arm64.exe", "mame0289s.exe", "mame0289b_x64.exe" },
+            { "duckstation-windows-x64-installer.exe", "duckstation-windows-x64-release-symbols.7z", "duckstation-windows-arm64-release.zip", "duckstation-windows-x64-release.zip" },
+            { "pcsx2-v2.8.2-windows-x64-Qt-symbols.7z", "pcsx2-v2.8.2-windows-x64-installer.exe", "pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage", "pcsx2-v2.8.2-windows-x64-Qt.7z" },
+            { "PPSSPP-v1.20.4-Windows-ARM64.zip", "PPSSPP-v1.20.4-Windows-x64.zip" },
+            { "flycast-win64-2.7.zip" }
+        };
+        for (size_t i = 0; i < emulators().size(); ++i) {
+            nlohmann::json list = nlohmann::json::array();
+            nlohmann::json release = { { "tag_name", tags[i] }, { "assets", nlohmann::json::array() } };
+            for (const auto& name : assets[i]) release["assets"].push_back({ { "name", name }, { "browser_download_url", "https://github.com/download/" + name }, { "size", 12345 }, { "digest", "sha256:" + std::string(64, 'a') } });
+            list.push_back(release);
+            auto bad = release;
+            bad["prerelease"] = true;
+            std::vector<Package> excluded;
+            std::vector<std::string> excludedWarnings;
+            check(parseEmulatorReleases(nlohmann::json::array({bad}).dump(), emulators()[i], "trusted", excluded, excludedWarnings, error) && excluded.empty(), "prereleases excluded");
+            for (const auto& tag : { "latest", "preview", "v999.9.9" }) {
+                bad["tag_name"] = tag;
+                bad["prerelease"] = tag == std::string("v999.9.9");
+                list.push_back(bad);
+            }
+            bad = release;
+            bad["draft"] = true;
+            bad["tag_name"] = "v999.9.9";
+            list.push_back(bad);
+            std::vector<Package> packages;
+            std::vector<std::string> warnings;
+            check(parseEmulatorReleases(list.dump(), emulators()[i], "trusted", packages, warnings, error), "parses " + tags[i]);
+            check(packages.size() == 1, "one package");
+            if (packages.empty()) continue;
+            const auto& package = packages[0];
+            checkEqual(package.version, versions[i], "version");
+            checkEqual(package.id, "emulator-" + emulators()[i].id, "id");
+            checkEqual(package.files[0].target, "emulators", "target");
+            checkEqual(package.files[0].path, emulators()[i].folder, "folder");
+            if (i == 0) {
+                checkEqual(package.files[0].url, "https://buildbot.libretro.com/stable/1.22.2/windows/x86_64/RetroArch.7z", "libretro URL");
+                check(package.noChecksum && package.files[0].sha256.empty(), "explicit checksum exception");
+            }
+            else {
+                checkEqual(package.files[0].url, "https://github.com/download/" + assets[i].back(), "exact asset");
+                check(package.files[0].size == 12345 && package.files[0].sha256 == std::string(64, 'a'), "size and digest");
+                release["assets"].back()["digest"] = nullptr;
+                packages.clear();
+                check(parseEmulatorReleases(nlohmann::json::array({release}).dump(), emulators()[i], "trusted", packages, warnings, error) && packages.empty() && !warnings.empty(), "missing digest is refused");
+            }
+            packages.clear();
+            check(!parseEmulatorReleases("{}", emulators()[i], "trusted", packages, warnings, error), "wrong JSON type refused");
+        }
+        check(compareVersions("0.289", "0.288") > 0, "MAME versions");
+        check(compareVersions("0.1.12083", "0.1.11894") > 0, "DuckStation versions");
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        check(parseEmulatorReleases(R"([{"tag_name":"latest"},{"tag_name":"preview"},{"tag_name":"v2.9.148","prerelease":true}])", emulators()[2], "trusted", packages, warnings, error) && packages.empty(), "rolling tags excluded");
+    });
+
+    run("emulator release caches are separate per entry", [&] {
+        auto root = makeRoot("emulator-cache");
+        FakeHttp http;
+        SourceConfig source;
+        source.name = "downloads";
+        for (const auto& entry : emulators()) {
+            source.repo = entry.repo;
+            http.documents["https://api.github.com/repos/" + entry.repo + "/releases?per_page=30"] = "[]";
+            SourceContents contents;
+            readGitHubReleases(source, root, &http, 1000, contents,
+                [&](const std::string& text, std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& parseError) {
+                    return parseEmulatorReleases(text, entry, source.name, packages, warnings, parseError);
+                }, entry.id);
+            check(contents.error.empty() && fs::exists(root + "/downloads/" + entry.id + "/releases.json") && fs::exists(root + "/downloads/" + entry.id + "/state.json"), "entry cache: " + entry.id);
+        }
+    });
+
+    run("emulator sources round trip and singleton", [&] {
+        auto root = makeRoot("emulator-sources");
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        source.enabled = false;
+        check(saveSources(root + "/sources.conf", {source}, error), "save");
+        std::vector<SourceConfig> sources;
+        check(loadSources(root + "/sources.conf", sources, error) && sources.size() == 1 && sources[0].type == "emulators" && !sources[0].enabled, "round trip");
+        SourceConfig second = source;
+        second.name = "second";
+        check(!validateSource(second, sources).empty(), "second refused");
+        check(!saveSources(root + "/sources.conf", {source, second}, error), "duplicate not saved");
+        writeFile(root + "/duplicate.conf", "sources.one.type = emulators\nsources.two.type = emulators\n");
+        check(!loadSources(root + "/duplicate.conf", sources, error), "duplicate configuration refused");
+        source.url = "https://example.org";
+        check(!validateSource(source, {}).empty(), "address refused");
+#ifndef _WIN32
+        source.url.clear();
+        auto contents = readSource(source, root, nullptr);
+        check(contents.packages.empty() && contents.error == "Emulator downloads are Windows-only for now", "Windows-only message");
+#endif
+    });
+
+    run("emulator installation trust, portable files and launchers", [&] {
+        auto root = makeRoot("emulator-install");
+        auto catalog = root + "/catalog";
+        SourceConfig source;
+        source.name = "trusted";
+        source.type = "emulators";
+        check(saveSources(catalog + "/sources.conf", {source}, error), "configured trust");
+        Installer installer(catalog, targetsUnder(root));
+        auto zip = root + "/downloads/duck.zip";
+        check(makeZip(zip, { { "duckstation-qt-x64-ReleaseLTCG.exe", "program" }, { "data/readme.txt", "data" } }), "zip");
+        auto package = zipPackage("emulator-duckstation", "0.1.12083", zip, "emulators", "DuckStation");
+        package.kind = "emulator";
+        package.source = "untrusted";
+        check(!installer.install(package, {zip}, error), "unconfigured source refused");
+        package.source = "trusted";
+        fs::create_directories(root + "/emulators/DuckStation");
+        check(!installer.install(package, {zip}, error) && error == "emulators/DuckStation is already there. Rename it, or add a launcher for it instead.", "unowned folder refused");
+        fs::remove(root + "/emulators/DuckStation");
+        check(installer.install(package, {zip}, error), "install: " + error);
+        check(fs::exists(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "program installed");
+        check(fs::exists(root + "/emulators/DuckStation/portable.txt") && fs::file_size(root + "/emulators/DuckStation/portable.txt") == 0, "portable marker");
+        Manifest manifest = installer.installed().at(package.id);
+        writeFile(root + "/collections/DuckStation/launcher.windows.conf", "executable = other.exe\n");
+        check(createEmulatorLauncher(root, catalog, manifest).find("left alone") != std::string::npos && manifest.launcherPath.empty(), "collection launcher name blocks creation");
+        fs::remove_all(root + "/collections/DuckStation");
+        auto message = createEmulatorLauncher(root, catalog, manifest);
+        check(message.find("Created") != std::string::npos, "created launcher: " + message);
+        auto launcher = root + "/launchers.windows/DuckStation.conf";
+        auto content = readFile(launcher);
+        check(content.find(R"(%RETROFE_PATH%\emulators\DuckStation\duckstation-qt-x64-ReleaseLTCG.exe)") != std::string::npos && content.find(R"(-batch -fullscreen -- "%ITEM_FILEPATH%")") != std::string::npos, "launcher executable and arguments");
+        check(createEmulatorLauncher(root, catalog, manifest).find("left alone") != std::string::npos && readFile(launcher) == content, "existing launcher skipped");
+        writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "self-updated");
+        package.version = "0.1.12084";
+        check(installer.install(package, {zip}, error), "update");
+        checkEqual(readFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "self-updated", "changed program kept during update");
+        writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "program");
+        manifest = installer.installed().at(package.id);
+        check(!manifest.launcherSha256.empty() && fs::exists(root + "/emulators/DuckStation/portable.txt"), "update preserves launcher and portable ownership");
+        writeFile(launcher, content + "# edited\n");
+        check(removeEmulatorLauncher(root, manifest).find("changed") != std::string::npos && fs::exists(launcher), "changed launcher kept");
+        writeFile(launcher, content);
+        writeFile(root + "/collections/PlayStation/settings.conf", "launcher = DuckStation\nlist.extensions = bin\n");
+        check(removeEmulatorLauncher(root, manifest).find("PlayStation") != std::string::npos && fs::exists(launcher), "used launcher kept with system name");
+        fs::remove_all(root + "/collections/PlayStation");
+        check(removeEmulatorLauncher(root, manifest).find("Removed launcher") != std::string::npos && !fs::exists(launcher), "unused launcher removed");
+        Installer::Removal removal;
+        check(installer.remove(package.id, removal, error), "remove");
+        check(!fs::exists(root + "/emulators/DuckStation/portable.txt") && !fs::exists(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe"), "program and empty portable file removed");
+        source.type = "index";
+        source.url = root + "/index.json";
+        check(saveSources(catalog + "/sources.conf", {source}, error), "change source type");
+        check(!installer.install(package, {zip}, error), "index source refused target");
+        package.files[0].target = "root";
+        package.files[0].path = "elsewhere";
+        check(!installer.install(package, {zip}, error) && error.find("program") != std::string::npos, "index source refused program");
+    });
+
+    run("RetroArch strips its top folder and refuses outside entries", [&] {
+        auto root = makeRoot("retroarch-install");
+        SourceConfig source;
+        source.name = "trusted";
+        source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "trust");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        auto zip = root + "/archive.zip";
+        check(makeZip(zip, { { "RetroArch-Win64/retroarch.exe", "program" } }), "archive");
+        auto package = zipPackage("emulator-retroarch", "1.22.2", zip, "emulators", "RetroArch");
+        package.kind = "emulator";
+        package.source = "trusted";
+        check(installer.install(package, {zip}, error), "install: " + error);
+        check(fs::exists(root + "/emulators/RetroArch/retroarch.exe") && !fs::exists(root + "/emulators/RetroArch/RetroArch-Win64"), "top folder removed");
+        check(makeZip(zip, { { "outside.txt", "bad" } }), "outside archive");
+        check(!installer.install(package, {zip}, error) && error.find("outside") != std::string::npos, "outside entry refused");
+    });
+
+    run("emulator 7z defaults and removal after removing its source", [&] {
+        auto root = makeRoot("emulator-seven");
+        SourceConfig source;
+        source.name = "downloads";
+        source.type = "emulators";
+        check(saveSources(root + "/catalog/sources.conf", {source}, error), "trust");
+        Installer installer(root + "/catalog", targetsUnder(root));
+        auto zip = root + "/program.zip";
+        check(makeZip(zip, { { "pcsx2-qt.exe", "program" } }), "program zip");
+        auto package = zipPackage("emulator-pcsx2", "2.8.2", "published.7z", "emulators", "PCSX2");
+        package.kind = "emulator";
+        package.source = source.name;
+        PackageFile program = package.files[0];
+        program.url = zip;
+        package.files.push_back(program);
+        check(installer.install(package, { std::string(RETROFE_TEST_FIXTURES) + "/7z/plain.7z", zip }, error), "7z unpacks by default: " + error);
+        check(installer.installed().at(package.id).files.size() > 3, "7z content, program and portable marker recorded");
+        writeFile(root + "/emulators/PCSX2/portable.txt", "changed");
+        check(saveSources(root + "/catalog/sources.conf", {}, error), "remove source");
+        Installer::Removal removal;
+        check(installer.remove(package.id, removal, error), "remove using recorded configured origin");
+        check(!fs::exists(root + "/emulators/PCSX2/pcsx2-qt.exe") && readFile(root + "/emulators/PCSX2/portable.txt") == "changed" && removal.kept == 1, "program removed and changed portable file kept");
+    });
+
+    run("emulator model action requires user trust", [&] {
+        auto root = makeRoot("emulator-model");
+        Configuration::absolutePath = root;
+        Configuration config;
+        Service service(root + "/catalog", targetsUnder(root), nullptr);
+        service.start();
+        service.waitUntilIdle();
+        ManagerModel model(config);
+        model.setCatalog(&service);
+        model.setDefault("draft:emulatorsTrusted", "yes");
+        check(!model.runAction("source.addEmulators").ok, "form default cannot grant trust");
+        model.set("draft:emulatorsTrusted", "yes");
+        check(model.runAction("source.addEmulators").ok, "explicit trust adds source");
+        service.waitUntilIdle();
+        check(service.sources().size() == 1 && service.sources()[0].type == "emulators", "configured source type");
+        check(!model.runAction("source.addEmulators").ok, "second source refused");
+    });
 
     // --- Hashes ----------------------------------------------------------------
 

@@ -63,7 +63,7 @@ uint64_t Package::totalSize() const
 bool isKnownTarget(const std::string& target)
 {
     return target == "root" || target == "collections" || target == "items"
-        || target == "media" || target == "layouts" || target == "meta";
+        || target == "media" || target == "layouts" || target == "meta" || target == "emulators";
 }
 
 int compareVersions(const std::string& a, const std::string& b)

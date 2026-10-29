@@ -1,6 +1,6 @@
 # Emulator downloads
 
-**Status:** design, 2026-10-28. Builds on [catalog-sources.md](catalog-sources.md) and
+**Status:** step 2 backend built, 2026-10-29. Builds on [catalog-sources.md](catalog-sources.md) and
 [FOLDERS.md](../FOLDERS.md).
 
 On a bare install, a system needs a launcher, and a launcher needs an emulator program.
@@ -147,6 +147,10 @@ in `.index-extended` beside them (`<date> <crc32> <file>` per line, about 250 co
 2. **The `emulators` source and packages:** the built-in list, the source and its trust
    screen, the `emulators` target, programs allowed there, portable files, launcher
    creation, update and removal rules, and the Download an emulator screen.
+   **Backend built.** The Download an emulator and trust screens are the next job.
+   The model action is `source.addEmulators`, requiring `draft:emulatorsTrusted`;
+   forms cannot pre-fill that trust toggle. `package:noChecksum` exposes the
+   libretro checksum notice. No emulator source is added automatically.
 3. **RetroArch cores.**
 4. **Adding a system** picks a launcher or a core (next round).
 
@@ -162,3 +166,20 @@ These change earlier Catalog decisions (catalog-sources.md):
 4. **One `emulators` source with a built-in list,** rather than a GitHub source per
    emulator added by hand. The list knows each emulator's program, arguments and portable
    files, which a bare GitHub repository doesn't say.
+
+## Backend notes
+
+- Release parsing is pure and tested without HTTP. The shared GitHub reader keeps
+  each entry's cache and ETag under `cache/<source>/<id>/`.
+- The installer checks the configured source type at extraction, staging and
+  commit. Package and index fields cannot grant program permission. Its manifest
+  records that configured origin for removal after a source is removed.
+- Launcher creation and removal run in the Catalog Service, using the Library
+  editor and a fresh Windows Library index. The launcher path and SHA-256 are
+  recorded separately from archive files, so updates never rewrite it. A changed
+  launcher or one used by a system or game stays; the result names its users.
+- Portable files are recorded with their empty-file hash and retained across
+  updates; removal keeps them if the emulator has written into them. Changed
+  emulator program files are also kept during updates.
+- The archive readers and portable arguments still need checking with real
+  Windows releases. This job's tests use release JSON and local archives only.

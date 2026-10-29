@@ -28,7 +28,7 @@ namespace Catalog
     struct SourceConfig
     {
         std::string name;
-        std::string type;      // "index", "folder" or "github"
+        std::string type;      // "index", "folder", "github" or "emulators"
         std::string url;       // index: http(s) URL or file path; github: the releases API address, if not GitHub's
         std::string path;      // folder: the folder to scan
         std::string repo;      // github: owner/name

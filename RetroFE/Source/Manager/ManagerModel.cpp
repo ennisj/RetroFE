@@ -357,7 +357,7 @@ void ManagerModel::setDefault(const std::string& key, const std::string& value)
     }
     else if (stripPrefix(key, "draft:", name) && drafts_[name].empty()) {
         // A layout's form can't pre-fill a source or vouch for one: the user adds sources
-        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath" || name == "retrofeTrusted") {
+        if (name == "sourceTrusted" || name == "sourceUrl" || name == "sourcePath" || name == "retrofeTrusted" || name == "emulatorsTrusted") {
             return;
         }
         drafts_[name] = value;
@@ -464,6 +464,7 @@ std::string ManagerModel::packageValue(const std::string& key)
     bool offered = catalog_->entry(package.id, offeredEntry);   // false: installed, but no source offers it now
 
     if (key == "name") return package.name;
+    if (key == "noChecksum") return package.noChecksum ? "yes" : "no";
     if (key == "description") return package.description;
     if (key == "canInstall") return !installed && !busy && offered ? "yes" : "no";
     if (key == "canUpdate") return installed && entry.updateAvailable && !busy ? "yes" : "no";
@@ -514,6 +515,7 @@ std::string ManagerModel::packageValue(const std::string& key)
         return text;
     }
     if (key == "checksum") {
+        if (package.noChecksum) return "libretro doesn't publish a checksum for this download.";
         if (!offered) return "";
         bool checked = std::any_of(package.files.begin(), package.files.end(), [](const Catalog::PackageFile& file) {
             return !file.sha256.empty() || !file.md5.empty() || !file.sha256Url.empty();
@@ -873,7 +875,7 @@ std::string ManagerModel::catalogProblem(const std::string& action)
 {
     bool known = action == "package.install" || action == "package.remove" || action == "package.cancel"
               || action == "package.removeInstalled" || action == "package.showInBrowse"
-              || action == "source.add" || action == "source.addRetroFE" || action == "source.remove"
+              || action == "source.add" || action == "source.addRetroFE" || action == "source.addEmulators" || action == "source.remove"
               || action == "source.removeThis" || action == "catalog.refresh" || action == "catalog.open";
     if (!known) {
         return "Unknown action " + action;
@@ -914,6 +916,10 @@ std::string ManagerModel::catalogProblem(const std::string& action)
     if (action == "source.add") {
         // Just added: the cleared form doesn't start nagging for the next one's name
         return sourceJustAdded_ ? "" : sourceAddProblem();
+    }
+    if (action == "source.addEmulators") {
+        for (const auto& source : catalog_->sources()) if (source.type == "emulators") return "Emulator downloads are already a source: " + source.name + ".";
+        return Forms::isTruthy(drafts_["emulatorsTrusted"]) ? "" : "Confirm that you trust this source.";
     }
     if (action == "source.addRetroFE") {
         // sources() returns a copy: keep it alive while existing points into it
@@ -1007,6 +1013,18 @@ Forms::Model::Result ManagerModel::runCatalogAction(const std::string& action)
             drafts_["sourceTrusted"] = "no";
             sourceJustAdded_ = true;
             result.focus = "catalog.open";   // as soon as there's something to open
+        }
+    }
+    else if (action == "source.addEmulators") {
+        Catalog::SourceConfig source;
+        source.type = "emulators";
+        auto sources = catalog_->sources();
+        source.name = "emulators";
+        for (int n = 2; std::any_of(sources.begin(), sources.end(), [&](const Catalog::SourceConfig& existing) { return existing.name == source.name; }); ++n) source.name = "emulators-" + std::to_string(n);
+        result.ok = catalog_->addSource(source, result.message);
+        if (result.ok) {
+            result.message = "Added emulator downloads.";
+            drafts_["emulatorsTrusted"] = "no";
         }
     }
     else if (action == "source.addRetroFE") {

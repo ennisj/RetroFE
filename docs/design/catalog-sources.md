@@ -88,6 +88,7 @@ sources, so nobody has to edit this file by hand.
 | `index` | A catalog index file (below) over HTTP(S) or from disk | The native format. Everything else maps to it. |
 | `folder` | A folder of package archives, each with a sidecar `<file>.package.json`, or just archives | With no sidecars, packages are guessed from file names (as `archiveorg` does). Good for LAN or USB. |
 | `archiveorg` | `https://archive.org/metadata/<item>` file lists | The One Saucier logic as an adapter: file name → stem/version via a `naming` rule, size and MD5 from the metadata, downloads from `/download/<item>/<file>`. With `naming = onesauce` it also writes the OnesaUCE `version.txt` markers on install, so One Saucier recognises the content on the same drive. |
+| `emulators` | The built-in Windows x64 emulator list | At most one source, no URL, path or repository. Added through `source.addEmulators` after the user sets `draft:emulatorsTrusted`. |
 | `github` | `https://api.github.com/repos/<owner>/<repo>/releases` | Offers RetroFE itself, as a package of kind `app` (see [GitHub sources and updating RetroFE](#github-sources-and-updating-retrofe)). Release notes become the description. |
 
 Each adapter caches what it read in `catalog/cache/<source>/`, keeping
@@ -131,7 +132,7 @@ A JSON document (the format web hosting and archive.org already speak):
 |-------|---------|
 | `id` | Stable identifier, unique within the source. The install key (One Saucier's `stem`). |
 | `name`, `description` | Shown in the Catalog. |
-| `kind` | `collection`, `layout`, `media`, `bundle`, `other`; `emulator` is reserved for later. Groups the Catalog and picks sensible targets. `app` (RetroFE itself) only comes from `github` sources: an index or folder offering it, or the id `retrofe`, is skipped with a warning. |
+| `kind` | `collection`, `layout`, `media`, `bundle`, `other`; `emulator` only comes from the built-in `emulators` source. Groups the Catalog and picks sensible targets. `app` (RetroFE itself) only comes from `github` sources: an index or folder offering it, or the id `retrofe`, is skipped with a warning. |
 | `version` | Compared to the installed one to offer updates. Semantic versions, plus the OnesaUCE `v2.0b13` style via the adapter. |
 | `artwork` | Image URLs, relative to the index. Shown like collection artwork. |
 | `requires` | Other packages, by `id` and optional version range. Offered together when installing. |
@@ -162,6 +163,15 @@ in a stock install and in a split OnesaUCE-style one.
 | `media` | `baseMediaPath` if set, otherwise `<root>/collections`: artwork |
 | `layouts` | `<root>/layouts` |
 | `meta` | `<root>/meta` |
+| `emulators` | `<root>/emulators`, only for built-in emulator packages from a configured `emulators` source |
+
+The `emulators` source reads each built-in entry's GitHub releases, using the same
+ETag, 60-second recheck and rate-limit waiting as `github`. Each entry has its own
+`cache/<source>/<id>/releases.json` and `state.json`. Pre-releases and rolling tags
+are excluded. GitHub downloads require the asset's SHA-256 digest. RetroArch uses
+`https://buildbot.libretro.com/` and exposes the missing-checksum flag. On other
+platforms the source offers nothing and reports that downloads are Windows-only.
+See [emulator-downloads.md](emulator-downloads.md) for the list and install rules.
 
 ## Download
 
@@ -491,12 +501,16 @@ Lists are layout pages and actions are forms, as for the rest of the Home menu:
 - Adding a source asks for confirmation and says that RetroFE doesn't vet
   what sources provide.
 - Hashes are checked whenever they're given; a source without hashes is
-  marked as such in its details.
+  marked as such in its details. RetroArch alone uses libretro’s HTTPS buildbot
+  without a checksum; the package exposes `noChecksum` (`package:noChecksum` to forms).
 - Packages never run code on install. Emulators are installed as files;
   their launchers are plain `.conf` files the user can read.
 - Packages can only write under their targets (see Install), never into
-  the catalog folder or RetroFE's program folder, and phase 1 refuses
-  programs and scripts outright (no emulator packages yet).
+  the catalog folder or RetroFE's program folder, and programs and scripts are refused except for built-in emulator packages from a
+  configured `emulators` source, inside their own `emulators/<folder>/` only.
+  Extraction, staging and commit check this permission against `sources.conf`, never
+  a field supplied by an index. The installer records the configured origin in the
+  installed manifest so removal still works after the source has been removed.
 - The one exception is RetroFE itself (kind `app`). Only a `github` source
   the user added can offer it, and only for the official repository or with
   `app = yes`. It must have a SHA-256, be newer than the running version,

@@ -416,7 +416,8 @@ bool parseReleases(const std::string& text, const SourceConfig& source, const Pl
     return true;
 }
 
-void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now, SourceContents& contents)
+void readGitHubReleases(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now,
+                        SourceContents& contents, const ReleaseParser& parse, const std::string& subfolder)
 {
     if (!isValidRepository(source.repo)) {
         contents.error = "\"" + source.repo + "\" isn't a GitHub repository (owner/name)";
@@ -429,19 +430,20 @@ void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http
     }
 
     fs::path folder = fs::path(cacheFolder) / source.name;
+    if (!subfolder.empty()) folder /= subfolder;
     fs::path cacheFile = folder / "releases.json";
     fs::path stateFile = folder / "state.json";
     FetchState state = readState(stateFile);
     std::string cached;
     bool haveCache = readFile(cacheFile, cached);
-    Platform platform = currentPlatform();
+
 
     // The last copy; problem says why it's used, or is "" when it's simply recent enough
     auto useCache = [&](const std::string& problem) {
         std::vector<Package> packages;
         std::vector<std::string> warnings;
         std::string error;
-        if (haveCache && parseReleases(cached, source, platform, packages, warnings, error)) {
+        if (haveCache && parse(cached, packages, warnings, error)) {
             contents.packages = packages;
             contents.warnings = warnings;
             if (!problem.empty()) {
@@ -487,7 +489,7 @@ void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http
         std::vector<Package> packages;
         std::vector<std::string> warnings;
         std::string error;
-        if (!parseReleases(response.body, source, platform, packages, warnings, error)) {
+        if (!parse(response.body, packages, warnings, error)) {
             useCache(error);
             return;
         }
@@ -518,6 +520,14 @@ void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http
         return;
     }
     useCache("GitHub answered " + std::to_string(response.status));
+}
+
+void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now, SourceContents& contents)
+{
+    readGitHubReleases(source, cacheFolder, http, now, contents,
+        [&](const std::string& text, std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error) {
+            return parseReleases(text, source, currentPlatform(), packages, warnings, error);
+        });
 }
 
 }
