@@ -16,6 +16,7 @@
 #pragma once
 
 #include "EditorPad.h"
+#include "../../../ThemeEditor/EditorRows.h"
 #include "FileChooser.h"
 #include "../../ImGuiScreen.h"
 #include "../../../ThemeEditor/EditorScript.h"
@@ -37,8 +38,8 @@ namespace Library { class Indexer; }
 
 // The theme editor: an ImGui screen inside the manager, opened by the Edit
 // action on a theme made with the editor (form "theme-editor", param id =
-// the theme's folder). Three regions: the theme and its pages on the left,
-// the canvas in the middle, the selected widget's properties on the right.
+// the theme's folder). Four tiles: Theme, Canvas, Theme Properties and
+// Widget Properties, with an action row below the canvas.
 //
 // The canvas shows the page as RetroFE's own PageBuilder builds it from the
 // generated XML (setLayoutXml), drawn into a texture of its own and shown
@@ -55,7 +56,7 @@ namespace Library { class Indexer; }
 // (ThemeEditor/EditorScript.h).
 //
 // RetroFE's mapped controls drive it too (EditorPad.h, EditorNav.h): the
-// regions (toolbar, theme panel, canvas, properties) and their items, the
+// tiles, toolbar and actions and their items, the
 // canvas's Pick / Move / Resize modes, the dialogs and an on-screen keyboard
 // for the text fields.
 class ThemeEditorScreen : public Manager::ImGuiScreen
@@ -115,15 +116,8 @@ private:
         std::string title;
         std::string note;       // what happens without a file
     };
-    // A collection in the menu tree, as the Collections list shows it
-    struct TreeRow
-    {
-        std::string name;
-        int depth = 0;
-        bool menu = false;
-        bool children = false;
-        std::string otherLayout;   // collections.<c>.layout names another theme
-    };
+    // A collection in the menu dropdown
+    using TreeRow = ThemeEditor::CollectionRow;
 
     void rebuildPreview();
     void destroyPreview();
@@ -142,16 +136,18 @@ private:
     bool isHandMade(const std::string& collection) const;
     void refreshFonts();
     std::vector<std::string> descendants(const std::string& collection) const;
+    const ThemeEditor::ThemePage& shownPageFor(const std::string& collection, bool menu) const;
     std::string pageNameFor(const std::string& collection, bool menu) const;
     void openTemplateDialog(const std::string& collection, bool create, const std::string& basedOn);
     void runScript();
     bool runCommand(const ThemeEditor::EditorCommand& command, std::string& note);
 
     void drawToolbar();
+    void drawActions();
+    void drawThemeSettings();
     void drawThemePanel();
     void drawThemeProperties();
     void drawSplash();
-    void drawPages();
     void drawCollections();
     void drawFileRow(const char* label, const std::string& value, const FileRequest& request,
                      const std::function<void()>& clear);
@@ -226,7 +222,6 @@ private:
     std::vector<TreeRow> tree_;
     unsigned treeGeneration_ = 0;
     bool treeFromIndex_ = false;
-    std::string treeFilter_;
     std::string chosenCollection_;          // picked in the Collections list
     std::string openSection_;               // a section a script asked to unfold
     std::set<std::string> handMade_;        // collections whose page in the theme was written by hand
@@ -252,6 +247,12 @@ private:
     bool showClose_ = false;
     bool addOpen_ = false, reportOpen_ = false, closeOpen_ = false;   // ImGui has the popup open
     std::string addFilter_;
+    std::string addSelected_;
+    std::string addProblem_;
+    bool collectionOpen_ = false;
+    std::string collectionFocus_;
+    bool showDeleteWidget_ = false, deleteWidgetOpen_ = false;
+    std::set<std::string> collapsedCollections_;
     bool back_ = false;
     bool leaveWithoutSaving_ = false;
     bool retired_ = false;   // left: nothing more is built
@@ -264,10 +265,6 @@ private:
     int repeats_ = 0;        // repeats of the held direction (Move and Resize speed up)
     ThemeEditor::HeldSelect heldSelect_;   // Select held in Pick: adds to the selection
     int resizeHandle_ = ThemeEditor::CH_SE;  // the handle Resize mode drags
-
-    // The widget list follows the selection made elsewhere (the canvas, the controller)
-    int listPrimary_ = -1;
-    bool listClicked_ = false;
 
     // -editorScript
     std::vector<ThemeEditor::EditorCommand> script_;

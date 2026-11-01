@@ -502,6 +502,12 @@ namespace Themes
         if (item.key) add(std::move(item));
     }
 
+    void EditorPad::focusNext()
+    {
+        ImGui::SetNavCursorVisible(true);
+        ImGui::SetKeyboardFocusHere();
+    }
+
     void EditorPad::setRegion(int region)
     {
         if (region < 0) return;

@@ -37,7 +37,50 @@ namespace ThemeEditor
 {
     // Focus regions, in reading order. EF_TOOLBAR is the canvas header row
     // between the theme tile and the canvas.
-    enum EdFocus { EF_THEME = 0, EF_CANVAS, EF_ACTIONS, EF_SELECTION, EF_TOOLBAR, EF_PROPS };
+    enum EdFocus { EF_THEME = 0, EF_CANVAS, EF_ACTIONS, EF_SELECTION, EF_TOOLBAR, EF_PROPS, EF_THEME_PROPS };
+
+    // The widget editor's tiles; the hand-made editor keeps regionStep/regionCycle.
+    static inline int widgetRegionCycle(int current, int step, bool vertical)
+    {
+        const std::vector<int> order = vertical
+            ? std::vector<int>{ EF_THEME, EF_TOOLBAR, EF_CANVAS, EF_ACTIONS, EF_PROPS, EF_THEME_PROPS }
+            : std::vector<int>{ EF_THEME, EF_TOOLBAR, EF_CANVAS, EF_ACTIONS, EF_THEME_PROPS, EF_PROPS };
+        auto it = std::find(order.begin(), order.end(), current);
+        int index = it == order.end() ? 0 : static_cast<int>(it - order.begin());
+        return order[(index + (step < 0 ? 5 : 1)) % 6];
+    }
+
+    static inline int widgetRegionStep(int current, int dx, int dy, bool vertical)
+    {
+        if (dx) {
+            if (vertical) {
+                if (current == EF_PROPS && dx > 0) return EF_THEME_PROPS;
+                if (current == EF_THEME_PROPS && dx < 0) return EF_PROPS;
+            }
+            else {
+                if (dx > 0 && current == EF_THEME) return EF_THEME_PROPS;
+                if (dx > 0 && (current == EF_TOOLBAR || current == EF_CANVAS || current == EF_ACTIONS)) return EF_PROPS;
+                if (dx < 0 && current == EF_THEME_PROPS) return EF_THEME;
+                if (dx < 0 && current == EF_PROPS) return EF_CANVAS;
+            }
+            return -1;
+        }
+        if (dy < 0) {
+            if (current == EF_TOOLBAR) return EF_THEME;
+            if (current == EF_CANVAS) return EF_TOOLBAR;
+            if (current == EF_ACTIONS) return EF_CANVAS;
+            if (current == EF_PROPS) return vertical ? EF_ACTIONS : EF_THEME_PROPS;
+            if (current == EF_THEME_PROPS && vertical) return EF_ACTIONS;
+        }
+        if (dy > 0) {
+            if (current == EF_THEME) return EF_TOOLBAR;
+            if (current == EF_TOOLBAR) return EF_CANVAS;
+            if (current == EF_CANVAS) return EF_ACTIONS;
+            if (current == EF_ACTIONS && vertical) return EF_PROPS;
+            if (current == EF_THEME_PROPS && !vertical) return EF_PROPS;
+        }
+        return -1;
+    }
 
     // The canvas header's stops in visual order (the controller walk)
     enum EdToolbarStop { ETB_UNDO = 0, ETB_REDO, ETB_CMUTE, ETB_WIRE, ETB_MEDIA, ETB_TEXT, ETB_LABELS,

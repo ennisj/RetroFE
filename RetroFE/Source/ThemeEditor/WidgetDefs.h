@@ -100,6 +100,8 @@ namespace ThemeEditor
     // others are added. The result is sorted by file name.
     WidgetFiles overlayWidgetFiles(const WidgetFiles& base, const WidgetFiles& overlay);
 
+    const char* widgetSection(const std::string& name);
+
     // Exactly 6 hex digits, no '#'
     bool widgetColorValid(const std::string& c);
     // [a-z0-9_]+, non-empty: shared by definition and instance ids

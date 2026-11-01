@@ -508,26 +508,30 @@ void runThemeEditorTests()
         check(!attachCollection(t, "", "X") && !attachCollection(t, "Arcade", "Arcade"), "never to Default, never a collection with its own page");
         check(detachCollection(t, "Neo Geo") && !t.coveredBy("Neo Geo"), "detach a member");
 
-        // The effective template inherits down the menu tree
-        std::map<std::string, std::string> parent = { { "Main", "" }, { "1 ARCADES", "Main" }, { "2 ARCADE COLLECTIONS", "1 ARCADES" },
-                                                      { "Data East Classics", "2 ARCADE COLLECTIONS" }, { "NES", "Main" } };
-        auto parentOf = [&parent](const std::string& c) { auto it = parent.find(c); return it == parent.end() ? std::string() : it->second; };
-        ThemeProject e;
-        ThemePage arc;
-        arc.collection = "2 ARCADE COLLECTIONS";
-        arc.tplName = "ARCADE COLLECTIONS";
-        e.pages.push_back(arc);
-        bool inherited = false;
-        const ThemePage* c1 = effectiveCover(e, "Data East Classics", parentOf, &inherited);
-        check(c1 && c1->displayName() == "ARCADE COLLECTIONS" && inherited, "a child without its own page inherits its ancestor's");
-        check(!effectiveCover(e, "NES", parentOf, &inherited) && !inherited, "an uncovered branch is Default");
-        std::map<std::string, std::string> loop = { { "A", "B" }, { "B", "A" } };
-        check(!effectiveCover(e, "A", [&loop](const std::string& c) { return loop[c]; }), "a parent cycle ends");
     });
 
     // --- the stock library and the generator -------------------------------------------------
 
     run("theme editor: stock widget library", [] {
+        WidgetLibrary sections;
+        std::string sectionError;
+        check(buildWidgetLibrary(embeddedWidgetFiles(), sections, sectionError), "stock section library");
+        for (const auto& def : sections.defs) check(std::string(widgetSection(def.name)) != "OTHER", def.name + " has a named section");
+        const std::vector<std::pair<std::string, std::vector<std::string>>> expectedSections = {
+            { "GAME MEDIA", { "Game Art", "Game Bezel", "Game Cabinet", "Game Front Artwork", "Game Logo", "Game Marquee", "Game Screentitle", "Game Video" } },
+            { "WHEELS", { "Curved Logo Wheel", "Vertical Logo Wheel", "Game Art Wheel" } },
+            { "GAME METADATA", { "Game Manufacturer", "Game Story", "Game Title", "Game Year", "System Name", "Game Players", "Game Genre", "Game Metadata" } },
+            { "SYSTEM ARTWORK", { "System Device", "System Logo", "System Marquee", "System Video" } },
+            { "OTHER ARTWORK", { "Static Image", "Static Video", "Live Background" } },
+            { "OTHER TEXT", { "Static Text", "Scrolling Text", "Status Messages", "Text File Scroller", "System Time" } },
+            { "COLLECTION", { "Game Index", "Game Letters", "Favorite Star", "Playlist" } }
+        };
+        for (const auto& section : expectedSections)
+            for (const auto& name : section.second) check(widgetSection(name) == section.first, name + " is in " + section.first);
+        check(std::string(widgetSection("Unknown extension")) == "OTHER", "extension fallback section");
+        check(std::string(widgetSection("Game Front Artwork")) == "GAME MEDIA" && std::string(widgetSection("Game Art Wheel")) == "WHEELS" &&
+              std::string(widgetSection("System Name")) == "GAME METADATA" && std::string(widgetSection("Status Messages")) == "OTHER TEXT" &&
+              std::string(widgetSection("Favorite Star")) == "COLLECTION", "named placement exceptions");
         WidgetLibrary lib;
         std::string error;
         const WidgetFiles files = embeddedWidgetFiles();

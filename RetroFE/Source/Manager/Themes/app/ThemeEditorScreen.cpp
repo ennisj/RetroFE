@@ -583,6 +583,9 @@ void ThemeEditorScreen::refreshTree()
     std::shared_ptr<const Library::Index> index = ctx_.library ? ctx_.library->index() : nullptr;
     if (ctx_.library) treeGeneration_ = ctx_.library->status().generation;
     if (!index) {
+        TreeRow group;
+        group.depth = -1;
+        tree_.push_back(group);
         for (const std::string& name : collections_) {
             TreeRow row;
             row.name = name;
@@ -598,6 +601,12 @@ void ThemeEditorScreen::refreshTree()
         row.name = record.name;
         row.depth = depth;
         row.menu = record.is(Library::KindMenu);
+        if (ctx_.config) {
+            std::string type;
+            ctx_.config->getProperty("collections." + record.name + ".type", type);
+            row.videos = type == "videos";
+            ctx_.config->getProperty("collections." + record.name + ".layoutFromAnotherCollection", row.layoutFrom);
+        }
         if (!record.layout.empty() && Utils::toLower(record.layout) != Utils::toLower(folder_)) row.otherLayout = record.layout;
         return row;
     };
@@ -636,13 +645,18 @@ std::vector<std::string> ThemeEditorScreen::descendants(const std::string& colle
     return out;
 }
 
+const ThemePage& ThemeEditorScreen::shownPageFor(const std::string& collection, bool menu) const
+{
+    for (const auto& row : tree_) {
+        if (row.name == collection && row.depth >= 0)
+            return pageShownFor(session_.project(), collection, menu, nullptr, row.videos, row.layoutFrom);
+    }
+    return pageShownFor(session_.project(), collection, menu);
+}
+
 std::string ThemeEditorScreen::pageNameFor(const std::string& collection, bool menu) const
 {
-    PageVia via = PageVia::Default;
-    const ThemePage& page = pageShownFor(session_.project(), collection, menu, &via);
-    if (via == PageVia::Default) return "Default";
-    if (via == PageVia::Menus) return page.displayName() + " (every menu)";
-    return page.displayName();
+    return shownPageFor(collection, menu).displayName();
 }
 
 void ThemeEditorScreen::openTemplateDialog(const std::string& collection, bool create, const std::string& basedOn)
@@ -661,7 +675,9 @@ void ThemeEditorScreen::openTemplateDialog(const std::string& collection, bool c
     }
     tplChoice_ = 0;
     if (!create) {
-        const ThemePage* cover = session_.project().coveredBy(collection);
+        bool menu = false;
+        for (const auto& row : tree_) if (row.name == collection) { menu = row.menu; break; }
+        const ThemePage* cover = &shownPageFor(collection, menu);
         tplChoice_ = 1;
         const std::vector<std::string> templates = session_.templates();
         for (size_t i = 0; cover && i < templates.size(); ++i) {
@@ -748,7 +764,7 @@ bool ThemeEditorScreen::runCommand(const EditorCommand& command, std::string& no
             if (row.name != command.rest || row.depth < 0) continue;
             chosenCollection_ = row.name;
             previewName_ = row.name;
-            const ThemePage* shown = &pageShownFor(session_.project(), row.name, row.menu);
+            const ThemePage* shown = &pageShownFor(session_.project(), row.name, row.menu, nullptr, row.videos, row.layoutFrom);
             for (int i = 0; i < session_.pageCount(); ++i) {
                 if (&session_.project().pages[i] == shown) session_.setPage(i);
             }
@@ -811,8 +827,8 @@ bool ThemeEditorScreen::escape()
         pad_.cancelKeyboard();
         return true;
     }
-    if (showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen()) {
-        showAdd_ = showClose_ = showReport_ = showTemplate_ = showDeleteTpl_ = false;
+    if (showDeleteWidget_ || showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen()) {
+        showDeleteWidget_ = showAdd_ = showClose_ = showReport_ = showTemplate_ = showDeleteTpl_ = false;
         browser_.close();
         return true;
     }
@@ -862,7 +878,7 @@ void ThemeEditorScreen::beforeFrame()
 
 bool ThemeEditorScreen::dialogOpen() const
 {
-    return showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen() || pad_.modalOpen();
+    return showDeleteWidget_ || showAdd_ || showClose_ || showReport_ || showTemplate_ || showDeleteTpl_ || browser_.isOpen() || pad_.modalOpen();
 }
 
 void ThemeEditorScreen::control(Control control, bool repeat)
@@ -876,6 +892,11 @@ void ThemeEditorScreen::control(Control control, bool repeat)
     // A script is driving: nobody else does
     if (scriptAt_ < script_.size()) return;
     repeats_ = repeat ? repeats_ + 1 : 0;
+    if (collectionOpen_ && (control == Control::Left || control == Control::Right)) {
+        if (control == Control::Left) collapsedCollections_.insert(collectionFocus_);
+        else collapsedCollections_.erase(collectionFocus_);
+        return;
+    }
     if (pad_.takesControl(control)) return;
     const int press = static_cast<int>(control);
     if (dialogOpen()) {
@@ -885,7 +906,7 @@ void ThemeEditorScreen::control(Control control, bool repeat)
     }
     if (session_.dragging()) return;   // the mouse is busy
     if (press == EP_PAGE_UP || press == EP_PAGE_DOWN) {
-        pad_.setRegion(regionCycle(pad_.region(), press == EP_PAGE_UP ? -1 : 1));
+        pad_.setRegion(widgetRegionCycle(pad_.region(), press == EP_PAGE_UP ? -1 : 1, session_.project().vertical));
         return;
     }
     if (pad_.region() == EF_CANVAS && !pad_.listOpen()) {
@@ -987,7 +1008,7 @@ void ThemeEditorScreen::canvasControl(int press, bool released)
             index.push_back(i);
         }
         const int next = pickStep(rects, cur, dx, dy, p.canvasW(), p.canvasH());
-        if (next < 0) pad_.setRegion(regionStep(EF_CANVAS, dx, dy));   // nothing that way: the panel there
+        if (next < 0) pad_.setRegion(widgetRegionStep(EF_CANVAS, dx, dy, session_.project().vertical));   // nothing that way: the panel there
         else session_.select(index[next]);
         break;
     }
@@ -1066,8 +1087,14 @@ std::string ThemeEditorScreen::controllerHints() const
                (session_.selectionCount() > 1 ? "Back: keep only the last one" : "Back: leave the editor");
     case EF_TOOLBAR:
         return "Toolbar: arrows move   Select: press   Down: the canvas   Back: the canvas";
+    case EF_ACTIONS:
+        return "ACTIONS: arrows move   Select: Save / Use this theme / Close   Page up/down: regions   Back: canvas";
+    case EF_THEME:
+        return "THEME: arrows move   Select: edit / open Collection   In Collection: Left/Right fold branches, Select picks, Back closes";
+    case EF_THEME_PROPS:
+        return "THEME PROPERTIES: arrows move / adjust   Select: edit   Page up/down: regions   Back: canvas";
     default:
-        return "Up / Down: rows   Left / Right: change a value   Select: press, or type with the on-screen keyboard   "
+        return "WIDGET PROPERTIES: Up / Down: rows   Left / Right: change a value   Select: press, or type with the on-screen keyboard   "
                "Back: the canvas";
     }
 }
@@ -1130,7 +1157,7 @@ void ThemeEditorScreen::draw()
     pad_.attach();
     pad_.beginFrame();
     int edgeX = 0, edgeY = 0;
-    if (pad_.takeEdge(edgeX, edgeY)) pad_.setRegion(regionStep(pad_.region(), edgeX, edgeY));
+    if (pad_.takeEdge(edgeX, edgeY)) pad_.setRegion(widgetRegionStep(pad_.region(), edgeX, edgeY, session_.project().vertical));
     if (pad_.region() != EF_CANVAS && mode_ != ECM_PICK) setMode(ECM_PICK);
     const float s = ctx_.scale;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
@@ -1155,63 +1182,60 @@ void ThemeEditorScreen::draw()
         return;
     }
 
-    pad_.beginRegion(EF_TOOLBAR, "##toolbar", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
-    drawToolbar();
-    ImGui::EndChild();
-
-    // Nobody should wonder why the theme is changing by itself
-    if (scriptAt_ < script_.size()) {
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.55f, 0.35f, 0.05f, 1.0f));
-        ImGui::BeginChild("##scriptBanner", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 1.4f), ImGuiChildFlags_None);
-        std::string file = fs::u8path(scriptPath_).filename().u8string();
-        ImGui::Text("Running the editor script %s from -editorScript: %d of %d commands done",
-                    file.c_str(), static_cast<int>(scriptAt_), static_cast<int>(script_.size()));
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", scriptPath_.c_str());
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-    }
-
-    const float sideW = 340.0f * s;
-    const float propsW = 330.0f * s;
-    const float statusH = ImGui::GetTextLineHeightWithSpacing() * 3.2f;
     ImVec2 avail = ImGui::GetContentRegionAvail();
-    avail.y -= Themes::hintStripHeight() + ImGui::GetStyle().ItemSpacing.y;   // the controller hints along the bottom
-
-    pad_.beginRegion(EF_THEME, "##theme", ImVec2(sideW, avail.y), ImGuiChildFlags_Borders);
+    avail.y -= Themes::hintStripHeight() + ImGui::GetStyle().ItemSpacing.y;
+    const bool vertical = session_.project().vertical;
+    const float gap = ImGui::GetStyle().ItemSpacing.x;
+    const float themeH = 174.0f * s;
+    const float actionsH = ImGui::GetFrameHeightWithSpacing() + 8.0f * s;
+    const float leftW = vertical ? avail.x : std::max(300.0f * s, avail.x - 480.0f * s - gap);
+    const float leftH = vertical ? avail.y * 0.65f : avail.y;
+    ImGui::BeginChild("##left", ImVec2(leftW, leftH));
+    pad_.beginRegion(EF_THEME, "##theme", ImVec2(0, themeH), ImGuiChildFlags_Borders);
     drawThemePanel();
     ImGui::EndChild();
-
-    ImGui::SameLine();
-    float canvasW = std::max(100.0f, avail.x - sideW - propsW - ImGui::GetStyle().ItemSpacing.x * 2.0f);
-    ImGui::BeginChild("##canvasColumn", ImVec2(canvasW, avail.y), ImGuiChildFlags_None,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    pad_.beginRegion(EF_CANVAS, "##canvas", ImVec2(canvasW, avail.y - statusH), ImGuiChildFlags_Borders,
-                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const float canvasH = ImGui::GetContentRegionAvail().y - (vertical ? 0 : actionsH + ImGui::GetStyle().ItemSpacing.y);
+    ImGui::BeginChild("##canvasTile", ImVec2(0, canvasH), ImGuiChildFlags_Borders);
+    pad_.beginRegion(EF_TOOLBAR, "##toolbar", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+    ImGui::SeparatorText("CANVAS");
+    drawToolbar();
+    ImGui::EndChild();
+    const float statusH = ImGui::GetTextLineHeightWithSpacing() * 2.0f;
+    pad_.beginRegion(EF_CANVAS, "##canvas", ImVec2(0, std::max(40.0f, ImGui::GetContentRegionAvail().y - statusH - ImGui::GetStyle().ItemSpacing.y - (vertical ? actionsH + ImGui::GetStyle().ItemSpacing.y : 0))),
+                     ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     drawCanvas();
     ImGui::EndChild();
-
-    // Status, then what the generator and the engine said about the page
-    ImGui::BeginChild("##status", ImVec2(canvasW, 0), ImGuiChildFlags_None);
-    if (!status_.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : statusIsInfo_ ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-        ImGui::TextWrapped("%s", status_.c_str());
-        ImGui::PopStyleColor();
+    ImGui::BeginChild("##status", ImVec2(0, statusH));
+    if (scriptAt_ < script_.size()) ImGui::Text("Running editor script: %d / %d", static_cast<int>(scriptAt_), static_cast<int>(script_.size()));
+    if (!status_.empty()) ImGui::TextWrapped("%s", status_.c_str());
+    for (const auto& issue : genIssues_) ImGui::TextWrapped("%s", issue.c_str());
+    for (const auto& issue : engineIssues_) ImGui::TextWrapped("Engine: %s", issue.c_str());
+    ImGui::EndChild();
+    if (vertical) drawActions();
+    ImGui::EndChild();
+    if (!vertical) drawActions();
+    ImGui::EndChild();
+    if (vertical) {
+        const float h = std::max(60.0f, avail.y - leftH - ImGui::GetStyle().ItemSpacing.y);
+        pad_.beginRegion(EF_PROPS, "##props", ImVec2((avail.x - gap) * 0.5f, h), ImGuiChildFlags_Borders);
+        drawProperties();
+        ImGui::EndChild();
+        ImGui::SameLine();
+        pad_.beginRegion(EF_THEME_PROPS, "##themeProps", ImVec2(0, h), ImGuiChildFlags_Borders);
+        drawThemeSettings();
+        ImGui::EndChild();
     }
-    else if (!pad_.controllerActive()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        ImGui::TextWrapped("Drag to move, drag a handle to resize, click again to pick the widget underneath. "
-                           "Arrows nudge (Shift: 10), Delete removes, Ctrl+Z / Ctrl+Y undo and redo, Ctrl+S saves.");
-        ImGui::PopStyleColor();
+    else {
+        ImGui::SameLine();
+        ImGui::BeginChild("##right", ImVec2(0, avail.y));
+        pad_.beginRegion(EF_THEME_PROPS, "##themeProps", ImVec2(0, avail.y / 3.0f), ImGuiChildFlags_Borders);
+        drawThemeSettings();
+        ImGui::EndChild();
+        pad_.beginRegion(EF_PROPS, "##props", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        drawProperties();
+        ImGui::EndChild();
+        ImGui::EndChild();
     }
-    for (const std::string& issue : genIssues_) ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "%s", issue.c_str());
-    for (const std::string& issue : engineIssues_) ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.4f, 1.0f), "Engine: %s", issue.c_str());
-    ImGui::EndChild();
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-    pad_.beginRegion(EF_PROPS, "##props", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
-    drawProperties();
-    ImGui::EndChild();
 
     // What the controls do here; the mouse's and keys' shortcuts are under the canvas
     const std::string hints = pad_.controllerActive() ? controllerHints() : "";
@@ -1225,19 +1249,6 @@ void ThemeEditorScreen::draw()
 
 void ThemeEditorScreen::drawToolbar()
 {
-    const ThemeProject& p = session_.project();
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Theme editor: %s%s", p.name.c_str(), session_.dirty() ? " *" : "");
-    ImGui::SameLine();
-    ImGui::TextDisabled("(layouts/%s, %d x %d)", folder_.c_str(), p.canvasW(), p.canvasH());
-
-    // Right-aligned actions
-    const char* labels[] = { "Add widget", "Undo", "Redo", "Save", "Use this theme", "Close" };
-    float width = 0.0f;
-    for (const char* label : labels) width += ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - width));
-    if (ImGui::Button("Add widget")) { showAdd_ = true; addFilter_.clear(); }
-    ImGui::SameLine();
     ImGui::BeginDisabled(!session_.canUndo());
     if (ImGui::Button("Undo")) session_.undo();
     ImGui::EndDisabled();
@@ -1245,18 +1256,8 @@ void ThemeEditorScreen::drawToolbar()
     ImGui::BeginDisabled(!session_.canRedo());
     if (ImGui::Button("Redo")) session_.redo();
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Save")) job_ = Job::Save;
-    ImGui::SameLine();
-    bool inUse = Utils::toLower(originalLayout_) == Utils::toLower(folder_);
-    ImGui::BeginDisabled(session_.dirty() || inUse);
-    if (ImGui::Button("Use this theme")) job_ = Job::Use;
-    ImGui::EndDisabled();
-    if (session_.dirty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Save the theme first");
-    ImGui::SameLine();
-    if (ImGui::Button("Close")) requestClose();
-
     // The preview's options
+    ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("Show:");
     ImGui::SameLine();
@@ -1273,37 +1274,39 @@ void ThemeEditorScreen::drawToolbar()
         ImGui::SetTooltip("While dragging with the mouse, edges and centres line up with the other widgets' and the page's "
                           "centre, with a line to show it. Hold Alt to drag without them.");
     }
+    ImGui::Text("Widget %d/%d", session_.selected() + 1, static_cast<int>(session_.page().widgets.size()));
     ImGui::SameLine();
-    ImGui::TextDisabled("Preview with:");
+    if (ImGui::Button("< Prev Widget")) session_.select(listStep(session_.selected(), static_cast<int>(session_.page().widgets.size()), -1));
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(220.0f * ctx_.scale);
-    const bool open = ImGui::BeginCombo("##previewCollection", previewName_.c_str());
-    // Left / Right: the previous / next collection
-    if (const int step = open ? 0 : pad_.choice("Preview with")) {
-        auto at = std::find(collections_.begin(), collections_.end(), previewName_);
-        const int next = choiceStep(at == collections_.end() ? -1 : static_cast<int>(at - collections_.begin()),
-                                    static_cast<int>(collections_.size()), step);
-        if (next >= 0) {
-            previewName_ = collections_[next];
-            previewDirty_ = true;
-        }
-    }
-    if (open) {
-        for (const std::string& name : collections_) {
-            if (ImGui::Selectable(name.c_str(), name == previewName_)) {
-                previewName_ = name;
-                previewDirty_ = true;
-            }
-            if (name == previewName_) ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
+    if (ImGui::Button("Next Widget >")) session_.select(listStep(session_.selected(), static_cast<int>(session_.page().widgets.size()), 1));
+    ImGui::SameLine();
+    if (ImGui::Button("+ Add Widget")) { showAdd_ = true; addFilter_.clear(); addProblem_.clear(); }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!session_.selectedWidget());
+    if (ImGui::Button("Delete Widget")) showDeleteWidget_ = true;
+    ImGui::EndDisabled();
+}
+
+void ThemeEditorScreen::drawActions()
+{
+    pad_.beginRegion(EF_ACTIONS, "##actions", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+    if (ImGui::Button(session_.dirty() ? "Save *" : "Save")) job_ = Job::Save;
+    ImGui::SameLine();
+    bool inUse = Utils::toLower(originalLayout_) == Utils::toLower(folder_);
+    ImGui::BeginDisabled(session_.dirty() || inUse);
+    if (ImGui::Button("Use this theme")) job_ = Job::Use;
+    ImGui::EndDisabled();
+    if (session_.dirty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Save the theme first");
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("Close").x - ImGui::GetStyle().FramePadding.x * 2));
+    if (ImGui::Button("Close")) requestClose();
+
+    ImGui::EndChild();
 }
 
 void ThemeEditorScreen::drawThemePanel()
 {
     const ThemeProject& p = session_.project();
-    ImGui::SeparatorText("Theme");
+    ImGui::SeparatorText("THEME");
     std::string name = p.name;
     ImGui::SetNextItemWidth(-1.0f);
     const bool typed = ImGui::InputText("##themeName", &name);
@@ -1318,6 +1321,32 @@ void ThemeEditorScreen::drawThemePanel()
     ImGui::SameLine();
     if (ImGui::RadioButton("Portrait", &vertical, 1)) session_.setVertical(true);
 
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Collection");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220.0f * ctx_.scale);
+    collectionOpen_ = ImGui::BeginCombo("##collection", chosenCollection_.empty() ? "(Top Level)" : chosenCollection_.c_str(), ImGuiComboFlags_HeightLarge);
+    if (collectionOpen_) {
+        ImGui::SeparatorText("Collection");
+        drawCollections();
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("< Prev Item") && page_) page_->scroll(false, false);
+    ImGui::SameLine();
+    if (ImGui::Button("Next Item >") && page_) page_->scroll(true, false);
+    bool menu = false;
+    for (const auto& row : tree_) if (row.name == chosenCollection_) { menu = row.menu; break; }
+    ImGui::Text("Template %s", pageNameFor(chosenCollection_, menu).c_str());
+    if (!chosenCollection_.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Change")) openTemplateDialog(chosenCollection_, false, "");
+    }
+}
+
+void ThemeEditorScreen::drawThemeSettings()
+{
+    ImGui::SeparatorText("THEME PROPERTIES");
     // A script's "open" command unfolds a section, so it shows in a screenshot
     auto unfold = [this](const char* section) {
         if (openSection_ == section || openSection_ == std::string("-") + section) {
@@ -1333,51 +1362,6 @@ void ThemeEditorScreen::drawThemePanel()
     const bool splash = ImGui::CollapsingHeader("Splash");
     pad_.node();
     if (splash) drawSplash();
-    drawPages();
-    if (openSection_ == "collections") ImGui::SetScrollHereY(0.0f);   // and scrolled to
-    unfold("collections");
-    const bool collections = ImGui::CollapsingHeader("Collections", ImGuiTreeNodeFlags_DefaultOpen);
-    pad_.node();
-    if (collections) drawCollections();
-
-    ImGui::SeparatorText("Widgets on this page");
-    const auto& widgets = session_.page().widgets;
-    if (widgets.empty()) ImGui::TextDisabled("None yet: choose Add widget.");
-    else if (widgets.size() > 1) ImGui::TextDisabled("Ctrl-click or Shift-click for several.");
-    // A widget picked elsewhere (the canvas, the controller) is scrolled to here
-    bool scrollTo = session_.selected() != listPrimary_ && !listClicked_;
-    listClicked_ = false;
-    listPrimary_ = session_.selected();
-    for (int i = 0; i < static_cast<int>(widgets.size()); ++i) {
-        const WidgetInstance& w = widgets[i];
-        const WidgetDef* def = session_.library().find(w.def);
-        ImVec2 pos = ImGui::GetCursorScreenPos();
-        float box = ImGui::GetTextLineHeight() * 0.7f;
-        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x, pos.y + box * 0.25f), ImVec2(pos.x + box, pos.y + box * 1.25f),
-                                                  colourOf(def ? def->color : "", 255));
-        ImGui::Dummy(ImVec2(box, box));
-        ImGui::SameLine();
-        if (w.canvasHide) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        std::string label = w.name + "##w" + std::to_string(i);
-        if (ImGui::Selectable(label.c_str(), session_.isSelected(i))) {
-            const ImGuiIO& io = ImGui::GetIO();
-            if (io.KeyCtrl) session_.toggleSelected(i);
-            else if (io.KeyShift && session_.selected() >= 0) {
-                std::vector<int> order;
-                for (int k = 0; k < static_cast<int>(widgets.size()); ++k) order.push_back(k);
-                session_.setSelection(selectionRange(order, session_.selected(), i));
-            }
-            else session_.select(i);
-            listClicked_ = true;
-        }
-        if (scrollTo && i == session_.selected()) {
-            if (!ImGui::IsItemVisible()) ImGui::SetScrollHereY(0.5f);
-            scrollTo = false;
-        }
-        if (w.canvasHide) ImGui::PopStyleColor();
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("L19").x);
-        ImGui::TextDisabled("L%d", w.layer);
-    }
 }
 
 void ThemeEditorScreen::drawFileRow(const char* label, const std::string& value, const FileRequest& request,
@@ -1499,111 +1483,6 @@ void ThemeEditorScreen::drawSplash()
     ImGui::Spacing();
 }
 
-void ThemeEditorScreen::drawPages()
-{
-    ImGui::SeparatorText("Pages");
-    for (int i = 0; i < session_.pageCount(); ++i) {
-        std::string label = session_.pageLabel(i) + "##page" + std::to_string(i);
-        if (ImGui::Selectable(label.c_str(), i == session_.pageIndex())) {
-            session_.setPage(i);
-            // A collection's page previews with that collection
-            const std::string& c = session_.page().collection;
-            if (!c.empty() && !ThemeProject::isSplashPage(c) && c != MENUS_TEMPLATE) {
-                previewName_ = c;
-            }
-            previewDirty_ = true;
-        }
-    }
-    if (ImGui::Button("New template...")) openTemplateDialog("", true, "");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("A page of its own for one or more collections");
-
-    const ThemePage& page = session_.page();
-    if (page.collection.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        ImGui::TextWrapped("The Default page: every collection without a template of its own.");
-        ImGui::PopStyleColor();
-        return;
-    }
-    if (ThemeProject::isSplashPage(page.collection)) return;
-
-    // The template being edited
-    const std::string primary = page.collection;
-    ImGui::SameLine();
-    if (ImGui::Button("Copy...")) openTemplateDialog("", true, primary);
-    ImGui::SameLine();
-    if (ImGui::Button("Delete...")) {
-        delPrimary_ = primary;
-        delReplacement_.clear();
-        showDeleteTpl_ = true;
-    }
-    std::string name = page.displayName();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Name");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-1.0f);
-    const bool typed = ImGui::InputText("##tplName", &name);
-    const bool keyboard = pad_.text("Template name", name);
-    if (typed || keyboard) {
-        session_.setCoalesceKey("tplName");
-        session_.renameTemplate(primary, name);
-    }
-    if (keyboard || ImGui::IsItemDeactivated()) session_.endCoalesce();
-
-    // Its collections
-    ImGui::TextDisabled(primary == MENUS_TEMPLATE ? "Used for every menu without a page of its own, and:" : "Used for:");
-    std::vector<std::string> covered;
-    if (primary != MENUS_TEMPLATE) covered.push_back(primary);
-    for (const std::string& m : page.members) covered.push_back(m);
-    // Changes wait until the page has been drawn: moving a collection can
-    // delete a template, and `page` refers into the project's pages
-    std::string unassign, add;
-    for (const std::string& c : covered) {
-        ImGui::PushID(c.c_str());
-        ImGui::Bullet();
-        ImGui::TextUnformatted(c.c_str());
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("x").x - ImGui::GetStyle().FramePadding.x * 2.0f);
-        const bool last = covered.size() == 1 && primary != MENUS_TEMPLATE;
-        ImGui::BeginDisabled(last);
-        if (ImGui::SmallButton("x")) unassign = c;
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip(last ? "A template needs a collection: delete the template instead"
-                                   : "Back to the Default page");
-        }
-        ImGui::PopID();
-    }
-    // More collections: the ones not on it already
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::BeginCombo("##addCollection", "Add a collection...", ImGuiComboFlags_HeightLarge)) {
-        // Typing filters straight away; with the controller the list comes first
-        if (ImGui::IsWindowAppearing() && !pad_.controllerActive()) ImGui::SetKeyboardFocusHere();
-        ImGui::InputTextWithHint("##addFilter", "Filter", &tplFilter_);
-        pad_.text("Filter collections", tplFilter_);
-        const std::string filter = Utils::toLower(tplFilter_);
-        std::set<std::string> listed;
-        for (const TreeRow& row : tree_) {
-            if (row.depth < 0 || row.name.empty() || page.covers(row.name) || !listed.insert(row.name).second) continue;
-            if (!filter.empty() && Utils::toLower(row.name).find(filter) == std::string::npos) continue;
-            std::string label = row.name + "  (now " + pageNameFor(row.name, row.menu) + ")##add" + row.name;
-            bool handMade = isHandMade(row.name);
-            ImGui::BeginDisabled(handMade);
-            bool chosen = ImGui::Selectable(label.c_str());
-            ImGui::EndDisabled();
-            if (handMade && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("Its page in this theme was written by hand; the editor won't overwrite it");
-            }
-            if (chosen) {
-                add = row.name;
-                ImGui::CloseCurrentPopup();
-                break;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (!unassign.empty()) session_.assignTemplate(unassign, "");
-    else if (!add.empty()) session_.assignTemplate(add, primary);
-}
-
 void ThemeEditorScreen::refreshHandMade()
 {
     // Read once per tree and after saving, not per frame: each is a file read
@@ -1624,67 +1503,37 @@ bool ThemeEditorScreen::isHandMade(const std::string& collection) const
 
 void ThemeEditorScreen::drawCollections()
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-    ImGui::TextWrapped("The page each collection gets. A collection without a template uses the Default page "
-                       "(RetroFE doesn't pass a menu's page on to the collections in it).");
-    ImGui::PopStyleColor();
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::InputTextWithHint("##treeFilter", "Filter collections", &treeFilter_);
-    pad_.text("Filter collections", treeFilter_);
-    const std::string filter = Utils::toLower(treeFilter_);
-    std::vector<int> rows;
-    for (int i = 0; i < static_cast<int>(tree_.size()); ++i) {
-        if (!filter.empty() && (tree_[i].depth < 0 || Utils::toLower(tree_[i].name).find(filter) == std::string::npos)) continue;
-        rows.push_back(i);
-    }
-    const float line = ImGui::GetTextLineHeightWithSpacing();
-    const float height = line * std::min(12.0f, std::max(3.0f, static_cast<float>(rows.size()))) + ImGui::GetStyle().WindowPadding.y;
-    // NavFlattened: the controller moves into the list like any other rows
-    ImGui::BeginChild("##tree", ImVec2(0, height), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
-    ImGuiListClipper clipper;
-    clipper.Begin(static_cast<int>(rows.size()), line);
-    while (clipper.Step()) {
-        for (int k = clipper.DisplayStart; k < clipper.DisplayEnd; ++k) {
-            const TreeRow& row = tree_[rows[k]];
-            ImGui::PushID(rows[k]);
-            if (row.depth < 0) {
-                ImGui::TextDisabled("Not in a menu:");
-                ImGui::PopID();
-                continue;
-            }
-            const std::string page = row.otherLayout.empty() ? pageNameFor(row.name, row.menu) : "theme " + row.otherLayout;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row.depth * ImGui::GetFontSize() * 0.8f);
-            const std::string label = row.name + (row.children ? " >" : "");
-            if (ImGui::Selectable(label.c_str(), row.name == chosenCollection_)) {
-                chosenCollection_ = row.name;
-                // Preview it, on the page RetroFE would show it with
-                previewName_ = row.name;
-                const ThemePage* shown = &pageShownFor(session_.project(), row.name, row.menu);
-                for (int i = 0; i < session_.pageCount(); ++i) {
-                    if (&session_.project().pages[i] == shown) session_.setPage(i);
+    const auto rows = collectionRows(tree_, collapsedCollections_, session_.project(), session_.page());
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const auto& row = rows[i];
+        ImGui::PushID(static_cast<int>(i));
+        if (row.depth < 0) ImGui::SeparatorText("Not in a menu");
+        else {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (16.0f + 22.0f * row.depth) * ctx_.scale);
+            if (!row.covered) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            if (row.children) {
+                ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+                if (ImGui::ArrowButton("##branch", collapsedCollections_.count(row.name) ? ImGuiDir_Right : ImGuiDir_Down)) {
+                    if (collapsedCollections_.count(row.name)) collapsedCollections_.erase(row.name);
+                    else collapsedCollections_.insert(row.name);
                 }
-                previewDirty_ = true;
+                ImGui::PopItemFlag();
+                ImGui::SameLine();
             }
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) openTemplateDialog(row.name, false, "");
-            const float w = ImGui::CalcTextSize(page.c_str()).x;
-            ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - w));
-            if (page == "Default" || !row.otherLayout.empty()) ImGui::TextDisabled("%s", page.c_str());
-            else ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", page.c_str());
-            ImGui::PopID();
+            if (ImGui::Selectable(row.label().c_str(), row.name == chosenCollection_)) {
+                chosenCollection_ = row.name;
+                if (!row.name.empty()) previewName_ = row.name;
+                const ThemePage* shown = &pageShownFor(session_.project(), row.name, row.menu, nullptr, row.videos, row.layoutFrom);
+                for (int page = 0; page < session_.pageCount(); ++page)
+                    if (&session_.project().pages[page] == shown) session_.setPage(page);
+                previewDirty_ = true;
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::IsItemFocused()) collectionFocus_ = row.name;
+            if (row.name == chosenCollection_) ImGui::SetItemDefaultFocus();
+            if (!row.covered) ImGui::PopStyleColor();
         }
-    }
-    ImGui::EndChild();
-    if (!treeFromIndex_) ImGui::TextDisabled(ctx_.library ? "Reading the menus..." : "No menu tree: collections are listed by name.");
-    if (!chosenCollection_.empty()) {
-        bool menu = false;
-        std::string other;
-        for (const TreeRow& row : tree_) {
-            if (row.name == chosenCollection_) { menu = row.menu; other = row.otherLayout; break; }
-        }
-        ImGui::TextWrapped("%s uses %s.", chosenCollection_.c_str(),
-                           other.empty() ? ("the " + pageNameFor(chosenCollection_, menu) + " page").c_str()
-                                         : ("the theme " + other + " (its own layout setting)").c_str());
-        if (ImGui::Button("Change its template...")) openTemplateDialog(chosenCollection_, false, "");
+        ImGui::PopID();
     }
 }
 
@@ -1752,14 +1601,15 @@ void ThemeEditorScreen::drawCanvas()
             sinceNudge_ = 0.0f;   // a pause ends this run of nudges as one undo step (update())
             nudging_ = true;
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete)) session_.removeSelected();
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete)) showDeleteWidget_ = true;
     }
     if (!io.WantTextInput && io.KeyCtrl && !pad_.keyboardOpen()) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) io.KeyShift ? session_.redo() : session_.undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) session_.redo();
         if (ImGui::IsKeyPressed(ImGuiKey_S, false)) job_ = Job::Save;
         if (ImGui::IsKeyPressed(ImGuiKey_A, false)) session_.selectAll();
-        if (ImGui::IsKeyPressed(ImGuiKey_D, false)) session_.duplicateSelected();
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !session_.duplicateSelected())
+            setStatus("This page already has a scrolling menu (one per page).", true);
     }
 
     // The wireframe, from the project (never from the engine)
@@ -1904,8 +1754,8 @@ void ThemeEditorScreen::drawProperties()
     const WidgetInstance* w = session_.selectedWidget();
     const WidgetDef* def = session_.selectedDef();
     if (!w) {
-        ImGui::SeparatorText("Widget");
-        ImGui::TextWrapped("Click a widget on the canvas or in the list to change it, or choose Add widget.");
+        ImGui::SeparatorText("WIDGET PROPERTIES");
+        ImGui::TextWrapped("Select a widget on the canvas, or add one with + Add Widget.");
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TextWrapped("Several at once: Ctrl-click or Shift-click them, or drag a box around them from an empty part of "
                            "the canvas (with Ctrl or Shift, from anywhere). With a controller, hold Select and press a direction.");
@@ -1918,7 +1768,7 @@ void ThemeEditorScreen::drawProperties()
         def = session_.selectedDef();
         if (!w) return;
     }
-    ImGui::SeparatorText(def ? def->name.c_str() : w->def.c_str());
+    ImGui::SeparatorText(("WIDGET PROPERTIES - " + w->name).c_str());
     if (def && !def->summary.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TextWrapped("%s", def->summary.c_str());
@@ -2012,9 +1862,10 @@ void ThemeEditorScreen::drawProperties()
     if (session_.selectionCount() > 1) return;   // the group's Duplicate and Delete are at the top
     if (ImGui::Button("Duplicate")) {
         if (session_.duplicateSelected()) setStatus("Added a copy, 20 units down and right (Ctrl+D).", false);
+        else setStatus("This page already has a scrolling menu (one per page).", true);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete widget")) session_.removeSelected();
+    if (ImGui::Button("Delete widget")) showDeleteWidget_ = true;
 }
 
 void ThemeEditorScreen::alignSelection(int op)
@@ -2060,9 +1911,10 @@ void ThemeEditorScreen::drawSelectionTools()
     if (n < 3 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Spacing needs three or more");
     if (ImGui::Button("Duplicate them")) {
         if (session_.duplicateSelected()) setStatus("Added " + std::to_string(n) + " copies, 20 units down and right; they're selected.", false);
+        else setStatus("This page already has a scrolling menu (one per page).", true);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete them")) session_.removeSelected();
+    if (ImGui::Button("Delete them")) showDeleteWidget_ = true;
     drawSharedSettings();
     if (primary) {
         if (ImGui::Button("Only this one")) session_.select(session_.selected());
@@ -2278,60 +2130,78 @@ void ThemeEditorScreen::syncPopup(const char* name, bool& show, bool& opened)
 void ThemeEditorScreen::drawAddWidget()
 {
     ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowSize(ImVec2(std::min(io.DisplaySize.x - 40.0f, 760.0f * ctx_.scale),
-                                    std::min(io.DisplaySize.y - 40.0f, 560.0f * ctx_.scale)), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.86f, io.DisplaySize.y * 0.82f), ImGuiCond_Appearing);
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    syncPopup("Add widget", showAdd_, addOpen_);
-    if (!ImGui::BeginPopupModal("Add widget", &showAdd_)) return;
-    if (!showAdd_) {
-        ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-        return;
-    }
-    ImGui::SetNextItemWidth(-1.0f);
-    // Typing searches straight away; with the controller the list comes first
-    // (Select on the search field types with the on-screen keyboard)
+    syncPopup("Add Widget", showAdd_, addOpen_);
+    if (!ImGui::BeginPopupModal("Add Widget", &showAdd_)) return;
+    if (!showAdd_) { ImGui::CloseCurrentPopup(); ImGui::EndPopup(); return; }
+    const float footer = ImGui::GetFrameHeightWithSpacing() + 8.0f * ctx_.scale;
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    bool add = false, focusAdd = false;
+    ImGui::BeginChild("##widgets", ImVec2(avail.x * 0.40f, avail.y - footer), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
+    ImGui::SeparatorText("WIDGETS");
+    ImGui::SetNextItemWidth(-1);
     if (ImGui::IsWindowAppearing() && !pad_.controllerActive()) ImGui::SetKeyboardFocusHere();
-    // Enter adds the first widget the search finds, so it works from the keyboard
-    bool addFirst = ImGui::InputTextWithHint("##filter", "Search widgets, Enter adds the first", &addFilter_,
-                                             ImGuiInputTextFlags_EnterReturnsTrue);
+    const bool addFirst = ImGui::InputTextWithHint("##filter", "Search widgets, Enter adds the first", &addFilter_, ImGuiInputTextFlags_EnterReturnsTrue);
     pad_.text("Search widgets", addFilter_);
-    std::string filter = Utils::toLower(addFilter_);
-
-    ImGui::BeginChild("##defs", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
-    static const std::pair<const char*, const char*> categories[] = {
-        { "menu", "Wheels and menus" }, { "media", "Art and video" }, { "text", "Text" }, { "static", "Fixed images, video and text" }
-    };
-    for (const auto& category : categories) {
-        bool header = false;
-        for (const WidgetDef& def : session_.library().defs) {
-            if (def.category != category.first) continue;
-            if (!filter.empty() && Utils::toLower(def.name).find(filter) == std::string::npos &&
-                Utils::toLower(def.summary).find(filter) == std::string::npos) {
-                continue;
+    const std::string filter = Utils::toLower(addFilter_);
+    static const char* sections[] = { "GAME MEDIA", "WHEELS", "GAME METADATA", "SYSTEM ARTWORK", "OTHER ARTWORK", "OTHER TEXT", "COLLECTION", "OTHER" };
+    bool first = true;
+    for (const char* section : sections) {
+        bool any = false;
+        for (const auto& def : session_.library().defs)
+            if (std::string(widgetSection(def.name)) == section && (filter.empty() || Utils::toLower(def.name + " " + def.summary).find(filter) != std::string::npos)) any = true;
+        if (!any) continue;
+        const bool expanded = ImGui::CollapsingHeader(section, ImGuiTreeNodeFlags_DefaultOpen);
+        pad_.node();
+        for (const auto& def : session_.library().defs) {
+            if (std::string(widgetSection(def.name)) != section || (!filter.empty() && Utils::toLower(def.name + " " + def.summary).find(filter) == std::string::npos)) continue;
+            if (first && addFirst) { addSelected_ = def.id; add = true; }
+            first = false;
+            if (!expanded) continue;
+            if (ImGui::Selectable((def.name + "##" + def.id).c_str(), addSelected_ == def.id, ImGuiSelectableFlags_AllowDoubleClick)) {
+                addSelected_ = def.id;
+                if (pad_.controllerActive()) focusAdd = true;
+                else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) add = true;
             }
-            if (!header) {
-                ImGui::SeparatorText(category.second);
-                header = true;
-            }
-            ImGui::PushID(def.id.c_str());
-            ImVec2 pos = ImGui::GetCursorScreenPos();
-            float box = ImGui::GetTextLineHeight();
-            ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + box, pos.y + box), colourOf(def.color, 255), 3.0f);
-            ImGui::Dummy(ImVec2(box, box));
-            ImGui::SameLine();
-            if (ImGui::Selectable(def.name.c_str()) || addFirst) {
-                addFirst = false;
-                showAdd_ = false;
-                ImGui::CloseCurrentPopup();
-                if (session_.addWidget(def.id)) askForFiles();
-            }
-            ImGui::SameLine(260.0f * ctx_.scale);
-            ImGui::TextDisabled("%s", def.summary.c_str());
-            ImGui::PopID();
         }
     }
     ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##description", ImVec2(0, avail.y - footer), ImGuiChildFlags_Borders);
+    const WidgetDef* selected = session_.library().find(addSelected_);
+    ImGui::SeparatorText("PREVIEW");
+    if (selected) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(colourOf(selected->color, 255)));
+        ImGui::BeginChild("##typeTile", ImVec2(0, 120.0f * ctx_.scale), ImGuiChildFlags_Borders);
+        ImGui::TextWrapped("%s   %s", selected->glyph.c_str(), selected->name.c_str());
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::SeparatorText("DESCRIPTION");
+        ImGui::TextWrapped("%s", selected->summary.c_str());
+        ImGui::Text("Default size %d x %d - layer %d", selected->w, selected->h, selected->layer);
+        if (!selected->info.empty()) ImGui::TextWrapped("%s", selected->info.c_str());
+        if (selected->menu) ImGui::TextUnformatted("Scrolling menu: one per page.");
+        ImGui::SeparatorText("SETTINGS");
+        for (const auto& var : selected->vars) ImGui::BulletText("%s: %s", var.name.c_str(), var.def.c_str());
+    }
+    else ImGui::TextUnformatted("Choose a widget from the list.");
+    if (!addProblem_.empty()) ImGui::TextWrapped("%s", addProblem_.c_str());
+    ImGui::EndChild();
+    if (focusAdd) pad_.focusNext();
+    ImGui::BeginDisabled(!selected);
+    if (ImGui::Button("Add Widget")) add = true;
+    ImGui::EndDisabled();
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("Cancel").x - ImGui::GetStyle().FramePadding.x * 2));
+    if (ImGui::Button("Cancel")) { showAdd_ = false; ImGui::CloseCurrentPopup(); }
+    if (add && selected) {
+        if (session_.addWidget(selected->id)) {
+            showAdd_ = false;
+            ImGui::CloseCurrentPopup();
+            askForFiles();
+        }
+        else addProblem_ = "This page already has a scrolling menu (one per page).";
+    }
     ImGui::EndPopup();
 }
 
@@ -2355,10 +2225,11 @@ void ThemeEditorScreen::drawBrowser()
 void ThemeEditorScreen::drawTemplateDialog()
 {
     ImGuiIO& io = ImGui::GetIO();
-    syncPopup("Collection template", showTemplate_, templateOpen_);
+    const std::string title = "Template for \"" + tplCollection_ + "\"###collectionTemplate";
+    syncPopup(title.c_str(), showTemplate_, templateOpen_);
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f * ctx_.scale, 0), ImVec2(io.DisplaySize.x - 40.0f, io.DisplaySize.y - 40.0f));
-    if (!ImGui::BeginPopupModal("Collection template", &showTemplate_, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    if (!ImGui::BeginPopupModal(title.c_str(), &showTemplate_, ImGuiWindowFlags_AlwaysAutoResize)) return;
     if (!showTemplate_) {
         ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
@@ -2409,41 +2280,45 @@ void ThemeEditorScreen::drawTemplateDialog()
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f), "Its layout setting uses the theme %s, so RetroFE doesn't show this theme for it.",
                                otherLayout.c_str());
         }
-        ImGui::TextDisabled("Uses now: %s", pageNameFor(tplCollection_, menu).c_str());
+        ImGui::TextDisabled("Current template: %s", pageNameFor(tplCollection_, menu).c_str());
     }
     ImGui::Separator();
 
     // What it should use
-    ImGui::RadioButton("The Default page", &tplChoice_, 1);
+    ImGui::TextUnformatted("Use template:");
+    ImGui::RadioButton("Create new template...", &tplChoice_, 0);
+    ImGui::RadioButton("Default", &tplChoice_, 1);
+    if (menu && !p.page(MENUS_TEMPLATE)) ImGui::RadioButton("Menus", &tplChoice_, -1);
     for (size_t i = 0; i < templates.size(); ++i) {
+        if (templates[i] == MENUS_TEMPLATE && !menu) continue;
         const ThemePage* t = p.page(templates[i]);
         std::string label = t->displayName();
+        if (&shownPageFor(tplCollection_, menu) == t) label += " (current)";
         if (templates[i] == MENUS_TEMPLATE) label += " (every menu)";
         label += "##tpl" + std::to_string(i);
         ImGui::RadioButton(label.c_str(), &tplChoice_, static_cast<int>(i) + 2);
     }
-    ImGui::RadioButton("A new template", &tplChoice_, 0);
     if (tplChoice_ == 0) {
         ImGui::Indent();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Name");
+        ImGui::TextUnformatted("Name:");
         ImGui::SameLine(ImGui::GetFontSize() * 5.0f);
         ImGui::SetNextItemWidth(260.0f * ctx_.scale);
         ImGui::InputText("##tplNewName", &tplName_);
         pad_.text("Template name", tplName_);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Based on");
+        ImGui::TextUnformatted("Based on:");
         ImGui::SameLine(ImGui::GetFontSize() * 5.0f);
         ImGui::SetNextItemWidth(260.0f * ctx_.scale);
         auto seedLabel = [&](const std::string& seed) {
             if (seed.empty()) return std::string("The Default page");
-            if (seed == EditorSession::BLANK) return std::string("An empty page");
+            if (seed == EditorSession::BLANK) return std::string("Blank");
             const ThemePage* t = p.page(seed);
             return t ? t->displayName() : seed;
         };
         if (ImGui::BeginCombo("##tplSeed", seedLabel(tplBasedOn_).c_str())) {
             if (ImGui::Selectable("The Default page", tplBasedOn_.empty())) tplBasedOn_.clear();
-            if (ImGui::Selectable("An empty page", tplBasedOn_ == EditorSession::BLANK)) tplBasedOn_ = EditorSession::BLANK;
+            if (ImGui::Selectable("Blank", tplBasedOn_ == EditorSession::BLANK)) tplBasedOn_ = EditorSession::BLANK;
             for (const std::string& t : templates) {
                 if (ImGui::Selectable((seedLabel(t) + "##seed" + t).c_str(), tplBasedOn_ == t)) tplBasedOn_ = t;
             }
@@ -2455,7 +2330,7 @@ void ThemeEditorScreen::drawTemplateDialog()
     // The collections under a menu: RetroFE doesn't pass a menu's page on, so this does it here
     const std::vector<std::string> under = tplCollection_.empty() ? std::vector<std::string>() : descendants(tplCollection_);
     if (!under.empty()) {
-        std::string label = "Also the " + std::to_string(under.size()) + " collection" + (under.size() == 1 ? "" : "s") + " under " + tplCollection_;
+        std::string label = "Also apply to the collections under \"" + tplCollection_ + "\"";
         ImGui::Checkbox(label.c_str(), &tplCascade_);
     }
     else {
@@ -2479,7 +2354,7 @@ void ThemeEditorScreen::drawTemplateDialog()
         problem = tplProblem_;
         summary = "Makes the template " + tplName_ + " for " + tplCollection_ + " and starts editing it.";
     }
-    else {
+    else if (tplChoice_ != -1) {
         const ThemePage* cover = p.coveredBy(tplCollection_);
         const std::string current = cover ? cover->collection : std::string();
         if (current == target && !tplCascade_) problem = tplCollection_ + " uses that already.";
@@ -2492,6 +2367,10 @@ void ThemeEditorScreen::drawTemplateDialog()
                        " is its only collection (Undo brings it back).";
         }
     }
+    if (tplChoice_ == -1 && isHandMade(tplCollection_)) problem = "This collection has a hand-made page; the editor won't overwrite it.";
+    const std::string targetName = tplChoice_ == -1 ? "Menus" : tplChoice_ == 0 ? tplName_ : target.empty() ? "Default" : p.page(target)->displayName();
+    ImGui::TextWrapped("%s", templateChangeLine(tplCollection_, targetName, tplCascade_ ? under.size() : 0).c_str());
+    ImGui::TextWrapped("RetroFE gives each collection its own page; ones under it keep theirs unless you tick the box.");
     if (!problem.empty()) ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.4f, 1.0f), "%s", problem.c_str());
     else ImGui::TextWrapped("%s", summary.c_str());
 
@@ -2500,19 +2379,21 @@ void ThemeEditorScreen::drawTemplateDialog()
         std::vector<std::string> also = tplCascade_ ? under : std::vector<std::string>();
         bool ok = false;
         int skipped = 0;
-        if (tplChoice_ == 0) {
+        if (tplChoice_ == -1) {
+            also.insert(also.begin(), tplCollection_);
+            ok = session_.newTemplate(MENUS_TEMPLATE, "Menus", "", also);
+        }
+        else if (tplChoice_ == 0) {
             ok = session_.newTemplate(tplCollection_, tplName_, tplBasedOn_, also);
         }
         else {
             also.insert(also.begin(), tplCollection_);
             ok = session_.assignTemplate(also, target, &skipped);
-            // Show the collection on its page now
-            const ThemePage* shown = &pageShownFor(session_.project(), tplCollection_, menu);
-            for (int i = 0; ok && i < session_.pageCount(); ++i) {
-                if (&session_.project().pages[i] == shown) session_.setPage(i);
-            }
         }
         if (ok) {
+            const ThemePage* shown = &shownPageFor(tplCollection_, menu);
+            for (int i = 0; i < session_.pageCount(); ++i)
+                if (&session_.project().pages[i] == shown) session_.setPage(i);
             if (tplCollection_ != MENUS_TEMPLATE) previewName_ = tplCollection_;
             previewDirty_ = true;
             setStatus(skipped ? std::to_string(skipped) + " collection(s) kept their hand-made pages." : std::string(), false);
@@ -2528,6 +2409,17 @@ void ThemeEditorScreen::drawTemplateDialog()
     if (ImGui::Button("Cancel")) {
         showTemplate_ = false;
         ImGui::CloseCurrentPopup();
+    }
+    const ThemePage* current = p.coveredBy(tplCollection_);
+    if (current && !current->collection.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Delete Template...")) {
+            delPrimary_ = current->collection;
+            delReplacement_.clear();
+            showDeleteTpl_ = true;
+            showTemplate_ = false;
+            ImGui::CloseCurrentPopup();
+        }
     }
     ImGui::EndPopup();
 }
@@ -2588,6 +2480,14 @@ void ThemeEditorScreen::drawPopups()
     drawBrowser();
     drawTemplateDialog();
     drawDeleteTemplate();
+    syncPopup("Delete Widget", showDeleteWidget_, deleteWidgetOpen_);
+    if (ImGui::BeginPopupModal("Delete Widget", &showDeleteWidget_, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Delete the selected widgets?");
+        if (ImGui::Button("Delete")) { session_.removeSelected(); showDeleteWidget_ = false; ImGui::CloseCurrentPopup(); }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) { showDeleteWidget_ = false; ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
 
     ImGuiIO& io = ImGui::GetIO();
     syncPopup("Saved", showReport_, reportOpen_);
