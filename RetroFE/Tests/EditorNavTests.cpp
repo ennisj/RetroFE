@@ -21,6 +21,7 @@
 #include "TestSupport.h"
 #include "../Source/Forms/KeyboardKeys.h"
 #include "../Source/ThemeEditor/EditorNav.h"
+#include "../Source/ThemeEditor/EditorRows.h"
 
 using namespace ThemeEditor;
 using Test::check;
@@ -36,6 +37,41 @@ namespace
 }
 
 static Test::Suite editorNav("editor controller", [] {
+    Test::run("widget editor: tile order and cycling", [] {
+        for (bool vertical : { false, true }) {
+            int region = EF_THEME;
+            std::vector<int> walk;
+            for (int i = 0; i < 6; ++i) { walk.push_back(region); region = widgetRegionCycle(region, 1, vertical); }
+            check(walk == (vertical ? std::vector<int>{ EF_THEME, EF_TOOLBAR, EF_CANVAS, EF_ACTIONS, EF_PROPS, EF_THEME_PROPS }
+                                   : std::vector<int>{ EF_THEME, EF_TOOLBAR, EF_CANVAS, EF_ACTIONS, EF_THEME_PROPS, EF_PROPS }), "tile reading order");
+            check(region == EF_THEME && widgetRegionCycle(EF_THEME, -1, vertical) == walk.back(), "wrap both ways");
+        }
+        check(widgetRegionStep(EF_THEME, 0, -1, false) == -1 && widgetRegionStep(EF_CANVAS, 0, 1, false) == EF_ACTIONS, "vertical edges follow tile stack");
+        check(widgetRegionStep(EF_THEME, 1, 0, false) == EF_THEME_PROPS && widgetRegionStep(EF_THEME_PROPS, 1, 0, false) == -1, "landscape right column edge");
+        check(widgetRegionStep(EF_PROPS, 1, 0, true) == EF_THEME_PROPS && widgetRegionStep(EF_THEME_PROPS, 0, -1, true) == EF_ACTIONS, "portrait bottom band edges");
+        check(listStep(-1, 0, 1) == -1 && listStep(-1, 3, -1) == 2 && listStep(-1, 3, 1) == 0, "empty and unselected widget cycle");
+        check(listStep(0, 3, -1) == 2 && listStep(2, 3, 1) == 0 && listStep(0, 1, 1) == 0, "widget cycle wraps");
+    });
+    Test::run("widget editor: collection dropdown rows", [] {
+        ThemeProject project;
+        ThemePage page; page.collection = "Arcade"; page.members = { "Member" }; project.pages.push_back(page);
+        ThemePage menus; menus.collection = "_menu"; project.pages.push_back(menus);
+        std::vector<CollectionRow> tree;
+        auto push = [&](const std::string& name, int depth, bool menu, bool children) {
+            CollectionRow row; row.name = name; row.depth = depth; row.menu = menu; row.children = children; tree.push_back(row);
+        };
+        push("Arcade", 0, true, true); push("Member", 1, false, false); push("Child", 1, false, false);
+        push("Menu", 0, true, false); push("", -1, false, false); push("Loose", 0, false, false);
+        auto rows = collectionRows(tree, {}, project, project.pages[1]);
+        check(rows.size() == 7 && rows[0].label() == "<root> (Top Level)" && rows[0].depth == 0, "Top Level first");
+        check(rows[1].name == "Arcade" && rows[2].name == "Member" && rows[2].depth == 1 && rows[5].label() == "Not in a menu" && rows[6].name == "Loose", "depth-first, then Not in a menu");
+        check(rows[1].covered && rows[2].covered && !rows[3].covered && !rows[4].covered && !rows[0].covered, "own and member bright, child does not inherit");
+        auto folded = collectionRows(tree, { "Arcade" }, project, project.pages[0]);
+        check(folded.size() == 5 && folded[2].name == "Menu" && folded[0].covered && folded.back().covered, "collapsed branch hides descendants, Default coverage");
+        check(collectionRows(tree, {}, project, project.pages[0]).size() == 7, "expand restores all rows");
+        check(templateChangeLine("Arcade", "Default", 0) == "Changes \"Arcade\" to Default.", "single live line");
+        check(templateChangeLine("Arcade", "Look", 2) == "Changes \"Arcade\" and its 2 collections to Look.", "branch live line");
+    });
     Test::run("editor controller: regions", [] {
         check(regionStep(EF_CANVAS, -1, 0) == EF_THEME && regionStep(EF_CANVAS, 1, 0) == EF_PROPS &&
               regionStep(EF_CANVAS, 0, -1) == EF_TOOLBAR && regionStep(EF_CANVAS, 0, 1) == -1,

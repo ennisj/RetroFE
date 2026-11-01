@@ -546,6 +546,10 @@ namespace ThemeEditor
     bool EditorSession::duplicateSelected()
     {
         if (selection_.empty()) return false;
+        for (int index : selection_) {
+            const WidgetDef* def = lib_->find(page().widgets[index].def);
+            if (def && def->menu) return false;
+        }
         const int offset = 20;
         const std::vector<DragRect> boxes = selectionBoxes();
         int dx = 0, dy = 0;
@@ -880,6 +884,12 @@ namespace ThemeEditor
     {
         const WidgetDef* def = lib_ ? lib_->find(defId) : nullptr;
         if (!def) return false;
+        if (def->menu) {
+            for (const auto& w : page().widgets) {
+                const WidgetDef* existing = lib_->find(w.def);
+                if (existing && existing->menu) return false;
+            }
+        }
         cancelDrag();
         beginChange("");
         ThemePage& p = project_.pages[page_];

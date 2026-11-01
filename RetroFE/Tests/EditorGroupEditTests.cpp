@@ -792,7 +792,16 @@ static Test::Suite editorGroupReview("editor group edits after review", [] {
         const std::string root = makeRoot("review_shared_colour");
         EditorSession w;
         check(openThree(root, w), "a theme");
-        check(w.addWidget("wheel_vertical") && w.addWidget("wheel_vertical"), "two wheels");
+        check(w.addWidget("wheel_vertical"), "a wheel");
+        // Older projects may already contain several menus: their shared settings remain editable.
+        ThemeProject legacy = w.project();
+        WidgetInstance second = legacy.pages[0].widgets.back();
+        second.id += "_legacy";
+        legacy.pages[0].widgets.push_back(second);
+        const std::string layouts = w.layoutsRoot(), folder = w.folder();
+        writeFile(layouts + "/" + folder + "/editor/project.xml", projectSerialize(legacy));
+        std::string error;
+        check(w.open(layouts, folder, Themes::widgetLibrary(), error), "two existing wheels: " + error);
         const int n = static_cast<int>(w.page().widgets.size());
         w.setSelection({ n - 2, n - 1 });
         check(!w.setVarAll("WHEELFONTCOLOR", "ff") && w.page().widgets[n - 1].varValue("WHEELFONTCOLOR", "") != "ff", "half a colour: nothing");

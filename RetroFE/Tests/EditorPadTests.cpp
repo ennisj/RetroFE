@@ -78,6 +78,26 @@ namespace
 }
 
 static Test::Suite editorPad("editor controller (ImGui)", [] {
+    Test::run("widget browser: Select focuses Add, second Select adds", [] {
+        Headless h;
+        int additions = 0;
+        bool initial = true;
+        ImGuiID addId = 0;
+        auto body = [&] {
+            if (initial) { ImGui::SetKeyboardFocusHere(); initial = false; }
+            bool picked = ImGui::Selectable("Game Art");
+            if (picked) h.pad.focusNext();
+            addId = ImGui::GetID("Add Widget");
+            if (ImGui::Button("Add Widget")) ++additions;
+        };
+        h.frames(4, body);
+        h.pad.press(EP_SELECT, EL_DIALOG);
+        h.frames(4, body);
+        check(additions == 0 && GImGui->NavId == addId, "first Select advances to confirmation");
+        h.pad.press(EP_SELECT, EL_DIALOG);
+        h.frames(4, body);
+        check(additions == 1, "second Select adds once");
+    });
     Test::run("editor controller: gamepad keys are released on attach and detach", [] {
         Headless h;
         ImGuiIO& io = ImGui::GetIO();

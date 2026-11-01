@@ -197,26 +197,6 @@ namespace ThemeEditor
         return erased;
     }
 
-    const ThemePage* effectiveCover(const ThemeProject& p, const std::string& collection,
-                                    const std::function<std::string(const std::string&)>& parentOf,
-                                    bool* inherited)
-    {
-        if (inherited) *inherited = false;
-        if (collection.empty() || ThemeProject::isSplashPage(collection)) return nullptr;
-        std::string cur = collection;
-        // Depth-capped: menu data can contain cycles
-        for (int guard = 0; guard < 16 && !cur.empty(); ++guard) {
-            const ThemePage* cb = p.coveredBy(cur);
-            if (cb && !cb->collection.empty()) {
-                if (inherited) *inherited = cur != collection;
-                return cb;
-            }
-            if (!parentOf) break;
-            cur = parentOf(cur);
-        }
-        return nullptr;
-    }
-
     ThemePage* createNamed(ThemeProject& p, const std::string& collection, const std::string& name,
                            const std::string& seedPrimary, std::string* erased)
     {
@@ -261,10 +241,18 @@ namespace ThemeEditor
         return true;
     }
 
-    const ThemePage& pageShownFor(const ThemeProject& p, const std::string& collection, bool isMenu, PageVia* via)
+    const ThemePage& pageShownFor(const ThemeProject& p, const std::string& collection, bool isMenu, PageVia* via, bool isVideos, const std::string& layoutFrom)
     {
         if (via) *via = PageVia::Default;
         if (collection.empty() || ThemeProject::isSplashPage(collection)) return p.pages[0];
+        if (!layoutFrom.empty()) {
+            const ThemePage* source = p.coveredBy(layoutFrom);
+            if (source) {
+                if (via) *via = PageVia::Own;
+                return *source;
+            }
+            return p.pages[0];
+        }
         for (const auto& page : p.pages) {
             if (page.collection.empty() || ThemeProject::isSplashPage(page.collection)) continue;
             if (page.collection == collection) {
@@ -276,6 +264,12 @@ namespace ThemeEditor
                     if (via) *via = PageVia::Member;
                     return page;
                 }
+            }
+        }
+        if (isVideos) {
+            if (const ThemePage* videos = p.coveredBy("_videos")) {
+                if (via) *via = PageVia::Videos;
+                return *videos;
             }
         }
         if (isMenu) {

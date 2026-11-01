@@ -50,44 +50,42 @@ hand-made ones included, that has no `splash.xml`.
 
 ## The screen
 
-- **Left: the theme.** Its name, orientation (switching reflows every
-  widget), *Font and sounds*, *Splash*, its pages, *Collections* and the
-  widgets on the page you're editing. Click a widget in the list to select
-  it.
-- **Middle: the canvas.** The page as RetroFE itself builds it, with the
-  collection chosen in *Preview with* (the one you were browsing, or Browse's
-  first collection), and an outline of every widget on top.
-  - Click a widget to select it; click it again to pick the one underneath.
-  - Drag to move; drag one of the eight handles to resize. Moves snap to a
-    5-unit grid (*Snap to grid* turns that off). The page is rebuilt when you
-    let go.
-  - **Guides**: while you drag, an edge or the centre that comes within a
-    few pixels of another widget's edge or centre, or of the page's centre,
-    lines up with it exactly and a pink line shows it (a resize lines up the
-    edge you're dragging). Anything not near a guide snaps to the grid as
-    before. Hold **Alt** to drag without guides; *Guides* in the toolbar
-    turns them off.
-  - Arrow keys nudge the selection by 1 (Shift: 10); Delete removes it;
-    Ctrl+D duplicates it (the copy goes 20 units down and right).
-  - *Show* turns art and video, text, and animations off in the preview only.
-  - Several at once: see [Several at once](#several-at-once).
-- **Right: the selected widget.** Name, position and size, layer (0 is
-  drawn first, 19 on top), opacity, text colour where it has one, and the
-  widget's own settings: switches, choices, numbers, colours, text and files.
-  *Choose...* opens the file chooser (below). *Hide in the editor* only hides
-  it here, to reach what's underneath.
-- **Top: Add widget, Undo, Redo, Save, Use this theme, Close.** Ctrl+Z,
-  Ctrl+Y and Ctrl+S work too. Under the canvas the editor says what the
-  generator warned about and anything RetroFE logged building the page.
+The widget editor follows One Saucier v0.6.0's four tiles. In landscape,
+**THEME** sits above **CANVAS** on the left; **THEME PROPERTIES** sits above
+**WIDGET PROPERTIES** on the right. Save, Use this theme and Close sit below
+the canvas. In portrait, Theme and Canvas span the width, the actions sit
+inside Canvas's bottom, and Widget Properties / Theme Properties share the
+bottom band.
 
-The widget list follows the selection: a widget picked on the canvas (or
-with the controller) is scrolled into view there.
+- **Theme:** name, orientation, Collection, previous/next preview item and
+  the collection's read-only template name. **Change** opens its template
+  dialog. Top Level uses Default and has no Change button.
+- **Canvas:** Undo / Redo, Show Media / Text / Animations, Snap, Guides,
+  Widget i/N, previous/next widget, **+ Add Widget**, and **Delete Widget**
+  (asks first). Click to select, click again to reach underneath, drag to
+  move, or drag a handle to resize. Arrows nudge (Shift: 10); Ctrl+Z / Ctrl+Y
+  undo / redo, Ctrl+S saves, Ctrl+D duplicates. Guides line up nearby edges
+  and centres; hold Alt to ignore them. Snap uses a 5-unit grid.
+- **Theme Properties:** collapsible Font and sounds and Splash sections.
+- **Widget Properties:** the selected widget's name, position, size, layer,
+  opacity, colour, variables and tools for several selected widgets.
+- **Actions:** Save shows **Save *** when there are unsaved edits. Save before
+  Use this theme. Close asks about unsaved changes.
 
-Save shows what it did when there's something to know: warnings, and **pages
-it removed** (a page an earlier save wrote that the theme no longer has).
-Leaving with unsaved changes (Close, Escape, Back or the Settings key) asks
-first: Save (Enter) / Don't save (D) / Cancel (Escape). In Add widget, type to
-search and press Enter to add the first match.
+**Collection** opens the text-only menu tree, with `<root> (Top Level)` first
+and a **Not in a menu** group last. Chevrons fold branches for this session.
+Bright rows get the page being edited; dim rows get another page. Choosing
+a row previews its real games and edits the page RetroFE actually shows.
+Previous / Next Item steps the preview's game selection. With a controller,
+Up / Down moves through Collection, Left / Right folds a branch, Select
+picks a collection and Back closes the dropdown.
+
+**+ Add Widget** opens a large browser with a searchable, grouped list on
+the left, a type tile and description on the right, including default size,
+layer, fixed attributes and settings. Select a type, then Add Widget, or
+double-click it. With a controller, Select on a row focuses Add Widget;
+Select again adds. New widgets are centred and selected; widgets needing a
+file open the chooser. Each page allows one scrolling menu.
 
 ## Several at once
 
@@ -132,9 +130,11 @@ and change them together:
 
 Both editors work with RetroFE's own controls (`controls.conf`: a gamepad,
 arcade controls, or the keyboard keys mapped there), no mouse needed. The
-screen has four regions: the **toolbar** at the top, the **theme panel** (in
-the layout editor: pages and elements) on the left, the **canvas** in the
-middle and the **properties** on the right. The focused region has a gold
+widget editor has six focus regions: **Theme**, **Toolbar**, **Canvas**,
+**Actions**, **Theme Properties**, **Widget Properties** in landscape;
+in portrait the last two swap to follow the bottom band's left-to-right
+order. Page Up / Down cycles these. The layout editor keeps its toolbar,
+pages/elements, canvas and properties regions. The focused region has a gold
 frame and the focused item a gold outline. A **hint strip** along the bottom
 of the screen, in the Manage screens' style, always says what the controls
 do: "Select: pick / move / resize   Hold Select + direction: add   Letter
@@ -246,31 +246,27 @@ is used where it is.
 
 ## Collection templates
 
-A template is a page of its own for one or more collections; every other
-collection uses the Default page. In this RetroFE a collection never takes
-its menu's page: entering a collection always shows its own template, else
-(for a menu of collections) the `_menu` template if the theme has one, else
-the Default page.
+CoinOPS RetroFE has **no layout inheritance**. A collection never follows
+its parent menu's template automatically. It uses, in order: the page named
+by `collections.<c>.layoutFromAnotherCollection`, its own collection page,
+`_videos` for a video collection, `_menu` for a menu of collections, then
+the theme's root **Default** page. A template's members explicitly share
+that template's widgets by reference.
 
-- **New template...** (under *Pages*): choose the collection, a name and what
-  it starts as (the Default page, an empty page, or a copy of a template).
-  **Copy...** does the same starting from the template you're editing.
-- The template being edited shows its name (edit it there), the collections
-  using it (*x* sends one back to the Default page) and *Add a
-  collection...*. **Delete...** asks which page its collections use instead.
-- **Collections** lists the menu tree with the page each collection gets.
-  Clicking one previews it on that page; double-clicking it, or *Change its
-  template...*, chooses its page: the Default page, a template, or a new one.
-  For a menu, *Also the N collections under it* puts the whole branch on the
-  same page.
-- `_menu` (in the collection list of *New template...*) makes the page every
-  menu of collections without one of its own uses.
-- Saving writes `collections/<c>/layout/layout.xml` for each collection a
-  template covers and removes the ones an earlier save wrote that are no
-  longer covered. A page somebody wrote by hand there is never overwritten:
-  such a collection can't be given a template (the editor says why).
-- Moving a template's only collection off it deletes the template (the
-  dialog says so first; Undo brings it back).
+Choose a collection, then **Change** beside Template. The dialog shows the
+current template and offers **Create new template...**, **Default**,
+**Menus** for menus, and named templates. Create asks for a name and a
+starting point: Blank, Default, or another template (copies its widgets).
+**Also apply to the collections under "..."** starts off. Tick it to assign
+the whole branch explicitly; the live line says which collections change.
+Apply is one undo step. Default removes the explicit assignment; normal
+video/menu fallback still applies. **Delete Template...** keeps the existing
+replacement-page chooser.
+
+Saving writes each explicitly covered collection's page and removes only
+obsolete editor-written pages. A hand-made collection page is refused,
+never overwritten. Moving a template's last collection away removes that
+template; Undo restores it.
 
 ## Wheels
 

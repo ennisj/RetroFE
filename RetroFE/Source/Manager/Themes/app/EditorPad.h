@@ -114,6 +114,8 @@ namespace Themes
         void setRegion(int region);
         // Moves the focus into the region again (after a dialog closed)
         void refocus() { focusRegion_ = region_; }
+        // A list selection can advance to its explicit confirmation button.
+        void focusNext();
         // BeginChild for a region: takes the focus when it was moved there,
         // follows the mouse there, and draws the region's frame (highlighted
         // when focused). EndChild as usual.

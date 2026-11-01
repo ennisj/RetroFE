@@ -108,6 +108,33 @@ namespace
 }
 
 static Test::Suite themes("themes", [] {
+    Test::run("widget editor: template scope and menu guard", [] {
+        const std::string root = makeThemesRoot("widget_tiles");
+        EditorSession s;
+        std::string folder;
+        check(openNew(root, "Tiles", s, folder), "opened");
+        check(s.newTemplate("Menu", "Look", EditorSession::BLANK, { "Child", "Grandchild" }), "create branch explicitly");
+        check(s.project().coveredBy("Child") && s.project().coveredBy("Grandchild"), "all descendants assigned");
+        check(s.undo() && !s.project().coveredBy("Menu") && !s.project().coveredBy("Child"), "branch create is one undo");
+        check(s.redo() && s.assignTemplate(std::vector<std::string>{ "Menu", "Child", "Grandchild" }, ""), "Default removes branch assignments");
+        check(!s.project().coveredBy("Menu") && !s.project().coveredBy("Grandchild"), "all removed");
+        check(s.undo() && s.project().coveredBy("Menu") && s.project().coveredBy("Grandchild"), "Default branch removal is one undo");
+        check(s.assignTemplate("Child", "") && !s.project().coveredBy("Child") && s.project().coveredBy("Grandchild"), "single collection leaves others alone");
+        check(s.undo() && s.project().coveredBy("Child"), "one collection assignment is one undo step");
+        check(s.newTemplate("Other", "Other Look", EditorSession::BLANK), "another template");
+        check(s.assignTemplate(std::vector<std::string>{ "Menu", "Child", "Grandchild" }, "Other") &&
+              s.project().coveredBy("Menu") == s.project().coveredBy("Grandchild"), "branch joins existing template by reference");
+        check(s.undo() && s.project().coveredBy("Menu") == s.project().coveredBy("Child") &&
+              s.project().coveredBy("Menu") != s.project().coveredBy("Other"), "branch reassignment undoes in one step");
+        s.setPage(0);
+        check(s.addWidget("wheel_vertical"), "first menu");
+        const unsigned revision = s.revision();
+        check(!s.addWidget("wheel_curved") && s.revision() == revision, "second menu refused without undo entry");
+        check(!s.duplicateSelected() && s.revision() == revision, "menu duplication is refused too");
+        check(s.undo(), "undo first menu");
+        for (const auto& widget : s.page().widgets) check(widget.def != "wheel_vertical", "refusal did not consume undo");
+        fs::remove_all(root);
+    });
     Test::run("a layout's size is read from its <layout> root", [] {
         int w = 0, h = 0;
         check(Themes::layoutSize("<?xml version=\"1.0\"?>\n<layout width=\"1920\" height=\"1080\">", w, h) && w == 1920 && h == 1080,
@@ -738,6 +765,12 @@ static Test::Suite themes("themes", [] {
         createTemplate(p, MENUS_TEMPLATE);
         check(&pageShownFor(p, "Consoles", true, &via) == p.page(MENUS_TEMPLATE) && via == PageVia::Menus, "then menus use that");
         check(&pageShownFor(p, "Arcade", false, &via) == &p.pages[0], "but not a system");
+
+        createTemplate(p, "_videos");
+        check(&pageShownFor(p, "Movies", true, &via, true) == p.page("_videos") && via == PageVia::Videos, "video fallback before menu");
+        check(&pageShownFor(p, "MAME", true, &via, true) == p.page("MAME"), "own before video fallback");
+        check(&pageShownFor(p, "MAME", true, &via, true, "Genesis") == p.page("Genesis"), "explicit source before own");
+        check(&pageShownFor(p, "Movies", false, &via, true, "Missing") == &p.pages[0], "missing explicit source does not fall through to video");
 
         // Saved: one page per covered collection, member pages included
         SaveInputs inputs;

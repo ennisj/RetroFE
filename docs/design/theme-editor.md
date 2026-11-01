@@ -1488,3 +1488,31 @@ theme unchanged (hashes).
 - `static_video`'s default `videos/background.mp4` and `static_image`'s
   `images/background.png` don't exist in a new theme; the editor asks for a
   file when they're placed (round 3), and saving warns if it's still missing.
+
+
+## Widget editor: One Saucier v0.6.0 screen
+
+The widget screen now follows One Saucier v0.6.0's layout: four tiles and an
+action row. Landscape stacks Theme / Canvas on the left and Theme Properties
+/ Widget Properties on the right (480 scaled pixels). Portrait stacks Theme
+/ Canvas above a split Widget Properties / Theme Properties band, with the
+actions inside Canvas. The hand-made LayoutEditorScreen is unchanged.
+
+The old Pages and Collections panels are removed. Collection is a depth-first
+text dropdown, with Top Level, session-only collapsed branches and a Not in
+a menu group. Its pure row model derives bright/dim coverage from
+pageShownFor, rather than parent membership. Template changes explicitly
+assign one collection or, optionally, every descendant in one undo step.
+The dialog explains this and previews its scope before Apply. Existing
+hand-made-page protection and delete-with-replacement remain.
+
+This follows One Saucier v0.6.0 minus its "(inherited)" templates, because
+CoinOPS RetroFE has no layout inheritance. The unused effectiveCover helper
+and its inheritance test were removed. pageShownFor also handles video
+fallback and an explicit layoutFromAnotherCollection source; neither walks
+parents. Normal menu fallback still applies after removing an assignment.
+
+Add Widget uses eight named sections, a type tile, description and settings,
+and an explicit Add action. EditorSession refuses a second scrolling menu
+before taking an undo snapshot. Navigation has separate widget-region
+helpers so the hand-made editor retains its existing controller behavior.

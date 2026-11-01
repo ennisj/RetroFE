@@ -220,13 +220,6 @@ namespace ThemeEditor
     // removed, else "".
     std::string reassign(ThemeProject& p, const std::string& collection, const std::string& targetPrimary);
 
-    // The template that applies to a collection: its own or its membership,
-    // else the nearest covered ancestor in the menu tree (the engine keeps the
-    // current page when a collection has no override). nullptr = Default.
-    const ThemePage* effectiveCover(const ThemeProject& p, const std::string& collection,
-                                    const std::function<std::string(const std::string&)>& parentOf,
-                                    bool* inherited = nullptr);
-
     // Creates a named template for a collection, seeded from seedPrimary
     // ("" = Default, "\x01" = blank, else that template). `erased` gets the
     // primary of a template that emptied and was removed.
@@ -244,9 +237,9 @@ namespace ThemeEditor
     // Which page this fork's RetroFE shows for a collection. Unlike One
     // Saucier's engine, a collection never inherits its parent menu's page
     // here: entering a collection always builds a page from
-    // collections/<c>/layout, else (for a menu of collections)
-    // collections/_menu/layout, else the theme's own layout.xml.
-    enum class PageVia { Own, Member, Menus, Default };
+    // an explicit layoutFrom source, collections/<c>/layout, then _videos
+    // for videos, _menu for menus, else the theme's own layout.xml.
+    enum class PageVia { Own, Member, Videos, Menus, Default };
     const ThemePage& pageShownFor(const ThemeProject& p, const std::string& collection, bool isMenu,
-                                  PageVia* via = nullptr);
+                                  PageVia* via = nullptr, bool isVideos = false, const std::string& layoutFrom = "");
 }

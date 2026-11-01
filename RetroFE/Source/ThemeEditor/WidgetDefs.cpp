@@ -372,3 +372,23 @@ namespace ThemeEditor
         return out;
     }
 }
+
+namespace ThemeEditor
+{
+    const char* widgetSection(const std::string& name)
+    {
+        static const std::vector<std::vector<std::string>> groups = {
+            { "Game Art", "Game Bezel", "Game Cabinet", "Game Front Artwork", "Game Logo", "Game Marquee", "Game Screentitle", "Game Video" },
+            { "Curved Logo Wheel", "Vertical Logo Wheel", "Game Art Wheel" },
+            { "Game Manufacturer", "Game Story", "Game Title", "Game Year", "System Name", "Game Players", "Game Genre", "Game Metadata" },
+            { "System Device", "System Logo", "System Marquee", "System Video" },
+            { "Static Image", "Static Video", "Live Background" },
+            { "Static Text", "Scrolling Text", "Status Messages", "Text File Scroller", "System Time" },
+            { "Game Index", "Game Letters", "Favorite Star", "Playlist" }
+        };
+        static const char* labels[] = { "GAME MEDIA", "WHEELS", "GAME METADATA", "SYSTEM ARTWORK", "OTHER ARTWORK", "OTHER TEXT", "COLLECTION" };
+        for (size_t i = 0; i < groups.size(); ++i)
+            for (const auto& entry : groups[i]) if (name == entry) return labels[i];
+        return "OTHER";
+    }
+}
