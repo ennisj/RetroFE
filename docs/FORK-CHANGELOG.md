@@ -4,6 +4,28 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 16 — the theme editor, as in One Saucier v0.6.0 (2026-10-31)
+
+Unit tests: 8,317 → 8,426 checks (Windows CI). Choices in M27 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Four tiles:** THEME and CANVAS on the left, THEME PROPERTIES and WIDGET
+  PROPERTIES on the right, with Save / Use this theme / Close below; a
+  portrait theme gets the vertical arrangement (properties side by side
+  under the canvas).
+- **A Collection dropdown** in the THEME tile shows the menu tree: Top
+  Level, folding chevrons, "Not in a menu", and bright rows for the
+  collections the current template covers. Picking one previews it and
+  edits the page it gets; < Prev Item / Next Item > step its games.
+- **Template for "...":** a collection's template is chosen there (Create
+  new, Default, Menus, or a named one), with "Also apply to the
+  collections under ..." for a whole branch. The Pages list and
+  Collections panel are gone.
+- **Add Widget** groups widgets as One Saucier does (Game Media, Wheels,
+  Game Metadata, System Artwork, Other Artwork, Other Text, Collection),
+  with a preview and description; the canvas header has < Prev Widget /
+  Next Widget > and Delete Widget. One scrolling menu per page.
+
 ## Round 15 — a system and its games, from a launcher (2026-10-29)
 
 Unit tests: 8,224 → 8,317 checks (Windows CI). Choices in M26 of

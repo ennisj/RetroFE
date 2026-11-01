@@ -595,6 +595,21 @@ Made while building the design review (M22); the option not taken in brackets.
   games are read from subfolders; otherwise games are copied flat so
   Browse finds them. Leaving the screen stops the copy cleanly.
 
+### M27. Round 16 choices — Decided (2026-10-31)
+- **The widget editor takes One Saucier v0.6.0's screen** (your request):
+  four tiles, the Collection dropdown as a tree, a Template row with
+  Change, and the grouped Add Widget dialog. The editor for hand-made
+  themes is unchanged.
+- **No layout inheritance, as in CoinOPS RetroFE:** a collection's page is
+  its `layoutFromAnotherCollection`, else its own `collections/<c>/layout`,
+  else `_videos` or `_menu` by type, else the theme's main page; nothing
+  comes from the parent menu. So the editor never marks a page
+  "(inherited)" [One Saucier's template inheritance]; "Also apply to the
+  collections under ..." assigns the branch explicitly, once, and the
+  dialog says the others keep their own page.
+- **One scrolling menu per page,** as in One Saucier (older projects with
+  two still open and edit).
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
