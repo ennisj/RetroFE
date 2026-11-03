@@ -693,16 +693,19 @@ Made while building the design review (M22); the option not taken in brackets.
   The worker's image has RetroFE's Linux packages (rebuilt 2026-10-28), so
   it configures, builds and runs the tests with CMake on Linux before
   Windows CI runs.
-- **Test builds reach the PC through a share.** Each passing Windows run on
-  `feature/management-ui` publishes the `management-ui-latest` pre-release
-  (the exe and Aeon Nox, without DLLs; docs/CI.md). An agent copies it to
-  `\\JOHN-DESKTOP\retrofe\management-ui\builds` with
-  `Scripts/test-build/push_to_share.py`, using a share-only local account
-  [Guest, which Windows disables and would open the share to the network].
-  You install it with `Install-TestBuild.ps1`, which backs up each file it
-  replaces and deletes nothing (Scripts/test-build/README.md).
-- What needs your desktop (GUI checks, screenshots at 16:9 and 4:3,
-  installing a test build) is listed in VERIFY.md instead.
+- **Test builds go straight to a test drive on the PC** (your request,
+  2026-11-02). Each passing Windows run on `feature/management-ui`
+  publishes the `management-ui-latest` pre-release (the exe and Aeon Nox,
+  without DLLs; docs/CI.md). An agent deploys it with
+  `Scripts/test-build/deploy_test_build.py` to `\\JOHN-DESKTOP\retrofe`,
+  using a share-only local account [Guest, which Windows disables and would
+  open the share to the network]: every build is kept in `builds\`, and the
+  test install `RetroFE-Bare` (its own RetroFE root) always has the newest
+  `retrofe\retrofe.exe`, so a shortcut to it never changes [you running
+  Install-TestBuild.ps1 against E:\Storage\OneSauce]. A OnesaUCE-derived
+  install can sit beside it (Scripts/test-build/README.md).
+- What needs your desktop (GUI checks, screenshots at 16:9 and 4:3)
+  is listed in VERIFY.md instead.
 
 ### W3. CI: two macOS builds, Xcode project left unused — Decided
 - `build.yml` builds macOS with Homebrew's libraries (quick, like a
