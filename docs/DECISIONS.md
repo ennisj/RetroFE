@@ -610,6 +610,20 @@ Made while building the design review (M22); the option not taken in brackets.
 - **One scrolling menu per page,** as in One Saucier (older projects with
   two still open and edit).
 
+### M28. Round 17 choices — Decided (2026-11-02)
+- **A window never holds or moves the mouse** (your request: three monitors,
+  usually windowed). `captureMouse` now only applies fullscreen; a
+  `settings.conf` that turns it on (as older installs may) no longer traps
+  the pointer in a window.
+- **Fullscreen moves or captures the pointer only when it's already on
+  RetroFE's monitor,** so starting RetroFE, or coming back from a game, never
+  pulls the pointer off the monitor you're working on.
+- **A Monitor choice in Settings** (`screenNum0`), applied at the next start
+  like Fullscreen and Screen size; a missing monitor falls back to the first
+  one with a warning instead of stopping RetroFE.
+- ImGui's own capture while dragging in Manage is left as it is: on Windows
+  it doesn't confine the pointer.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
