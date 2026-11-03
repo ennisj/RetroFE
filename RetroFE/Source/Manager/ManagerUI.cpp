@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ManagerUI.h"
+#include "../Utility/MousePolicy.h"
 #include "../SDL.h"
 #include <thread>
 #include "FileDialog.h"
@@ -64,6 +65,13 @@ ManagerUI::~ManagerUI()
 
 bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache* fontCache)
 {
+    std::vector<std::pair<std::string, std::string>> displays;
+    for (int index = 0; index < SDL_GetNumVideoDisplays(); ++index) {
+        SDL_Rect bounds{};
+        SDL_GetDisplayBounds(index, &bounds);
+        displays.push_back(MousePolicy::displayOption(index, { bounds.x, bounds.y, bounds.w, bounds.h }));
+    }
+    model_.setDisplays(displays);
     if (context_) {
         return true;
     }

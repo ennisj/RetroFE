@@ -894,6 +894,9 @@ std::vector<std::pair<std::string, std::string>> ManagerModel::options(const std
             result.emplace_back(name, name);
         }
     }
+    else if (source == "displays") {
+        result = displays_;
+    }
     else if (source == "screenSizes") {
         result = screenSizes;
     }
@@ -1216,7 +1219,7 @@ Forms::Model::Result ManagerModel::saveSettings()
 
     result.ok = true;
     result.reload = true;
-    result.message = "Saved. RetroFE reloads now. Fullscreen and screen size apply the next time RetroFE starts.";
+    result.message = "Saved. RetroFE reloads now. Fullscreen, monitor and screen size apply the next time RetroFE starts.";
     return result;
 }
 

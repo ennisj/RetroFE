@@ -193,13 +193,18 @@ screen writes is a **Saved in** row with the file or folder. Changes RetroFE
 has to load show "after it reloads, when you close Manage".
 
 **Settings** starts with **Controls** (see [Controls](#controls)), then
-Display (Fullscreen; **Screen size**: the screen's size, 1920 x 1080,
+Display (Fullscreen; **Monitor**, which sets `screenNum0` with a numbered display
+choice; **Screen size**: the screen's size, 1920 x 1080,
 1280 x 720 and other common sizes, or Custom, which shows Width and Height;
 Hide mouse; Capture mouse), Menus (**Theme**, which sets `layout`; Start on Home; Browse
 opens) and Video, then Save. A size that isn't in the list shows as Custom.
-Save reloads RetroFE. Hide mouse and Capture mouse apply then; fullscreen and screen size
-apply the next time RetroFE starts. Capture mouse (`captureMouse`, off by default)
-keeps the pointer inside RetroFE's window.
+Save reloads RetroFE. Hide mouse and Capture mouse apply then; fullscreen, monitor and
+screen size apply the next time RetroFE starts (a reload keeps its window). Capture mouse (`captureMouse`, off by default) is enabled
+only with fullscreen and keeps the pointer on RetroFE's screen if it is already there.
+In a window the pointer always moves freely, and RetroFE never moves it at startup,
+after a game or at exit. Hide mouse controls visibility without confining the pointer.
+A missing configured main display falls back to display 0 with a warning. Windowed
+RetroFE opens centred on the chosen monitor; automatic size uses its usable bounds.
 
 ### Choosing a folder or a file
 

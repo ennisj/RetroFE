@@ -40,12 +40,13 @@ const char* const settingsForm = R"(
   <link label="Controls" open="controls"/>
   <section label="Display">
     <toggle label="Fullscreen" bind="settings:fullscreen"/>
+    <choice label="Monitor" bind="settings:screenNum0" options="displays" default="0"/>
     <choice label="Screen size" bind="settings:screenSize" options="screenSizes" enabledWhen="!settings:fullscreen"/>
     <text label="Width" bind="settings:horizontal" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <text label="Height" bind="settings:vertical" hint="pixels, stretch or auto" enabledWhen="!settings:fullscreen" visibleWhen="info:customScreenSize"/>
     <toggle label="Hide mouse" bind="settings:hideMouse" default="no"/>
-    <toggle label="Capture mouse" bind="settings:captureMouse" default="no" help="Keeps the mouse pointer inside RetroFE's window."/>
-    <note value="Fullscreen and screen size apply the next time RetroFE starts. Hide mouse and Capture mouse apply when you save; RetroFE reloads."/>
+    <toggle label="Capture mouse" bind="settings:captureMouse" default="no" enabledWhen="settings:fullscreen" help="Fullscreen only: keeps the mouse pointer on RetroFE's screen. In a window the pointer always moves freely."/>
+    <note value="Fullscreen, monitor and screen size apply the next time RetroFE starts. Hide mouse and Capture mouse apply when you save; RetroFE reloads."/>
   </section>
   <section label="Menus">
     <choice label="Theme" bind="settings:layout" options="layouts"/>

@@ -37,7 +37,10 @@ public:
     // e.g. for checks while someone uses the machine): RetroFE leaves the
     // pointer alone and doesn't bring its window to the front
     static bool staysInBackground( ) { return leaveMouse_; }
-    // Moves the pointer as SDL_WarpMouseInWindow does, remembering when (SDL
+    // Query the main display before moving or acquiring the pointer.
+    static bool mayMovePointer();
+    static bool grabsPointer(bool captureMouse);
+    // Moves the pointer only when mayMovePointer allows it, remembering when (SDL
     // ticks), so the motion it causes isn't taken for someone using a mouse
     static void warpMouse( SDL_Window *window, int x, int y );
     static Uint32 lastWarp( ) { return lastWarp_; }

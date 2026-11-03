@@ -4,6 +4,22 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 17 — the mouse stays yours, on any monitor (2026-11-02)
+
+Unit tests: 8,426 → 8,465 checks (Windows CI). Choices in M28 of
+[DECISIONS.md](DECISIONS.md).
+
+- **In a window RetroFE leaves the mouse alone:** it never holds the pointer
+  inside its window (even with Capture mouse on) and never moves it, not at
+  startup, after a game or at exit.
+- **Fullscreen:** Capture mouse still keeps the pointer on RetroFE's screen,
+  and RetroFE still tucks it into the corner, but only when the pointer is
+  already on that screen; one on another monitor stays where it is.
+- **Settings > Display > Monitor** picks the monitor RetroFE opens on
+  ("1: 2560 x 1440 (main)"...). If it's gone at the next start, RetroFE uses
+  the first monitor instead of failing. Capture mouse is greyed out unless
+  Fullscreen is on.
+
 ## Round 16 — the theme editor, as in One Saucier v0.6.0 (2026-10-31)
 
 Unit tests: 8,317 → 8,426 checks (Windows CI). Choices in M27 of
