@@ -28,6 +28,7 @@
 #endif
 #include "Utility/Utils.h"
 #include "Utility/WindowSize.h"
+#include "Utility/MousePolicy.h"
 #include "Graphics/LayoutCompat.h"
 #include <SDL2/SDL_version.h>
 #if !SDL_VERSION_ATLEAST(2, 0, 18)
@@ -149,8 +150,10 @@ bool SDL::initialize(Configuration& config)
 		{
 			if (screenNum == mainScreen)
 			{
-				LOG_ERROR("SDL", "Display " + std::to_string(configuredScreenNum) + " does not exist.");
-				return false;
+				LOG_WARNING("SDL", "Display " + std::to_string(configuredScreenNum) + " does not exist; using display 0.");
+				configuredScreenNum = 0;
+				if (SDL_GetCurrentDisplayMode(configuredScreenNum, &mode) != 0)
+					return false;
 			}
 			else
 			{
@@ -323,14 +326,14 @@ bool SDL::initialize(Configuration& config)
 			{
 #ifndef __APPLE__
 				// If not MacOS, warp cursor top right
-				SDL::warpMouse(window_[screenNum], windowWidth_[screenNum], 0);
+				SDL::warpMouse(window_[screenNum], windowWidth_[screenNum] - 1, 0);
 #endif
 #ifdef __APPLE__
 				// If MacOS, warp cursor to center to prevent hot corner activation
 				SDL::warpMouse(window_[screenNum], windowWidth_[screenNum] / 2, windowHeight_[screenNum] / 2);
 				bool captureMouse = false;
 				config.getProperty(OPTION_CAPTUREMOUSE, captureMouse);
-				SDL_SetRelativeMouseMode(captureMouse ? SDL_TRUE : SDL_FALSE);
+				SDL_SetRelativeMouseMode(SDL::grabsPointer(captureMouse) ? SDL_TRUE : SDL_FALSE);
 #endif
 			}
 			bool vSync = false;
@@ -1947,7 +1950,29 @@ Uint32 SDL::lastWarp_ = 0;
 bool SDL::hasWarped_ = false;
 void SDL::warpMouse(SDL_Window* window, int x, int y)
 {
+    if (!window || !mayMovePointer()) return;
     lastWarp_ = SDL_GetTicks();
     hasWarped_ = true;
     SDL_WarpMouseInWindow(window, x, y);
+}
+
+
+bool SDL::mayMovePointer()
+{
+    if (window_.empty() || !window_[0] || fullscreen_.empty()) return false;
+    int display = SDL_GetWindowDisplayIndex(window_[0]);
+    SDL_Rect bounds;
+    if (display < 0 || SDL_GetDisplayBounds(display, &bounds) != 0) return false;
+    int x, y;
+    SDL_GetGlobalMouseState(&x, &y);
+    return MousePolicy::mayMovePointer(fullscreen_[0], staysInBackground(), x, y,
+        { bounds.x, bounds.y, bounds.w, bounds.h });
+}
+
+bool SDL::grabsPointer(bool captureMouse)
+{
+    // Acquiring a grab must not pull the pointer from another display.
+    return !fullscreen_.empty()
+        && MousePolicy::grabsPointer(fullscreen_[0], captureMouse, staysInBackground())
+        && mayMovePointer();
 }

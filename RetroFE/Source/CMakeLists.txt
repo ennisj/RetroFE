@@ -341,6 +341,7 @@ set(RETROFE_HEADERS
 	"${RETROFE_DIR}/Source/Menu/Menu.h"
 	"${RETROFE_DIR}/Source/Sound/Sound.h"
 	"${RETROFE_DIR}/Source/Utility/FileStamp.h"
+	"${RETROFE_DIR}/Source/Utility/MousePolicy.h"
 	"${RETROFE_DIR}/Source/Utility/Log.h"
 	"${RETROFE_DIR}/Source/Utility/Utils.h"
 	"${RETROFE_DIR}/Source/Video/IVideo.h"
@@ -438,6 +439,7 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Graphics/Component/VideoComponent.cpp"
 	"${RETROFE_DIR}/Source/Menu/Menu.cpp"
 	"${RETROFE_DIR}/Source/Sound/Sound.cpp"
+	"${RETROFE_DIR}/Source/Utility/MousePolicy.cpp"
 	"${RETROFE_DIR}/Source/Utility/Log.cpp"
 	"${RETROFE_DIR}/Source/Utility/Utils.cpp"
 	"${RETROFE_DIR}/Source/Video/GStreamerVideo.cpp"
@@ -632,6 +634,7 @@ if(RETROFE_BUILD_TESTS)
 		"${RETROFE_DIR}/Source/Manager/Setup.cpp"
 		${RETROFE_MANAGER_SECTION_SOURCES}
 		${RETROFE_TEST_EXTRA_SOURCES}
+		"${RETROFE_DIR}/Source/Utility/MousePolicy.cpp"
 		"${RETROFE_DIR}/Source/Utility/Log.cpp"
 		"${RETROFE_DIR}/Source/Utility/Utils.cpp"
 	)

@@ -29,7 +29,7 @@ For all `BOOLEAN` types, the following values are accepted: `yes`, `no`, `true`,
 | `fullscreenX` | `true` | `BOOLEAN` | Run the frontend in fullscreen for monitor x | |
 | `horizontalX` | `""` | `INTEGER` | Pixel width for monitor x | |
 | `verticalX` | `""` | `INTEGER` | Pixel height for monitor x | |
-| `screenNumX` | `""` | `INTEGER` | Define which monitor x is which display window, Screen numbers start at 0! | |
+| `screenNumX` | `""` | `INTEGER` | Choose the display for window X (screenNum0 for the main window), starting at 0. A missing main display falls back to 0. Fullscreen, monitor and screen size apply at the next start. | |
 | `mirrorX` | `false` | `BOOLEAN` | Divides monitor x into two halves | |
 | `rotationX` | `0` | `INTEGER` | Rotation of monitor x (0, 1, 2, 3) | |
 
@@ -40,9 +40,11 @@ For all `BOOLEAN` types, the following values are accepted: `yes`, `no`, `true`,
 | `windowResize` | `false` | `BOOLEAN` | Allow window to be resized | |
 | `fps` | `60` | `INTEGER` | Requested FPS while in an active state | |
 | `fpsIdle` | `60` | `INTEGER` | Request FPS while in an idle state | |
-| `captureMouse` | `false` | `BOOLEAN` | Keeps the mouse pointer inside RetroFE's window | |
-| `hideMouse` | `true` | `BOOLEAN` | Defines whether the mouse cursor is hidden | |
+| `captureMouse` | `false` | `BOOLEAN` | Fullscreen only: keeps the mouse pointer on RetroFE's screen. In a window the pointer always moves freely. | |
+| `hideMouse` | `true` | `BOOLEAN` | Defines whether the mouse cursor is hidden; does not confine or move it | |
 | `animateDuringGame` | `true` | `BOOLEAN` | Pause animated marquees while in the game | ✅ |
+
+The Settings form's Monitor choice writes `screenNum0`. Windowed RetroFE opens centred on that display; `auto` sizing uses its usable bounds. Fullscreen, monitor and screen size apply when RetroFE starts: a reload (saving settings) keeps the window it has. Hide mouse and Capture mouse apply on that reload. Pointer grabs and movement require fullscreen and a window allowed to take focus; acquiring a grab or moving the pointer also requires it to be on RetroFE's display already. Hidden and no-activation windows leave the pointer alone.
 
 ## VIDEO OPTIONS
 | Option | Default | Type | Description | CoinOPS Added Feature |

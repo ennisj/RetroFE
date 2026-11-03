@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "FileDialog.h"
+#include "../SDL.h"
 #include "../Utility/Log.h"
 
 #ifdef WIN32
@@ -112,7 +113,7 @@ namespace
             }
         }
 
-        if (owner) SDL_SetWindowGrab(owner, grabbed);
+        if (owner) SDL_SetWindowGrab(owner, grabbed && SDL::grabsPointer(true) ? SDL_TRUE : SDL_FALSE);
         dialog->Release();
         if (uninitialize) CoUninitialize();
         return chosen;

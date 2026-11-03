@@ -117,6 +117,7 @@ public:
     void setDefault(const std::string& key, const std::string& value) override;
     std::vector<std::string> list(const std::string& key) override;
     Forms::Rows rows(const std::string& key, size_t limit) override;
+    void setDisplays(const std::vector<std::pair<std::string, std::string>>& displays) { displays_ = displays; }
     std::vector<std::pair<std::string, std::string>> options(const std::string& source) override;
     std::string actionProblem(const std::string& action) override;
     Result runAction(const std::string& action) override;
@@ -153,6 +154,7 @@ private:
     std::map<std::string, std::string> settingDefaults_;  // what RetroFE uses when nothing sets a key
     std::map<std::string, std::string> drafts_;
     std::vector<std::string> collections_;
+    std::vector<std::pair<std::string, std::string>> displays_;
 
     std::string countedPath_;
     std::string countedExtensions_;

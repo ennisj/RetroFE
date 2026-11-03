@@ -271,7 +271,7 @@ void RetroFE::launchExit()
 	}
 	bool captureMouse = false;
 	config_.getProperty(OPTION_CAPTUREMOUSE, captureMouse);
-	SDL_SetWindowGrab(SDL::getWindow(0), captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
+	SDL_SetWindowGrab(SDL::getWindow(0), SDL::grabsPointer(captureMouse) ? SDL_TRUE : SDL_FALSE);
 
 	// Empty event queue, but handle joystick add/remove events
 	SDL_Event e;
@@ -297,7 +297,7 @@ void RetroFE::launchExit()
 
 #ifndef __APPLE__
 	// If not MacOS, warp cursor top right. game/program may warp elsewhere
-	SDL::warpMouse(SDL::getWindow(0), SDL::getWindowWidth(0), 0);
+	SDL::warpMouse(SDL::getWindow(0), SDL::getWindowWidth(0) - 1, 0);
 #endif
 
 #ifdef WIN32
@@ -305,7 +305,7 @@ void RetroFE::launchExit()
 #endif
 	// If on MacOS enable relative mouse mode when capturing the pointer
 #ifdef __APPLE__
-	SDL_SetRelativeMouseMode(captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
+	SDL_SetRelativeMouseMode(SDL::grabsPointer(captureMouse) ? SDL_TRUE : SDL_FALSE);
 #endif
 }
 
@@ -463,9 +463,9 @@ bool RetroFE::run()
 	}
 	bool captureMouse = false;
 	config_.getProperty(OPTION_CAPTUREMOUSE, captureMouse);
-	SDL_SetWindowGrab(SDL::getWindow(0), captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
+	SDL_SetWindowGrab(SDL::getWindow(0), SDL::grabsPointer(captureMouse) ? SDL_TRUE : SDL_FALSE);
 #ifdef __APPLE__
-	SDL_SetRelativeMouseMode(captureMouse && !SDL::staysInBackground() ? SDL_TRUE : SDL_FALSE);
+	SDL_SetRelativeMouseMode(SDL::grabsPointer(captureMouse) ? SDL_TRUE : SDL_FALSE);
 #endif
 #ifdef WIN32
 	if (!PacInitialize()) {  //attempt to enable ServoStik
