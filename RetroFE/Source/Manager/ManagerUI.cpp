@@ -34,7 +34,6 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
-#include "versioning.h" // Created at build time
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -132,10 +131,9 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
 
     // Forms are loaded when first opened, from the layout in use now
     forms_.clear();
-    startCatalog();
     startLibrary();
     if (!providersAdded_) {
-        Manager::Services services{ config_, catalog_.get() };
+        Manager::Services services{ config_ };
         services.library = library_.get();
         services.editor = libraryEditor_.get();
         services.requestReload = [this] { reloadWhenClosed_ = true; };
@@ -147,10 +145,6 @@ bool ManagerUI::initialize(SDL_Window* window, SDL_Renderer* renderer, FontCache
             }
             request.returning.providers = model_.saveView();
             launches_.want(request);   // handleResult closes the manager for it
-        };
-        services.launchProblem = [this] {
-            bool reloadDue = reloadRequested_ || reloadWhenClosed_ || (library_ && library_->changesPending());
-            return Manager::LaunchQueue::problem(reloadDue, catalog_ && catalog_->isBusy());
         };
         services.sameInputs = Manager::padSameInputs;
         if (FileDialog::isSupported()) {
@@ -219,90 +213,6 @@ void ManagerUI::startLibrary()
     options.layoutsPath = Configuration::layoutsPath();
     library_ = std::make_unique<Library::Indexer>(options);
     libraryEditor_ = std::make_unique<Library::Editor>(Configuration::absolutePath);
-}
-
-void ManagerUI::startCatalog()
-{
-    if (catalog_) {
-        return;
-    }
-    // catalogPath, relative to the root like other paths; downloads and installs all happen under it
-    std::string folder;
-    if (!config_.getPropertyAbsolutePath(OPTION_CATALOGPATH, folder) || folder.empty()) {
-        folder = Utils::combinePath(Configuration::absolutePath, "catalog");
-    }
-    Catalog::Targets targets;
-    targets.root = Configuration::absolutePath;
-    targets.collections = Utils::combinePath(Configuration::absolutePath, "collections");
-    targets.layouts = Configuration::layoutsPath();   // baseLayoutPath when set (OneSauce)
-    targets.emulators = Utils::combinePath(Configuration::absolutePath, "emulators");
-    targets.meta = Utils::combinePath(Configuration::absolutePath, "meta");
-    if (!config_.getPropertyAbsolutePath(OPTION_BASEITEMPATH, targets.items)) {
-        targets.items = targets.collections;
-    }
-    if (!config_.getPropertyAbsolutePath(OPTION_BASEMEDIAPATH, targets.media)) {
-        targets.media = targets.collections;
-    }
-    // RetroFE's own program folder, when it's a folder of its own (retrofe/ under the root)
-    if (char* base = SDL_GetBasePath()) {
-        std::filesystem::path program = std::filesystem::path(base).lexically_normal();
-        SDL_free(base);
-        std::filesystem::path root = std::filesystem::path(Configuration::absolutePath).lexically_normal();
-        while (!program.empty() && !program.has_filename()) program = program.parent_path();   // drop the trailing separator
-        if (program != root && program.parent_path() == root) {
-            targets.protectedFolders.push_back(program.string());
-        }
-    }
-
-    catalog_ = std::make_unique<Catalog::Service>(folder, targets, Catalog::createHttp());
-    // GitHub sources can update RetroFE itself (SelfUpdater checks it's in a folder of its own). UTF-8 paths.
-    Catalog::AppInstall app;
-    app.executable = Catalog::currentExecutable();
-    if (!app.executable.empty()) {
-        app.program = std::filesystem::u8path(app.executable).parent_path().u8string();
-    }
-    app.root = std::filesystem::path(Configuration::absolutePath).u8string();
-    app.version = RETROFE_VERSION_DESCRIBE;
-    catalog_->setApp(app);
-    catalog_->start();
-    model_.setCatalog(catalog_.get());
-}
-
-bool ManagerUI::takeCatalogChanges()
-{
-    Catalog::Service::Changes changes;
-    if (!catalog_ || !catalog_->takeChanges(changes)) {
-        return false;
-    }
-    if (changes.libraryFiles && library_) library_->changed("Catalog changed library files");
-    // Installed collections show under Browse, like ones made in Manage
-    std::string error;
-    if (!changes.addedCollections.empty() && !model_.ensureSettingsFile(error)) {
-        LOG_ERROR("Manager", error);
-    }
-    for (const std::string& name : changes.addedCollections) {
-        // (addToMainMenu skips the top menu itself)
-        if (!Setup::addToMainMenu(name, error)) {
-            LOG_ERROR("Manager", error);
-        }
-    }
-    for (const std::string& name : changes.removedCollections) {
-        if (!Setup::removeFromMainMenu(name, error)) {
-            LOG_ERROR("Manager", error);
-        }
-    }
-    return true;
-}
-
-bool ManagerUI::takeRestartRequest()
-{
-    // The path found at start: the running file may have been renamed since
-    std::string executable = catalog_ ? catalog_->app().executable : "";
-    if (!catalog_ || !catalog_->takeRestartRequest() || executable.empty()) {
-        return false;
-    }
-    Catalog::requestRelaunch(executable);
-    return true;
 }
 
 void ManagerUI::deInitialize()
@@ -458,7 +368,6 @@ Manager::PendingChanges ManagerUI::pendingChanges() const
         pending.libraryFlag = library_->changesPending();
     }
     pending.reloadAsked = reloadWhenClosed_ || reloadRequested_;
-    pending.catalog = catalog_ && catalog_->hasChanges();
     return pending;
 }
 
@@ -477,11 +386,6 @@ bool ManagerUI::reopenAfterReload()
         setStatus(screen.message, Forms::StatusKind::Success);
     }
     return open_;
-}
-
-bool ManagerUI::takeBrowseRequest(std::string& collection)
-{
-    return afterReload_.takeBrowse(open_, reloadRequested_, collection);
 }
 
 void ManagerUI::show()
@@ -508,7 +412,7 @@ void ManagerUI::show()
     if (!wasOpen) {
         model_.refresh();
         cursorWasShown_ = SDL_ShowCursor(SDL_QUERY);
-        // Files may have changed since the last look (games added, a Catalog install)
+        // Files may have changed since the last look (games added outside RetroFE)
         if (library_) {
             library_->rebuild();
         }
@@ -569,8 +473,8 @@ void ManagerUI::close()
         reloadWhenClosed_ = false;
         reloadRequested_ = true;
         // A bare install that's now set up (e.g. its first system added in
-        // Systems) keeps its built-in defaults in a settings.conf, as after a
-        // Catalog install; without one, RetroFE would open Manage at every start
+        // Systems) keeps its built-in defaults in a settings.conf; without
+        // one, RetroFE would open Manage at every start
         std::string error;
         if (!model_.ensureSettingsFile(error)) {
             LOG_ERROR("Manager", error);
@@ -1055,7 +959,6 @@ void ManagerUI::update(float dt)
     if (!open_) {
         return;
     }
-    if (takeCatalogChanges()) reloadWhenClosed_ = true;
     if (open_ && nav_.current() && hubProgress_.focusSystem(nav_.current()->form == "manage", model_.get("info:hasLaunchers") == "yes")) {
         if (widget_) widget_->focusOn("system-add");
     }
@@ -1195,22 +1098,10 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
             const Navigator::Frame* frame = nav_.current();
             afterReload_.reopen({ result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result), result.message });
         }
-        if (!result.browse.empty()) {
-            afterReload_.browse(result.browse);
-        }
         reloadRequested_ = true;
         close();
         return;
     }
-    // A collection to show (the Catalog list): close, asking about unsaved
-    // changes as Close does, and RetroFE goes there
-    if (result.ok && !result.browse.empty()) {
-        if (requestClose()) {
-            afterReload_.browse(result.browse);
-        }
-        return;
-    }
-
     if (result.ok && !result.pickFor.empty()) {
         applyPick(result);
         return;
@@ -1309,31 +1200,20 @@ void ManagerUI::render()
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer_);
 }
 
-bool ManagerUI::takeReloadRequest(bool backHome)
+bool ManagerUI::takeReloadRequest()
 {
-    // Reloading destroys the Catalog, so it waits for installs to finish
-    if (backHome && catalog_ && catalog_->hasChanges()) {
-        reloadRequested_ = true;
-    }
-    if (!reloadRequested_ || (catalog_ && catalog_->isBusy())) {
+    if (!reloadRequested_) {
         return false;
     }
     reloadRequested_ = false;
     launches_.reloading();   // a game waiting for this reload starts once RetroFE is back
-    afterReload_.reloading();   // and Manage, or a collection, is shown once it's back
-    // Catalog installs finished meanwhile go on the Main menu now: the
-    // Catalog that knows about them doesn't survive the reload
-    takeCatalogChanges();
+    afterReload_.reloading();   // and Manage is shown once it's back
     return true;
 }
 
 bool ManagerUI::takeLaunchRequest(LaunchRequest& request)
 {
-    Manager::LaunchQueue::Take take = launches_.take(open_, reloadRequested_, catalog_ && catalog_->isBusy(), request);
-    if (take == Manager::LaunchQueue::Take::Dropped) {
-        LOG_WARNING("Manager", "Not starting the game Manage asked for: RetroFE can't reload while the Catalog installs");
-    }
-    return take == Manager::LaunchQueue::Take::Start;
+    return launches_.take(open_, reloadRequested_, request);
 }
 
 void ManagerUI::returnFromLaunch(const LaunchRequest& request, const std::string& problem)

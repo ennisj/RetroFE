@@ -237,9 +237,11 @@ void runFormsTests()
 
     run("built-in forms parse", [&] {
         std::vector<std::string> ids = Forms::builtinFormIds();
-        for (const char* id : { "settings", "manage", "sources", "package",
-                                "games", "menus", "systems", "videos", "emulators", "themes", "retroarch-cores" }) {
+        for (const char* id : { "settings", "manage", "games", "menus", "systems", "videos", "emulators", "emulator-new", "themes" }) {
             check(std::find(ids.begin(), ids.end(), id) != ids.end(), std::string(id) + " is built in");
+        }
+        for (const char* id : { "sources", "source", "package", "retroarch-cores", "emulator-downloads" }) {
+            check(std::find(ids.begin(), ids.end(), id) == ids.end(), std::string(id) + " isn't built in any more");
         }
         for (const std::string& id : ids) {
             auto form = Forms::parse(Forms::builtinForm(id), error);
@@ -488,19 +490,19 @@ void runFormsTests()
         // Opening starts again
         nav.open("manage");
         nav.push("games", {}, {});
-        nav.open("sources");
-        check(nav.depth() == 1 && nav.current()->form == "sources", "open starts a new stack");
+        nav.open("settings");
+        check(nav.depth() == 1 && nav.current()->form == "settings", "open starts a new stack");
 
         for (size_t i = 0; i < Navigator::maxDepth + 5; i++) {
             nav.push("game", { { "id", std::to_string(i) } }, {});
         }
         check(nav.depth() == Navigator::maxDepth, "depth is limited");
-        check(nav.frames().front().form == "sources", "the first screen is kept");
+        check(nav.frames().front().form == "settings", "the first screen is kept");
         checkEqual(nav.current()->params.at("id"), std::to_string(Navigator::maxDepth + 4), "and the newest");
         while (nav.depth() > 1) {
             nav.back();
         }
-        checkEqual(nav.current()->form, "sources", "so Back still ends where it started");
+        checkEqual(nav.current()->form, "settings", "so Back still ends where it started");
     });
 
     run("a screen can take the place of the one it came from", [&] {

@@ -9,11 +9,6 @@ set(RETROFE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(RETROFE_THIRD_PARTY_DIR "${RETROFE_DIR}/ThirdParty")
 list(APPEND CMAKE_MODULE_PATH "${RETROFE_DIR}/CMake")
 
-file(GLOB LZMA_SDK_SOURCES "${RETROFE_THIRD_PARTY_DIR}/lzma-sdk/*.c")
-add_library(retrofe_lzma STATIC ${LZMA_SDK_SOURCES})
-target_compile_definitions(retrofe_lzma PRIVATE Z7_PPMD_SUPPORT Z7_EXTRACT_ONLY)
-target_include_directories(retrofe_lzma PUBLIC "${RETROFE_THIRD_PARTY_DIR}/lzma-sdk")
-
 ##############################################################
 # Versioning
 # Ensure versioning.h is generated before compiling
@@ -276,7 +271,6 @@ if(WIN32)
         "${WEBP_ROOT}/lib/libwebpdemux_dll.lib"
         "${ZLIB_ROOT}/lib/minizip.lib"
         "dxgi.lib"
-        "winhttp.lib"
     )
 endif()
 
@@ -446,18 +440,6 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Video/VideoFactory.cpp"
     "${RETROFE_DIR}/Source/Video/VideoPool.cpp"
 	"${RETROFE_DIR}/Source/Main.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Archive.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Download.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Emulators.cpp"
-	"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Http.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Index.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Package.cpp"
-	"${RETROFE_DIR}/Source/Catalog/SelfUpdate.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Service.cpp"
-	"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 	"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"
 	"${RETROFE_DIR}/Source/Forms/Form.cpp"
 	"${RETROFE_DIR}/Source/Forms/SettingsFile.cpp"
@@ -587,18 +569,6 @@ if(RETROFE_BUILD_TESTS)
 	endforeach()
 	set(RETROFE_TEST_ALL_SOURCES
 		${RETROFE_TEST_SOURCES}
-		"${RETROFE_DIR}/Source/Catalog/Archive.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Download.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Emulators.cpp"
-		"${RETROFE_DIR}/Source/Catalog/GitHub.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Hash.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Http.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Index.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Installer.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Package.cpp"
-		"${RETROFE_DIR}/Source/Catalog/SelfUpdate.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Service.cpp"
-		"${RETROFE_DIR}/Source/Catalog/Sources.cpp"
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
 		"${RETROFE_DIR}/Source/Database/Configuration.cpp"
 		"${RETROFE_DIR}/Source/Database/GlobalOpts.cpp"
@@ -643,23 +613,17 @@ if(RETROFE_BUILD_TESTS)
 	add_dependencies(retrofe_tests GenerateVersioningHeader)
 	# The theme editor tests read the bundled font and check the layout
 	# vocabulary against PageBuilder.cpp and Tween.cpp in the source tree
-	target_link_libraries(retrofe_tests retrofe_theme_editor retrofe_lzma)
-	target_compile_definitions(retrofe_tests PRIVATE RETROFE_TEST_FIXTURES="${RETROFE_DIR}/Tests/fixtures" RETROFE_TEST_SDK="${RETROFE_THIRD_PARTY_DIR}/lzma-sdk")
+	target_link_libraries(retrofe_tests retrofe_theme_editor)
 	target_compile_definitions(retrofe_tests PRIVATE
 		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
 		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
-	# The Catalog tests extract and write zip archives
 	if(WIN32)
-		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES} winhttp)
+		target_link_libraries(retrofe_tests ${ZLIB_LIBRARIES})
 		add_custom_command(TARGET retrofe_tests POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZLIB_ROOT}/lib/zlib.dll" "$<TARGET_FILE_DIR:retrofe_tests>")
 	else()
 		# sqlite3 needs libdl and threads; the library index builds on a thread
-		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
-		if(APPLE AND RETROFE_MACOS_BUNDLE)
-			# ThirdPartyMac's libminizip.dylib is @rpath/libminizip.dylib
-			set_target_properties(retrofe_tests PROPERTIES BUILD_RPATH "${MAC_FRAMEWORKS_DIR}")
-		endif()
+		target_link_libraries(retrofe_tests ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
 	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)
@@ -671,7 +635,7 @@ set(LIBRARY_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORC
 include_directories(${RETROFE_INCLUDE_DIRS})
 add_executable(retrofe  ${RETROFE_SOURCES} ${RETROFE_HEADERS})
 add_dependencies(retrofe GenerateVersioningHeader)
-target_link_libraries(retrofe retrofe_theme_editor retrofe_lzma)
+target_link_libraries(retrofe retrofe_theme_editor)
 
 # macOS links what its branch above found, frameworks or Homebrew's
 if(NOT APPLE)

@@ -49,8 +49,8 @@ endif()
 
 set(RETROFE_VERSION_DESCRIBE "${RETROFE_VERSION_MAJOR}.${RETROFE_VERSION_MINOR}")
 
-# A release build says the version of its tag (-DRETROFE_RELEASE_VERSION=2504.3 for v2504.3),
-# which is what the Catalog compares with GitHub releases when offering updates
+# A release build says the version of its tag (-DRETROFE_RELEASE_VERSION=2504.3 for v2504.3)
+# in -version and log.txt
 if(DEFINED RETROFE_RELEASE_VERSION AND NOT "${RETROFE_RELEASE_VERSION}" STREQUAL "")
     set(RETROFE_VERSION_DESCRIBE "${RETROFE_RELEASE_VERSION}")
 endif()

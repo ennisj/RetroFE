@@ -72,16 +72,11 @@ now separate pages:
                                   collections, such as Main (Browse) or a "Consoles"
                                   menu, unless it has a page of its own. Collections
                                   without a logo show their name.
-  collections/Home/layout/        Home (Catalog, Settings, Manage, Browse) in the systems
-                                  style, with a logo, icon, tagline and description per
-                                  item under collections/Home/medium_artwork/.
-  collections/Catalog/layout/     The Catalog: packages in the logo strip, their kind,
-                                  source and version in the info panel, and an icon and
-                                  text for the Sources item under
-                                  collections/Catalog/medium_artwork/.
-  forms/layout.xml                Settings, Manage, Sources and the other screens, on the
+  collections/Home/layout/        Home (Settings, Manage, Browse) in the systems style,
+                                  with a logo, icon, tagline and description per item
+                                  under collections/Home/medium_artwork/.
+  forms/layout.xml                Settings, Manage and the other screens, on the
                                   theme's info panel.
-  forms/package/layout.xml        A package, leaving the Catalog's info panel visible.
   forms/keyboard/layout.xml       The on-screen keyboard.
   "layout 4x3.xml"                A 4:3 version of each page above, for randomLayout =
                                   layout 4x3.
@@ -108,15 +103,14 @@ Also:
   - New artwork, all of it made by Scripts/aeon-nox/gen_images.py in the RetroFE
     repository, which draws it with Pillow from rectangles, ellipses, arcs and
     polygons whose coordinates are written in the script. No icon font, icon set or
-    traced artwork was used; the shapes are the usual metaphors (a download arrow
-    over a tray, a gear, sliders, a grid of tiles, a stack of disks). The script
+    traced artwork was used; the shapes are the usual metaphors (a gear, sliders,
+    a grid of tiles). The script
     regenerates these files byte for byte:
       images/background.png        behind every page, where upstream was black
       images/form_focus.png        the focused row on form pages
       collections/Home/medium_artwork/logo/*.png    Home's logos: an icon and the
                                    item's name in Bebas Neue (OFL)
       collections/Home/medium_artwork/icon/*.png    Home's icons
-      collections/Catalog/medium_artwork/icon/Catalog Sources.png
   - Games view: the top bar names the collection in text (upstream showed its system
     logo, which collections made in RetroFE don't have); "ITEMS" and the count no
     longer overlap; titles without box art use Oswald; MC360 replaced as above.

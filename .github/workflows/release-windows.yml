@@ -5,9 +5,7 @@ name: Windows Release
 # tag's GitHub release, creating the release if there isn't one yet.
 #
 # The archive holds retrofe/ (retrofe.exe and its DLLs), RetroFE.lnk, and the
-# layouts listed in RELEASE_LAYOUTS under layouts/. The Catalog's GitHub
-# sources offer it as an update of RetroFE itself (docs/design/catalog-sources.md),
-# so the asset name and that layout matter: <name>-<version>-windows-x64.zip,
+# layouts listed in RELEASE_LAYOUTS under layouts/: <name>-<version>-windows-x64.zip,
 # with the program under retrofe/.
 on:
   push:
@@ -62,8 +60,7 @@ jobs:
         run: .github/scripts/install-gstreamer-windows.ps1
 
       - name: Configure
-        # RETROFE_RELEASE_VERSION makes the build report the tag's version, which
-        # is what the Catalog compares with releases when offering updates
+        # RETROFE_RELEASE_VERSION makes the build report the tag's version
         shell: pwsh
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -96,7 +93,7 @@ jobs:
           $name = "RetroFE-$version-windows-x64.zip"
           $zip = "dist\$name"
           Compress-Archive -Path "$out\*" -DestinationPath $zip
-          # The checksum beside it, in sha256sum's format: the Catalog uses it if GitHub's digest is missing
+          # The checksum beside it, in sha256sum's format, so a download can be checked (sha256sum -c)
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -Path "$zip.sha256" -Value "$hash  $name" -NoNewline -Encoding ascii
           "zip=$zip" >> $env:GITHUB_OUTPUT
@@ -120,6 +117,5 @@ jobs:
             gh release create $tag @options
             if ($LASTEXITCODE -ne 0) { throw "Could not create the release" }
           }
-          # GitHub also records each asset's SHA-256 digest, which the Catalog checks first
           gh release upload $tag $env:ZIP "$($env:ZIP).sha256" --clobber
           if ($LASTEXITCODE -ne 0) { throw "Could not upload the archive" }

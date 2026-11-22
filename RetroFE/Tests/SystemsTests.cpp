@@ -14,12 +14,12 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "TestSupport.h"
-#include "../Source/Catalog/Emulators.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Forms/Form.h"
 #include "../Source/Library/Edits.h"
 #include "../Source/Library/Files.h"
 #include "../Source/Library/Indexer.h"
+#include "../Source/Manager/Emulators/KnownEmulators.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Systems/SystemForms.h"
 #include "../Source/Manager/Systems/SystemProvider.h"
@@ -546,7 +546,7 @@ static void runSystemsTests()
         std::string error;
         auto form = Forms::parse(Forms::builtinForm("system-add"), error);
         check(form && form->fields[2].bind == "system:addLauncher" && form->fields[2].type == Forms::FieldType::Choice, "compact launcher immediately after intro");
-        check(form->fields[3].label == "Download an emulator" && form->fields[3].open == "emulator-downloads", "download link immediately below choice");
+        check(form->fields[3].bind == "system:addLauncherNote", "then why there's no launcher to choose, if there isn't");
         auto video = Forms::parse(Forms::builtinForm("video-add"), error);
         check(video && video->fields[2].bind == "video:addName", "video still starts with Name");
         check(Forms::findField(*video, "video:addLauncher") && !Forms::findField(*video, "video:addLauncherChoices"), "video keeps its choice field");
@@ -564,9 +564,11 @@ static void runSystemsTests()
         checkEqual(bare.model.get("system:addLauncherNote"), "A system needs a launcher first.", "explains why");
         auto bareChoices = bare.model.options("system:addLaunchers");
         check(bareChoices.size() == 1 && bareChoices.front().second == "A program on the drive...", "only program choice on bare install");
-        check(!Forms::isEnabled(form->fields[2], bare.model) && Forms::isEnabled(form->fields[3], bare.model), "download is first focusable control");
+        const Forms::Field* program = Forms::findField(*form, "system:addProgram");
+        check(!Forms::isEnabled(form->fields[2], bare.model) && program && Forms::isVisible(*program, bare.model),
+              "no launcher to choose: the program is asked for instead");
         checkEqual(bare.model.get("system:addIsNewLauncher"), "yes", "program fields shown without launchers");
-        writeFile(bare.root + "/launchers." + os() + "/DuckStation.conf", "executable = duck.exe\n");
+        writeFile(bare.root + "/launchers." + os() + "/DuckStation.conf", "executable = duckstation-qt-x64-ReleaseLTCG.exe\n");
         bare.rescan();
         bare.open("system-add", {});
         check(bare.model.options("system:addLaunchers").front().first == "DuckStation", "return includes installed launcher");
@@ -581,34 +583,34 @@ static void runSystemsTests()
         checkEqual(bare.model.get("system:addName"), "My console", "typed name survives return");
     });
 
-    run("systems: launcher suggestions use installed core info and preserve typed fields", [] {
+    run("systems: launcher suggestions come from the program or RetroArch's core, and keep typed fields", [] {
         Fixture f("sys-suggestions");
-        writeFile(f.root + "/launchers." + os() + "/DuckStation.conf", "executable = duck.exe\n");
-        writeFile(f.root + "/launchers." + os() + "/RetroArch Genesis Plus GX.conf", "executable = retroarch.exe\n");
-        Catalog::Manifest manifest;
-        manifest.id = "core-genesis_plus_gx";
-        manifest.kind = "core";
-        manifest.name = "Genesis Plus GX";
-        manifest.version = "1";
-        manifest.source = "emulators";
-        manifest.launcherName = "RetroArch Genesis Plus GX";
-        std::string error;
-        check(Catalog::writeManifest(f.root + "/catalog/installed/" + manifest.id + ".json", manifest, error), "fake installed core: " + error);
+        writeFile(f.root + "/launchers." + os() + "/Duck.conf", "executable = %RETROFE_PATH%/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe\n");
+        writeFile(f.root + "/launchers." + os() + "/RetroArch Genesis Plus GX.conf",
+                  "executable = %RETROFE_PATH%/emulators/RetroArch/retroarch.exe\narguments = -L cores/genesis_plus_gx_libretro.dll \"%ITEM_FILEPATH%\"\n");
+        writeFile(f.root + "/launchers." + os() + "/RetroArch NES.conf",
+                  "executable = %RETROFE_PATH%/emulators/RetroArch/retroarch.exe\narguments = -L cores/fceumm_libretro.dll \"%ITEM_FILEPATH%\"\n");
+        writeFile(f.root + "/launchers." + os() + "/Notes.conf", "executable = notepad.exe\n");
         writeFile(f.root + "/emulators/RetroArch/info/genesis_plus_gx_libretro.info",
                   "systemname = \"Genesis\"\nsupported_extensions = \"md|gen|zip\"\n");
         f.rescan();
         f.open("system-add", {});
         auto launchers = f.model.options("system:addLaunchers");
         check(std::any_of(launchers.begin(), launchers.end(), [](const auto& choice) { return choice.first == "RetroArch Genesis Plus GX"; }), "core launcher included with global launchers");
+        f.model.set("system:addLauncher", "Notes");
+        checkEqual(f.model.get("system:addName"), "", "an unknown program has no suggested name");
+        checkEqual(f.model.get("system:addExtensions"), "", "an unknown program has no suggested extensions");
         f.model.set("system:addLauncher", "mame");
-        checkEqual(f.model.get("system:addName"), "", "other launcher has no suggested name");
-        checkEqual(f.model.get("system:addExtensions"), "", "other launcher has no suggested extensions");
+        checkEqual(f.model.get("system:addName"), "Arcade", "mame.exe is MAME");
         f.model.set("system:addLauncher", "RetroArch Genesis Plus GX");
         checkEqual(f.model.get("system:addName"), "Genesis", "core systemname");
         checkEqual(f.model.get("system:addExtensions"), "md,gen,zip", "core extensions converted to commas");
-        f.model.set("system:addLauncher", "DuckStation");
-        checkEqual(f.model.get("system:addName"), "PlayStation", "built-in system");
-        checkEqual(f.model.get("system:addExtensions"), Catalog::findEmulator("emulator-duckstation")->extensions, "built-in extensions");
+        f.model.set("system:addLauncher", "RetroArch NES");
+        checkEqual(f.model.get("system:addName"), "", "a core without a .info file suggests nothing");
+        f.model.set("system:addLauncher", "Duck");
+        checkEqual(f.model.get("system:addName"), "PlayStation", "known by its program, whatever the launcher's name");
+        checkEqual(f.model.get("system:addExtensions"), Emulators::findKnownEmulator("duckstation-qt-x64-ReleaseLTCG.exe")->extensions,
+                   "built-in extensions");
         f.model.set("system:addName", "My console");
         f.model.set("system:addExtensions", "chd");
         f.model.set("system:addLauncher", "RetroArch Genesis Plus GX");

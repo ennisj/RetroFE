@@ -23,6 +23,7 @@
 #include "../Source/Forms/Form.h"
 #include "../Source/Library/Backups.h"
 #include "../Source/Library/Edits.h"
+#include "../Source/Library/Index.h"
 #include "../Source/Library/Indexer.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Manager/Menus/MenuProvider.h"
@@ -349,6 +350,10 @@ static void runMenusTests()
         check(!rig.run("create").ok, "folder names RetroFE skips are refused");
         rig.set("newName", "Home");
         check(!rig.run("create").ok, "reserved names are refused");
+        check(Library::isReservedCollection("home") && !Library::isReservedCollection("Catalog"), "Home is reserved, Catalog isn't");
+        rig.set("newName", "Catalog");
+        Forms::Model::Result catalog = rig.run("create");
+        check(catalog.ok && contains(rig.file("collections/Main/menu.txt"), "Catalog"), "Catalog is an ordinary name: " + catalog.message);
 
         Library::Editor& editor = *rig.editor;
         auto index = rig.indexer->index();

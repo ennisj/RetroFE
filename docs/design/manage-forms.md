@@ -16,14 +16,14 @@ form element and the built-in bindings are in [../MANAGER.md](../MANAGER.md).
   it and puts the focus back where it was. Back on the first screen closes
   the manager. Past 32 screens the oldest but the first is dropped.
 - `ManagerModel` answers every binding. Built-in prefixes (`settings`,
-  `draft`, `info`, `param`, `package`, `source`, and the actions `collection.*`,
-  `source.*`, `catalog.*`, `changes.*`, `open.*`, `back`) are its own; any other prefix
+  `draft`, `info`, `param`, and the actions `settings.*`, `collection.*`,
+  `changes.*`, `open.*`, `back`) are its own; any other prefix
   goes to the **provider** registered for it.
 - Forms are drawn by `FormWidget` (layout pages, driven by RetroFE's controls)
   or `FormView` (Dear ImGui, `formsRenderer = imgui`, for development).
   `FormWidget` rebuilds a screen from the model after input, when the
   model's `generation()` changes, and every 250 ms otherwise (so status lines
-  such as Catalog progress keep moving). `get()`, `rows()`, `list()`,
+  such as the library's progress keep moving). `get()`, `rows()`, `list()`,
   `options()` and `actionProblem()` run on every rebuild, so keep them cheap.
   The ImGui view calls them every frame.
 
@@ -40,7 +40,7 @@ generator only notices new files on the build after the one that finds them).
 | `Manager/<Section>/<Section>Forms.cpp` | The section's built-in forms, returned by `Forms::<section>Forms()` (declared in `Forms/BuiltinForms.h`). It exists already with a "Coming soon" placeholder for the section's form id: replace it and add more forms to the table. `retrofe_tests` parses every built-in form. |
 | `Manager/<Section>/*.cpp`, `*.h` | Your provider(s), implementing `Manager::Provider` (`Manager/Provider.h`), and their helpers. Built into RetroFE **and** `retrofe_tests`, so they must not need SDL or graphics code. |
 | `Manager/<Section>/app/*.cpp`, `*.h` | Code only RetroFE builds: anything that needs SDL, pages or platform APIs. Platform-specific files go here too (or wrap their body in `#ifdef _WIN32`). |
-| `Manager/<Section>/tests.cmake` | Optional: what your files need in the tests beyond the Forms/Manager/Catalog code already there, e.g. `list(APPEND RETROFE_TEST_EXTRA_SOURCES "${RETROFE_DIR}/Source/Database/DB.cpp")`. Use `${RETROFE_DIR}/Source/...` paths so duplicates between sections are merged. |
+| `Manager/<Section>/tests.cmake` | Optional: what your files need in the tests beyond the Forms/Manager code already there, e.g. `list(APPEND RETROFE_TEST_EXTRA_SOURCES "${RETROFE_DIR}/Source/Database/DB.cpp")`. Use `${RETROFE_DIR}/Source/...` paths so duplicates between sections are merged. |
 | `Manager/Providers.cpp` | Registration: one include line and one `model.addProvider(...)` line per provider, in your section's slots. Keep the blank lines between slots so sections added in parallel merge cleanly. |
 | `Tests/<Section>Tests.cpp` | Unit tests, as a `static Test::Suite` (see `Tests/TestSupport.h`); every `Tests/*.cpp` is built in. |
 
@@ -263,13 +263,11 @@ Things to know:
   else can take it (`Forms::refocusTarget`, `FormWidget::buildRows`). If it
   has to, Select there does nothing until the user moves, so a second press
   can't open the file browser or undo the action. So give a screen a harmless
-  row near its action (the package screen's "Back to the Catalog") rather
-  than special-casing focus.
+  row near its action (a Back button, say) rather than special-casing focus.
 - **Focus after an action**: set `Result::focus` to the field to focus
   afterwards, named by its `action`, `bind` or `open` (`Forms::findField`),
-  e.g. `"package.showInBrowse"`. If it isn't shown yet (it appears when an
-  install finishes) it's focused when it appears, unless the user has moved
-  by then. `ManagerUI::returnFromLaunch` uses the same to put focus back on
+  e.g. `"system-add"`. If it isn't shown yet (it appears once the work is
+  done) it's focused when it appears, unless the user has moved by then. `ManagerUI::returnFromLaunch` uses the same to put focus back on
   "Start this game".
 - **Folder and file fields** open the file browser (`Manager/Browser/`, form
   `file-browser`, prefix `browse`) on Select, never the system dialog. Its
@@ -326,20 +324,14 @@ Things to know:
   instead closes the manager and reloads straight away; Settings' Save and
   Add a system use that, because the user expects to see the result at once.
   With `Result::open` too, Manage opens on that screen again once RetroFE is
-  back, showing the message (the hub's `changes.apply`); with
-  `Result::browse`, RetroFE shows that collection (`package.showInBrowse`).
-  `Result::browse` without `reload` just closes the screens and shows it
-  (`catalog.open`). Both outlive the reload in `Manager::AfterReload`
-  (SDL-free, tested). Every Manage screen shows how many changes wait for a
-  reload (`info:pendingChanges`, `Manager/PendingChanges.h`): the distinct
-  descriptions given to `library->changed(what)`, a `requestReload()`, and
-  finished Catalog installs, so give `changed()` a short description of what
-  changed ("game metadata", "added Arcade").
+  back, showing the message (the hub's `changes.apply`). That outlives the
+  reload in `Manager::AfterReload` (SDL-free, tested). Every Manage screen
+  shows how many changes wait for a reload (`info:pendingChanges`,
+  `Manager/PendingChanges.h`): the distinct descriptions given to
+  `library->changed(what)` and a `requestReload()`, so give `changed()` a
+  short description of what changed ("game metadata", "added Arcade").
 - **Starting a game**: `services.requestLaunch(system, game)` from an action
-  (Games' `game.launch`); check `services.launchProblem()` in
-  `actionProblem` first: it refuses while a reload is due and a Catalog
-  install is running (RetroFE can't reload then, and a game starting minutes
-  later would be a surprise). After the action succeeds the manager closes,
+  (Games' `game.launch`). After the action succeeds the manager closes,
   asking `leaving()` like Close does: if a screen objects, nothing starts and
   its warning shows; running the same action again leaves the changes and
   starts the game. RetroFE reloads first when changes are pending (the
@@ -349,7 +341,7 @@ Things to know:
   (`Launcher::failure()`). The rules are `Manager/LaunchQueue.h`, tested in
   `GamesTests.cpp`. Both are null in tests unless a test sets them.
 - `Manager::Services` (`Provider.h`) is what providers can use: the
-  configuration, the Catalog, `requestReload`, `requestLaunch`,
+  configuration, `requestReload`, `requestLaunch`,
   `reloadControls` (RetroFE re-reads controls*.conf and remaps, straight
   away), and the shared library:
   `library` (one `Library::Indexer` for every section, rebuilt each time the

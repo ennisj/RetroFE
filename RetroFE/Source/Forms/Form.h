@@ -209,11 +209,6 @@ namespace Forms
             // back, showing the message there (the hub's "Apply changes now").
             bool reload = false;
 
-            // After success, the manager closes and RetroFE shows this
-            // collection, as Browse would (after the reload, with reload),
-            // e.g. a collection just installed, or the Catalog list
-            std::string browse;
-
             // After success, the field to focus: a field whose action, bind
             // or open is this (see findField). If it isn't shown yet (e.g. a
             // button that appears once an install has finished), it's focused

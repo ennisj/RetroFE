@@ -128,12 +128,6 @@ bool addToMainMenu(const std::string& name, std::string& error)
     return Library::MenuFiles::add(Configuration::absolutePath, top, name, -1, &backups, error);
 }
 
-bool removeFromMainMenu(const std::string& name, std::string& error)
-{
-    Library::Backups backups(Configuration::absolutePath);
-    return Library::MenuFiles::remove(Configuration::absolutePath, topMenu(), name, &backups, error);
-}
-
 bool hasSettingsFile()
 {
     return fs::exists(Utils::combinePath(Configuration::absolutePath, "settings.conf"));

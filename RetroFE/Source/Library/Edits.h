@@ -42,7 +42,7 @@
 
 namespace Library
 {
-    // Serialises Editor and Backups calls, including Catalog launcher edits.
+    // Serialises Editor and Backups calls.
     std::recursive_mutex& libraryWriteMutex();
 
     struct EditResult

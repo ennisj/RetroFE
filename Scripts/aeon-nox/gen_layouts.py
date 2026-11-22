@@ -7,7 +7,6 @@
 #   layout.xml                           games view, used by every collection of games
 #   collections/_menu/layout/layout.xml  systems view, for menus of collections (Browse)
 #   collections/Home/layout/layout.xml   Home, in the systems style
-#   collections/Catalog/layout/...       the Catalog list, in the systems style
 # plus 4x3 twins of each, splash.xml and the form/keyboard pages.
 import os, re, sys
 import xml.etree.ElementTree as ET
@@ -135,15 +134,13 @@ GEO = {
              box_x=180, title_y=220, line2_y=280, line3_y=320, tagline_y=250, box_w=1120,
              right_x=1555, right_y=220, right_w=360, right_h=260,
              bar2_y=623, bar2_x=110, bar2_w=1700,
-             dev_x=480, dev_y=855, lab_x=750, val_x=1000, val_w=650, rows=(785, 855, 925),
-             desc_x=300, desc_y=750, desc_w=1320, desc_h=300, sdesc_x=750, sdesc_w=880,
+             desc_x=300, desc_y=750, desc_w=1320, desc_h=300,
              logo_font=48, logo_w=460, box_font=40),
     ' 4x3': dict(W=1600, H=1200, file='layout 4x3.xml',
              box_x=140, title_y=220, line2_y=280, line3_y=320, tagline_y=250, box_w=980,
              right_x=1300, right_y=220, right_w=320, right_h=240,
              bar2_y=683, bar2_x=80, bar2_w=1440,
-             dev_x=350, dev_y=975, lab_x=750, val_x=980, val_w=520, rows=(905, 975, 1045),
-             desc_x=180, desc_y=870, desc_w=1240, desc_h=300, sdesc_x=750, sdesc_w=760,
+             desc_x=180, desc_y=870, desc_w=1240, desc_h=300,
              logo_font=48, logo_w=470, box_font=40),
 }
 
@@ -264,7 +261,7 @@ def games_page(variant):
     return page(header, render(blocks), 'Aeon Nox: a collection\'s games. Every collection without a page of its own uses this one.')
 
 # ---------------------------------------------------------------------------------------
-# Systems view: Main, and the base for Home and the Catalog
+# Systems view: Main, and the base for Home
 
 def systems_blocks(variant):
     g, header, shared, systems, games, both = split(variant)
@@ -309,7 +306,7 @@ def home_page(variant):
     # collections/Home/medium_artwork/logo/<item>.png
     menu = find(systems, 'imageType="logo"')
     sub(menu, '<menu type="custom" imageType="logo"', '<menu type="custom" mode="layout" imageType="logo"')
-    # Only four items: show the selected one and its neighbours, so none appears twice
+    # Only three items: show the selected one and its neighbours, so none appears twice
     menu['text'] = re.sub(r'<item xOffset="(-?\d+)">.*?</item>',
                           lambda m: m.group(0) if abs(int(m.group(1))) < 900 else '<item xOffset="%s" alpha="0"/>' % m.group(1),
                           menu['text'], flags=re.S)
@@ -331,49 +328,7 @@ def home_page(variant):
                  comment('More about the item: collections/Home/medium_artwork/description/<item>.txt')),
         hint(g, 'Left/Right: choose     Select: open'),
     ]
-    return page(header, render(blocks + keep + new), 'Aeon Nox: Home (Catalog, Settings, Manage, Browse)', up='../../../')
-
-def label_value(g, row, label, type_, fmt=''):
-    """An accent label and a white value that both disappear when the item has no value.
-    The label is the value's prefix padded with spaces and cut off by maxWidth."""
-    y = g['rows'][row]
-    pad = label + ' ' * 60
-    lab = comp('reloadableText', 'type="%s" singlePrefix="%s" pluralPrefix="%s" alpha="0" x="%d" y="%d" maxWidth="230" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="%s" layer="10"'
-               % (type_, pad, pad, g['lab_x'], y, ACCENT))
-    val = comp('reloadableText', 'type="%s"%s alpha="0" x="%d" y="%d" maxWidth="%d" height="50" xOrigin="left" yOrigin="center" font="fonts/BebasNeue.ttf" fontSize="50" loadFontSize="50" fontColor="ffffff" layer="10"'
-               % (type_, fmt, g['val_x'], y, g['val_w']))
-    return [lab, val]
-
-def catalog_page(variant):
-    g, header, shared, systems, both = systems_blocks(variant)
-    blocks = sounds_fanart(shared, fanart=False)
-    blocks.insert(4, background(g['W'], g['H']))
-    keep = drop(systems, 'type="story"', 'type="lb_', 'type="type"', 'type="generation"', 'type="media"', 'type="cpu"',
-                'type="device"', 'type="manufacturer"', 'type="year"')
-    keep.append(main_video(g, True))
-    # Package names are often longer than system names: use the whole box
-    sub(find(keep, 'type="title"'), 'maxWidth="900"', 'maxWidth="%d"' % g['box_w'])
-    new = [
-        with_pre(comp('reloadableScrollingText', 'type="tagline" mode="layout" alpha="0" x="%d" y="%d" width="%d" height="64" xOrigin="left" yOrigin="top" font="fonts/Oswald-Regular.ttf" fontSize="46" loadFontSize="46" fontColor="ffffff" direction="vertical" startPosition="0" layer="10"'
-                      % (g['box_x'], g['tagline_y'], g['box_w'])),
-                 comment('A line under the title for the Sources item: collections/Catalog/medium_artwork/tagline/Catalog Sources.txt')),
-        with_pre(comp('reloadableImage', 'type="logo" alpha="0" x="%d" y="%d" maxWidth="440" maxHeight="280" xOrigin="center" yOrigin="center" layer="11"'
-                      % (g['dev_x'], g['dev_y'])),
-                 comment('The package\'s logo, large, where systems show their device')),
-        with_pre(comp('reloadableImage', 'type="icon" mode="layout" alpha="0" x="%d" y="%d" maxWidth="360" maxHeight="260" xOrigin="center" yOrigin="center" layer="11"'
-                      % (g['dev_x'], g['dev_y'])),
-                 comment('Sources has no logo; it gets an icon from the layout: collections/Catalog/medium_artwork/icon/Catalog Sources.png')),
-    ]
-    lv = label_value(g, 0, 'KIND', 'genre') + label_value(g, 1, 'SOURCE', 'manufacturer') + label_value(g, 2, 'VERSION', 'year')
-    lv[0]['pre'] = [comment('Kind, source and version. Each label is its value\'s prefix, padded and cut off by maxWidth, so it only shows when there is a value.')]
-    new += lv
-    new += [
-        with_pre(comp('reloadableScrollingText', 'type="description" mode="layout" alpha="0" x="%d" y="%d" width="%d" height="%d" xOrigin="left" yOrigin="top" font="fonts/OpenSans.ttf" fontSize="38" loadFontSize="38" fontColor="f2f2f2" direction="vertical" startPosition="0" layer="10"'
-                      % (g['sdesc_x'], g['desc_y'] + 8, g['sdesc_w'], g['desc_h'] - 30)),
-                 comment('Text for the Sources item: collections/Catalog/medium_artwork/description/Catalog Sources.txt')),
-        hint(g, 'Left/Right: choose     Select: details     Back: Home'),
-    ]
-    return page(header, render(blocks + keep + new), 'Aeon Nox: the Catalog (one item per package, then Sources)', up='../../../')
+    return page(header, render(blocks + keep + new), 'Aeon Nox: Home (Settings, Manage, Browse)', up='../../../')
 
 # ---------------------------------------------------------------------------------------
 # Form and keyboard pages. RetroFE uses forms/<screen>/<page>.xml, then forms/<page>.xml,
@@ -411,8 +366,7 @@ def help_attrs(picture_h):
               defaultImage="%sManage.png">
         <!-- Rows without a picture of their own show Home's icon for the part of RetroFE they're in -->
         <defaultImage forms="settings control*" src="%sSettings.png"/>
-        <defaultImage forms="sources package" src="%sCatalog.png"/>
-    </formHelp>''' % (FORM_FONT, picture_h, icons, icons, icons)
+    </formHelp>''' % (FORM_FONT, picture_h, icons, icons)
 
 # The info panel images have a transparent margin (12 px of 811 x 214) that grows when
 # they're stretched, so they're drawn larger than the panel that shows.
@@ -424,11 +378,9 @@ FORMS = {
     # help: the same for the help panel and its <formHelp>
     '': dict(W=1920, H=1080, file='layout.xml', panel=(40, 70, 1250, 1040), form=(60, 84, 1170, 942), label=430,
              help_panel=(1270, 70, 1880, 1040), help=(1286, 90, 578, 930), picture_h=300,
-             pkg_cover=655, pkg_panel=(184, 70, 1736, 640), pkg_form_w=1500, pkg_label=420,
              kb=(1440, 660, 1050)),
     ' 4x3': dict(W=1600, H=1200, file='layout 4x3.xml', panel=(30, 70, 1080, 1160), form=(46, 84, 1020, 1062), label=400,
                  help_panel=(1098, 70, 1570, 1160), help=(1110, 90, 448, 1050), picture_h=240,
-                 pkg_cover=775, pkg_panel=(60, 70, 1540, 755), pkg_form_w=1420, pkg_label=400,
                  kb=(1400, 720, 1170)),
 }
 
@@ -454,7 +406,7 @@ def forms_page(v):
     hx0, hy0, hx1, hy1 = f['help_panel']
     return '''%s
 
-<!-- Aeon Nox: Settings, Manage, Sources and the other screens, drawn over the page behind.
+<!-- Aeon Nox: Settings, Manage and the other screens, drawn over the page behind.
      Two panels, as on Home: the screen's rows on the left, and on the right the focused
      row's picture, status and help (<formHelp>). Image paths are relative to this page's folder. -->
 
@@ -479,31 +431,6 @@ def forms_page(v):
 ''' % ((head(f), f['W'], f['H'], topbar(f, 'RETROFE'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),
         hx0, hx1, hy0, hy1, panel_images(hx0, hy0, hx1, hy1))
        + f['form'] + (f['label'], form_attrs('../')) + f['help'] + (help_attrs(f['picture_h']),))
-
-def package_page(v):
-    f = FORMS[v]
-    x0, y0, x1, y1 = f['pkg_panel']
-    return '''%s
-
-<!-- Aeon Nox: a package from the Catalog. The form takes the top of the screen, so the
-     Catalog page behind it keeps showing the package's logo, kind, source and version in
-     its info panel. (A form page has no selected item of its own, so it can't show the
-     package's artwork itself.) -->
-
-    <!-- Cover the Catalog's top part (the background squashed to fit) -->
-    <image src="images/background.png" x="0" y="0" width="%d" height="%d" layer="0"/>
-
-%s
-
-    <!-- Panel (seen at x %d-%d, y %d-%d) -->
-%s
-
-    <form x="%d" y="%d" width="%d" height="%d" xOrigin="center" yOrigin="top" labelWidth="%d"
-          %s layer="3"/>
-
-</layout>
-''' % (head(f), f['W'], f['pkg_cover'], topbar(f, 'CATALOG'), x0, x1, y0, y1, panel_images(x0, y0, x1, y1),
-       (x0 + x1) // 2, y0 + 18, f['pkg_form_w'], y1 - y0 - 30, f['pkg_label'], form_attrs('../../', 36, 54))
 
 def keyboard_page(v):
     f = FORMS[v]
@@ -551,32 +478,21 @@ for variant in GEO:
     write(f, games_page(variant))
     write('collections/_menu/layout/' + f, menu_page(variant))
     write('collections/Home/layout/' + f, home_page(variant))
-    write('collections/Catalog/layout/' + f, catalog_page(variant))
     write('forms/' + f, forms_page(variant).replace('src="images/', 'src="../images/'))
-    write('forms/package/' + f, package_page(variant).replace('src="images/', 'src="../../images/'))
     write('forms/keyboard/' + f, keyboard_page(variant).replace('src="images/', 'src="../../images/'))
 write('splash.xml', splash())
 
 TEXT = {
-    'collections/Home/medium_artwork/tagline/Catalog.txt': 'Collections, artwork and layouts to install',
     'collections/Home/medium_artwork/tagline/Settings.txt': 'Controls, display, menus and video',
     'collections/Home/medium_artwork/tagline/Manage.txt': 'Your games, systems, menus and themes',
     'collections/Home/medium_artwork/tagline/Browse.txt': 'Your collections and games',
-    'collections/Home/medium_artwork/description/Catalog.txt':
-        'Everything your sources offer: collections, artwork, layouts and more. Choose a package to see what it is and install it. '
-        'Downloads carry on in the background while you look around.',
     'collections/Home/medium_artwork/description/Settings.txt':
         'Your controls, window or full screen and the screen size, which theme to use, whether RetroFE starts here on Home, and video playback. '
         'The Settings key opens it from anywhere, too.',
     'collections/Home/medium_artwork/description/Manage.txt':
-        'Games, menus, systems, videos, launchers and themes: add, change and hide what RetroFE shows and how it starts it. '
-        'See what the Catalog has installed, and the sources it uses.',
+        'Games, menus, systems, videos, launchers and themes: add, change and hide what RetroFE shows and how it starts it.',
     'collections/Home/medium_artwork/description/Browse.txt':
-        'Your collections, as set up in Manage or installed from the Catalog. Back brings you here again.',
-    'collections/Catalog/medium_artwork/tagline/Catalog Sources.txt': 'Where packages come from',
-    'collections/Catalog/medium_artwork/description/Catalog Sources.txt':
-        'Add or remove sources: an index file on the web or on disk, or a folder of package archives on a USB stick or a NAS. '
-        'You can check them all for updates here too.',
+        'Your collections, as set up in Manage. Back brings you here again.',
 }
 for rel, text in TEXT.items():
     write(rel, text)

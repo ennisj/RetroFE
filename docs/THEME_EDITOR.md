@@ -23,7 +23,7 @@ Two kinds of theme, in two ways:
   It never duplicates or deletes a hand-made theme.
 
 An editor-made theme is an ordinary layout folder. RetroFE runs it without
-the editor, and it can be copied, zipped for the Catalog or deleted like any
+the editor, and it can be copied, zipped to share or deleted like any
 other:
 
 ```

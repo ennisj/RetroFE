@@ -1,7 +1,6 @@
 # Artwork the fork adds to Aeon Nox, drawn with Pillow:
 #   images/background.png, images/form_focus.png
 #   collections/Home/medium_artwork/logo/<item>.png and icon/<item>.png
-#   collections/Catalog/medium_artwork/icon/Catalog Sources.png
 #   python gen_images.py <Aeon Nox folder>
 import math, os, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -58,19 +57,6 @@ def form_focus():
 def canvas(size):
     return Image.new('L', (size * SS, size * SS), 0)
 
-def icon_catalog(size):
-    m = canvas(size); d = ImageDraw.Draw(m); s = size * SS; w = int(s * 0.07)
-    cx = s // 2
-    # arrow
-    d.rectangle([cx - w // 2, int(s * 0.12), cx + w // 2, int(s * 0.52)], fill=255)
-    d.polygon([(cx - int(s * 0.2), int(s * 0.42)), (cx + int(s * 0.2), int(s * 0.42)), (cx, int(s * 0.66))], fill=255)
-    # tray
-    y0, y1, x0, x1 = int(s * 0.62), int(s * 0.86), int(s * 0.14), int(s * 0.86)
-    d.line([(x0, y0), (x0, y1), (x1, y1), (x1, y0)], fill=255, width=w, joint='curve')
-    for x, y in ((x0, y1), (x1, y1), (x0, y0), (x1, y0)):
-        d.ellipse([x - w // 2, y - w // 2, x + w // 2, y + w // 2], fill=255)
-    return m
-
 def icon_settings(size):
     m = canvas(size); d = ImageDraw.Draw(m); s = size * SS
     cx = cy = s / 2
@@ -111,22 +97,7 @@ def icon_browse(size):
     d.polygon([(x - t * 0.8, y - t), (x - t * 0.8, y + t), (x + t, y)], fill=0)
     return m
 
-def icon_sources(size):
-    m = canvas(size); d = ImageDraw.Draw(m); s = size * SS; w = int(s * 0.055)
-    x0, x1 = s * 0.2, s * 0.8
-    eh = s * 0.16
-    top, bottom = s * 0.14, s * 0.78
-    # a stack of disks (a database)
-    d.rectangle([x0, top + eh / 2, x1, bottom + eh / 2], fill=255)
-    d.ellipse([x0, bottom, x1, bottom + eh], fill=255)
-    d.ellipse([x0, top, x1, top + eh], fill=255)
-    d.ellipse([x0 + w, top + w * 0.7, x1 - w, top + eh - w * 0.7], fill=0)
-    for k in (0.38, 0.62):
-        y = top + (bottom - top) * k
-        d.arc([x0 + w, y - eh / 2 + w, x1 - w, y + eh / 2], 0, 180, fill=0, width=w)
-    return m
-
-ICONS = {'Catalog': icon_catalog, 'Settings': icon_settings, 'Manage': icon_manage, 'Browse': icon_browse}
+ICONS = {'Settings': icon_settings, 'Manage': icon_manage, 'Browse': icon_browse}
 
 def tint(mask, size, color=ACCENT, glow=True):
     mask = mask.resize((size, size), Image.LANCZOS)
@@ -169,4 +140,3 @@ font = os.path.join(ROOT, 'fonts', 'BebasNeue.ttf')
 for name, fn in ICONS.items():
     save(logo(name, fn, font), 'collections/Home/medium_artwork/logo/%s.png' % name)
     save(icon_image(fn, 260), 'collections/Home/medium_artwork/icon/%s.png' % name)
-save(icon_image(icon_sources, 260), 'collections/Catalog/medium_artwork/icon/Catalog Sources.png')

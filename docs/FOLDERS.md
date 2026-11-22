@@ -2,8 +2,7 @@
 
 This is the reference for where a RetroFE install keeps each kind of thing: the program,
 settings, themes, launchers, emulator programs, systems, games, their media, and what
-Manage and the Catalog keep for themselves. Manage, the Catalog and new documentation
-follow it. It describes what the code does; where the code is still being brought in line,
+Manage keeps for itself. Manage and new documentation follow it. It describes what the code does; where the code is still being brought in line,
 the [To do](#to-do) list says so.
 
 Paths are written with `/`; on Windows they're the same with `\`.
@@ -35,7 +34,7 @@ Relative paths in settings are relative to the root.
 ├── layouts/<theme>/              themes: layout.xml, splash.xml, artwork, fonts, sounds
 │   └── collections/<system>/     a system's own pages and layout artwork, inside the theme
 ├── launchers.windows/<name>.conf global launchers (launchers.linux/, launchers.apple/ elsewhere)
-├── emulators/<emulator>/         emulator programs, one folder each
+├── emulators/<emulator>/         emulator programs you installed, one folder each
 ├── collections/
 │   ├── <system>/                 a system (a "collection")
 │   │   ├── settings.conf         where its games are, their extensions, its launcher
@@ -55,7 +54,6 @@ Relative paths in settings are relative to the root.
 ├── meta/                         game databases RetroFE imports (hyperlist/, mamelist/, emuarc/)
 ├── meta.db                       the imported game database
 ├── hi2txt/                       hiscore reader
-├── catalog/                      everything the Catalog keeps (see below)
 ├── manage/                       Manage's backups and saved game saves
 ├── start.bat, exit.bat           optional scripts run when RetroFE starts and exits
 └── log.txt
@@ -65,12 +63,13 @@ Folders whose names start with `_` under `collections/` aren't systems.
 
 ### Emulator programs: `emulators/<emulator>/`
 
-Each emulator gets a folder of its own under `<root>/emulators/`, named after it:
-`emulators/RetroArch/`, `emulators/MAME/`, `emulators/DuckStation/`. Its program and
+This is where you put the emulators you install yourself, a folder each, named after
+it: `emulators/RetroArch/`, `emulators/MAME/`, `emulators/DuckStation/`. Its program and
 everything it ships go in that folder, and so do its own settings, when the emulator can
-keep them there (its "portable" mode). The Catalog installs emulators here (target
-`emulators`). Emulators you install yourself can go anywhere, but here keeps the install
-self-contained and movable.
+keep them there (its "portable" mode). RetroFE doesn't download or install emulators;
+add a launcher in Manage by choosing the emulator's program. Emulators can go anywhere,
+but here keeps the install self-contained and movable, and a launcher's program inside
+the root is written with `%RETROFE_PATH%`.
 
 - **RetroArch** keeps its cores in `emulators/RetroArch/cores/` (its `libretro_directory`),
   their descriptions in `emulators/RetroArch/info/`, and BIOS files in
@@ -118,29 +117,12 @@ it at a games folder you already have. Leave Games folder unset to use
 `collections/<Name>/roms`. Add makes that games folder. It writes `list.path` only
 when you choose a different folder.
 
-### What Manage and the Catalog keep
+### What Manage keeps
 
 | Folder | What |
 |---|---|
 | `manage/backups/` | Every file Manage changes or removes, before it does |
 | `manage/saves/<system>/<game>/` | Game saves Manage has put aside |
-| `catalog/` (`catalogPath`) | `sources.conf`, `cache/<source>/`, `artwork/`, `downloads/` (unfinished downloads), `staging/` (installs in progress), `installed/<id>.json` (what each package wrote), `backups/` (files a package replaced), `update/` (RetroFE's own updates) |
-| `retrofe.update.json` | A RetroFE update in progress |
-
-The Catalog installs into these targets, never into a full path:
-
-| Target | Folder |
-|---|---|
-| `root` | the root |
-| `collections` | `collections/` |
-| `items` | `baseItemPath`, else `collections/` |
-| `media` | `baseMediaPath`, else `collections/` |
-| `layouts` | the layouts folder (`baseLayoutPath`, else `layouts/`) |
-| `meta` | `meta/` |
-| `emulators` | `emulators/` (built-in emulator and RetroArch core downloads only) |
-
-It never writes into `catalog/` itself or the `retrofe/` program folder, except when
-updating RetroFE.
 
 ## A split install (OnesaUCE)
 
@@ -183,6 +165,4 @@ Places that don't follow this yet:
 - GETTING_STARTED.md, LAUNCHERS.md and COLLECTIONS.md disagree with this page in places
   (the `launchers/` folder, `%RETROFE_EXEC_PATH%`, `%ITEM_DIRECTORY%`, a missing
   `SETTINGS.md`). Where they do, this page is right.
-- The Catalog's `items` target puts `<system>/roms/...` under `baseItemPath`, where
-  RetroFE doesn't look (it expects `<baseItemPath>/<system>/`).
 - On Linux and macOS, a relative program path isn't resolved against the root.

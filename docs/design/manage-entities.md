@@ -22,8 +22,10 @@ adapted to RetroFE's layout-drawn forms: where One Saucier shows a details
 screen as scrollable tiles, here each tile is a **link** row that opens its
 own screen ([DECISIONS M2](../DECISIONS.md)).
 
-Out of scope for now: packaging customizations and custom packs. The Catalog
-gets one more source: this RetroFE fork itself, from GitHub.
+Out of scope for now: packaging customizations and custom packs, and
+downloading or installing anything (the package installer, emulator
+downloads and RetroFE's self-update were removed in round 18; their code is
+kept in git). A setup is built by hand in Manage.
 
 ## Building blocks (round 1)
 
@@ -79,8 +81,7 @@ These carry over from One Saucier, where they were learned the hard way:
 - **Changes take effect on reload.** RetroFE reads configuration, collections,
   metadata and media once, and caches media folder listings until it reloads
   (the reload forgets them, so new and removed files show). Screens
-  mark changes as pending, and RetroFE reloads when you leave Manage (as the
-  Catalog does when you're back on Home).
+  mark changes as pending, and RetroFE reloads when you leave Manage.
 - **Media can be a folder of files** (OneSauce): every media screen shows
   such a slot, lists its files and changes them one by one
   (`Library::Editor`'s media folder calls), and a file beside a folder wins,
@@ -454,26 +455,11 @@ ImGui screen inside the manager, previewing with RetroFE's own page builder.
 It edits themes made with the editor; editing hand-made themes such as Aeon
 Nox needs an importer or a different mode (see DECISIONS).
 
-## Catalog: this fork from GitHub
-
-There are no releases yet: CI uploads build artifacts only. The plan:
-
-1. A `github` source type that reads a repository's releases
-   (`https://api.github.com/repos/<owner>/<repo>/releases`) and offers each
-   platform's release asset as a package of kind `app`.
-2. The Sources screen offers "RetroFE (this fork)" as a one-step source for
-   `ennisj/RetroFE`, alongside adding any other source.
-3. Installing an `app` package updates RetroFE itself. Windows can't overwrite
-   a running exe, so the update is staged and applied by renaming the running
-   files aside and restarting; leftovers are removed on the next start.
-4. A release workflow that builds and attaches the Windows package when a tag
-   is pushed. Publishing a release is your call (see DECISIONS).
-
 ## Rounds
 
 | Round | Work (parallel where listed together) |
 |-------|---------------------------------------|
-| 1 | Forms foundation (navigation, providers, new elements, Manage hub) · Aeon Nox as the default layout · library data layer · Catalog GitHub source and self-update · theme editor core port (model, generator, widget audit, storage, export) |
+| 1 | Forms foundation (navigation, providers, new elements, Manage hub) · Aeon Nox as the default layout · library data layer · a GitHub source and self-update (removed in round 18) · theme editor core port (model, generator, widget audit, storage, export) |
 | 2 | Games · Menus and Systems (Videos as a preset of Systems) · Launchers · Themes list and theme editor screen · Aeon Nox styling of the new elements |
 | 3 | Theme editor editing (drag, properties, templates) · media replacement, playlists and other editing extras · end-to-end checks on OnesaUCE-shaped data (read-only copy) |
 | 4+ | Later items from each entity, the open decisions you've answered |

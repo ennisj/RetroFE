@@ -1,6 +1,6 @@
 <layout width="1600" height="1200" font="fonts/RobotoCondensed-Regular.ttf" loadFontSize="44" fontColor="e6e6e6">
 
-<!-- Aeon Nox: Settings, Manage, Sources and the other screens, drawn over the page behind.
+<!-- Aeon Nox: Settings, Manage and the other screens, drawn over the page behind.
      Two panels, as on Home: the screen's rows on the left, and on the right the focused
      row's picture, status and help (<formHelp>). Image paths are relative to this page's folder. -->
 
@@ -36,7 +36,6 @@
               defaultImage="../collections/Home/medium_artwork/icon/Manage.png">
         <!-- Rows without a picture of their own show Home's icon for the part of RetroFE they're in -->
         <defaultImage forms="settings control*" src="../collections/Home/medium_artwork/icon/Settings.png"/>
-        <defaultImage forms="sources package" src="../collections/Home/medium_artwork/icon/Catalog.png"/>
     </formHelp>
 
 </layout>

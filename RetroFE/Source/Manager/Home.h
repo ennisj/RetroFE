@@ -26,16 +26,15 @@ namespace Home
     constexpr const char* collectionName = "Home";
 
     // Items, in menu order
-    constexpr const char* catalog = "Catalog";
     constexpr const char* settings = "Settings";
     constexpr const char* manage = "Manage";
     constexpr const char* browse = "Browse";   // goes to firstCollection
 
-    constexpr const char* items[] = { catalog, settings, manage, browse };
+    constexpr const char* items[] = { settings, manage, browse };
 
     // The item Home starts on, as a position in items: Browse once there's
     // something to browse (collections), Manage on a bare install, where the
-    // first system is added. Never the Catalog, whatever the order.
+    // first system is added.
     inline size_t landing(bool hasContent)
     {
         const char* wanted = hasContent ? browse : manage;
@@ -46,11 +45,4 @@ namespace Home
         }
         return 0;
     }
-
-    // The Catalog list, opened from Home's Catalog item: also built in memory,
-    // one item per package, named by package id, so artwork is <id>.png.
-    // Layouts style it as the "Catalog" collection.
-    constexpr const char* catalogCollectionName = "Catalog";
-    // Its last item, which opens the Sources screen (ids can't contain spaces)
-    constexpr const char* catalogSourcesItem = "Catalog Sources";
 }

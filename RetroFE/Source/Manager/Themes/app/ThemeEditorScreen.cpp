@@ -126,7 +126,7 @@ ThemeEditorScreen::ThemeEditorScreen(const Context& context, const std::string& 
         collections_.insert(collections_.begin(), "Main");
     }
     previewName_ = ctx_.currentCollection ? ctx_.currentCollection() : "";
-    if (previewName_.empty() || previewName_ == Home::collectionName || previewName_ == Home::catalogCollectionName) {
+    if (previewName_.empty() || previewName_ == Home::collectionName) {
         previewName_ = "Main";
         if (ctx_.config) ctx_.config->getProperty(OPTION_FIRSTCOLLECTION, previewName_);
     }

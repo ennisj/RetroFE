@@ -82,7 +82,7 @@ const global_options::options_entry global_options::s_option_entries[] =
                                        "",         global_options::option_type::STRING,  "Jump to playlist by way of quickList key" },
     { OPTION_CYCLEPLAYLIST,            "",         global_options::option_type::MSTRING,  "Set of playlists that can be cycled through, CSV list of playlist names" },
     { OPTION_FIRSTCOLLECTION,          "",         global_options::option_type::STRING,   "Start on this collection if available" },
-    { OPTION_HOMEMENU,                 "false",    global_options::option_type::BOOLEAN,  "Start on the Home menu (Catalog, Settings, Manage, Browse); Browse goes to firstCollection. Ignored in kiosk mode" },
+    { OPTION_HOMEMENU,                 "false",    global_options::option_type::BOOLEAN,  "Start on the Home menu (Settings, Manage, Browse); Browse goes to firstCollection. Ignored in kiosk mode" },
     { OPTION_CYCLECOLLECTION,          "",         global_options::option_type::MSTRING,  "Set of collections that can be cycled through, CSV list of collection names" },
     { OPTION_LASTPLAYEDSIZE,           "10",       global_options::option_type::INTEGER,  "Size of the auto-generated last played playlist, 0 to disable" },
     { OPTION_LASTPLAYEDSKIPCOLLECTION, "",         global_options::option_type::MSTRING,  "Skip CSV list of collections being added to last played" },
@@ -141,7 +141,6 @@ const global_options::options_entry global_options::s_option_entries[] =
     { nullptr,                        nullptr,     global_options::option_type::HEADER,   "MEDIA SEARCH PATH OPTIONS" },
     { OPTION_BASEMEDIAPATH,            "",         global_options::option_type::PATH,     "Path to media if stored outside the build" },
     { OPTION_BASEITEMPATH,             "",         global_options::option_type::PATH,     "Path to items if stored outside the build" },
-    { OPTION_CATALOGPATH,              "catalog",  global_options::option_type::PATH,     "Folder the Catalog keeps its sources, downloads, backups and records of installed packages in" },
 
     { nullptr }
 };

@@ -55,7 +55,7 @@ namespace
     }
 
     // The screen is rebuilt at least this often, for values that change by
-    // themselves, such as Catalog progress
+    // themselves, such as the library's progress
     constexpr uint32_t refreshMs = 250;
 
     // New thumbnails loaded per frame, so paging through a list doesn't stall

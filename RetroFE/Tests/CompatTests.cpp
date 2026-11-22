@@ -18,8 +18,6 @@
 // layout.lua pages, transform="...", %RETROFE_PATH% and baseLayoutPath in settings
 
 #include "TestSupport.h"
-#include "../Source/Catalog/Installer.h"
-#include "../Source/Catalog/Package.h"
 #include "../Source/Database/Configuration.h"
 #include "../Source/Graphics/LayoutCompat.h"
 #include "../Source/Library/Index.h"
@@ -630,41 +628,6 @@ namespace
             checkEqual(normal(session.file()), at(layouts, "Hand/layout.xml"), "from base_assets/layouts");
             ThemeEditor::LayoutSession old;
             check(!old.open(root, "Hand", "layout.xml", error), "not under <root>/layouts");
-        });
-
-        run("compat: catalog layouts go to the layouts folder, but never one holding the root", [] {
-            std::string layouts;
-            std::string root = splitInstall("compat-catalog", layouts);
-            writeFile(at(root, "dl/download.tmp"), "<layout/>");
-            auto package = [](const std::string& id) {
-                Catalog::Package p;
-                p.id = id;
-                p.name = id;
-                p.kind = "layout";
-                p.version = "1";
-                Catalog::PackageFile file;
-                file.url = "https://h.org/files/extra.xml";
-                file.target = "layouts";
-                file.path = "Blue";
-                p.files.push_back(file);
-                return p;
-            };
-            Catalog::Targets targets;
-            targets.root = root;
-            targets.collections = at(root, "collections");
-            targets.items = targets.collections;
-            targets.media = targets.collections;
-            targets.meta = at(root, "meta");
-            targets.layouts = layouts;
-            std::string error;
-            Catalog::Installer installer(at(root, "catalog"), targets);
-            check(installer.install(package("blue"), { at(root, "dl/download.tmp") }, error), "installed: " + error);
-            check(fs::exists(at(layouts, "Blue/extra.xml")), "into base_assets/layouts");
-
-            targets.layouts = at(root, "..");   // a layouts folder that holds the RetroFE folder
-            Catalog::Installer unsafe(at(root, "catalog2"), targets);
-            check(!unsafe.install(package("red"), { at(root, "dl/download.tmp") }, error) && error.find("holds") != std::string::npos,
-                  "refused: " + error);
         });
     }
 }

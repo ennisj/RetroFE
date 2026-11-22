@@ -28,7 +28,6 @@
 //                    default="" is its initial value.
 //   info:<key>       computed, read-only values
 //   param:<name>     the screen's parameters, e.g. param:id
-//   package:<key>    the package the screen is about, param:id (see ManagerModel.h)
 //   <prefix>:<key>   a provider's values, e.g. game:title (see Manager/Provider.h)
 namespace
 {
@@ -64,12 +63,11 @@ const char* const settingsForm = R"(
 )";
 
 // The hub: on a bare install the first launcher and system, then applying
-// what's waiting, one link per section, and the Catalog. Each package
-// installed from the Catalog opens its own screen, which can remove it.
+// what's waiting, and one link per section.
 const char* const manageForm = R"(
 <form id="manage" title="Manage">
   <note visibleWhen="!info:hasCollections" panel="yes"
-        value="Welcome! First add a launcher (the emulator program that runs the games), then a system (a folder of games and the launcher that starts them). Or install from the Catalog via Sources."/>
+        value="Welcome! First add a launcher (the emulator program that runs the games), then a system (a folder of games and the launcher that starts them)."/>
   <link label="Add your first launcher/emulator" open="emulator-new" visibleWhen="!info:hasLaunchers"/>
   <results bind="system:firstGames" open="system-add-games" visibleWhen="system:hasFirstEmptySystem"/>
   <link label="Add your first system" open="system-add" visibleWhen="!system:hasSystems"/>
@@ -83,83 +81,6 @@ const char* const manageForm = R"(
   <link label="Launchers" open="emulators"
         help="The launchers that start games: the program, its arguments, and which systems and games use each one."/>
   <link label="Themes" open="themes" help="How RetroFE looks: choose a theme, or change one with the theme and layout editors."/>
-  <section label="Catalog">
-    <link label="Sources" open="sources" help="Where the Catalog finds packages: an index file on the web or on disk, or a folder of package archives."/>
-  </section>
-  <results label="Installed from the Catalog" bind="info:installed" open="package"
-           empty="Nothing has been installed from the Catalog yet."/>
-</form>
-)";
-
-// Where the Catalog gets packages from. Each source opens its own screen.
-const char* const sourcesForm = R"(
-<form id="sources" title="Catalog sources">
-  <note bind="info:catalogStatus"/>
-  <button label="Open the Catalog" action="catalog.open" visibleWhen="info:canOpenCatalog"/>
-  <results label="Sources" bind="info:sources" open="source"
-           empty="The Catalog lists packages from sources you add here: an index file on the web or on disk, or a folder of package archives, e.g. on a USB stick or a NAS."/>
-  <list label="Problems" bind="info:catalogWarnings"/>
-  <section label="RetroFE updates" visibleWhen="!info:hasRetroFESource">
-    <note bind="info:retrofeSourceNote"/>
-    <toggle label="I trust this source" bind="draft:retrofeTrusted" default="no"
-            help="RetroFE doesn't check what sources offer. Only add sources you trust."/>
-    <button label="Add RetroFE from GitHub" action="source.addRetroFE"/>
-  </section>
-  <section label="Add a source">
-    <text label="Name" bind="draft:sourceName" hint="e.g. community"/>
-    <choice label="Type" bind="draft:sourceType" options="sourceTypes" default="index"/>
-    <text label="Address" bind="draft:sourceUrl" hint="https://..." visibleWhen="!info:sourceIsFolder"/>
-    <folder label="Folder" bind="draft:sourcePath" hint="Not chosen yet" visibleWhen="info:sourceIsFolder"/>
-    <toggle label="I trust this source" bind="draft:sourceTrusted" default="no"
-            help="RetroFE doesn't check what sources offer. Only add sources you trust."/>
-  </section>
-  <actions>
-    <button label="Add source" action="source.add" primary="yes"/>
-    <button label="Check for updates" action="catalog.refresh"/>
-  </actions>
-</form>
-)";
-
-// One source (param:id, its name): what it offers, how its last reading went
-const char* const sourceForm = R"(
-<form id="source" title="Source" bind="source:name">
-  <value label="Type" bind="source:type"/>
-  <value label="Address" bind="source:location"/>
-  <note bind="source:status"/>
-  <list label="Problems" bind="source:problems"/>
-  <results label="Packages it offers" bind="source:packages" open="package"
-           empty="None: it offers no packages, or it hasn't been read yet."/>
-  <actions>
-    <button label="Check for updates" action="catalog.refresh"/>
-    <button label="Remove this source" action="source.removeThis"
-            confirm="Remove this source? Packages installed from it stay installed."/>
-  </actions>
-</form>
-)";
-
-// One package from the Catalog; package: is the package param:id names.
-// Back is always there, so an install leaves focus on it rather than on
-// Remove, which takes Install's place. param:listed: opened from a list in
-// Manage (installed packages, a source's), not from the Catalog page.
-const char* const packageForm = R"(
-<form id="package" title="Package" bind="package:name">
-  <link label="Cores" open="retroarch-cores" visibleWhen="package:hasCores"/>
-  <note bind="package:summary"/>
-  <note bind="package:notice"/>
-  <note bind="package:description"/>
-  <note bind="package:installedStatus"/>
-  <note bind="package:requires"/>
-  <note bind="package:checksum"/>
-  <note bind="package:progress"/>
-  <actions>
-    <button label="Install" action="package.install" visibleWhen="package:canInstall"/>
-    <button label="Update" action="package.install" visibleWhen="package:canUpdate"/>
-    <button label="Show it in Browse" action="package.showInBrowse" visibleWhen="package:canShow"/>
-    <button label="Back to the Catalog" action="back" visibleWhen="!param:listed"/>
-    <button label="Back" action="back" visibleWhen="param:listed"/>
-    <button label="Stop" action="package.cancel" visibleWhen="package:isBusy"/>
-    <button label="Remove" action="package.remove" visibleWhen="package:canRemove" confirm="Remove this package? It puts back files it replaced, and keeps files you've changed since."/>
-  </actions>
 </form>
 )";
 
@@ -169,9 +90,6 @@ Forms::BuiltinTable allForms()
     Forms::BuiltinTable forms = {
         { "settings", settingsForm },
         { "manage", manageForm },
-        { "sources", sourcesForm },
-        { "source", sourceForm },
-        { "package", packageForm },
     };
     for (auto section : { Forms::gamesForms, Forms::menusForms, Forms::systemsForms,
                           Forms::videosForms, Forms::emulatorsForms, Forms::themesForms,

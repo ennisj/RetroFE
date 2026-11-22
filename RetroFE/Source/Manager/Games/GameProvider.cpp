@@ -2443,8 +2443,7 @@ std::string GameProvider::problem(const std::string& action, const Screen& scree
                 ? "It won't start: " + r.name + "'s program isn't there (" + (check.path.empty() ? def.executable : check.path) + ")."
                 : "";
         }
-        if (!launchCheck_.empty()) return launchCheck_;
-        return services_.launchProblem ? services_.launchProblem() : "";
+        return launchCheck_;
     }
 
     if (isUnset) {

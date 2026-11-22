@@ -62,10 +62,9 @@ namespace Setup
     // Creates collections/<name> with its settings and launcher, and adds it to the top menu
     bool createCollection(const NewCollection& collection, std::string& error);
 
-    // Adds a collection to topMenu() if it isn't listed yet, or removes it,
-    // leaving the other lines as they were. The menu's menu.txt is used, or its
+    // Adds a collection to topMenu() if it isn't listed yet, leaving the
+    // other lines as they were. The menu's menu.txt is used, or its
     // menu/ folder when it has no menu.txt (see Library::MenuFiles); originals
     // go to manage/backups. A name checkName() refuses isn't added.
     bool addToMainMenu(const std::string& name, std::string& error);
-    bool removeFromMainMenu(const std::string& name, std::string& error);
 }
