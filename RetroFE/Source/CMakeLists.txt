@@ -40,7 +40,6 @@ add_custom_command(
 set(SQLITE3_ROOT "${RETROFE_THIRD_PARTY_DIR}/sqlite3")
 set(RAPIDXML_ROOT "${RETROFE_THIRD_PARTY_DIR}/rapidxml-1.13")
 set(IMGUI_ROOT "${RETROFE_THIRD_PARTY_DIR}/imgui-1.91.5")
-set(NLOHMANN_JSON_ROOT "${RETROFE_THIRD_PARTY_DIR}/nlohmann-json-3.11.3")
 
 if(WIN32)
     if(MSVC)
@@ -247,7 +246,6 @@ set(RETROFE_INCLUDE_DIRS
     "${RAPIDXML_ROOT}"
     "${IMGUI_ROOT}"
     "${IMGUI_ROOT}/backends"
-    "${NLOHMANN_JSON_ROOT}"
     "${PACDRIVE_ROOT}"
     ${RETROFE_PLATFORM_INCLUDE_DIRS}
 )

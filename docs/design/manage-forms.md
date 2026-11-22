@@ -259,16 +259,15 @@ Things to know:
   pressed): focus stays at the same place or moves up, and never lands by
   itself on a file or folder field, a button with `confirm=`, or a button
   that wasn't shown before the press (usually the undo of what was pressed:
-  "Show this game again" after Hide, Remove after Install), when anything
+  "Show this game again" after Hide), when anything
   else can take it (`Forms::refocusTarget`, `FormWidget::buildRows`). If it
   has to, Select there does nothing until the user moves, so a second press
   can't open the file browser or undo the action. So give a screen a harmless
   row near its action (a Back button, say) rather than special-casing focus.
-- **Focus after an action**: set `Result::focus` to the field to focus
-  afterwards, named by its `action`, `bind` or `open` (`Forms::findField`),
-  e.g. `"system-add"`. If it isn't shown yet (it appears once the work is
-  done) it's focused when it appears, unless the user has moved by then. `ManagerUI::returnFromLaunch` uses the same to put focus back on
-  "Start this game".
+- **Focusing a field from code**: `FormWidget::focusOn` takes a field named by
+  its `action`, `bind` or `open` (`Forms::findField`). If it isn't shown yet
+  it's focused when it appears, unless the user has moved by then.
+  `ManagerUI::returnFromLaunch` uses it to put focus back on "Start this game".
 - **Folder and file fields** open the file browser (`Manager/Browser/`, form
   `file-browser`, prefix `browse`) on Select, never the system dialog. Its
   pick comes back through your `set()` on your own screen, as if typed, so

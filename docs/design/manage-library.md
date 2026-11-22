@@ -491,7 +491,7 @@ These are simplified or not modelled:
   invalidate after writes.
 
 **LB9. New systems are listed in the top menu, which is `firstCollection` only when it's a menu.**
-- `Setup::addToMainMenu` and `removeFromMainMenu` delegate to `Library::MenuFiles`.
+- `Setup::addToMainMenu` delegates to `Library::MenuFiles`.
 - `Setup::topMenu()` is `firstCollection` when it is a menu or could become one,
   meaning it has no games of its own: no `list.extensions`, `list.path`, roms
   folder or `.sub`. Otherwise it's "Main".

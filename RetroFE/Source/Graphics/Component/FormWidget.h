@@ -168,7 +168,7 @@ public:
     void restoreFocus(const Forms::Focus& focus);
 
     // Focuses the field key names (Forms::findField), now or as soon as it's
-    // shown, unless the user moves first (Result::focus)
+    // shown, unless the user moves first
     void focusOn(const std::string& key);
 
     // Whether Select on a folder or file field asks for the file browser
@@ -359,7 +359,7 @@ private:
     bool focusGuarded_ = false;   // focus landed on a Guarded row (Forms::refocusTarget) because rows
                                   // went away: Select there waits for the user to move first
     std::vector<const Forms::Field*> shownFields_;   // focusable fields of the last build, to tell new ones
-    std::string wantedFocus_;     // Result::focus not shown yet: focused when it is, until the user moves
+    std::string wantedFocus_;     // focusOn's field not shown yet: focused when it is, until the user moves
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key
     bool manualScroll_ = false;

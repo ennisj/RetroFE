@@ -930,10 +930,7 @@ go back once it succeeds, or ask for the next input the user presses
 (`Result::capture`, as Settings > Controls does), a provider can object to
 leaving a screen with unsaved changes, and it can ask RetroFE to reload once
 the manager closes (which the "changes waiting" line counts). An action can
-also name the field to focus afterwards (`Result::focus`, by its action, bind
-or open; focused as soon as it shows), reload now and come back to a screen
-(`Result::reload` with `open`), or close the screens and show a collection
-(`Result::browse`).
+also reload now and come back to a screen (`Result::reload` with `open`).
 How to add a section, its forms and its provider is in
 [design/manage-forms.md](design/manage-forms.md).
 

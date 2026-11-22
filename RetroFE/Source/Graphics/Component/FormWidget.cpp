@@ -690,7 +690,7 @@ void FormWidget::focusBar(int index)
 
 void FormWidget::resolveFocus(int previousFocus, int previousBar)
 {
-    // A field an action asked for (Result::focus) takes focus once it's shown
+    // A field focusOn asked for takes focus once it's shown
     if (!wantedFocus_.empty()) {
         for (size_t i = 0; i < bar_.size(); i++) {
             if (bar_[i].enabled && Forms::fieldMatches(*bar_[i].field, wantedFocus_)) {

@@ -1093,7 +1093,7 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         return;
     }
     if (result.ok && result.reload) {
-        // Where to go once RetroFE is back: Manage on a screen, a collection
+        // Where to go once RetroFE is back: Manage on a screen
         if (!result.open.empty()) {
             const Navigator::Frame* frame = nav_.current();
             afterReload_.reopen({ result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result), result.message });
@@ -1131,10 +1131,6 @@ void ManagerUI::handleResult(const Forms::Model::Result& result)
         if (!push(result.open, Forms::openParams(frame ? frame->params : Forms::Params{}, result))) {
             return;
         }
-    }
-    // Focus where the action says, now or once that field shows; on the screen it ended on
-    if (open_ && result.ok && !result.focus.empty() && widget_) {
-        widget_->focusOn(result.focus);
     }
     if (open_) {
         setStatus(result.message, Forms::statusKind(result));

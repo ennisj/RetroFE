@@ -209,14 +209,6 @@ namespace Forms
             // back, showing the message there (the hub's "Apply changes now").
             bool reload = false;
 
-            // After success, the field to focus: a field whose action, bind
-            // or open is this (see findField). If it isn't shown yet (e.g. a
-            // button that appears once an install has finished), it's focused
-            // when it appears, unless the user has moved by then. Without
-            // it, focus stays where it was; if that field went away, it never
-            // lands on a button that wasn't there before the action or that
-            // asks for confirmation (see refocusTarget).
-            std::string focus;
 
             // After success, go to another screen: open pushes that form with
             // params, plus the current screen's when keepParams (params win);
@@ -391,8 +383,8 @@ namespace Forms
     // away (e.g. after an action). Guarded: a file or folder field (Select opens
     // a picker); a button that asks for confirmation (destructive); a button
     // that wasn't shown before (wasShown false), which after an action is
-    // usually its undo ("Show this game again" after Hide, "Remove" after
-    // Install), so a second Select from someone still pressing it does nothing.
+    // usually its undo ("Show this game again" after Hide), so a second Select
+    // from someone still pressing it does nothing.
     FocusTarget refocusTarget(const Field* field, bool focusable, bool wasShown);
 
     // Letter jump in a list (RetroFE's letterUp / letterDown): from row

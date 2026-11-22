@@ -668,5 +668,20 @@ static Test::Suite emulators("emulators", [] {
         noCore.arguments = "\"%ITEM_FILEPATH%\"";
         check(Emulators::suggestSystem(root, noCore).name.empty(), "no core: nothing");
         check(!fs::exists(root + "/emulators/RetroArch/info/fceumm_libretro.info"), "nothing is downloaded");
+
+        // RetroArch's names may hold characters a system name can't
+        writeFile(root + "/emulators/RetroArch/info/gambatte_libretro.info", "systemname = \"Game Boy/Game Boy Color\"\n");
+        writeFile(root + "/emulators/RetroArch/info/genesis_plus_gx_libretro.info", "systemname = \"Sega 8/16-bit (MS/GG/MD/CD)\"\n");
+        writeFile(root + "/emulators/RetroArch/info/odd_libretro.info", "systemname = \"Odd: thing #1? <a|b>*\"\n");
+        Library::LauncherDef gb = launcher;
+        gb.arguments = "-L cores/gambatte_libretro.dll \"%ITEM_FILEPATH%\"";
+        checkEqual(Emulators::suggestSystem(root, gb).name, "Game Boy-Game Boy Color", "a slash becomes a dash");
+        Library::LauncherDef md = launcher;
+        md.arguments = "-L cores/genesis_plus_gx_libretro.dll \"%ITEM_FILEPATH%\"";
+        checkEqual(Emulators::suggestSystem(root, md).name, "Sega 8-16-bit (MS-GG-MD-CD)", "every slash");
+        Library::LauncherDef odd = launcher;
+        odd.arguments = "-L cores/odd_libretro.dll";
+        std::string oddName = Emulators::suggestSystem(root, odd).name;
+        check(oddName.find_first_of("\\/:*?\"<>|#") == std::string::npos && !oddName.empty(), "no character a name can't have: " + oddName);
     });
 });

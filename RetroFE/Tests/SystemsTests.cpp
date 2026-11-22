@@ -611,6 +611,12 @@ static void runSystemsTests()
         checkEqual(f.model.get("system:addName"), "PlayStation", "known by its program, whatever the launcher's name");
         checkEqual(f.model.get("system:addExtensions"), Emulators::findKnownEmulator("duckstation-qt-x64-ReleaseLTCG.exe")->extensions,
                    "built-in extensions");
+        // A new launcher: the program chosen in the form
+        f.model.set("system:addLauncher", "");
+        f.model.set("system:addProgram", "C:\\Emulators\\PCSX2\\pcsx2-qt.exe");
+        checkEqual(f.model.get("system:addName"), "PlayStation 2", "known by the Program field of a new launcher");
+        f.model.set("system:addProgram", "C:\\Tools\\notepad.exe");
+        checkEqual(f.model.get("system:addName"), "", "another program: the suggestion goes");
         f.model.set("system:addName", "My console");
         f.model.set("system:addExtensions", "chd");
         f.model.set("system:addLauncher", "RetroArch Genesis Plus GX");

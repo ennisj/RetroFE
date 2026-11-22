@@ -1583,7 +1583,7 @@ void SystemProvider::set(const std::string& key, const std::string& value, const
         }
         add_[key] = value;
         if (!videos_ && (key == "addName" || key == "addExtensions")) addTyped_[key] = true;
-        if (!videos_ && key == "addLauncher") suggestLauncher();
+        if (!videos_ && (key == "addLauncher" || key == "addProgram")) suggestLauncher();
     }
 }
 
@@ -2241,15 +2241,23 @@ void SystemProvider::syncAddLaunchers()
 void SystemProvider::suggestLauncher()
 {
     std::string launcher = get("addLauncher", Screen{});
+    // A new launcher (A program on the drive...): its Program field instead
+    std::string program = addIsNewLauncher() ? Utils::trimEnds(add_["addProgram"]) : "";
     IndexPtr idx = index();
-    if (suggestionIndex_ == idx && suggestedLauncher_ == launcher) return;
+    std::string key = launcher + "\n" + program;
+    if (suggestionIndex_ == idx && suggestedLauncher_ == key) return;
     suggestionIndex_ = idx;
-    suggestedLauncher_ = launcher;
+    suggestedLauncher_ = key;
     // What the launcher's program says about its games: a known emulator, or RetroArch's core
     Emulators::SystemSuggestion suggestion;
-    int found = idx ? idx->findLauncher(Library::LauncherScope::Global, launcher) : -1;
+    int found = idx && program.empty() ? idx->findLauncher(Library::LauncherScope::Global, launcher) : -1;
     if (found >= 0) {
         suggestion = Emulators::suggestSystem(root(), idx->launchers[static_cast<size_t>(found)]);
+    }
+    else if (!program.empty()) {
+        Library::LauncherDef chosen;
+        chosen.executable = program;
+        suggestion = Emulators::suggestSystem(root(), chosen);
     }
     if (!addTyped_["addName"]) add_["addName"] = suggestion.name;
     if (!addTyped_["addExtensions"]) add_["addExtensions"] = suggestion.extensions;

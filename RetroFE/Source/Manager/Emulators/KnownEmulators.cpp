@@ -42,6 +42,23 @@ namespace
         return at == std::string::npos ? "" : path.substr(0, at);
     }
 
+    // A system name RetroFE accepts (no \ / : * ? " < > | #, see MenuFiles::checkChildName):
+    // RetroArch's "Game Boy/Game Boy Color" becomes "Game Boy-Game Boy Color"
+    std::string systemName(const std::string& text)
+    {
+        std::string name;
+        for (char c : text) {
+            if (c == '/' || c == '\\') name += '-';
+            else if (std::string(":*?\"<>|#").find(c) == std::string::npos) name += c;
+        }
+        std::string collapsed;
+        for (char c : Utils::trimEnds(name)) {
+            if (c == ' ' && !collapsed.empty() && collapsed.back() == ' ') continue;
+            collapsed += c;
+        }
+        return collapsed;
+    }
+
     bool isAbsolute(const std::string& path)
     {
         return (!path.empty() && (path[0] == '/' || path[0] == '\\')) || (path.size() > 1 && path[1] == ':');
@@ -113,7 +130,7 @@ SystemSuggestion suggestSystem(const std::string& root, const Library::LauncherD
         folder = Utils::combinePath(root, folder);
     }
     auto info = Library::RetroArch::readConfigFile(Utils::combinePath(folder, "info", stem + "_libretro.info"));
-    suggestion.name = info["systemname"];
+    suggestion.name = systemName(info["systemname"]);
     suggestion.extensions = info["supported_extensions"];
     std::replace(suggestion.extensions.begin(), suggestion.extensions.end(), '|', ',');
     return suggestion;
