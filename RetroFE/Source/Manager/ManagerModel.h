@@ -26,7 +26,6 @@
 #include <vector>
 
 class Configuration;
-namespace Catalog { class Service; }
 
 // What the manager's forms are bound to.
 //   settings:<key>         global settings; edits are pending until settings.save.
@@ -38,38 +37,15 @@ namespace Catalog { class Service; }
 //   info:hasCollections    whether there are any, for visibleWhen
 //   info:romCount          matching files in draft:romPath
 //   info:source:<binding>  the file a settings: value comes from, when it isn't settings.conf
-//   info:sources, info:installed, info:catalogWarnings   Catalog lists
-//   info:catalogStatus     what the Catalog is doing, or how many packages it has
-//   info:hasSources, info:hasInstalled, info:sourceIsFolder   for visibleWhen
-//                          (hasInstalled: packages that can be removed, so not RetroFE itself)
-//   info:removalStatus     how the last package.removeInstalled went
-//   package:<key>          the package param:id names: name, summary,
-//                          description, installedStatus, requires, checksum, progress,
-//                          notice (installing RetroFE itself restarts it),
-//                          and canInstall, canUpdate, canRemove, isBusy for visibleWhen
-//   draft:source*          the Sources form's input
-//   info:hasRetroFESource, info:retrofeSourceNote, draft:retrofeTrusted
-//                          adding this fork's GitHub releases in one step
 //   info:pendingChanges    "2 changes apply when you close Manage", or "" (see
 //                          PendingChanges.h); info:hasPendingChanges for visibleWhen
-//   rows info:sources      a row per source, opening the "source" screen (id = its name)
-//   rows info:installed    a row per installed package, opening "package" (id)
-//   source:<key>           the source param:id names: name, type, location,
-//                          status (when it was read and how it went), and
-//                          the list source:problems and rows source:packages
-//   info:canOpenCatalog    the Catalog list has packages and Home is on, for catalog.open
-//   package:isInstalled, package:canShow (a collection that can be shown in Browse)
 //   settings:screenSize    horizontal and vertical as one choice (options
 //                          "screenSizes": "stretch", "1920x1080"..., "custom");
 //                          info:customScreenSize while "custom" shows Width and Height
 //   <prefix>:<key>         a registered provider's (see Provider.h)
-// Actions: settings.save, collection.create, package.install, package.remove,
-// package.cancel, package.removeInstalled (draft:removePackage),
-// package.showInBrowse (reloads, then shows its collection), source.add,
-// source.addRetroFE (draft:retrofeTrusted), source.remove, source.removeThis
-// (the source screen's), catalog.refresh, catalog.open (shows the Catalog
-// list), changes.apply (reloads now, then opens Manage again), open.<form>
-// (opens that form), back, and <prefix>.<name> for providers.
+// Actions: settings.save, collection.create, changes.apply (reloads now, then
+// opens Manage again), open.<form> (opens that form), back, and
+// <prefix>.<name> for providers.
 class ManagerModel : public Forms::Model
 {
 public:
@@ -78,9 +54,6 @@ public:
 
     // Re-reads settings and collections and drops unsaved setting edits
     void refresh();
-
-    // The Catalog the package:, source and catalog bindings use; may be null
-    void setCatalog(Catalog::Service* catalog) { catalog_ = catalog; }
 
     // What's waiting for a reload, for info:pendingChanges and changes.apply
     void setPendingChanges(std::function<Manager::PendingChanges()> pending) { pending_ = std::move(pending); }
@@ -131,24 +104,15 @@ private:
     std::string romCount();
     Result saveSettings();
     Result createCollection();
-    std::string packageValue(const std::string& key);
-    std::string sourceValue(const std::string& key);
-    std::string catalogStatus();
-    std::string catalogProblem(const std::string& action);
-    std::string sourceAddProblem();
-    Result runCatalogAction(const std::string& action);
     std::string screenSize();
     void setScreenSize(const std::string& value);
     Manager::PendingChanges pendingChanges() const { return pending_ ? pending_() : Manager::PendingChanges{}; }
 
     Configuration& config_;
-    Catalog::Service* catalog_ = nullptr;
     std::function<Manager::PendingChanges()> pending_;
     bool customScreenSize_ = false;   // "Custom" chosen for settings:screenSize
-    bool sourceJustAdded_ = false;    // the Sources form was just cleared by source.add
     Manager::Screen screen_;
     std::map<std::string, std::unique_ptr<Manager::Provider>> providers_;   // by prefix
-    std::string removedPackage_;   // the last package.removeInstalled, for info:removalStatus
     SettingsFile settings_;
     std::map<std::string, std::string> pendingSettings_;
     std::map<std::string, std::string> settingDefaults_;  // what RetroFE uses when nothing sets a key

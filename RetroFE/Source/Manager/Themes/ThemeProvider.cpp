@@ -133,7 +133,7 @@ namespace Themes
     {
         static const char* const elsewhere[] = {
             "Collections", "CollectionInfoBuilder", "Menu", "MetadataDatabase", "Database", "HiScores",
-            "Catalog", "Configuration", "Manager", "ThemeEditor", "Input"
+            "Configuration", "Manager", "ThemeEditor", "Input"
         };
         for (const char* name : elsewhere) {
             if (component == name) return false;

@@ -165,7 +165,7 @@ static const char* const playerLayout = R"(
 </layout>
 )";
 
-// Settings, Manage and Catalog when the layout doesn't style them
+// Settings and Manage when the layout doesn't style them
 // (layouts/<layout>/forms/layout.xml or forms/<id>/layout.xml)
 static const char* const formLayout = R"(
 <layout width="1280" height="720" loadFontSize="40" fontColor="c8c8c8">

@@ -24,8 +24,6 @@ It has four jobs:
 
 Each configures with `-DRETROFE_BUILD_TESTS=ON`, builds everything, and runs the tests with `ctest --test-dir RetroFE/Build --output-on-failure` (`-C Release` on Windows). ctest runs `retrofe_tests`, which exits non-zero if any check fails and prints each failure, so a failing check fails the job. On Windows, ctest runs with `-V` and the job repeats compiler and linker errors, failing checks and the closing "N/M checks passed" line as annotations: unlike the log, annotations can be read without signing in (`GET /repos/ennisj/RetroFE/check-runs/<job id>/annotations`), so an agent without a GitHub login can still see why a run failed. The Linux and macOS jobs also run `retrofe --version`, which exits before opening a window: a quick check that the executable starts and its libraries load.
 
-On Windows the tests run with `RetroFE/Tests/test_server.py` listening on port 8765 and `RETROFE_TEST_SERVER` pointing to it, so the Catalog's and self-update's real HTTP tests run too. Linux and macOS have no HTTP client yet (`Catalog/Http.cpp`), so those tests skip themselves there.
-
 None of the tests need a display, a GPU or SDL: `retrofe_tests` is built only from the code that doesn't use SDL (see the `RETROFE_BUILD_TESTS` block in `RetroFE/Source/CMakeLists.txt`). A test that needed a window couldn't run on these runners.
 
 To run the tests locally:
@@ -48,7 +46,7 @@ These run only by hand (`workflow_dispatch`) and upload the package as an artifa
 - `build-linux.yml`: AppImages for x86_64 and arm64
 - `build-macos.yml`: `RetroFE.dmg`, holding a universal (arm64 and x86_64) `RetroFE.app` for macOS 11 and later
 
-`release-windows.yml` runs when a `v*` tag is pushed and attaches the Windows archive to that tag's release (see the workflow's comments).
+`release-windows.yml` runs when a `v*` tag is pushed, such as `v2504.3`, and attaches `RetroFE-2504.3-windows-x64.zip` (`retrofe\` plus `RetroFE.lnk` and the layouts in `RELEASE_LAYOUTS`) and its `.sha256` to that tag's release. Tags with a `-` (e.g. `v2504.3-beta.1`) become pre-releases. A release build reports its tag's version; other builds report the version in `RetroFE/CMake/Versioning.cmake` (see the workflow's comments).
 
 ### The test build of `feature/management-ui`
 
@@ -58,7 +56,7 @@ When the Windows job passes on a push to `feature/management-ui`, its last step 
 https://github.com/ennisj/RetroFE/releases/download/management-ui-latest/RetroFE-management-ui-windows-x64.zip
 ```
 
-The release is deleted and created again each time, so its tag always points at the commit that was built. The Catalog never offers it as an update: its tag isn't a version, and it's a pre-release.
+The release is deleted and created again each time, so its tag always points at the commit that was built. `Scripts/test-build/deploy_test_build.py` downloads it, checks it against its `.sha256` and copies it onto the PC's test install.
 
 ## macOS builds
 

@@ -231,7 +231,7 @@ namespace Manager
         IndexPtr addLauncherIndex_;
         std::vector<std::string> addLauncherIds_;
         IndexPtr suggestionIndex_;
-        std::string suggestedLauncher_;
+        std::string suggestedLauncher_;   // the launcher and, for a new one, its program
         std::string countedKey_;
         std::string countText_;
     };

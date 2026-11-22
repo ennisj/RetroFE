@@ -7,8 +7,8 @@ again.
 
 | Script | Writes |
 |--------|--------|
-| `gen_layouts.py <upstream folder> <output folder>` | `layout.xml`, `collections/_menu/`, `collections/Home/`, `collections/Catalog/` pages and texts, `forms/` pages and `splash.xml`, each page also as `layout 4x3.xml` |
-| `gen_images.py <output folder>` | `images/background.png`, `images/form_focus.png`, the Home logos and icons and the Sources icon, drawn with Pillow from rectangles, ellipses, arcs and polygons (the logos use `fonts/BebasNeue.ttf` from the output folder) |
+| `gen_layouts.py <upstream folder> <output folder>` | `layout.xml`, `collections/_menu/` and `collections/Home/` pages and texts, `forms/` pages and `splash.xml`, each page also as `layout 4x3.xml` |
+| `gen_images.py <output folder>` | `images/background.png`, `images/form_focus.png`, the Home logos and icons, drawn with Pillow from rectangles, ellipses, arcs and polygons (the logos use `fonts/BebasNeue.ttf` from the output folder) |
 
 They need Python 3 and Pillow (the committed images were made with Pillow 11.3;
 another version can compress the PNGs differently). The upstream folder is

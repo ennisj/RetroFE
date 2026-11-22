@@ -24,7 +24,6 @@
 
 class Configuration;
 class ManagerModel;
-namespace Catalog { class Service; }
 namespace Library { class Indexer; class Editor; }
 
 // Entity modules for the Manage screens (games, menus, systems...). A provider
@@ -61,7 +60,7 @@ namespace Manager
         virtual ~Provider() = default;
 
         // The prefix served, e.g. "game". Built-in prefixes (settings, draft,
-        // info, param, package, collection, source, catalog, open, back, changes) can't be used.
+        // info, param, collection, open, back, changes) can't be used.
         virtual std::string prefix() const = 0;
 
         // View state that parameters don't describe (searches, filters, choices).
@@ -166,7 +165,6 @@ namespace Manager
     struct Services
     {
         Configuration& config;
-        Catalog::Service* catalog = nullptr;   // may be null
 
         // The shared library (docs/design/manage-library.md): one index for
         // every section, rebuilt each time the manager opens, and the one
@@ -186,10 +184,8 @@ namespace Manager
         // same game leaves them), RetroFE reloads first when changes are
         // waiting, launches it with the usual launcher (per-game overrides
         // included), and then opens Manage on that game again. Null where
-        // games can't be started (tests). launchProblem says why a launch
-        // can't be asked for now (a reload is due while the Catalog installs), or "".
+        // games can't be started (tests).
         std::function<void(const std::string& collection, const std::string& game)> requestLaunch{};
-        std::function<std::string()> launchProblem{};
 
         // RetroFE reads controls.conf and controls1..9.conf again and maps its
         // controls (and the key that opens Settings) from them, straight away

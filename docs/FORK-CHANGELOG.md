@@ -4,6 +4,26 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 18 — no Catalog: the basics, set up by hand (2026-11-22)
+
+Unit tests: 8,465 → 7,181 checks (Windows CI; the Catalog's own tests went
+with it). Choices in M29 of [DECISIONS.md](DECISIONS.md).
+
+- **The Catalog is gone,** with emulator and core downloads and RetroFE's
+  self-update: no Sources or package screens, no Download or "Check for
+  updates" buttons, no update check at start, no `catalogPath`. Home is
+  Settings, Manage, Browse. About 28,500 lines removed, including the 7z
+  and JSON libraries only the Catalog used. The code is kept in git (tag
+  `catalog-last`) for a later phase.
+- **Set up from scratch by hand:** add a launcher by choosing the emulator
+  you installed (RetroArch: choose its core), then a system, then games.
+- **Add a system still fills in the name and extensions,** from the
+  emulator's program (MAME, DuckStation, PCSX2, PPSSPP, Flycast) or, for
+  RetroArch, from the core's file in RetroArch's `info` folder; nothing is
+  downloaded. Names RetroArch writes with a slash ("Game Boy/Game Boy
+  Color") become valid system names.
+- "Catalog" is an ordinary collection name now.
+
 ## Round 17 — the mouse stays yours, on any monitor (2026-11-02)
 
 Unit tests: 8,426 → 8,465 checks (Windows CI). Choices in M28 of

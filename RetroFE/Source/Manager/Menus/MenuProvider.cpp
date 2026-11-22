@@ -439,7 +439,7 @@ const MenuProvider::Options& MenuProvider::addableEntries(const Screen& screen)
     const CollectionRecord& menu = index_->collections[static_cast<size_t>(m)];
     for (size_t c = 0; c < index_->collections.size(); c++) {
         const CollectionRecord& r = index_->collections[c];
-        if (static_cast<int>(c) == m || iequals(r.name, "Home") || iequals(r.name, "Catalog")
+        if (static_cast<int>(c) == m || iequals(r.name, "Home")
             || std::any_of(menu.children.begin(), menu.children.end(), [&](const MenuEntry& e) { return e.collection == static_cast<int>(c); })) {
             continue;
         }

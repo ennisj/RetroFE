@@ -818,7 +818,7 @@ namespace
         }
         const CollectionRecord& record = index.collections[static_cast<size_t>(p)];
         spelling = record.name;
-        if (iequals(record.name, "Home") || iequals(record.name, "Catalog")) {
+        if (iequals(record.name, "Home")) {
             return "\"" + record.name + "\" is a menu RetroFE builds itself.";
         }
         if (record.menuSource == MenuSource::MenuXml || record.menuSource == MenuSource::CollectionLaunchers) {
@@ -1280,7 +1280,7 @@ EditResult Editor::addMenuChild(const Index& index, const std::string& menu, con
     if (!childRecord) {
         return EditResult::fail("There's no collection called \"" + child + "\".");
     }
-    if (iequals(childRecord->name, "Home") || iequals(childRecord->name, "Catalog")) {
+    if (iequals(childRecord->name, "Home")) {
         return EditResult::fail("\"" + childRecord->name + "\" is a name RetroFE keeps for its own menus.");
     }
     if (m == c) {

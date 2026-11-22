@@ -52,7 +52,7 @@ const std::vector<std::string>& videoExtensions()
 
 bool isReservedCollection(const std::string& name)
 {
-    return name.empty() || name[0] == '_' || iequals(name, "Home") || iequals(name, "Catalog") || iequals(name, "Favorites");
+    return name.empty() || name[0] == '_' || iequals(name, "Home") || iequals(name, "Favorites");
 }
 
 bool isReservedPlaylistName(const std::string& name)

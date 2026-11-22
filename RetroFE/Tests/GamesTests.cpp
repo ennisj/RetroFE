@@ -99,13 +99,12 @@ namespace
             Configuration::absolutePath = root;
             indexer.rebuild();
             indexer.wait(10000);
-            Manager::Services services{ config, nullptr };
+            Manager::Services services{ config };
             services.library = &indexer;
             services.editor = &editor;
             services.requestLaunch = [this](const std::string& collection, const std::string& game) {
                 launched.push_back(collection + "/" + game);
             };
-            services.launchProblem = [this] { return launchProblem; };
             auto owned = std::make_unique<Manager::GameProvider>(services);
             games = owned.get();
             model.addProvider(std::move(owned));
@@ -145,7 +144,6 @@ namespace
         ManagerModel model;
         Manager::GameProvider* games = nullptr;
         std::vector<std::string> launched;   // requestLaunch calls: "<collection>/<game>"
-        std::string launchProblem;           // what launchProblem says
     };
 
     Forms::Params gameParams(const std::string& collection, const std::string& id)
@@ -894,7 +892,7 @@ static void runGamesTests()
         std::string root = makeInstall("games-launch-return");
         for (bool reload : { false, true }) {
             Fixture before(root);
-            Manager::Services services{ before.config, nullptr };
+            Manager::Services services{ before.config };
             before.model.addProvider(std::make_unique<Manager::SystemProvider>(services, false));
             before.model.addProvider(std::make_unique<Manager::MenuProvider>(services));
             before.model.addProvider(std::make_unique<EmulatorProvider>(services));
@@ -935,17 +933,17 @@ static void runGamesTests()
             queue.want(wanted);
             queue.handle(true, [](bool) { return true; });
             if (reload) {
-                check(queue.take(false, true, false, wanted) == Manager::LaunchQueue::Take::None, "reload delays launch");
+                check(!queue.take(false, true, wanted), "reload delays launch");
                 queue.reloading();
                 queue.shutdown();
             }
             Manager::LaunchQueue::Request launched;
-            check(queue.take(false, false, false, launched) == Manager::LaunchQueue::Take::Start, "launch takes the snapshot");
+            check(queue.take(false, false, launched), "launch takes the snapshot");
             // A fresh model represents the ManagerUI destroyed by a reload;
             // refresh on the existing one is the ordinary return path.
             Fixture after(root);
             ManagerModel& model = reload ? after.model : before.model;
-            Manager::Services restoredServices{ after.config, nullptr };
+            Manager::Services restoredServices{ after.config };
             if (reload) {
                 model.addProvider(std::make_unique<Manager::SystemProvider>(restoredServices, false));
                 model.addProvider(std::make_unique<Manager::MenuProvider>(restoredServices));
@@ -1006,12 +1004,8 @@ static void runGamesTests()
 
     run("games: the launch request between Manage and RetroFE", [] {
         using Manager::LaunchQueue;
-        using Take = LaunchQueue::Take;
         LaunchQueue::Request request;
         auto closes = [](bool result) { return [result](bool) { return result; }; };
-
-        check(LaunchQueue::problem(true, false).empty() && LaunchQueue::problem(false, true).empty()
-              && !LaunchQueue::problem(true, true).empty(), "refused only when a reload is due and the Catalog is busy");
 
         // Not a launch: handled as usual
         LaunchQueue q;
@@ -1020,14 +1014,14 @@ static void runGamesTests()
         // The manager closes: RetroFE starts it once it's idle and nothing's due
         q.want({ "Arcade", "a" });
         check(q.handle(true, closes(true)) && q.hasPending(), "pending once closed");
-        check(q.take(true, false, false, request) == Take::None, "not while the manager is open");
-        check(q.take(false, true, false, request) == Take::None && q.hasPending(), "a reload first");
-        check(q.take(false, false, false, request) == Take::Start && request.game == "a" && !q.hasPending(), "then it starts");
-        check(q.take(false, false, false, request) == Take::None, "once");
+        check(!q.take(true, false, request), "not while the manager is open");
+        check(!q.take(false, true, request) && q.hasPending(), "a reload first");
+        check(q.take(false, false, request) && request.game == "a" && !q.hasPending(), "then it starts");
+        check(!q.take(false, false, request), "once");
 
         // The title rides along for "Back from <title>", and isn't part of what the request is
         q.want({ "Arcade", "a", "Alpha" });
-        check(q.handle(true, closes(true)) && q.take(false, false, false, request) == Take::Start
+        check(q.handle(true, closes(true)) && q.take(false, false, request)
               && request.title == "Alpha", "the title comes back with the request");
         check(LaunchQueue::Request{ "Arcade", "a", "Alpha" } == LaunchQueue::Request{ "Arcade", "a", "" }, "same game, same request");
 
@@ -1043,7 +1037,7 @@ static void runGamesTests()
         q.want({ "Arcade", "a" });
         check(q.handle(true, refuseFirst) && q.hasPending(), "asked again: it closes");
         check(discards == std::vector<bool>{ false, true }, "the second close leaves the changes");
-        q.take(false, false, false, request);
+        q.take(false, false, request);
         q.want({ "Arcade", "a" });
         q.handle(true, refuseFirst);
         q.screenChanged();
@@ -1052,12 +1046,12 @@ static void runGamesTests()
         q.handle(true, refuseFirst);
         check(discards == std::vector<bool>{ false }, "after another screen it warns again");
 
-        // A reload that can't happen (the Catalog installs) drops it: no surprise launch later
-        LaunchQueue busy;
-        busy.want({ "Arcade", "a" });
-        busy.handle(true, closes(true));
-        check(busy.take(false, true, true, request) == Take::Dropped && !busy.hasPending(), "dropped");
-        check(busy.take(false, false, false, request) == Take::None, "and never started");
+        // A reload that's due only delays it, however often RetroFE asks: nothing drops it
+        LaunchQueue waiting;
+        waiting.want({ "Arcade", "a" });
+        waiting.handle(true, closes(true));
+        check(!waiting.take(false, true, request) && !waiting.take(false, true, request) && waiting.hasPending(), "waits for the reload");
+        check(waiting.take(false, false, request) && request.game == "a", "then starts");
 
         // Kept across the reload it waits for, dropped by any other shutdown
         LaunchQueue reload;
@@ -1087,12 +1081,6 @@ static void runGamesTests()
         Forms::Model::Result started = f.model.runAction("game.launch");
         check(started.ok && started.message.find("Alpha") != std::string::npos, "starting: " + started.message);
         check(f.launched == std::vector<std::string>{ "Arcade/a" }, "asked RetroFE to start it from its own system");
-
-        // RetroFE has to reload first and can't while the Catalog installs: refused, not delayed
-        f.launchProblem = Manager::LaunchQueue::problem(true, true);
-        checkEqual(f.model.actionProblem("game.launch"), f.launchProblem, "the Catalog is installing");
-        check(!f.model.runAction("game.launch").ok && f.launched.size() == 1, "not asked");
-        f.launchProblem.clear();
 
         // A game whose launcher isn't installed can't start
         Test::writeFile(root + "/collections/Arcade/launchers/c.conf", "nosuch\n");

@@ -32,9 +32,7 @@ namespace Manager
     //               changes stops the close, asking again for the same game
     //               leaves them (the warning isn't repeated forever)
     //   take()      RetroFE, when idle: the game to start now. While the
-    //               manager is open, or a reload is due, it waits; a reload
-    //               that can't happen (a Catalog install is running) drops it,
-    //               so a game never starts minutes later out of nowhere.
+    //               manager is open, or a reload is due, it waits.
     //   reloading() the reload it waited for is starting: it's kept for the
     //               RetroFE that comes back up
     //   shutdown()  RetroFE is going away: dropped unless reloading()
@@ -49,16 +47,6 @@ namespace Manager
             LaunchReturn returning;
             bool operator==(const Request& o) const { return collection == o.collection && game == o.game; }
         };
-
-        // Why a launch can't be asked for now, or "": RetroFE reloads before
-        // starting the game when changes are waiting, and can't while it installs
-        static std::string problem(bool reloadPending, bool catalogBusy)
-        {
-            return reloadPending && catalogBusy
-                ? "Wait for the Catalog to finish installing: RetroFE reloads your changes before starting the game, "
-                  "and can't while it installs."
-                : "";
-        }
 
         void want(const Request& request) { wanted_ = request; }
 
@@ -89,23 +77,16 @@ namespace Manager
         // Another screen: a refused request isn't "again" any more
         void screenChanged() { refused_.reset(); }
 
-        enum class Take { None, Start, Dropped };
-        Take take(bool managerOpen, bool reloadDue, bool catalogBusy, Request& request)
+        // True, with the request, when the game should start now
+        bool take(bool managerOpen, bool reloadDue, Request& request)
         {
-            if (!pending_ || managerOpen) {
-                return Take::None;
-            }
-            if (reloadDue) {
-                if (catalogBusy) {
-                    pending_.reset();
-                    return Take::Dropped;
-                }
-                return Take::None;   // the reload happens first; the request outlives it
+            if (!pending_ || managerOpen || reloadDue) {
+                return false;   // a reload happens first; the request outlives it
             }
             request = *pending_;
             pending_.reset();
             reloading_ = false;
-            return Take::Start;
+            return true;
         }
 
         void reloading()

@@ -14,8 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "SystemProvider.h"
-#include "../../Catalog/Emulators.h"
-#include "../../Library/RetroArch.h"
+#include "../Emulators/KnownEmulators.h"
 #include "../Emulators/Launchers.h"
 #include "../../Collection/VideoCollections.h"
 #include "../../Library/Backups.h"
@@ -1584,7 +1583,7 @@ void SystemProvider::set(const std::string& key, const std::string& value, const
         }
         add_[key] = value;
         if (!videos_ && (key == "addName" || key == "addExtensions")) addTyped_[key] = true;
-        if (!videos_ && key == "addLauncher") suggestLauncher();
+        if (!videos_ && (key == "addLauncher" || key == "addProgram")) suggestLauncher();
     }
 }
 
@@ -2242,38 +2241,26 @@ void SystemProvider::syncAddLaunchers()
 void SystemProvider::suggestLauncher()
 {
     std::string launcher = get("addLauncher", Screen{});
+    // A new launcher (A program on the drive...): its Program field instead
+    std::string program = addIsNewLauncher() ? Utils::trimEnds(add_["addProgram"]) : "";
     IndexPtr idx = index();
-    if (suggestionIndex_ == idx && suggestedLauncher_ == launcher) return;
+    std::string key = launcher + "\n" + program;
+    if (suggestionIndex_ == idx && suggestedLauncher_ == key) return;
     suggestionIndex_ = idx;
-    suggestedLauncher_ = launcher;
-    std::string name, extensions;
-    for (const auto& entry : Catalog::emulators()) {
-        if (!entry.launcher.empty() && entry.launcher == launcher) {
-            name = entry.system;
-            extensions = entry.extensions;
-        }
+    suggestedLauncher_ = key;
+    // What the launcher's program says about its games: a known emulator, or RetroArch's core
+    Emulators::SystemSuggestion suggestion;
+    int found = idx && program.empty() ? idx->findLauncher(Library::LauncherScope::Global, launcher) : -1;
+    if (found >= 0) {
+        suggestion = Emulators::suggestSystem(root(), idx->launchers[static_cast<size_t>(found)]);
     }
-    std::string catalog;
-    if (!idx || !idx->properties.getAbsolutePath("catalogPath", catalog) || catalog.empty()) {
-        catalog = Utils::combinePath(root(), "catalog");
+    else if (!program.empty()) {
+        Library::LauncherDef chosen;
+        chosen.executable = program;
+        suggestion = Emulators::suggestSystem(root(), chosen);
     }
-    std::error_code ec;
-    for (const auto& file : fs::directory_iterator(fs::path(catalog) / "installed", ec)) {
-        Catalog::Manifest manifest;
-        std::string error;
-        if (!Catalog::readManifest(file.path().string(), manifest, error) || manifest.kind != "core"
-            || !Catalog::isCoreId(manifest.id)) continue;
-        std::string coreLauncher = manifest.launcherName.empty() ? Catalog::coreLauncherName(manifest.name) : manifest.launcherName;
-        if (coreLauncher != launcher) continue;
-        auto info = Library::RetroArch::readConfigFile(Utils::combinePath(root(), "emulators/RetroArch/info",
-                                                       manifest.id.substr(5) + "_libretro.info"));
-        name = info["systemname"];
-        extensions = info["supported_extensions"];
-        std::replace(extensions.begin(), extensions.end(), '|', ',');
-        break;
-    }
-    if (!addTyped_["addName"]) add_["addName"] = name;
-    if (!addTyped_["addExtensions"]) add_["addExtensions"] = extensions;
+    if (!addTyped_["addName"]) add_["addName"] = suggestion.name;
+    if (!addTyped_["addExtensions"]) add_["addExtensions"] = suggestion.extensions;
 }
 
 std::string SystemProvider::addFolderCount()

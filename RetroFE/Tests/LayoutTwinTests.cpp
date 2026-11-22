@@ -213,7 +213,7 @@ static Test::Suite layoutTwin("layout twin pages", [] {
             return;
         }
         int pairs = 0;
-        for (const std::string folder : { "", "collections/Home/layout/", "collections/_menu/layout/", "collections/Catalog/layout/" }) {
+        for (const std::string folder : { "", "collections/Home/layout/", "collections/_menu/layout/" }) {
             const fs::path wide = nox / (folder + "layout.xml"), narrow = nox / (folder + "layout 4x3.xml");
             if (!fs::is_regular_file(wide, ec) || !fs::is_regular_file(narrow, ec)) continue;
             pairs++;
@@ -257,7 +257,7 @@ static Test::Suite layoutTwin("layout twin pages", [] {
                       "Home: item[5] is item[4] there, item[2] is item[1], item[0] has none");
             }
         }
-        check(pairs == 4, "four shipped pairs checked (" + std::to_string(pairs) + ")");
+        check(pairs == 3, "three shipped pairs checked (" + std::to_string(pairs) + ")");
     });
 
     Test::run("twin pages: what an edit changed", [] {

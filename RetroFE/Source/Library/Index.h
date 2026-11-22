@@ -128,7 +128,7 @@ namespace Library
         std::string name;          // folder name, exactly as on disk
         std::string folder;        // <root>/collections/<name>
         unsigned kinds = 0;        // Kind flags
-        bool reserved = false;     // Home, Catalog or Favorites: names RetroFE gives a meaning
+        bool reserved = false;     // Home or Favorites: names RetroFE gives a meaning
         std::string title;         // info.conf title, else the name
         std::map<std::string, std::string> info;      // info.conf keys
         std::vector<std::string> settingsFiles;       // settings*.conf and info.conf that exist

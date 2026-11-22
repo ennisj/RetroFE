@@ -55,7 +55,7 @@ namespace
     }
 
     // The screen is rebuilt at least this often, for values that change by
-    // themselves, such as Catalog progress
+    // themselves, such as the library's progress
     constexpr uint32_t refreshMs = 250;
 
     // New thumbnails loaded per frame, so paging through a list doesn't stall
@@ -690,7 +690,7 @@ void FormWidget::focusBar(int index)
 
 void FormWidget::resolveFocus(int previousFocus, int previousBar)
 {
-    // A field an action asked for (Result::focus) takes focus once it's shown
+    // A field focusOn asked for takes focus once it's shown
     if (!wantedFocus_.empty()) {
         for (size_t i = 0; i < bar_.size(); i++) {
             if (bar_[i].enabled && Forms::fieldMatches(*bar_[i].field, wantedFocus_)) {

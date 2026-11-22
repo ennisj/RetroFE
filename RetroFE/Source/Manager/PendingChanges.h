@@ -32,17 +32,15 @@ namespace Manager
     //     same screen twice is still one change
     //   - a library change with no description, when there's none with one
     //   - Services::requestReload (e.g. "Use this theme"), once
-    //   - Catalog installs or removals that finished and aren't shown yet, once
     struct PendingChanges
     {
         std::vector<std::string> library;   // Indexer::pendingChanges()
         bool libraryFlag = false;           // Indexer::changesPending()
         bool reloadAsked = false;           // A reload was asked for or is queued
-        bool catalog = false;               // Catalog::Service::hasChanges()
 
         bool needsReloadOnClose() const
         {
-            return libraryFlag || reloadAsked || catalog;
+            return libraryFlag || reloadAsked;
         }
 
         size_t count() const
@@ -57,7 +55,7 @@ namespace Manager
             if (n == 0 && libraryFlag) {
                 n = 1;
             }
-            return n + (reloadAsked ? 1 : 0) + (catalog ? 1 : 0);
+            return n + (reloadAsked ? 1 : 0);
         }
 
         // "2 changes apply when you close Manage", or "" when there are none

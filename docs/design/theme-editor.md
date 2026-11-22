@@ -204,8 +204,8 @@ layouts/<Theme>/fonts/LICENSE-Apache-2.0.txt        its licence
 layouts/<Theme>/collections/_common/medium_artwork/firstLetter/   letter tiles
 ```
 
-An editable theme is just a layout folder: it can be copied, zipped for the
-Catalog or deleted like any other, and RetroFE runs it without the editor.
+An editable theme is just a layout folder: it can be copied, zipped to share
+or deleted like any other, and RetroFE runs it without the editor.
 
 **Deviation: `assets/` at the theme root, not `editor/assets/`.** Imported
 files are what the pages show, so they belong to the theme: pages refer to
@@ -666,8 +666,8 @@ slots are drawn but not dragged (they're generated from its settings).
   `<root>/manage/backups/layouts/<theme>/<page>` through `Library::Backups`,
   the same store and rules as every Manage screen: the original is taken
   before the first change only, and putting it back keeps what was there as
-  a numbered copy. The theme folder stays clean (it can be zipped for the
-  Catalog without an `editor/original/` in it). Considered: a copy inside
+  a numbered copy. The theme folder stays clean (it can be zipped to share
+  without an `editor/original/` in it). Considered: a copy inside
   the theme (travels with it, but ships with it too).
 - **Writes stay in the theme.** The page path must be relative with no
   `..`, and the file must resolve (`weakly_canonical`, so links count)
@@ -1224,8 +1224,8 @@ an element and a controller Move of the two was copied to the 4:3 page.
 
 - **Matching (high, found on shipped data).** A same-path element with the
   same tag and identity was trusted even when the counts differed; a plain
-  `<item>`'s identity is just "item", and Aeon Nox's Home, `_menu` and
-  Catalog wheels have 9 items on the 16:9 page (the 5th selected) and 7 on
+  `<item>`'s identity is just "item", and Aeon Nox's Home and `_menu`
+  wheels have 9 items on the 16:9 page (the 5th selected) and 7 on
   the 4:3 one (the 4th), so `item[5]` matched the 4:3 `item[5]`, a slot
   further out. Now an element is looked for under its parent's match:
   menu items by their offset from the `selected="true"` item (none past the
@@ -1235,8 +1235,8 @@ an element and a controller Move of the two was copied to the 4:3 page.
   only (or n-th of as many) with the same identity, else (a weaker tier)
   the same place differing only by `src` / `value`, so an element whose art
   differs on the 4:3 page, or whose `src` edit wasn't copied, isn't lost.
-  The shipped-pages test covers `layout.xml` and the Home, `_menu` and
-  Catalog pairs: every element matches its own, items by offset, none in a
+  The shipped-pages test covers `layout.xml` and the Home and `_menu`
+  pairs: every element matches its own, items by offset, none in a
   wrong slot.
 - **Rounding across steps (medium).** Each separate nudge was scaled and
   rounded on its own (+1 per 1-unit nudge on a smaller page). `TwinSync`

@@ -43,7 +43,7 @@ namespace Library
         std::string text;             // case-insensitive substring of the name or title
         unsigned kinds = 0;           // any of these Kind flags; 0 = any
         std::string under;            // only collections below this menu; "" = all
-        bool includeReserved = false; // Home / Catalog / Favorites
+        bool includeReserved = false; // Home / Favorites
         size_t offset = 0;
         size_t limit = 200;
 

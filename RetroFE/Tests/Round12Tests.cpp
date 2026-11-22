@@ -56,19 +56,19 @@ static Test::Suite round12Suite("round 12", [] {
         Test::check(!Forms::primaryHint(save, true, false), "cannot run");
         Test::check(!Forms::primaryHint(form->fields[1], true, true), "other action never green");
     });
-    Test::run("Sources pins its primary Add source before Check for updates", [] {
+    Test::run("Edit launcher pins its primary Save before Undo changes", [] {
         std::string error;
-        auto form = Forms::parse(Forms::builtinForm("sources"), error);
+        auto form = Forms::parse(Forms::builtinForm("emulator-edit"), error);
         Test::check(form != nullptr, error);
         if (!form) return;
         auto pinned = Forms::pinnedActions(*form);
-        Test::check(!pinned.empty(), "Sources has a bar");
+        Test::check(!pinned.empty(), "Edit launcher has a bar");
         if (pinned.empty()) return;
         const auto& buttons = pinned[0]->children;
-        Test::check(buttons.size() == 2, "Add source and Check for updates");
+        Test::check(buttons.size() == 2, "Save and Undo changes");
         if (buttons.size() != 2) return;
-        Test::check(buttons[0].action == "source.add" && buttons[0].primary, "jump targets Add source when ready");
-        Test::check(buttons[1].action == "catalog.refresh" && !buttons[1].primary, "Check never turns green");
+        Test::check(buttons[0].action == "emulator.save" && buttons[0].primary, "jump targets Save when ready");
+        Test::check(buttons[1].action == "emulator.resetEdit" && !buttons[1].primary, "Undo never turns green");
     });
     Test::run("a replacement bar button must be free before retaining bar focus", [] {
         Forms::Field button;

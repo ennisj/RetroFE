@@ -65,17 +65,17 @@ namespace
             touch(path(forms, "layout.xml"));
             checkEqual(LayoutPages::formFile(forms, "settings", "layout 4x3"), path(forms, "layout.xml"), "shared page when there's no 4x3 one");
 
-            touch(path(forms, "package", "layout.xml"));
-            checkEqual(LayoutPages::formFile(forms, "package", "layout"), path(forms, "package", "layout.xml"), "screen's own page");
+            touch(path(forms, "game", "layout.xml"));
+            checkEqual(LayoutPages::formFile(forms, "game", "layout"), path(forms, "game", "layout.xml"), "screen's own page");
             checkEqual(LayoutPages::formFile(forms, "settings", "layout"), path(forms, "layout.xml"), "other screens share");
 
             touch(path(forms, "layout 4x3.xml"));
             checkEqual(LayoutPages::formFile(forms, "settings", "layout 4x3"), path(forms, "layout 4x3.xml"), "shared 4x3 page");
-            checkEqual(LayoutPages::formFile(forms, "package", "layout 4x3"), path(forms, "layout 4x3.xml"), "the right shape before the screen's own 16:9 page");
+            checkEqual(LayoutPages::formFile(forms, "game", "layout 4x3"), path(forms, "layout 4x3.xml"), "the right shape before the screen's own 16:9 page");
 
-            touch(path(forms, "package", "layout 4x3.xml"));
-            checkEqual(LayoutPages::formFile(forms, "package", "layout 4x3"), path(forms, "package", "layout 4x3.xml"), "screen's own 4x3 page");
-            checkEqual(LayoutPages::formFile(forms, "package", ""), path(forms, "package", "layout.xml"), "no page name means layout");
+            touch(path(forms, "game", "layout 4x3.xml"));
+            checkEqual(LayoutPages::formFile(forms, "game", "layout 4x3"), path(forms, "game", "layout 4x3.xml"), "screen's own 4x3 page");
+            checkEqual(LayoutPages::formFile(forms, "game", ""), path(forms, "game", "layout.xml"), "no page name means layout");
         });
 
         run("the keyboard page follows it too", [] {

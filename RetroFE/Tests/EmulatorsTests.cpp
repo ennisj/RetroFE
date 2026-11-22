@@ -15,7 +15,8 @@
  */
 
 // The Emulators section (Manager/Emulators): the launcher list, details,
-// users, unresolved names, adding, duplicating and deleting launchers.
+// users, unresolved names, adding, duplicating and deleting launchers, and
+// what a launcher's program says about its system (KnownEmulators).
 
 #include "TestSupport.h"
 #include "../Source/Database/Configuration.h"
@@ -23,6 +24,7 @@
 #include "../Source/Library/Files.h"
 #include "../Source/Library/Indexer.h"
 #include "../Source/Manager/Emulators/EmulatorProvider.h"
+#include "../Source/Manager/Emulators/KnownEmulators.h"
 #include "../Source/Manager/Emulators/Launchers.h"
 #include "../Source/Manager/ManagerModel.h"
 #include "../Source/Utility/Utils.h"
@@ -160,15 +162,15 @@ static Test::Suite emulators("emulators", [] {
         }
     });
 
-    run("emulators: hub sees launchers after a catalog rescan", [] {
+    run("emulators: hub sees launchers added outside Manage after a rescan", [] {
         auto root = makeRoot("emu-hub-rescan");
         Fixture f(root);
         checkEqual(f.model->get("info:hasLaunchers"), "no", "bare install");
-        writeFile(root + "/launchers." + os() + "/Downloaded.conf", "executable = emulators/program.exe\n");
-        f.indexer.changed("Catalog changed library files");
+        writeFile(root + "/launchers." + os() + "/ByHand.conf", "executable = emulators/program.exe\n");
+        f.indexer.changed("launcher files");
         check(f.indexer.wait(10000), "rescan finished");
-        checkEqual(f.model->get("info:hasLaunchers"), "yes", "hub sees downloaded launcher");
-        check(f.row("emulator:search", "Downloaded") != nullptr, "launcher screen sees it too");
+        checkEqual(f.model->get("info:hasLaunchers"), "yes", "hub sees the new launcher");
+        check(f.row("emulator:search", "ByHand") != nullptr, "launcher screen sees it too");
     });
 
     run("emulators: the list shows where each launcher is, its program and who uses it", [] {
@@ -608,5 +610,78 @@ static Test::Suite emulators("emulators", [] {
         index.options.os = os() == "linux" ? "windows" : "linux";
         check(Emulators::checkExecutable(index, "/bin/x").state == Emulators::ExecutableCheck::State::Unchecked,
               "another platform's launchers aren't checked here");
+    });
+
+    run("emulators: known emulators by their program's file name", [] {
+        const Emulators::KnownEmulator* duck = Emulators::findKnownEmulator("duckstation-qt-x64-ReleaseLTCG.exe");
+        check(duck && std::string(duck->system) == "PlayStation", "a bare file name");
+        check(duck && contains(duck->extensions, "cue") && contains(duck->extensions, "chd"), "with its extensions");
+        check(Emulators::findKnownEmulator("%RETROFE_PATH%\\emulators\\DuckStation\\DUCKSTATION-QT-X64-RELEASELTCG.EXE") == duck,
+              "a Windows path, in any case");
+        check(Emulators::findKnownEmulator("\"C:/Emu/PCSX2/pcsx2-qt.exe\"") && std::string(Emulators::findKnownEmulator("pcsx2-qt.exe")->system) == "PlayStation 2",
+              "quoted, with forward slashes");
+        check(Emulators::findKnownEmulator("ppssppwindows64.exe") && Emulators::findKnownEmulator("Flycast.exe")
+              && Emulators::findKnownEmulator("MAME.exe"), "PPSSPP, Flycast and MAME");
+        checkEqual(std::string(Emulators::findKnownEmulator("mame.exe")->system), "Arcade", "MAME is Arcade");
+        check(!Emulators::findKnownEmulator("notepad.exe") && !Emulators::findKnownEmulator("")
+              && !Emulators::findKnownEmulator("emulators/mame.exe.bak"), "unknown programs: nothing");
+        check(!Emulators::findKnownEmulator("retroarch.exe"), "RetroArch's system comes from its core");
+
+        Library::LauncherDef known;
+        known.executable = "%RETROFE_PATH%/emulators/Flycast/flycast.exe";
+        Emulators::SystemSuggestion flycast = Emulators::suggestSystem(makeRoot("emu-known"), known);
+        checkEqual(flycast.name, "Dreamcast", "suggested from the table");
+        check(contains(flycast.extensions, "gdi"), "with its extensions: " + flycast.extensions);
+        Library::LauncherDef other;
+        other.executable = "notepad.exe";
+        other.arguments = "\"%ITEM_FILEPATH%\"";
+        check(Emulators::suggestSystem(makeRoot("emu-unknown"), other).name.empty(), "an unknown program suggests nothing");
+    });
+
+    run("emulators: a RetroArch launcher suggests what its core's .info file says", [] {
+        std::string root = makeRoot("emu-info");
+        writeFile(root + "/emulators/RetroArch/info/snes9x_libretro.info",
+                  "display_name = \"Nintendo - SNES / SFC (Snes9x - Current)\"\nsystemname = \"Super Nintendo Entertainment System\"\n"
+                  "supported_extensions = \"smc|sfc|swc|fig|bs|st\"\n");
+        Library::LauncherDef launcher;
+        launcher.executable = "%RETROFE_PATH%/emulators/RetroArch/retroarch.exe";
+        launcher.arguments = "-L \"cores/snes9x_libretro.dll\" \"%ITEM_FILEPATH%\"";
+        Emulators::SystemSuggestion snes = Emulators::suggestSystem(root, launcher);
+        checkEqual(snes.name, "Super Nintendo Entertainment System", "systemname");
+        checkEqual(snes.extensions, "smc,sfc,swc,fig,bs,st", "supported_extensions, comma-separated");
+
+        Library::LauncherDef relative = launcher;
+        relative.executable = "emulators\\RetroArch\\retroarch.exe";
+        relative.arguments = "--libretro=cores\\snes9x_libretro.dll \"%ITEM_FILEPATH%\"";
+        checkEqual(Emulators::suggestSystem(root, relative).name, "Super Nintendo Entertainment System",
+                   "a path relative to RetroFE's folder, and --libretro=");
+
+        Library::LauncherDef absolute = launcher;
+        absolute.executable = root + "/emulators/RetroArch/retroarch.exe";
+        checkEqual(Emulators::suggestSystem(root, absolute).name, "Super Nintendo Entertainment System", "an absolute path");
+
+        Library::LauncherDef missing = launcher;
+        missing.arguments = "-L cores/fceumm_libretro.dll \"%ITEM_FILEPATH%\"";
+        Emulators::SystemSuggestion none = Emulators::suggestSystem(root, missing);
+        check(none.name.empty() && none.extensions.empty(), "a core without a .info file: nothing");
+        Library::LauncherDef noCore = launcher;
+        noCore.arguments = "\"%ITEM_FILEPATH%\"";
+        check(Emulators::suggestSystem(root, noCore).name.empty(), "no core: nothing");
+        check(!fs::exists(root + "/emulators/RetroArch/info/fceumm_libretro.info"), "nothing is downloaded");
+
+        // RetroArch's names may hold characters a system name can't
+        writeFile(root + "/emulators/RetroArch/info/gambatte_libretro.info", "systemname = \"Game Boy/Game Boy Color\"\n");
+        writeFile(root + "/emulators/RetroArch/info/genesis_plus_gx_libretro.info", "systemname = \"Sega 8/16-bit (MS/GG/MD/CD)\"\n");
+        writeFile(root + "/emulators/RetroArch/info/odd_libretro.info", "systemname = \"Odd: thing #1? <a|b>*\"\n");
+        Library::LauncherDef gb = launcher;
+        gb.arguments = "-L cores/gambatte_libretro.dll \"%ITEM_FILEPATH%\"";
+        checkEqual(Emulators::suggestSystem(root, gb).name, "Game Boy-Game Boy Color", "a slash becomes a dash");
+        Library::LauncherDef md = launcher;
+        md.arguments = "-L cores/genesis_plus_gx_libretro.dll \"%ITEM_FILEPATH%\"";
+        checkEqual(Emulators::suggestSystem(root, md).name, "Sega 8-16-bit (MS-GG-MD-CD)", "every slash");
+        Library::LauncherDef odd = launcher;
+        odd.arguments = "-L cores/odd_libretro.dll";
+        std::string oddName = Emulators::suggestSystem(root, odd).name;
+        check(oddName.find_first_of("\\/:*?\"<>|#") == std::string::npos && !oddName.empty(), "no character a name can't have: " + oddName);
     });
 });

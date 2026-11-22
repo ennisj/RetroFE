@@ -26,7 +26,6 @@
 #include "Navigator.h"
 #include "Controls/InputCapture.h"
 #include "Controls/app/CaptureEvents.h"
-#include "../Catalog/Service.h"
 #include "../Forms/Form.h"
 #include "../Library/Edits.h"
 #include "../Library/Indexer.h"
@@ -47,9 +46,9 @@ class FontCache;
 class Page;
 struct ImGuiContext;
 
-// The management screens (Settings, Manage and its sections, Catalog sources
-// and packages), shown over the current page. Each screen is a form (see
-// Forms/Form.h) opened by id, e.g. "settings", "manage", "sources"; screens
+// The management screens (Settings, Manage and its sections), shown over the
+// current page. Each screen is a form (see Forms/Form.h) opened by id, e.g.
+// "settings", "manage", "games"; screens
 // open further screens over themselves, and Back returns (see Navigator.h).
 // A screen is drawn as a RetroFE page with a <form> element, styled by
 // layouts/<layout>/forms/<id>/layout.xml or forms/layout.xml, or the built-in
@@ -92,20 +91,6 @@ public:
     // A close after another kind of warning (Back's) warns again first.
     bool requestQuit();
 
-    // The Catalog, which keeps working while the screens are closed; null before initialize()
-    Catalog::Service* catalog() { return catalog_.get(); }
-
-    // Opens the details of a package from the Catalog list
-    void openPackage(const std::string& id) { open("package", { { "id", id } }); }
-
-    // True once after Catalog installs or removals finished, having added
-    // collections they installed to the Main menu: RetroFE should reload
-    bool takeCatalogChanges();
-
-    // True once after RetroFE updated itself: RetroFE should exit, and main()
-    // starts the new version (Catalog::takeRelaunch)
-    bool takeRestartRequest();
-
     // Returns true if the UI used the event, including the key that opens Settings.
     // Unused events should go to RetroFE's input so navigate() gets them.
     bool handleEvent(const SDL_Event& e);
@@ -134,8 +119,8 @@ public:
 
     // True once after changes were saved that RetroFE has to reload to show:
     // straight away for Result::reload, after the manager closes for
-    // Services::requestReload. Waits while a Catalog install is running.
-    bool takeReloadRequest(bool backHome = false);
+    // Services::requestReload.
+    bool takeReloadRequest();
 
     // Kiosk mode: the Settings key does nothing, and an open screen closes
     void setLocked(bool locked);
@@ -145,7 +130,6 @@ public:
     // True once, with the request, after the manager closed for it. Not while
     // a reload is due: the request outlives RetroFE's reload (it's kept for
     // the next ManagerUI), so the game starts with the changes made in Manage.
-    // A reload that can't happen (a Catalog install) drops it (LaunchQueue).
     bool takeLaunchRequest(LaunchRequest& request);
     // After the game: Manage opens again on its screen (Manage > Games > the
     // game), saying it's back, or problem when it couldn't be started
@@ -155,11 +139,6 @@ public:
     // Result::open ("Apply changes now"): opens Manage on that screen with
     // the action's message. False (nothing opened) otherwise.
     bool reopenAfterReload();
-
-    // A collection an action asked RetroFE to show (Result::browse: one just
-    // installed, the Catalog list): true once, when the manager has closed
-    // and any reload it needed is done
-    bool takeBrowseRequest(std::string& collection);
 
     // The page RetroFE draws collections with ("layout", or a randomLayout one
     // such as "layout 4x3"); screens use the layout's forms/.../<page>.xml when it has one
@@ -185,7 +164,6 @@ private:
     bool showImGuiScreen(const Navigator::Frame& frame);
     void retireScreen();
     void drawWindow();
-    void startCatalog();
     void startLibrary();
     std::string gameTitle(const std::string& collection, const std::string& game) const;   // its title, else game
     const Forms::Form* form(const std::string& id);
@@ -228,8 +206,7 @@ private:
     std::array<float, std::tuple_size<Controls>::value> navRepeatAt_{};
 
     Configuration& config_;
-    std::unique_ptr<Catalog::Service> catalog_;   // destroyed after model_, which points to it
-    std::unique_ptr<Library::Indexer> library_;   // the same for the library, which providers use
+    std::unique_ptr<Library::Indexer> library_;   // destroyed after model_, whose providers use it
     std::unique_ptr<Library::Editor> libraryEditor_;
     ManagerModel model_;
     bool providersAdded_ = false;

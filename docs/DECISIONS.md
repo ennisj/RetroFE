@@ -624,6 +624,23 @@ Made while building the design review (M22); the option not taken in brackets.
 - ImGui's own capture while dragging in Manage is left as it is: on Windows
   it doesn't confine the pointer.
 
+### M29. Round 18 choices — Decided (2026-11-22)
+- **No Catalog in this phase** (your request): the Catalog, its sources and
+  packages, emulator and core downloads and self-update are removed rather
+  than hidden, so phase 1 is only what's needed to build a setup from
+  scratch. Everything removed is at git tag `catalog-last`. Downloads and
+  self-update went too (your choice): emulators are ones you install
+  yourself, in `emulators/` (docs/FOLDERS.md).
+- **Add a system's suggestions don't need the Catalog:** a short built-in
+  table of standalone emulators by program file name, and RetroArch's own
+  `info/<core>_libretro.info`. Names are cleaned so the form accepts them.
+- **Old installs:** a `settings.conf` with `catalogPath`, a `catalog/`
+  folder or old Catalog layout files are simply ignored; nothing deletes
+  them.
+- **Who did it:** the Codex worker stopped early three times on this job,
+  so Claude Opus made the change, built and tested through the worker's
+  test mode, and Claude Fable 5.1 reviewed it (your yes) before merging.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless

@@ -26,7 +26,7 @@ namespace
 const char* const themesForm = R"(
 <form id="themes" title="Themes">
   <link label="New theme" open="theme-new"/>
-  <results bind="theme:list" open="theme" empty="No themes are installed. Install one from the Catalog, or make a new one."/>
+  <results bind="theme:list" open="theme" empty="No themes are installed. Make a new one, or copy one into layouts/."/>
 </form>
 )";
 
