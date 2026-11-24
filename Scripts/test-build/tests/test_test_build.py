@@ -30,6 +30,13 @@ class TestBuild(unittest.TestCase):
         self.fetch = patch.object(testdrive, 'fetch', side_effect=lambda name: hashlib.sha256(blob).hexdigest().encode() if name.endswith('.sha256') else blob)
         self.fetch.start()
         self.addCleanup(self.fetch.stop)
+        dlls = self.root / 'dlls'
+        dlls.mkdir()
+        (dlls / 'SDL2.dll').write_bytes(b'dll')
+        (dlls / 'README.md').write_text('not copied')
+        self.dlls = patch.object(testdrive, 'DLLS', str(dlls))
+        self.dlls.start()
+        self.addCleanup(self.dlls.stop)
         self.fixture_patch = patch.object(maker, 'FIXTURES', str(self.fixtures))
         self.fixture_patch.start()
         self.addCleanup(self.fixture_patch.stop)
@@ -67,6 +74,8 @@ class TestBuild(unittest.TestCase):
         self.assertEqual((staged / 'art/pic').read_bytes(), b'pic')
         install = self.drive / 'RetroFE-Starter'
         self.assertEqual((install / 'retrofe/retrofe.exe').read_bytes(), b'exe')
+        self.assertEqual((install / 'retrofe/SDL2.dll').read_bytes(), b'dll')
+        self.assertFalse((install / 'retrofe/README.md').exists())
         (install / 'keep').write_text('old')
         (staged / 'art/pic').write_bytes(b'old')
         (staged / 'roms/more/a.nes').write_bytes(b'longer')
@@ -78,6 +87,13 @@ class TestBuild(unittest.TestCase):
         self.assertFalse((install / 'keep').exists())
         self.assertEqual(len(list((self.drive / 'backups').glob('RetroFE-Starter-*/keep'))), 1)
         self.assertEqual((bare / 'keep').read_text(), 'bare')
+
+    def test_no_dlls(self):
+        # Without the DLL submodule a new install would not start: stop instead
+        os.remove(os.path.join(testdrive.DLLS, 'SDL2.dll'))
+        with self.assertRaises(SystemExit):
+            self.run_make()
+        self.assertFalse((self.drive / 'RetroFE-Starter/retrofe/retrofe.exe').exists())
 
     def test_discovery(self):
         drive = testdrive.Local(str(self.drive))
