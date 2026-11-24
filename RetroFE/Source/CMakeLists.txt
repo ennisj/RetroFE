@@ -614,6 +614,7 @@ if(RETROFE_BUILD_TESTS)
 	target_link_libraries(retrofe_tests retrofe_theme_editor)
 	target_compile_definitions(retrofe_tests PRIVATE
 		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
+		RETROFE_FIXTURES_DIR="${RETROFE_DIR}/../Scripts/test-build/fixtures"
 		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
 	if(WIN32)
 		target_link_libraries(retrofe_tests ${ZLIB_LIBRARIES})
@@ -625,6 +626,10 @@ if(RETROFE_BUILD_TESTS)
 	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)
+	find_package(Python3 QUIET COMPONENTS Interpreter)
+	if(Python3_Interpreter_FOUND)
+		add_test(NAME test_build COMMAND ${Python3_EXECUTABLE} -m unittest discover -s "${RETROFE_DIR}/../Scripts/test-build/tests" -v)
+	endif()
 endif()
 
 set(EXECUTABLE_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORCE)

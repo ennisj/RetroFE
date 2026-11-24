@@ -17,6 +17,7 @@ on:
       - 'RetroFE/ThirdParty/**'
       - 'RetroFE/ThirdPartyMac/**'
       - 'RetroFE/Tests/**'
+      - 'Scripts/test-build/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   pull_request:
@@ -29,6 +30,7 @@ on:
       - 'RetroFE/ThirdParty/**'
       - 'RetroFE/ThirdPartyMac/**'
       - 'RetroFE/Tests/**'
+      - 'Scripts/test-build/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   workflow_dispatch:

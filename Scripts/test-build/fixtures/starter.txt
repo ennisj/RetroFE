@@ -1,0 +1,188 @@
+# Starter test install: what a first setup would have downloaded, picked from the owner's copy of
+# OneSauce (content/retrofe/collections on the OneSauce share). Only these paths are in the repo;
+# the files themselves never are. See Scripts/test-build/README.md.
+#
+# One path per line, relative to that collections folder. A path ending in "/" is a folder, copied
+# with everything in it. "=> <path>" puts the file somewhere else under the staging folder.
+#
+# Picked to cover: names with ", The", "&", "'", "!", "...", dots and region lists; a second extension
+# (.dat on NES, .md and .smd on Genesis); a game in a subfolder (Contra); a game without artwork
+# (Excitebike); artwork without a game (Metroid, puckman); artwork named after the title instead of the
+# file (Genesis) or kept as a folder of pictures (Genesis, MAME); a clone whose artwork is its parent's
+# (pacman, clone of puckman).
+
+# Nintendo Entertainment System
+Nintendo Entertainment System/system_artwork/logo.png
+Nintendo Entertainment System/system_artwork/device.png
+Nintendo Entertainment System/system_artwork/story.txt
+Nintendo Entertainment System/roms/Addams Family, The (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Addams Family, The (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Addams Family, The (USA).png
+Nintendo Entertainment System/medium_artwork/video/Addams Family, The (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Addams Family, The (USA).txt
+Nintendo Entertainment System/roms/Bill & Ted's Excellent Video Game Adventure (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Bill & Ted's Excellent Video Game Adventure (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Bill & Ted's Excellent Video Game Adventure (USA).png
+Nintendo Entertainment System/medium_artwork/video/Bill & Ted's Excellent Video Game Adventure (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Bill & Ted's Excellent Video Game Adventure (USA).txt
+Nintendo Entertainment System/roms/Arch Rivals - A Basketbrawl! (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Arch Rivals - A Basketbrawl! (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Arch Rivals - A Basketbrawl! (USA).png
+Nintendo Entertainment System/medium_artwork/video/Arch Rivals - A Basketbrawl! (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Arch Rivals - A Basketbrawl! (USA).txt
+Nintendo Entertainment System/roms/Castlevania (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Castlevania (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Castlevania (USA).png
+Nintendo Entertainment System/medium_artwork/video/Castlevania (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Castlevania (USA).txt
+Nintendo Entertainment System/roms/Super Mario Bros. 3 (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Super Mario Bros. 3 (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Super Mario Bros. 3 (USA).png
+Nintendo Entertainment System/medium_artwork/video/Super Mario Bros. 3 (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Super Mario Bros. 3 (USA).txt
+Nintendo Entertainment System/roms/Mike Tyson's Punch-Out!! (Japan, USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Mike Tyson's Punch-Out!! (Japan, USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Mike Tyson's Punch-Out!! (Japan, USA).png
+Nintendo Entertainment System/medium_artwork/video/Mike Tyson's Punch-Out!! (Japan, USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Mike Tyson's Punch-Out!! (Japan, USA).txt
+Nintendo Entertainment System/roms/Legend of Zelda, The (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Legend of Zelda, The (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Legend of Zelda, The (USA).png
+Nintendo Entertainment System/medium_artwork/video/Legend of Zelda, The (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Legend of Zelda, The (USA).txt
+Nintendo Entertainment System/roms/Tetris (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Tetris (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Tetris (USA).png
+Nintendo Entertainment System/medium_artwork/video/Tetris (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Tetris (USA).txt
+Nintendo Entertainment System/roms/Duck Hunt (World).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Duck Hunt (World).jpg
+Nintendo Entertainment System/medium_artwork/logo/Duck Hunt (World).png
+Nintendo Entertainment System/medium_artwork/video/Duck Hunt (World).mp4
+Nintendo Entertainment System/medium_artwork/story/Duck Hunt (World).txt
+Nintendo Entertainment System/roms/Little Lancelot (NES Rom Hack).dat
+Nintendo Entertainment System/medium_artwork/artwork_front/Little Lancelot (NES Rom Hack).jpg
+Nintendo Entertainment System/medium_artwork/logo/Little Lancelot (NES Rom Hack).png
+Nintendo Entertainment System/medium_artwork/video/Little Lancelot (NES Rom Hack).mp4
+Nintendo Entertainment System/medium_artwork/story/Little Lancelot (NES Rom Hack).txt
+Nintendo Entertainment System/roms/Contra (USA).nes => Nintendo Entertainment System/roms/More games/Contra (USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Contra (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Contra (USA).png
+Nintendo Entertainment System/medium_artwork/video/Contra (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Contra (USA).txt
+Nintendo Entertainment System/roms/Excitebike (Japan, USA).nes
+Nintendo Entertainment System/medium_artwork/artwork_front/Metroid (USA).jpg
+Nintendo Entertainment System/medium_artwork/logo/Metroid (USA).png
+Nintendo Entertainment System/medium_artwork/video/Metroid (USA).mp4
+Nintendo Entertainment System/medium_artwork/story/Metroid (USA).txt
+
+# Sega Genesis
+Sega Genesis/system_artwork/logo.png
+Sega Genesis/system_artwork/device.png
+Sega Genesis/system_artwork/story.txt
+Sega Genesis/roms/Sonic The Hedgehog (USA, Europe).gen
+Sega Genesis/medium_artwork/artwork_front/Sonic The Hedgehog/
+Sega Genesis/medium_artwork/logo/Sonic The Hedgehog.png
+Sega Genesis/medium_artwork/video/Sonic The Hedgehog.mp4
+Sega Genesis/medium_artwork/story/Sonic The Hedgehog (USA, Europe).txt
+Sega Genesis/roms/Altered Beast (USA, Europe).gen
+Sega Genesis/medium_artwork/artwork_front/Altered Beast/
+Sega Genesis/medium_artwork/logo/Altered Beast.png
+Sega Genesis/medium_artwork/video/Altered Beast.mp4
+Sega Genesis/medium_artwork/story/Altered Beast (USA, Europe).txt
+Sega Genesis/roms/Gunstar Heroes (USA).gen
+Sega Genesis/medium_artwork/artwork_front/Gunstar Heroes/
+Sega Genesis/medium_artwork/logo/Gunstar Heroes.png
+Sega Genesis/medium_artwork/video/Gunstar Heroes.mp4
+Sega Genesis/medium_artwork/story/Gunstar Heroes (USA).txt
+Sega Genesis/roms/Streets of Rage 2 (USA).gen
+Sega Genesis/medium_artwork/artwork_front/Streets of Rage 2/
+Sega Genesis/medium_artwork/logo/Streets of Rage 2.png
+Sega Genesis/medium_artwork/video/Streets of Rage 2.mp4
+Sega Genesis/medium_artwork/story/Streets of Rage 2 (USA).txt
+Sega Genesis/roms/ToeJam & Earl (World) (Rev A).smd
+Sega Genesis/medium_artwork/artwork_front/ToeJam & Earl/
+Sega Genesis/medium_artwork/logo/ToeJam & Earl.png
+Sega Genesis/medium_artwork/video/ToeJam & Earl.mp4
+Sega Genesis/medium_artwork/story/ToeJam & Earl (World) (Rev A).txt
+Sega Genesis/roms/Aaahh!!! Real Monsters (USA).gen
+Sega Genesis/medium_artwork/artwork_front/Aaahh!!! Real Monsters.jpg
+Sega Genesis/medium_artwork/logo/Aaahh!!! Real Monsters.png
+Sega Genesis/medium_artwork/video/Aaahh!!! Real Monsters.mp4
+Sega Genesis/medium_artwork/story/Aaahh!!! Real Monsters (USA).txt
+Sega Genesis/roms/Earthworm Jim 2 (USA).md
+Sega Genesis/medium_artwork/artwork_front/Earthworm Jim 2/
+Sega Genesis/medium_artwork/logo/Earthworm Jim 2.png
+Sega Genesis/medium_artwork/video/Earthworm Jim 2.mp4
+Sega Genesis/medium_artwork/story/Earthworm Jim 2 (USA).txt
+Sega Genesis/roms/Adventures of Batman & Robin, The (USA).gen
+Sega Genesis/medium_artwork/artwork_front/Adventures of Batman & Robin, The.jpg
+Sega Genesis/medium_artwork/logo/Adventures of Batman & Robin, The.png
+Sega Genesis/medium_artwork/video/Adventures of Batman & Robin, The.mp4
+Sega Genesis/medium_artwork/story/Adventures of Batman & Robin, The (USA).txt
+Sega Genesis/roms/Alien 3 (USA, Europe) (Rev A).gen
+Sega Genesis/medium_artwork/artwork_front/Alien 3.jpg
+Sega Genesis/medium_artwork/logo/Alien 3.png
+Sega Genesis/medium_artwork/video/Alien 3.mp4
+Sega Genesis/medium_artwork/story/Alien 3 (USA, Europe) (Rev A).txt
+Sega Genesis/roms/Awesome Possum... ...Kicks Dr. Machino's Butt (USA).gen
+Sega Genesis/medium_artwork/artwork_front/Awesome Possum... ...Kicks Dr. Machino's Butt.jpg
+Sega Genesis/medium_artwork/logo/Awesome Possum... ...Kicks Dr. Machino's Butt.png
+Sega Genesis/medium_artwork/video/Awesome Possum... ...Kicks Dr. Machino's Butt.mp4
+Sega Genesis/medium_artwork/story/Awesome Possum... ...Kicks Dr. Machino's Butt (USA).txt
+
+# MAME
+MAME/system_artwork/logo.png
+MAME/roms/1942.zip
+MAME/medium_artwork/artwork_front/1942/
+MAME/medium_artwork/logo/1942.png
+MAME/medium_artwork/video/1942.mp4
+MAME/medium_artwork/story/1942.txt
+MAME/roms/galaga.zip
+MAME/medium_artwork/artwork_front/galaga.jpg
+MAME/medium_artwork/logo/galaga.png
+MAME/medium_artwork/video/galaga.mp4
+MAME/medium_artwork/story/galaga.txt
+MAME/roms/dkong.zip
+MAME/medium_artwork/artwork_front/dkong.jpg
+MAME/medium_artwork/logo/dkong.png
+MAME/medium_artwork/video/dkong.mp4
+MAME/medium_artwork/story/dkong.txt
+MAME/roms/digdug.zip
+MAME/medium_artwork/artwork_front/digdug/
+MAME/medium_artwork/logo/digdug.png
+MAME/medium_artwork/video/digdug.mp4
+MAME/medium_artwork/story/digdug.txt
+MAME/roms/frogger.zip
+MAME/medium_artwork/artwork_front/frogger/
+MAME/medium_artwork/logo/frogger.png
+MAME/medium_artwork/video/frogger.mp4
+MAME/medium_artwork/story/frogger.txt
+MAME/roms/mspacman.zip
+MAME/medium_artwork/artwork_front/mspacman/
+MAME/medium_artwork/logo/mspacman.png
+MAME/medium_artwork/video/mspacman.mp4
+MAME/medium_artwork/story/mspacman.txt
+MAME/roms/joust.zip
+MAME/medium_artwork/artwork_front/joust.jpg
+MAME/medium_artwork/logo/joust.png
+MAME/medium_artwork/video/joust.mp4
+MAME/medium_artwork/story/joust.txt
+MAME/roms/robotron.zip
+MAME/medium_artwork/artwork_front/robotron/
+MAME/medium_artwork/artwork_front/robotron.png
+MAME/medium_artwork/logo/robotron.png
+MAME/medium_artwork/video/robotron.mp4
+MAME/medium_artwork/story/robotron.txt
+MAME/roms/bublbobl.zip
+MAME/medium_artwork/artwork_front/bublbobl/
+MAME/medium_artwork/logo/bublbobl.png
+MAME/medium_artwork/video/bublbobl.mp4
+MAME/medium_artwork/story/bublbobl.txt
+MAME/roms/pacman.zip
+MAME/medium_artwork/logo/pacman.png
+MAME/medium_artwork/video/pacman.mp4
+MAME/medium_artwork/story/pacman.txt
+MAME/medium_artwork/artwork_front/puckman/
+MAME/medium_artwork/logo/puckman.png
+MAME/medium_artwork/story/puckman.txt
