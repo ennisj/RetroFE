@@ -641,6 +641,28 @@ Made while building the design review (M22); the option not taken in brackets.
   so Claude Opus made the change, built and tested through the worker's
   test mode, and Claude Fable 5.1 reviewed it (your yes) before merging.
 
+### M30. Round 19 choices — Decided (2026-11-23)
+- **Test installs from your OneSauce copy** (your idea): the OneSauce share
+  (`\\JOHN-DESKTOP\OneSauce`) is only ever read. Its files are copied
+  into `fixtures\<name>\` on the test drive, never into the repo, which is
+  public. The repo keeps only the list of paths.
+- **Starter is NES, Genesis and MAME** (your OK). It has 33 games, picked
+  for the cases a first setup meets. The MAME files are sets for RetroArch's
+  `mame2003_plus` core, as in OneSauce, so the checklist uses that core and
+  not current MAME.
+- **Starting over keeps the old install:** `--reset` moves it to
+  `backups\` and nothing on the drive is deleted.
+- **Two gaps, noted and not fixed yet:**
+  - Add games copies only games, so the checklist has you copy the artwork
+    by hand.
+  - A release ships no `meta\` game database, so MAME shows file names,
+    Genesis artwork named by title doesn't match, and clones can't use
+    their parent's artwork.
+
+  Each could be a later round.
+- **A larger install** (many systems, full lists) comes later, after
+  Starter has been tried.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless

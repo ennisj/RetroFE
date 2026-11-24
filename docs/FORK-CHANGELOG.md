@@ -4,6 +4,28 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 19 — test installs: a first setup from your OneSauce copy (2026-11-23)
+
+Unit tests: 7,181 → 7,227 checks (Windows CI), plus the test-build scripts'
+own tests. Choices in M30 of [DECISIONS.md](DECISIONS.md).
+
+- **Test installs side by side** on the PC's test drive, each its own
+  RetroFE folder: `RetroFE-Bare` (nothing set up) and the new
+  `RetroFE-Starter`. Deploys now update every `RetroFE-*` install.
+- **The Starter set:** 33 NES, Genesis and MAME games with their artwork
+  (about 97 MB), copied from your OneSauce share into
+  `fixtures\starter\` on the test drive. They were picked for awkward
+  names, extra file extensions, a game in a subfolder, missing artwork,
+  artwork named by title, and a clone whose artwork is its parent's.
+  `make_test_install.py --fixtures starter --reset` starts over, moving the
+  old install into `backups\`. Only the file list is in the repo
+  (`Scripts/test-build/fixtures/starter.txt`), never ROMs or artwork.
+- **A checklist** in [Scripts/test-build/README.md](../Scripts/test-build/README.md)
+  takes you through the first setup on the PC: RetroArch and three cores,
+  launchers, systems, Add games, artwork.
+- **CI runs Add games over empty stand-ins** named like the Starter set's
+  games, and runs the test-build scripts' tests.
+
 ## Round 18 — no Catalog: the basics, set up by hand (2026-11-22)
 
 Unit tests: 8,465 → 7,181 checks (Windows CI; the Catalog's own tests went
