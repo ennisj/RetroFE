@@ -407,10 +407,14 @@ static Test::Suite firstSetup("first setup", [] {
         std::string retroarch = Utils::combinePath(root, "emulators", "RetroArch");
         fs::create_directories(retroarch);
         std::error_code ec;
+#ifdef _WIN32
         fs::copy_file(RETROFE_FAKE_EMULATOR, Utils::combinePath(retroarch, programName), fs::copy_options::overwrite_existing, ec);
+#else
+        // A symlink rather than a copy: the temp folder may be mounted noexec
+        // (it is on the test worker); the fake writes beside the path it's started by
+        fs::create_symlink(fs::absolute(RETROFE_FAKE_EMULATOR), Utils::combinePath(retroarch, programName), ec);
+#endif
         check(!ec, "the fake RetroArch is in place: " + ec.message());
-        fs::permissions(Utils::combinePath(retroarch, programName), fs::perms::owner_exec | fs::perms::owner_read,
-                        fs::perm_options::add, ec);
         for (const System& system : systems()) {
             writeFile(Utils::combinePath(retroarch, "cores", system.core + "_libretro" + coreExtension), system.core);
             writeFile(Utils::combinePath(retroarch, "info", system.core + "_libretro.info"),

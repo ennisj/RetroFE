@@ -15,8 +15,9 @@
  */
 
 // retrofe_fake_emulator: an emulator for the tests (FirstSetupTests). Each run
-// appends to launches.txt beside its own executable "launch", its current
-// directory, each argument on its own line, then "end", and exits 0.
+// appends to launches.txt beside its own executable (on Linux and macOS, the
+// path it was started by) "launch", its current directory, each argument on
+// its own line, then "end", and exits 0.
 
 #include <filesystem>
 #include <fstream>
@@ -47,10 +48,16 @@ int wmain(int argc, wchar_t* argv[])
 #include <unistd.h>
 int main(int argc, char* argv[])
 {
-    char path[4096];
-    auto length = readlink("/proc/self/exe", path, sizeof(path));
-    if (length < 0) return 1;
-    std::ofstream out(std::filesystem::path(std::string(path, length)).parent_path() / "launches.txt", std::ios::app | std::ios::binary);
+    // Started by its path (as RetroFE starts a launcher's program): beside
+    // that path, which may be a symlink to this one
+    std::string self = argv[0] ? argv[0] : "";
+    if (self.find('/') == std::string::npos) {
+        char path[4096];
+        auto length = readlink("/proc/self/exe", path, sizeof(path));
+        if (length < 0) return 1;
+        self.assign(path, static_cast<size_t>(length));
+    }
+    std::ofstream out(std::filesystem::path(self).parent_path() / "launches.txt", std::ios::app | std::ios::binary);
     out << "launch\n" << std::filesystem::current_path().string() << '\n';
     for (int i = 1; i < argc; ++i) out << argv[i] << '\n';
     out << "end\n";
