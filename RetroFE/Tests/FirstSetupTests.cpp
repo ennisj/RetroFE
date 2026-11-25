@@ -157,16 +157,18 @@ namespace
 
     // RetroFE's configuration as it reads it when it starts (Main.cpp's
     // ImportConfiguration): settings.conf or the built-in defaults, the
-    // launchers, and each collection's settings, info and launcher files
+    // launchers, and each collection's settings, info and launcher files.
+    // Without the log setting: it starts logging, which sends this process's
+    // output to the install's log.txt.
     void loadConfiguration(Configuration& config, const std::string& root)
     {
         std::string settings = Utils::combinePath(root, "settings.conf");
-        if (!fs::exists(settings)) {
-            config.importString("", Builtin::settings);
+        std::string text = fs::exists(settings) ? readFile(settings) : std::string(Builtin::settings);
+        std::string kept;
+        for (const std::string& line : lines(text)) {
+            if (Utils::trimEnds(line.substr(0, line.find('='))) != "log") kept += line + "\n";
         }
-        else {
-            config.import("", settings);
-        }
+        config.importString("", kept);
         std::error_code ec;
         for (const auto& entry : fs::directory_iterator(Utils::combinePath(root, "launchers." + Utils::getOSType()), ec)) {
             if (entry.is_regular_file() && entry.path().extension() == ".conf") {
