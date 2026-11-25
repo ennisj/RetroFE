@@ -404,8 +404,9 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                         pause(hold)
                         win.post(window_handle, WM_KEYUP, virtual_key, key_lparam(virtual_key, scan_code, True))
                         if index + 1 < count:
-                            # Leave time for a sampled release before the next press.
-                            pause(0.15)
+                            # A press while a list is still scrolling to the last one is
+                            # dropped (seen on CI: 0.15 s apart, two Rights moved once)
+                            pause(0.5)
                 elif operation == 'type':
                     encoded = arguments[0].encode('utf-16-le')
                     for index in range(0, len(encoded), 2):
