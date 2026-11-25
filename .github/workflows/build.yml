@@ -184,6 +184,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             $why = ($lines | ForEach-Object { "$_" } | Where-Object { $_ -match '^FAIL ' } | Select-Object -First 1)
             $failed += "$($script.BaseName): $why"
+            if ($why -match 'exit code 0xC') {
+              # A crash: run it once more under the debugger, whose stack and module list
+              # go into the published zip as cdb.txt
+              $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+              if (Test-Path $cdb) {
+                $log = "$out\$($script.BaseName)\cdb.txt"
+                $p = Start-Process $cdb -WorkingDirectory $install -PassThru -NoNewWindow `
+                  -RedirectStandardOutput $log -ArgumentList @('-g', '-G', '-c', '".lastevent; kv 40; lm; q"',
+                  "`"$install\retrofe\retrofe.exe`"", '-fullscreen', 'no', '-horizontal', '960', '-vertical', '540')
+                if (-not $p.WaitForExit(90000)) { $p.Kill(); "cdb timed out" | Add-Content $log }
+              }
+              else { "::warning::No cdb.exe at $cdb" }
+            }
           }
         }
         $shots = (Get-ChildItem -Recurse "$out\*.png").Count
