@@ -16,6 +16,7 @@
 
 
 #include "SDL.h"
+#include "WindowFlags.h"
 #include "Database/Configuration.h"
 #include "Database/GlobalOpts.h"
 #include "Utility/Log.h"
@@ -120,6 +121,14 @@ bool SDL::initialize(Configuration& config)
 	LOG_INFO("SDL", "Number of displays found: " + std::to_string(numDisplays_));
 	LOG_INFO("SDL", "Number of displays requested: " + std::to_string(numScreens_));
 
+	std::string SDLRenderDriver = "direct3d11";
+#ifdef WIN32
+	config.getProperty(OPTION_SDLRENDERDRIVER, SDLRenderDriver);
+	const bool windows = true;
+#else
+	const bool windows = false;
+#endif
+
 	// Preset the SDL settings for all monitors
 	int mainScreen = 0;
 	screenCount_ = std::min(numScreens_, numDisplays_);
@@ -128,7 +137,10 @@ bool SDL::initialize(Configuration& config)
 		SDL_DisplayMode mode;
 		bool windowBorder = false;
 		bool windowResize = false;
-		Uint32 windowFlags = SDL_WINDOW_OPENGL;
+		Uint32 windowFlags = 0;
+		// Avoid a driverless Windows OpenGL startup crash; SDL recreates the window if it falls back to OpenGL.
+		if (windowNeedsOpenGL(SDLRenderDriver, windows))
+			windowFlags |= SDL_WINDOW_OPENGL;
 		if (hiddenWindows_)
 			windowFlags |= SDL_WINDOW_HIDDEN;
 		std::string screenIndex = std::to_string(screenNum);
@@ -299,8 +311,6 @@ bool SDL::initialize(Configuration& config)
 		}
 
 #ifdef WIN32
-		std::string SDLRenderDriver = "direct3d11";
-		config.getProperty(OPTION_SDLRENDERDRIVER, SDLRenderDriver);
 		if (SDL_SetHint(SDL_HINT_RENDER_DRIVER, SDLRenderDriver.c_str()) != SDL_TRUE)
 		{
 			LOG_ERROR("SDL", "Error setting renderer to" + SDLRenderDriver + ". Available direct3d, direct3d11, direct3d12, opengl, opengles2, opengles, metal, and software");

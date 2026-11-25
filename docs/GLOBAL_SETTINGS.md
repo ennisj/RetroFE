@@ -61,7 +61,7 @@ The Settings form's Monitor choice writes `screenNum0`. Windowed RetroFE opens c
 | `HardwareVideoAccel` | `false` | `BOOLEAN` | Hardware decoding | ✅ |
 | `AvdecMaxThreads` | `2` | `INTEGER` | Number of threads for avdec software decoding | ✅ |
 | `MuteVideo` | `false` | `BOOLEAN` | Video playback is muted | ✅ |
-| `SDLRenderDriver` | `direct3d` | `STRING` | Set renderer (direct3d, direct3d11, direct3d12, opengl, opengles2, opengles, metal, and software) | ✅ |
+| `SDLRenderDriver` | `direct3d11` | `STRING` | Set renderer (direct3d, direct3d11, direct3d12, opengl, opengles2, opengles, metal, and software). On Windows, the window is made for OpenGL only when an OpenGL renderer is chosen. | ✅ |
 | `ScaleQuality` | `1` | `INTEGER` | Scaling quality (0, 1, 2) | ✅ |
 | `highPriority` | `false` | `BOOLEAN` | RetroFE Windows process priority | ✅ |
 | `unloadSDL` | `false` | `BOOLEAN` | Close SDL when launching a game, MUST be true for RPI | |
