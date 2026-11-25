@@ -4,6 +4,27 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 20 — the first setup, tested automatically (2026-11-25)
+
+Unit tests: 7,227 → 7,500 checks (Windows CI). Choices in M31 of
+[DECISIONS.md](DECISIONS.md).
+
+- **The Starter checklist now runs in CI** (`FirstSetupTests`), steps 2 to 6,
+  from an empty RetroFE folder:
+  - three RetroArch launchers, and three systems with the names and
+    extensions suggested from each core's info file;
+  - Add games for the 33 Starter games (12, 10 and 10, then "already there");
+  - Browse's lists and a search for every game's exact name;
+  - five games actually started, through a fake RetroArch that records what
+    it was given;
+  - the artwork on the Media screens.
+- **What stays on the PC:** real RetroArch and cores, how it looks,
+  controllers and fullscreen.
+- **The launch command is its own piece:** RetroFE works out a game's
+  program, arguments and folder, and the Windows command line, in
+  `Execute/LaunchCommand`, so the tests run the same code. Launching
+  doesn't change.
+
 ## Round 19 — test installs: a first setup from your OneSauce copy (2026-11-23)
 
 Unit tests: 7,181 → 7,227 checks (Windows CI), plus the test-build scripts'
