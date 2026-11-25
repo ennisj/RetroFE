@@ -6,7 +6,7 @@ The GitHub Actions workflows are in `.github/workflows`.
 
 `build.yml` builds RetroFE and the `retrofe_tests` unit tests (`RetroFE/Tests`), then runs the tests. It runs:
 
-- on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, `.github/workflows` or `.github/scripts` changes
+- on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, Python files under `Scripts/test-build`, `Scripts/test-build/fixtures`, `.github/workflows` or `.github/scripts` changes
 - by hand: `gh workflow run build.yml --ref <branch>`, or "Run workflow" on the Actions tab
 
 A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`), except to publish: `release-windows.yml` for releases and `build.yml`'s Windows job for the test build below.
@@ -22,7 +22,7 @@ It has four jobs:
 
 **For now only Windows x64 runs on every push** (development is Windows-first, [DECISIONS.md](DECISIONS.md) W4). The Linux and macOS jobs run for `master`, pull requests to `master`, and runs started by hand, so a branch can still be checked on every platform with `gh workflow run build.yml --ref <branch>`.
 
-Each configures with `-DRETROFE_BUILD_TESTS=ON`, builds everything, and runs the tests with `ctest --test-dir RetroFE/Build --output-on-failure` (`-C Release` on Windows). ctest runs `retrofe_tests`, which exits non-zero if any check fails and prints each failure, so a failing check fails the job. On Windows, ctest runs with `-V` and the job repeats compiler and linker errors, failing checks and the closing "N/M checks passed" line as annotations: unlike the log, annotations can be read without signing in (`GET /repos/ennisj/RetroFE/check-runs/<job id>/annotations`), so an agent without a GitHub login can still see why a run failed. The Linux and macOS jobs also run `retrofe --version`, which exits before opening a window: a quick check that the executable starts and its libraries load.
+Each configures with `-DRETROFE_BUILD_TESTS=ON`, builds everything, and runs the tests with `ctest --test-dir RetroFE/Build --output-on-failure` (`-C Release` on Windows). When Python is found, ctest also runs the test-build scripts' Python tests. ctest runs `retrofe_tests`, which exits non-zero if any check fails and prints each failure, so a failing check fails the job. On Windows, ctest runs with `-V` and the job repeats compiler and linker errors, failing checks and the closing "N/M checks passed" line as annotations: unlike the log, annotations can be read without signing in (`GET /repos/ennisj/RetroFE/check-runs/<job id>/annotations`), so an agent without a GitHub login can still see why a run failed. The Linux and macOS jobs also run `retrofe --version`, which exits before opening a window: a quick check that the executable starts and its libraries load.
 
 None of the tests need a display, a GPU or SDL: `retrofe_tests` is built only from the code that doesn't use SDL (see the `RETROFE_BUILD_TESTS` block in `RetroFE/Source/CMakeLists.txt`). A test that needed a window couldn't run on these runners.
 
@@ -56,7 +56,7 @@ When the Windows job passes on a push to `feature/management-ui`, its last step 
 https://github.com/ennisj/RetroFE/releases/download/management-ui-latest/RetroFE-management-ui-windows-x64.zip
 ```
 
-The release is deleted and created again each time, so its tag always points at the commit that was built. `Scripts/test-build/deploy_test_build.py` downloads it, checks it against its `.sha256` and copies it onto the PC's test install.
+The release is deleted and created again each time, so its tag always points at the commit that was built. `Scripts/test-build/deploy_test_build.py` downloads it, checks it against its `.sha256` and copies it onto the PC's `RetroFE-*` test installs (see [Scripts/test-build/README.md](../Scripts/test-build/README.md)).
 
 ## macOS builds
 

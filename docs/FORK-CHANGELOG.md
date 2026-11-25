@@ -13,9 +13,9 @@ Unit tests: 7,227 → 7,500 checks (Windows CI). Choices in M31 of
   from an empty RetroFE folder:
   - three RetroArch launchers, and three systems with the names and
     extensions suggested from each core's info file;
-  - Add games for the 33 Starter games (12, 10 and 10, then "already there");
+  - Add games for the 32 Starter games (12, 10 and 10, then "already there");
   - Browse's lists and a search for every game's exact name;
-  - five games actually started, through a fake RetroArch that records what
+  - five games started, with the command RetroFE builds, through a fake RetroArch that records what
     it was given;
   - the artwork on the Media screens.
 - **What stays on the PC:** real RetroArch and cores, how it looks,
@@ -33,7 +33,7 @@ own tests. Choices in M30 of [DECISIONS.md](DECISIONS.md).
 - **Test installs side by side** on the PC's test drive, each its own
   RetroFE folder: `RetroFE-Bare` (nothing set up) and the new
   `RetroFE-Starter`. Deploys now update every `RetroFE-*` install.
-- **The Starter set:** 33 NES, Genesis and MAME games with their artwork
+- **The Starter set:** 32 NES, Genesis and MAME games with their artwork
   (about 97 MB), copied from your OneSauce share into
   `fixtures\starter\` on the test drive. They were picked for awkward
   names, extra file extensions, a game in a subfolder, missing artwork,

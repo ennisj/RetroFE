@@ -646,12 +646,12 @@ Made while building the design review (M22); the option not taken in brackets.
   (`\\JOHN-DESKTOP\OneSauce`) is only ever read. Its files are copied
   into `fixtures\<name>\` on the test drive, never into the repo, which is
   public. The repo keeps only the list of paths.
-- **Starter is NES, Genesis and MAME** (your OK). It has 33 games, picked
+- **Starter is NES, Genesis and MAME** (your OK). It has 32 games, picked
   for the cases a first setup meets. The MAME files are sets for RetroArch's
   `mame2003_plus` core, as in OneSauce, so the checklist uses that core and
   not current MAME.
 - **Starting over keeps the old install:** `--reset` moves it to
-  `backups\` and nothing on the drive is deleted.
+  `backups\` and nothing of yours is deleted; only a build left half-copied by an interrupted deploy (`builds\<label>.partial`) is replaced.
 - **Two gaps, noted and not fixed yet:**
   - Add games copies only games, so the checklist has you copy the artwork
     by hand.
