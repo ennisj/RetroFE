@@ -558,6 +558,7 @@ target_link_libraries(retrofe_theme_editor ${ZLIB_LIBRARIES})
 # Unit tests for code that doesn't need SDL: cmake -DRETROFE_BUILD_TESTS=ON, then run retrofe_tests
 option(RETROFE_BUILD_TESTS "Build the retrofe_tests unit tests" OFF)
 if(RETROFE_BUILD_TESTS)
+	add_executable(retrofe_fake_emulator "${RETROFE_DIR}/Tests/FakeEmulator/FakeEmulator.cpp")
 	# Every Tests/*.cpp, so a new test file needs no edit here (see Test::Suite in TestSupport.h)
 	file(GLOB RETROFE_TEST_SOURCES CONFIGURE_DEPENDS "${RETROFE_DIR}/Tests/*.cpp")
 	set(RETROFE_TEST_EXTRA_SOURCES)
@@ -608,11 +609,12 @@ if(RETROFE_BUILD_TESTS)
 	)
 	list(REMOVE_DUPLICATES RETROFE_TEST_ALL_SOURCES)
 	add_executable(retrofe_tests ${RETROFE_TEST_ALL_SOURCES})
-	add_dependencies(retrofe_tests GenerateVersioningHeader)
+	add_dependencies(retrofe_tests GenerateVersioningHeader retrofe_fake_emulator)
 	# The theme editor tests read the bundled font and check the layout
 	# vocabulary against PageBuilder.cpp and Tween.cpp in the source tree
 	target_link_libraries(retrofe_tests retrofe_theme_editor)
 	target_compile_definitions(retrofe_tests PRIVATE
+		RETROFE_FAKE_EMULATOR="$<TARGET_FILE:retrofe_fake_emulator>"
 		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
 		RETROFE_FIXTURES_DIR="${RETROFE_DIR}/../Scripts/test-build/fixtures"
 		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
