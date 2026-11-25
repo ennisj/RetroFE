@@ -1,25 +1,27 @@
-# bare: first startup and the Manage hub and setup forms.
-# The layout.xml log identifies the initial page rather than splash.xml; allow it to settle.
+# Builtin.cpp defaults to Home; Home::landing chooses Manage without collections.
+# RetroFE.cpp opens Manage automatically without settings.conf; timing: tune on CI.
 wait-log layout.xml
 wait 4
 shot first-start
-# First start opens Manage automatically; F10 closes and reopens it.
-key F10 hold 0.1
+# ManagerUI handles F10 to close and reopen Manage.
+key F10
 wait 1
-key F10 hold 0.1
+key F10
 wait 1
 shot manage-hub
-# The hub initially focuses Add your first launcher.
-key Return hold 0.1
+# BuiltinForms.cpp lists Add your first launcher first; focus: tune on CI.
+key Return
 wait 1
 shot add-launcher
-key Escape hold 0.1
+# Escape returns to the hub; focus restoration: tune on CI.
+key Escape
 wait 1
-# The hub's following setup link is Add your first system.
-key Down hold 0.1
-key Return hold 0.1
+# BuiltinForms.cpp lists Add your first system next; navigation: tune on CI.
+key Down
+key Return
 wait 1
 shot add-system
-key Escape hold 0.1
+# Escape returns to Manage; timing: tune on CI.
+key Escape
 wait 1
 quit

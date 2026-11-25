@@ -4,16 +4,16 @@ This stdlib-only tool prepares small RetroFE installs and drives the real Window
 
 ```
 python -I Scripts/test-build/screens/screens.py install --kind bare --exe path/retrofe.exe --dlls path/DLLs --common Package/Environment/Common out/bare
-python -I Scripts/test-build/screens/screens.py install --kind starter --exe path/retrofe.exe --dlls path/DLLs --common Package/Environment/Common --fake-emulator path/retrofe_fake_emulator.exe out/starter
+python -I Scripts/test-build/screens/screens.py install --kind starter --exe path/retrofe.exe --dlls path/DLLs --common Package/Environment/Common --setup path/kept-setup out/starter
 python -I Scripts/test-build/screens/screens.py run --install out/bare --script Scripts/test-build/screens/scripts/bare-first-start.txt --out out/pictures --width 960 --height 540 --timeout 120
 ```
 
-An existing nonempty install destination is refused. Starter ROMs are empty stand-ins, and the executable is a fake emulator. Run writes numbered PNGs, results.json, and a copy of log.txt. A one-colour capture is marked `blank` in results.json.
+Run `RETROFE_KEEP_FIRST_SETUP=/path/to/empty-destination retrofe_tests` to retain the completed FirstSetupTests root, then pass that path as `--setup`. The test uses stand-in ROMs and a fake emulator. An existing nonempty install destination is refused. Run writes numbered PNGs, results.json, and a copy of log.txt. A one-colour capture is marked `blank` in results.json.
 
 Scripts use one command per line; blank lines and lines starting with `#` are ignored:
 
 - `wait SECONDS`, `wait-log TEXT [TIMEOUT]` (default 30 seconds)
-- `key NAME [xN] [hold SECONDS]`, `type TEXT`
+- `key NAME [xN] [hold SECONDS]` (default hold 0.1 seconds), `type TEXT`
 - `shot NAME`, `expect-file PATH [TEXT]`, `expect-log TEXT`, `quit`
 
 File paths are relative to the install and cannot contain spaces. Key names include arrows, Return, Escape, Space, Tab, Backspace, Delete, Home, End, PageUp, PageDown, F1–F12, letters and digits. `type` posts character messages. The whole script is validated before launch. A failure exits 1 and is recorded in results.json.
