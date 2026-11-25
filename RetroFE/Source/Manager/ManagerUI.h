@@ -21,6 +21,7 @@
 #include "Browser/MouseUse.h"
 #include "ImGuiScreen.h"
 #include "LaunchQueue.h"
+#include "LaunchNotice.h"
 #include "LeaveWarning.h"
 #include "ManagerModel.h"
 #include "Navigator.h"
@@ -68,6 +69,7 @@ public:
     void deInitialize();
 
     bool isOpen() const { return open_; }
+    void showLaunchNotice(const std::string& text) { launchNotice_.show(text); }
 
     // Opens a form by id with its parameters, as the only screen: Back closes it.
     // Does nothing (and logs why) if there's no such form.
@@ -219,6 +221,7 @@ private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Scancode toggleKey_ = SDL_SCANCODE_F10;
     float scale_ = 1.0f;
+    Manager::LaunchNotice launchNotice_;
     bool open_ = false;
     bool locked_ = false;
     Manager::HubProgress hubProgress_;

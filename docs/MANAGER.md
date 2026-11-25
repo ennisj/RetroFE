@@ -232,6 +232,8 @@ The game's screen also has:
   collection was renamed), it opens Manage > Games (that collection) > the
   game instead. It says why if the game couldn't start. With unsaved changes on an open screen,
   the first press says so and the second leaves them and starts the game.
+  A game started from a Browse page that cannot start shows why at the bottom
+  of the screen for a few seconds. Attract mode only logs the reason.
 - **Hide this game**: adds it to its system's exclude list (`exclude.txt`,
   or the file `list.excludeFile` names), so RetroFE stops listing it. Hidden
   games are found with **Only hidden games** in Games' Filters. Their screen
