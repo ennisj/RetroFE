@@ -4,6 +4,19 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 22 — a game that doesn't start from Browse says why (2026-11-25)
+
+Unit tests: 7,508 → 7,517 checks (Windows CI). Choices in M33 of
+[DECISIONS.md](DECISIONS.md).
+
+- **A game started from a Browse page that doesn't start shows why** at the
+  bottom of the screen for eight seconds, e.g. "It couldn't start: Contra's
+  file isn't in ...\roms." Opening Manage or starting another game clears it.
+  Before, the reason was only in `log.txt`. Attract mode still only logs it.
+  Manage's **Start this game** is unchanged.
+- The message is drawn in Manage's style over the page, takes no input and
+  leaves a hidden mouse pointer hidden.
+
 ## Round 21 — a missing game file is said, not launched; review fixes (2026-11-25)
 
 Unit tests: 7,500 → 7,508 checks (Windows CI), and the test-build scripts'

@@ -692,6 +692,15 @@ Made while building the design review (M22); the option not taken in brackets.
     process. Its comments now say what that copy doesn't cover: absolute
     paths, the PATH lookup and non-`.exe` programs on Windows.
 
+### M33. Round 22 choices — Decided (2026-11-25)
+- **The Browse message shows for eight seconds** and goes when Manage opens or
+  another game starts; keys keep working on the page meanwhile, so it never
+  has to be dismissed.
+- **Not in attract mode:** nobody is watching, and attract mode moves on by
+  itself; the reason stays in `log.txt`.
+- **On Windows it shows only when the program didn't start:** RetroFE ignores
+  a Windows program's exit code, so quitting a game normally shows nothing.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
