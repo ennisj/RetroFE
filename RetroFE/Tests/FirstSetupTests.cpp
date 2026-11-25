@@ -226,8 +226,9 @@ namespace
 
     // Starts the command as Launcher::execute() does at its core, and waits:
     // CreateProcess with its command line on Windows, fork and execvp with
-    // its argv elsewhere, both in its current directory
-    bool startAndWait(const LaunchCommand::Command& command)
+    // its argv elsewhere, both in its current directory. "" when it ran and
+    // exited 0, else what happened.
+    std::string startAndWait(const LaunchCommand::Command& command)
     {
 #ifdef _WIN32
         std::string commandLine = LaunchCommand::windowsCommandLine(command.executable, command.arguments);
@@ -236,14 +237,14 @@ namespace
         PROCESS_INFORMATION processInfo{};
         if (!CreateProcessA(nullptr, &commandLine[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
                             command.currentDirectory.c_str(), &startupInfo, &processInfo)) {
-            return false;
+            return "CreateProcess failed, error " + std::to_string(GetLastError());
         }
         WaitForSingleObject(processInfo.hProcess, 30000);
         DWORD exitCode = 1;
         GetExitCodeProcess(processInfo.hProcess, &exitCode);
         CloseHandle(processInfo.hThread);
         CloseHandle(processInfo.hProcess);
-        return exitCode == 0;
+        return exitCode == 0 ? "" : "exit code " + std::to_string(exitCode);
 #else
         std::vector<std::string> argv = LaunchCommand::unixArgv(command.executable, command.arguments);
         std::vector<char*> args;
@@ -258,11 +259,13 @@ namespace
             _exit(127);
         }
         if (pid < 0) {
-            return false;
+            return "fork failed";
         }
         int status = 0;
         waitpid(pid, &status, 0);
-        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        if (!WIFEXITED(status)) return "ended by signal " + std::to_string(WTERMSIG(status));
+        // 126: chdir failed; 127: execvp failed
+        return WEXITSTATUS(status) == 0 ? "" : "exit code " + std::to_string(WEXITSTATUS(status));
 #endif
     }
 
@@ -626,7 +629,7 @@ static Test::Suite firstSetup("first setup", [] {
 
             std::error_code ec;
             fs::remove(s->launches(), ec);
-            check(startAndWait(command), name + ": the fake RetroArch ran and exited 0");
+            checkEqual(startAndWait(command), "", name + ": the fake RetroArch ran and exited 0");
             std::vector<Launch> launches = readLaunches(s->launches());
             check(launches.size() == 1, name + ": one launch written down");
             if (launches.size() != 1) continue;
