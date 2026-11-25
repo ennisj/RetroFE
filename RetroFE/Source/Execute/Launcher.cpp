@@ -15,6 +15,7 @@
  */
 
 #include "Launcher.h"
+#include "LaunchCommand.h"
 #include "../RetroFE.h"
 #include "../Collection/Item.h"
 #include "../Library/Files.h"
@@ -392,33 +393,6 @@ bool detectInput(const std::vector<std::string>& devices) {
 
 #endif
 
-std::string replaceVariables(std::string str,
-	const std::string& itemFilePath,
-	const std::string& itemName,
-	const std::string& itemFilename,
-	const std::string& itemDirectory,
-	const std::string& itemCollectionName)
-{
-	str = Utils::replace(str, "%ITEM_FILEPATH%", itemFilePath);
-	str = Utils::replace(str, "%ITEM_NAME%", itemName);
-	str = Utils::replace(str, "%ITEM_FILENAME%", itemFilename);
-	str = Utils::replace(str, "%ITEM_DIRECTORY%", itemDirectory);
-	str = Utils::replace(str, "%ITEM_COLLECTION_NAME%", itemCollectionName);
-	str = Utils::replace(str, "%RETROFE_PATH%", Configuration::absolutePath);
-	str = Utils::replace(str, "%COLLECTION_PATH%", Utils::combinePath(Configuration::absolutePath, "collections", itemCollectionName));
-#ifdef WIN32
-	str = Utils::replace(str, "%RETROFE_EXEC_PATH%", Utils::combinePath(Configuration::absolutePath, "retrofe", "RetroFE.exe"));
-	const char* comspec = std::getenv("COMSPEC");
-	if (comspec) {
-		str = Utils::replace(str, "%CMD%", std::string(comspec));
-	}
-#else
-	str = Utils::replace(str, "%RETROFE_EXEC_PATH%", Utils::combinePath(Configuration::absolutePath, "RetroFE"));
-#endif
-
-	return str;
-}
-
 #ifdef WIN32
 // Utility function to terminate a process and all its child processes
 void TerminateProcessAndChildren(DWORD processId) {
@@ -463,84 +437,28 @@ void TerminateProcessAndChildren(DWORD processId) {
 #endif
 
 bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPage, bool isAttractMode) {
-	// Step 1: Determine launcher name (with potential per-item override)
-	std::string launcherName = collectionItem->collectionInfo->launcher;
-	std::string launcherFile = Utils::combinePath(Configuration::absolutePath, "collections", collection, "launchers", collectionItem->name + ".conf");
-
-	if (std::ifstream launcherStream(launcherFile); launcherStream.good()) {
-		std::string line;
-		if (std::getline(launcherStream, line)) {
-			std::string localLauncherKey = "localLaunchers." + collection + "." + line;
-			launcherName = config_.propertyPrefixExists(localLauncherKey) ? (collection + "." + line) : line;
-			LOG_INFO("Launcher", "Using per-item launcher override: " + launcherName);
-		}
-	}
-
-	// Check for collection-specific launcher if no override
-	if (launcherName == collectionItem->collectionInfo->launcher) {
-		std::string collectionLauncherKey = "collectionLaunchers." + collection;
-		if (config_.propertyPrefixExists(collectionLauncherKey)) {
-			launcherName = collectionItem->collectionInfo->name;
-			LOG_INFO("Launcher", "Using collection-specific launcher: " + launcherName);
-		}
-	}
-
-	// Step 2: Retrieve executable, extensions, and directory
-	std::string executablePath, selectedItemsDirectory, selectedItemsPath, extensionstr, matchedExtension, args;
-
 	failure_.clear();
 	started_ = false;
-	if (!launcherExecutable(executablePath, launcherName)) {
-		LOG_ERROR("Launcher", "Launcher executable not found for: " + launcherName);
-		failure_ = "It couldn't start: there's no launcher called " + launcherName + " with a program.";
+
+	// Steps 1-5 (LaunchCommand::build): the launcher (with potential per-item
+	// override), its executable, the game's file, the arguments and the
+	// current directory, with variables substituted
+	LaunchCommand::Game game;
+	game.collection = collection;
+	game.itemCollection = collectionItem->collectionInfo->name;
+	game.itemLauncher = collectionItem->collectionInfo->launcher;
+	game.name = collectionItem->name;
+	game.file = collectionItem->file;
+	game.filepath = collectionItem->filepath;
+	LaunchCommand::Command command = LaunchCommand::build(config_, game);
+	if (!command.failure.empty()) {
+		failure_ = command.failure;
 		return false;
 	}
-	if (!extensions(extensionstr, collection)) {
-		LOG_ERROR("Launcher", "No file extensions configured for collection: " + collection);
-		failure_ = "It couldn't start: " + collection + " has no list.extensions.";
-		return false;
-	}
-	if (!collectionDirectory(selectedItemsDirectory, collection)) {
-		LOG_ERROR("Launcher", "No valid directory found for collection: " + collection);
-		failure_ = "It couldn't start: " + collection + " has no games folder.";
-		return false;
-	}
-
-	launcherArgs(args, launcherName);
-
-	// Override directory if filepath is provided in the item
-	if (!collectionItem->filepath.empty()) {
-		selectedItemsDirectory = collectionItem->filepath;
-		LOG_DEBUG("LauncherDebug", "Using filepath from item: " + selectedItemsDirectory);
-	}
-
-	// Step 3: Find the item file based on provided or derived names
-	if (collectionItem->file.empty()) {
-		findFile(selectedItemsPath, matchedExtension, selectedItemsDirectory, collectionItem->name, extensionstr);
-	}
-	else {
-		findFile(selectedItemsPath, matchedExtension, selectedItemsDirectory, collectionItem->file, extensionstr);
-	}
-
-	LOG_DEBUG("LauncherDebug", "File selected: " + selectedItemsPath);
-	LOG_DEBUG("LauncherDebug", "Arguments before replacement: " + args);
-
-	// Step 4: Substitute variables in args and executable path
-	args = replaceVariables(args, selectedItemsPath, collectionItem->name, Utils::getFileName(selectedItemsPath), selectedItemsDirectory, collection);
-	executablePath = replaceVariables(executablePath, selectedItemsPath, collectionItem->name, Utils::getFileName(selectedItemsPath), selectedItemsDirectory, collection);
-
-	LOG_INFO("Launcher", "Final executable path: " + executablePath);
-	LOG_INFO("Launcher", "Arguments after replacement: " + args);
-
-	// Step 5: Determine the current working directory
-	std::string currentDirectoryKey = "launchers." + launcherName + ".currentDirectory";
-	// By default the program's own folder. A bare name (cmd.exe, found on the
-	// system path) has none: it runs in RetroFE's, not in a folder named after it
-	std::string currentDirectory = Library::programFolder(executablePath, Configuration::absolutePath);
-	config_.getProperty(currentDirectoryKey, currentDirectory);
-
-	currentDirectory = replaceVariables(currentDirectory, selectedItemsPath, collectionItem->name, Utils::getFileName(selectedItemsPath), selectedItemsDirectory, collection);
-	LOG_DEBUG("LauncherDebug", "Final working directory: " + currentDirectory);
+	const std::string& launcherName = command.launcher;
+	const std::string& executablePath = command.executable;
+	const std::string& args = command.arguments;
+	const std::string& currentDirectory = command.currentDirectory;
 
 	// Step 6: Execute the command
 	if (!execute(executablePath, args, currentDirectory, true, currentPage, isAttractMode, collectionItem)) {
@@ -798,19 +716,8 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 		startupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 		startupInfo.wShowWindow = SW_SHOWDEFAULT;
 
-		// Construct command line
-		std::string commandLine = "\"" + exePathStr + "\"";
-		std::string runArgs = args;
-		if (Library::iequals(exePath.filename().string(), "cmd.exe")) {
-			// cmd /c drops the first and last quote when there are more than two
-			runArgs = Library::cmdArguments(args);
-			if (runArgs != args) {
-				LOG_INFO("Launcher", "Quoted the command for cmd.exe /c: " + runArgs);
-			}
-		}
-		if (!runArgs.empty()) {
-			commandLine += " " + runArgs;
-		}
+		// Construct command line (made safe for cmd.exe /c)
+		std::string commandLine = LaunchCommand::windowsCommandLine(exePathStr, args);
 
 		LOG_INFO("Launcher", "Command line to be executed: " + commandLine);
 
@@ -1260,15 +1167,10 @@ bool Launcher::execute(std::string executable, std::string args, std::string cur
 			exit(EXIT_FAILURE);
 		}
 
-		std::vector<std::string> argVector;
-		std::istringstream argsStream(args);
-		std::string arg;
-		while (argsStream >> std::quoted(arg)) {
-			argVector.push_back(arg);
-		}
+		// The program, then the arguments as std::quoted splits them
+		std::vector<std::string> argVector = LaunchCommand::unixArgv(executable, args);
 
 		std::vector<char*> execArgs;
-		execArgs.push_back(const_cast<char*>(executable.c_str()));
 		for (auto& arg : argVector) {
 			execArgs.push_back(const_cast<char*>(arg.c_str()));
 		}
@@ -1501,122 +1403,3 @@ void Launcher::keepRendering(std::atomic<bool>& stop_thread, Page& currentPage) 
 		SDL_UnlockMutex(SDL::getMutex());
 	}
 }
-
-bool Launcher::launcherName(std::string& launcherName, std::string collection)
-{
-	// find the launcher for the particular item 
-	std::string launcherKey = "collections." + collection + ".launcher";
-	bool found = config_.getProperty(launcherKey, launcherName);
-	// Fork-compat (OneSauce data): the first of "launcher = a, b, c"
-	launcherName = Library::firstLauncher(launcherName);
-	if (!found) {
-		std::stringstream ss;
-
-		ss << "Launch failed. Could not find a configured launcher for collection \""
-			<< collection
-			<< "\" (could not find a property for \""
-			<< launcherKey
-			<< "\")";
-
-		LOG_ERROR("Launcher", ss.str());
-
-		return false;
-	}
-
-	std::stringstream ss;
-	ss << "collections."
-		<< collection
-		<< " is configured to use launchers."
-		<< launcherName
-		<< "\"";
-
-	LOG_DEBUG("Launcher", ss.str());
-
-	return true;
-}
-
-bool Launcher::launcherExecutable(std::string& executable, std::string launcherName) {
-	// Try with the localLauncher prefix
-	std::string executableKey = "localLaunchers." + launcherName + ".executable";
-	if (!config_.getProperty(executableKey, executable)) {
-		// Try with the collectionLauncher prefix
-		executableKey = "collectionLaunchers." + launcherName + ".executable";
-		if (!config_.getProperty(executableKey, executable)) {
-			// Finally, try with the global launcher prefix
-			executableKey = "launchers." + launcherName + ".executable";
-			if (!config_.getProperty(executableKey, executable)) {
-				LOG_ERROR("Launcher", "No launcher found for: " + executableKey);
-				return false;
-			}
-		}
-	}
-	return true;
-}
-
-bool Launcher::launcherArgs(std::string& args, std::string launcherName) {
-	// Try with the localLauncher prefix
-	std::string argsKey = "localLaunchers." + launcherName + ".arguments";
-	if (!config_.getProperty(argsKey, args)) {
-		// Try with the collectionLauncher prefix
-		argsKey = "collectionLaunchers." + launcherName + ".arguments";
-		if (!config_.getProperty(argsKey, args)) {
-			// Finally, try with the global launcher prefix
-			argsKey = "launchers." + launcherName + ".arguments";
-			if (!config_.getProperty(argsKey, args)) {
-				LOG_WARNING("Launcher", "No arguments specified for: " + argsKey);
-				args.clear(); // Ensure args is empty if not found
-			}
-		}
-	}
-	return true;
-}
-
-bool Launcher::extensions(std::string& extensions, std::string collection)
-{
-	if (std::string extensionsKey = "collections." + collection + ".list.extensions"; !config_.getProperty(extensionsKey, extensions)) {
-		LOG_ERROR("Launcher", "No extensions specified for: " + extensionsKey);
-		return false;
-	}
-
-	extensions = Utils::replace(extensions, " ", "");
-	extensions = Utils::replace(extensions, ".", "");
-
-	return true;
-}
-
-bool Launcher::collectionDirectory(std::string& directory, std::string collection)
-{
-	std::string itemsPathValue;
-	std::string mergedCollectionName;
-
-	// find the items path folder (i.e. ROM path)
-	config_.getCollectionAbsolutePath(collection, itemsPathValue);
-	directory += itemsPathValue + Utils::pathSeparator;
-
-	return true;
-}
-
-bool Launcher::findFile(std::string& foundFilePath, std::string& foundFilename, const std::string& directory, const std::string& filenameWithoutExtension, const std::string& extensions) {
-	bool fileFound = false;
-	std::stringstream ss(extensions);
-	std::string extension;
-
-	while (std::getline(ss, extension, ',')) {
-		fs::path filePath = fs::path(directory) / (filenameWithoutExtension + "." + extension);
-
-		if (fs::exists(filePath)) {
-			foundFilePath = fs::absolute(filePath).string();
-			foundFilename = extension;
-			fileFound = true;
-			LOG_INFO("Launcher", "File found: " + foundFilePath + " with extension: ." + extension);
-			break; // Exit the loop once the file is found
-		}
-	}
-
-	if (!fileFound) {
-		LOG_ERROR("Launcher", "No matching files found for \"" + filenameWithoutExtension + "\" in directory \"" + directory + "\" with extensions: " + extensions);
-	}
-
-	return fileFound;
-}
-
