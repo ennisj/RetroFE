@@ -131,6 +131,15 @@ def is_blank(rgb):
     return bool(rgb) and all((rgb[index:index + 3] == rgb[:3] for index in range(0, len(rgb), 3)))
 
 
+def exit_text(code):
+    """An exit code as Windows reports crashes: 0xC0000005 rather than -1073741819."""
+    if code is None:
+        return 'none'
+    if code < 0 or code > 0xffff:
+        return f'0x{code & 0xffffffff:08X}'
+    return str(code)
+
+
 def install(kind, exe, dlls, common, out, setup=None):
     """Build a bare install, optionally adding a finished first setup."""
     out, exe, dlls, common = map(Path, (out, exe, dlls, common))
@@ -303,6 +312,7 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
     args = ['-fullscreen', 'no', '-horizontal', str(width), '-vertical', str(height), '-windowBorder', 'false', '-log', 'ALL']
     result = dict(install=str(root), script=str(script), exe=str(exe), args=args, steps=[])
     process = None
+    console = None
     started = time.monotonic()
     deadline = started + timeout
     current = None
@@ -312,7 +322,7 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
         if time.monotonic() >= deadline:
             raise TimeoutError('overall timeout')
         if process is not None and process.poll() is not None:
-            raise RuntimeError('RetroFE exited before quit')
+            raise RuntimeError('RetroFE exited before quit (exit code ' + exit_text(process.returncode) + ')')
 
     def pause(seconds):
         """Wait, still checking that RetroFE is running."""
@@ -344,7 +354,9 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
         env = os.environ.copy()
         # Avoid stealing focus from the CI desktop when the SDL window appears.
         env['SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN'] = '1'
-        process = subprocess.Popen([str(exe)] + args, cwd=root, env=env)
+        # RetroFE's console output (messages from before logging starts, crashes) goes to stdout.txt
+        console = open(out / 'stdout.txt', 'wb')
+        process = subprocess.Popen([str(exe)] + args, cwd=root, env=env, stdout=console, stderr=subprocess.STDOUT)
         end = min(deadline, time.monotonic() + 30)
         window_handle = None
         while time.monotonic() < end:
@@ -428,6 +440,10 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
         if process is not None and process.poll() is None:
             process.kill()
             process.wait()
+        if process is not None:
+            result['exit_code'] = exit_text(process.returncode)
+        if console is not None:
+            console.close()
         try:
             if log.is_file() and log.resolve() != (out / 'log.txt').resolve():
                 shutil.copy2(log, out / 'log.txt')

@@ -82,6 +82,13 @@ class ScreensTests(unittest.TestCase):
         length = struct.unpack('>I', data[33:37])[0]
         self.assertEqual(zlib.decompress(data[41:41 + length]), b'\0' + rgb)
 
+    def test_exit_text(self):
+        """Crash codes read as Windows shows them; ordinary codes stay decimal."""
+        self.assertEqual(screens.exit_text(-1073741819), '0xC0000005')
+        self.assertEqual(screens.exit_text(3221225781), '0xC0000135')
+        self.assertEqual(screens.exit_text(1), '1')
+        self.assertEqual(screens.exit_text(None), 'none')
+
     def test_blank(self):
         """Only uniform captures are blank."""
         self.assertTrue(screens.is_blank(b'\1\2\3' * 3))
