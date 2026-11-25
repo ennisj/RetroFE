@@ -101,7 +101,7 @@ class ScreensTests(unittest.TestCase):
     def test_bare_install(self):
         """Copy only the release files needed for a bare install."""
         output = self.install('bare')
-        files = {str(path.relative_to(output)) for path in output.rglob('*') if path.is_file()}
+        files = {path.relative_to(output).as_posix() for path in output.rglob('*') if path.is_file()}
         self.assertEqual(files, {'retrofe/retrofe.exe', 'retrofe/SDL2.dll', 'layouts/Aeon Nox/layout.xml'})
 
     def test_starter_install(self):
