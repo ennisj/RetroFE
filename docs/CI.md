@@ -6,7 +6,7 @@ The GitHub Actions workflows are in `.github/workflows`.
 
 `build.yml` builds RetroFE and the `retrofe_tests` unit tests (`RetroFE/Tests`), then runs the tests. It runs:
 
-- on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, Python files under `Scripts/test-build`, `Scripts/test-build/fixtures`, `.github/workflows` or `.github/scripts` changes
+- on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, Python files under `Scripts/test-build`, `Scripts/test-build/fixtures`, `Scripts/test-build/screens`, `.github/workflows` or `.github/scripts` changes
 - by hand: `gh workflow run build.yml --ref <branch>`, or "Run workflow" on the Actions tab
 
 A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`), except to publish: `release-windows.yml` for releases and `build.yml`'s Windows job for the test build below.
@@ -37,6 +37,16 @@ ctest --test-dir RetroFE/Build -C Release --output-on-failure
 ### GStreamer on Windows
 
 The Windows workflows (`build.yml`, `build-windows.yml`, `release-windows.yml`) get GStreamer through `.github/scripts/install-gstreamer-windows.ps1`. The script unpacks the MSVC x86_64 development MSI from gstreamer.freedesktop.org with an administrative install and sets `GSTREAMER_ROOT`. GStreamer removes older releases from that site; Chocolatey's `gstreamer-devel` 1.24.11 broke that way. If the download starts failing with 404, raise the script's `$Version` and `$Sha256`. Take the hash from the `.sha256sum` file GStreamer publishes beside the MSI, and check it against the file you download. The script checks the MSI against `$Sha256` both after downloading it and when it comes from the Actions cache. A copy that doesn't match is deleted and the job fails. Only the headers and import libraries come from there. The DLLs RetroFE ships with are in the `Package/Environment/Windows/retrofe` submodule.
+
+### Screenshots of the real program (Windows)
+
+After the unit tests, the Windows job runs `retrofe.exe` in a 960x540 window on the runner and drives it with the scripts in `Scripts/test-build/screens/scripts` (key presses posted to its window, a screenshot after each step; see [Scripts/test-build/screens/README.md](../Scripts/test-build/screens/README.md)). A script named `bare-*` runs in a bare install (as `RetroFE-Bare` on the PC); one named `starter-*` runs in the install the first-setup test leaves behind (ctest runs with `RETROFE_KEEP_FIRST_SETUP` set), with empty stand-in games, no artwork and the test's fake RetroArch. Each push publishes the screenshots, `results.json`, RetroFE's `log.txt` and console output as `screens-<first 8 characters of the commit>.zip` on the `ci-screens` pre-release (the 30 newest are kept), downloadable without signing in:
+
+```
+https://github.com/ennisj/RetroFE/releases/download/ci-screens/screens-<commit>.zip
+```
+
+A failing script is a warning annotation for now, not a failed build, while the scripts settle (DECISIONS M34). When RetroFE crashes, the step runs it again under `cdb` and adds the stack and module list to the zip as `cdb.txt`. The runner has no GPU or sound device: what it can't show is how things look on real hardware, at full size (thin strokes can drop out at 960x540), with videos, sound, controllers or fullscreen.
 
 ## Packages
 

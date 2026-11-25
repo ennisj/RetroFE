@@ -19,6 +19,7 @@ on:
       - 'RetroFE/Tests/**'
       - 'Scripts/test-build/**/*.py'
       - 'Scripts/test-build/fixtures/**'
+      - 'Scripts/test-build/screens/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   pull_request:
@@ -33,6 +34,7 @@ on:
       - 'RetroFE/Tests/**'
       - 'Scripts/test-build/**/*.py'
       - 'Scripts/test-build/fixtures/**'
+      - 'Scripts/test-build/screens/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   workflow_dispatch:
