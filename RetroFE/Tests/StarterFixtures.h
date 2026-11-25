@@ -28,8 +28,16 @@ namespace StarterFixtures
         std::string line;
         while (std::getline(in, line)) {
             if (line.empty() || line[0] == '#') continue;
-            auto arrow = line.find(" => ");
-            result.push_back(arrow == std::string::npos ? line : line.substr(arrow + 4));
+            auto trim = [](std::string value) {
+                auto first = value.find_first_not_of(" \t\r\n");
+                if (first == std::string::npos) return std::string();
+                return value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+            };
+            line = trim(line);
+            if (line.empty() || line[0] == '#') continue;
+            auto arrow = line.find("=>");
+            std::string source = trim(line.substr(0, arrow));
+            result.push_back(arrow == std::string::npos ? source : trim(line.substr(arrow + 2)));
         }
         return result;
     }

@@ -646,12 +646,12 @@ Made while building the design review (M22); the option not taken in brackets.
   (`\\JOHN-DESKTOP\OneSauce`) is only ever read. Its files are copied
   into `fixtures\<name>\` on the test drive, never into the repo, which is
   public. The repo keeps only the list of paths.
-- **Starter is NES, Genesis and MAME** (your OK). It has 33 games, picked
+- **Starter is NES, Genesis and MAME** (your OK). It has 32 games, picked
   for the cases a first setup meets. The MAME files are sets for RetroArch's
   `mame2003_plus` core, as in OneSauce, so the checklist uses that core and
   not current MAME.
 - **Starting over keeps the old install:** `--reset` moves it to
-  `backups\` and nothing on the drive is deleted.
+  `backups\` and nothing of yours is deleted; only a build left half-copied by an interrupted deploy (`builds\<label>.partial`) is replaced.
 - **Two gaps, noted and not fixed yet:**
   - Add games copies only games, so the checklist has you copy the artwork
     by hand.
@@ -679,6 +679,18 @@ Made while building the design review (M22); the option not taken in brackets.
 - **Who did it:** the Codex worker stopped early again (after about 2
   minutes), so Claude Opus wrote it, building and testing through the
   worker's test mode.
+
+### M32. Round 21 choices — Decided (2026-11-25)
+- **A missing game file stops the launch** (your yes): only when the
+  launcher uses the file, so launchers that go by name are unchanged. Browse
+  doesn't show the reason yet (it's in `log.txt`). Showing it there would be
+  new screen work, left for later.
+- **Review of rounds 19 and 20** (your yes): Claude Fable 5.1 found nothing
+  serious. Every finding was checked, and all were fixed except two:
+  - the SMB path of the setup script stays untested;
+  - the first-setup test keeps its own copy of the step that starts the
+    process. Its comments now say what that copy doesn't cover: absolute
+    paths, the PATH lookup and non-`.exe` programs on Windows.
 
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow

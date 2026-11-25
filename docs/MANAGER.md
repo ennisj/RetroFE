@@ -224,7 +224,8 @@ The game's screen also has:
   `playlists/lastplayed.txt`), play count and time played kept as for any
   launch. When changes made in Manage are waiting, RetroFE reloads first, so
   the game starts with them. A missing program is pointed out
-  before starting. When the game exits, Manage returns to the game with focus
+  before starting. If the launcher needs the game file and it cannot be found,
+  the game does not start. When the game exits, Manage returns to the game with focus
   on **Start this game**, keeping the screens you came through, their focus,
   searches and filters, even when RetroFE reloaded first. Back shows your
   previous results. If a saved screen is no longer available (for example, a

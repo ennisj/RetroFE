@@ -17,7 +17,8 @@ on:
       - 'RetroFE/ThirdParty/**'
       - 'RetroFE/ThirdPartyMac/**'
       - 'RetroFE/Tests/**'
-      - 'Scripts/test-build/**'
+      - 'Scripts/test-build/**/*.py'
+      - 'Scripts/test-build/fixtures/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   pull_request:
@@ -30,7 +31,8 @@ on:
       - 'RetroFE/ThirdParty/**'
       - 'RetroFE/ThirdPartyMac/**'
       - 'RetroFE/Tests/**'
-      - 'Scripts/test-build/**'
+      - 'Scripts/test-build/**/*.py'
+      - 'Scripts/test-build/fixtures/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   workflow_dispatch:
@@ -147,7 +149,7 @@ jobs:
         ctest --test-dir RetroFE/Build -C Release -V 2>&1 | Tee-Object -Variable out
         $failed = $LASTEXITCODE -ne 0
         $lines = $out | ForEach-Object { "$_" }
-        $lines | Where-Object { $_ -match 'FAIL \[' } | Select-Object -First 40 |
+        $lines | Where-Object { $_ -match 'FAIL \[|^\d+: (FAIL|ERROR): ' } | Select-Object -First 40 |
           ForEach-Object { '::error::' + ($_ -replace '^\d+: ', '').Trim().Replace('%', '%25') }
         $lines | Where-Object { $_ -match 'checks passed' } | Select-Object -Last 1 |
           ForEach-Object { '::notice::' + ($_ -replace '^\d+: ', '').Trim() }

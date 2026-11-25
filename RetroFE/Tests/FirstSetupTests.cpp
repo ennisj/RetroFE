@@ -155,8 +155,8 @@ namespace
         return !a.empty() && fs::equivalent(fs::path(a), b, ec);
     }
 
-    // RetroFE's configuration as it reads it when it starts (Main.cpp's
-    // ImportConfiguration): settings.conf or the built-in defaults, the
+    // This is a copy of Main.cpp's ImportConfiguration, not the product function:
+    // settings.conf or the built-in defaults, the
     // launchers, and each collection's settings, info and launcher files.
     // Without the log setting: it starts logging, which sends this process's
     // output to the install's log.txt.
@@ -224,7 +224,10 @@ namespace
         return launches;
     }
 
-    // Starts the command as Launcher::execute() does at its core, and waits:
+    // This test starts the process itself; LaunchCommand::build, windowsCommandLine
+    // and unixArgv are product code. Launcher::execute() also makes paths absolute,
+    // looks programs up on PATH and uses ShellExecuteEx for non-.exe programs on Windows.
+    // This copy starts the command at its core and waits:
     // CreateProcess with its command line on Windows, fork and execvp with
     // its argv elsewhere, both in its current directory. "" when it ran and
     // exited 0, else what happened.
@@ -616,7 +619,7 @@ static Test::Suite firstSetup("first setup", [] {
             check(item != nullptr, name + " is in " + system.name);
             if (!item) continue;
 
-            // As Launcher::run() reads the item
+            // This Item-to-Game mapping is a copy of Launcher::run(), not product code.
             LaunchCommand::Game game;
             game.collection = item->collectionInfo->name;
             game.itemCollection = item->collectionInfo->name;

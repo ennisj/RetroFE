@@ -86,11 +86,24 @@ Command build(Configuration& config, const Game& game)
 	}
 
 	// Step 3: Find the item file based on provided or derived names
-	if (game.file.empty()) {
-		findFile(selectedItemsPath, matchedExtension, selectedItemsDirectory, game.name, extensionstr);
-	}
-	else {
-		findFile(selectedItemsPath, matchedExtension, selectedItemsDirectory, game.file, extensionstr);
+	bool fileFound = findFile(selectedItemsPath, matchedExtension, selectedItemsDirectory,
+		game.file.empty() ? game.name : game.file, extensionstr);
+	std::string currentDirectoryKey = "launchers." + launcherName + ".currentDirectory";
+	std::string configuredDirectory;
+	config.getProperty(currentDirectoryKey, configuredDirectory);
+	auto usesItemFile = [](const std::string& value) {
+		return value.find("%ITEM_FILEPATH%") != std::string::npos
+			|| value.find("%ITEM_FILENAME%") != std::string::npos;
+	};
+	if (!fileFound && (usesItemFile(args) || usesItemFile(executablePath) || usesItemFile(configuredDirectory))) {
+		// The folder findFile searched, without its trailing separator
+		std::string folder = selectedItemsDirectory;
+		while (folder.size() > 1 && (folder.back() == '/' || folder.back() == '\\')) {
+			folder.pop_back();
+		}
+		command.failure = "It couldn't start: " + game.name + "'s file isn't in " + folder + ".";
+		LOG_ERROR("Launcher", "Not starting " + launcherName + ": it needs the game's file. " + command.failure);
+		return command;
 	}
 
 	LOG_DEBUG("LauncherDebug", "File selected: " + selectedItemsPath);
@@ -104,7 +117,6 @@ Command build(Configuration& config, const Game& game)
 	LOG_INFO("Launcher", "Arguments after replacement: " + args);
 
 	// Step 5: Determine the current working directory
-	std::string currentDirectoryKey = "launchers." + launcherName + ".currentDirectory";
 	// By default the program's own folder. A bare name (cmd.exe, found on the
 	// system path) has none: it runs in RetroFE's, not in a folder named after it
 	std::string currentDirectory = Library::programFolder(executablePath, Configuration::absolutePath);

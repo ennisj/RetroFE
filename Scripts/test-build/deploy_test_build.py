@@ -21,12 +21,24 @@ def main():
     parser.add_argument('--install', action='append',
                         help='an install folder to update (repeatable); default all RetroFE-* installs')
     args = parser.parse_args()
+    if args.path and not os.path.isdir(args.path):
+        print('--path must be an existing folder', file=sys.stderr)
+        return 1
     drive = Local(args.path) if args.path else Smb(args.host, args.share, args.credentials)
     installs = args.install or discover_installs(drive)
     build = prepare_build(drive)
+    failed = []
     for install in installs:
-        deploy_build(drive, install, build)
+        try:
+            if not deploy_build(drive, install, build): failed.append(install)
+        except (OSError, SystemExit) as e:
+            print(f'{install}: not updated ({e})', file=sys.stderr)
+            failed.append(install)
+    if failed:
+        print('Not updated: ' + ', '.join(failed), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

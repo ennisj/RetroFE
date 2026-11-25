@@ -95,12 +95,16 @@ def prepare_build(drive):
     return archive, names, label
 
 
+def check_dlls():
+    if not os.path.exists(os.path.join(DLLS, 'SDL2.dll')):
+        sys.exit(f'no RetroFE DLLs in {DLLS} (a submodule: run this from a checkout that has it)')
+
+
 def deploy_build(drive, install, build):
     archive, names, label = build
     if not drive.exists(drive.join(install, 'retrofe', 'SDL2.dll')):
         # A new install: RetroFE's DLLs, as releases ship them
-        if not os.path.exists(os.path.join(DLLS, 'SDL2.dll')):
-            sys.exit(f'{install}: no RetroFE DLLs in {DLLS} (a submodule: run this from a checkout that has it)')
+        check_dlls()
         count = 0
         for entry in sorted(os.listdir(DLLS)):
             if entry in SKIP or os.path.isdir(os.path.join(DLLS, entry)):
