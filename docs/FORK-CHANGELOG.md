@@ -4,6 +4,27 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 21 — a missing game file is said, not launched; review fixes (2026-11-25)
+
+Unit tests: 7,500 → 7,508 checks (Windows CI), and the test-build scripts'
+tests from 6 to 12. Choices in M32 of [DECISIONS.md](DECISIONS.md).
+
+- **A game whose file is missing doesn't start** when its launcher needs the
+  file (`%ITEM_FILEPATH%` or `%ITEM_FILENAME%`). Manage's **Start this game**
+  says "It couldn't start: <game>'s file isn't in <folder>." From Browse
+  nothing starts, and the same text is in `log.txt`. Launchers that go by
+  the game's name (MAME with its own ROM path, scripts) start as before.
+- **Fixes from Claude Fable's review of rounds 19 and 20:**
+  - `make_test_install.py --reset` checks it can rebuild before moving the
+    install away, and puts the original back if the deploy fails.
+  - `--path` must exist and can't overlap the OneSauce share.
+  - The Add games folders are printed as the PC sees them.
+  - The file list is checked more strictly.
+  - A deploy that couldn't update an install now says so and fails.
+  - Two tests that couldn't fail now can.
+  - The docs give the right count (32 Starter games) and describe CI's
+    triggers.
+
 ## Round 20 — the first setup, tested automatically (2026-11-25)
 
 Unit tests: 7,227 → 7,500 checks (Windows CI). Choices in M31 of

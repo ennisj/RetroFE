@@ -680,6 +680,18 @@ Made while building the design review (M22); the option not taken in brackets.
   minutes), so Claude Opus wrote it, building and testing through the
   worker's test mode.
 
+### M32. Round 21 choices — Decided (2026-11-25)
+- **A missing game file stops the launch** (your yes): only when the
+  launcher uses the file, so launchers that go by name are unchanged. Browse
+  doesn't show the reason yet (it's in `log.txt`). Showing it there would be
+  new screen work, left for later.
+- **Review of rounds 19 and 20** (your yes): Claude Fable 5.1 found nothing
+  serious. Every finding was checked, and all were fixed except two:
+  - the SMB path of the setup script stays untested;
+  - the first-setup test keeps its own copy of the step that starts the
+    process. Its comments now say what that copy doesn't cover: absolute
+    paths, the PATH lookup and non-`.exe` programs on Windows.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
