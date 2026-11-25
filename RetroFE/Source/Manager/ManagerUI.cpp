@@ -390,6 +390,7 @@ bool ManagerUI::reopenAfterReload()
 
 void ManagerUI::show()
 {
+    launchNotice_.clear();
     browserOpening_.reset();
     const Navigator::Frame* frame = nav_.current();
     if (!frame) {
@@ -951,6 +952,7 @@ void ManagerUI::navigate(const Controls& held, float now)
 
 void ManagerUI::update(float dt)
 {
+    launchNotice_.update(dt);
     // Screens left since the last frame free their pages and textures here, outside the render pass
     for (auto& screen : retired_) {
         screen->shutdown();
@@ -1174,10 +1176,30 @@ void ManagerUI::drawPage()
 
 void ManagerUI::render()
 {
-    if (!context_ || !open_ || page_) {
+    if (!context_ || page_ || (!open_ && !launchNotice_.visible())) {
         return;
     }
     ImGui::SetCurrentContext(context_);
+    if (!open_) {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGuiConfigFlags flags = io.ConfigFlags;
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        ImGui_ImplSDLRenderer2_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.94f), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+        ImGui::SetNextWindowBgAlpha(0.85f);
+        ImGui::Begin("##launch-notice", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + io.DisplaySize.x * 0.8f);
+        ImGui::TextUnformatted(launchNotice_.text().c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::End();
+        ImGui::Render();
+        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer_);
+        io.ConfigFlags = flags;
+        return;
+    }
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     if (screen_) {

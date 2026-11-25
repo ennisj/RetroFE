@@ -2201,8 +2201,14 @@ bool RetroFE::run()
 				}
 
 				l.LEDBlinky(3, nextPageItem_->collectionInfo->name, nextPageItem_);
+				// A game that doesn't start says why over the page (an older notice goes first)
+				manager_.showLaunchNotice("");
 				// Run and check if we need to reboot
 				bool rebootAfter = l.run(nextPageItem_->collectionInfo->name, nextPageItem_, currentPage_);
+				if (!l.failure().empty())
+				{
+					manager_.showLaunchNotice(l.failure());
+				}
 				// Last played and the play count: only for a program that started
 				// (it used to count before the launch, failed ones too)
 				if (updateLastPlayed && l.started())

@@ -52,7 +52,7 @@ a relative path in their arguments means the same as anywhere else in
 RetroFE. Elsewhere a bare name found on `PATH` (installed system-wide, e.g.
 `/usr/bin/retroarch`) runs in RetroFE's root.
 
-If the arguments, executable, or current directory uses `%ITEM_FILEPATH%` or `%ITEM_FILENAME%`, RetroFE will not start the launcher when the game file cannot be found.
+If the arguments, executable, or current directory uses `%ITEM_FILEPATH%` or `%ITEM_FILENAME%`, RetroFE will not start the launcher when the game file cannot be found. The reason shows at the bottom of the screen for a few seconds when the game was started from a Browse page; in attract mode it is only logged.
 
 Launcher variables
 
