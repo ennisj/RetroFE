@@ -1021,7 +1021,7 @@ int Index::findLauncher(LauncherScope scope, const std::string& id) const
 
 int Index::findLauncher(const std::string& id) const
 {
-    // The order Launcher::launcherExecutable looks
+    // The order LaunchCommand::launcherExecutable looks
     for (LauncherScope scope : { LauncherScope::Local, LauncherScope::Collection, LauncherScope::Global }) {
         int found = findLauncher(scope, id);
         if (found >= 0) {

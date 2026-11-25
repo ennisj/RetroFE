@@ -2191,7 +2191,7 @@ std::string Editor::checkNewLauncherName(const Index& index, const std::string& 
     if (!problem.empty()) {
         return problem;
     }
-    // Launcher::launcherExecutable looks for localLaunchers.<name>, then
+    // LaunchCommand::launcherExecutable looks for localLaunchers.<name>, then
     // collectionLaunchers.<name>, then launchers.<name>: a global launcher
     // with another launcher's id would never run
     for (const LauncherDef& def : index.launchers) {
