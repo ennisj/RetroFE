@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "TestSupport.h"
+#include "StarterFixtures.h"
 #include "../Source/Manager/Systems/GameImport.h"
 #include <atomic>
 #include <map>
@@ -25,14 +26,10 @@ using Manager::GameImport;
 static Test::Suite starter("starter fixtures", [] {
     run("starter games import", [] {
         std::string root = makeRoot("starter-fixtures");
-        std::ifstream in(std::string(RETROFE_FIXTURES_DIR) + "/starter.txt");
-        check(in.good(), "manifest opens");
         std::map<std::string, std::vector<std::string>> names;
-        std::string line;
-        while (std::getline(in, line)) {
-            if (line.empty() || line[0] == '#') continue;
-            auto arrow = line.find(" => ");
-            std::string target = arrow == std::string::npos ? line : line.substr(arrow + 4);
+        auto targets = StarterFixtures::targets();
+        check(!targets.empty(), "manifest opens");
+        for (const auto& target : targets) {
             auto roms = target.find("/roms/");
             if (roms == std::string::npos) continue;
             std::string system = target.substr(0, roms);

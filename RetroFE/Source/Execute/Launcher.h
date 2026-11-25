@@ -39,12 +39,7 @@ public:
     void keepRendering(std::atomic<bool>& stop_thread, Page& currentPage) const;
 
 private:
-    bool launcherName(std::string &launcherName, std::string collection);
-    bool launcherExecutable(std::string &executable, std::string launcherName);
-    bool launcherArgs(std::string &args, std::string launcherName);
-    bool extensions(std::string &extensions, std::string launcherName);
-    bool collectionDirectory(std::string &directory, std::string collection);
-    bool findFile(std::string& foundFilePath, std::string& foundFilename, const std::string& directory, const std::string& filenameWithoutExtension, const std::string& extensions);
+    // What run() works out before execute() is LaunchCommand's (LaunchCommand.h)
     bool simpleExecute(std::string executable, std::string args, std::string currentDirectory, bool wait = true, Page* currentPage = nullptr);
     bool execute(std::string executable, std::string args, std::string currentDirectory, bool wait = true, Page* currentPage = nullptr, bool isAttractMode = false, Item* collectionItem = nullptr);
     Configuration &config_;

@@ -663,6 +663,23 @@ Made while building the design review (M22); the option not taken in brackets.
 - **A larger install** (many systems, full lists) comes later, after
   Starter has been tried.
 
+### M31. Round 20 choices — Decided (2026-11-25)
+- **Less testing by hand** (your request): the first step is to test the
+  first setup through Manage's own model, not by driving the real window.
+  Real-window tests with screenshots on Windows CI, and a runner on your
+  PC, are later options.
+- **The launch is tested by starting a program:**
+  - a small fake emulator (built only with the tests) records what it was
+    given;
+  - the code that works out the command moved out of `Launcher.cpp`
+    unchanged, so the test and RetroFE share it.
+- **Open question:** RetroFE starts the emulator even when the game's file
+  can't be found, with an empty `%ITEM_FILEPATH%` and only a log line. It
+  always has. Left as it is until you decide.
+- **Who did it:** the Codex worker stopped early again (after about 2
+  minutes), so Claude Opus wrote it, building and testing through the
+  worker's test mode.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
