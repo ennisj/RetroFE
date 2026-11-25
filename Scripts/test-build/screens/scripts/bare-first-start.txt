@@ -1,28 +1,29 @@
-# Builtin.cpp defaults to Home; Home::landing chooses Manage without collections.
-# RetroFE.cpp opens Manage automatically without settings.conf; timing: tune on CI.
-# RetroFE logs nothing at its default level once the first page shows, and the
-# log is rewritten as settings load, so this waits a fixed time instead.
-wait 8
+# Bare install (RetroFE-Bare): the first start, Manage's hub and its first screens.
+# With no settings.conf and no systems, RetroFE starts in Manage's hub
+# (RetroFE.cpp, "nothing set up yet: start in the manager").
+wait-drawn
+wait 2
 shot first-start
-# ManagerUI handles F10 to close and reopen Manage.
-key F10
-wait 1
-key F10
-wait 1
-shot manage-hub
-# BuiltinForms.cpp lists Add your first launcher first; focus: tune on CI.
+# The hub's first item has the focus: open it, then back to the hub
 key Return
 wait 1
-shot add-launcher
-# Escape returns to the hub; focus restoration: tune on CI.
+shot hub-first-item
 key Escape
 wait 1
-# BuiltinForms.cpp lists Add your first system next; navigation: tune on CI.
 key Down
 key Return
 wait 1
-shot add-system
-# Escape returns to Manage; timing: tune on CI.
+shot hub-second-item
+key Escape
+wait 1
+# Back on the hub closes Manage, leaving the built-in empty page
+key Escape
+wait 2
+shot browse-empty
+# F10 (controls.manager) opens Settings
+key F10
+wait 1
+shot settings
 key Escape
 wait 1
 quit

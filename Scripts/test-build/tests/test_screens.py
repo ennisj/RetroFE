@@ -55,6 +55,13 @@ class ScreensTests(unittest.TestCase):
         self.assertEqual(steps[3]['args'], [' a b  '])
         self.assertEqual(steps[1]['args'], ['hello world', 2])
 
+    def test_wait_drawn(self):
+        """wait-drawn takes an optional timeout, 60 seconds by default."""
+        self.assertEqual(screens.parse_script('wait-drawn\n')[0]['args'], [60.0])
+        self.assertEqual(screens.parse_script('wait-drawn 90\n')[0]['args'], [90.0])
+        with self.assertRaisesRegex(ValueError, 'line 1:'):
+            screens.parse_script('wait-drawn 0\n')
+
     def test_parser_rejects_bad_commands(self):
         """Report the line for malformed commands."""
         for bad in ['key Nope', 'wait -1', 'shot ../x', 'quit now', 'wat', 'expect-file ../x', 'wait-log']:

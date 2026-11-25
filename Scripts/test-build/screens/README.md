@@ -12,7 +12,7 @@ Run `RETROFE_KEEP_FIRST_SETUP=/path/to/empty-destination retrofe_tests` to retai
 
 Scripts use one command per line; blank lines and lines starting with `#` are ignored:
 
-- `wait SECONDS`, `wait-log TEXT [TIMEOUT]` (default 30 seconds)
+- `wait SECONDS`, `wait-drawn [TIMEOUT]` (until the window shows anything; default 60 seconds), `wait-log TEXT [TIMEOUT]` (default 30 seconds; RetroFE logs little at its default level)
 - `key NAME [xN] [hold SECONDS]` (default hold 0.1 seconds), `type TEXT`
 - `shot NAME`, `expect-file PATH [TEXT]`, `expect-log TEXT`, `quit`
 

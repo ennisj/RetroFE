@@ -1,37 +1,42 @@
-# Builtin.cpp defaults to Home; RetroFE.cpp opens Manage when settings.conf is absent.
-# Home::landing chooses Browse when collections exist. Timing: tune on CI.
-# RetroFE logs nothing at its default level once the first page shows, and the
-# log is rewritten as settings load, so this waits a fixed time instead.
-wait 8
-key F10
-wait 1
-shot main-menu
-# Home::browse opens Main; MenuParser preserves the first-setup menu order (NES first).
+# Starter install (the first-setup test's finished install): Browse the NES list,
+# start a game through the fake RetroArch, and a listed game whose file is missing.
+# No settings.conf, so RetroFE starts in Manage's hub (RetroFE.cpp, "nothing set
+# up yet: start in the manager"); Back closes it.
+wait-drawn
+wait 2
+shot first-start
+key Escape
+wait 2
+shot home
+# Home's Browse opens Main, whose first entry is NES (the setup's menu order)
 key Return
 wait 2
-# Return enters NES (RetroFE.cpp selection); timing: tune on CI.
+shot main-menu
 key Return
 wait 2
 shot nes-list
-# Aeon Nox layout.xml has a horizontal menu; controls.conf maps Right to right.
-# CollectionInfo::itemIsLess sorts by lowercase full title: Addams, Arch, Bill & Ted.
+# Aeon Nox's game list is horizontal. Sorted by title (CollectionInfo::itemIsLess):
+# Addams Family, Arch Rivals, Bill & Ted, Castlevania, Contra, Duck Hunt,
+# Excitebike, Legend of Zelda, Little Lancelot, Mike Tyson, Missing Game, ...
 key Right x2
 wait 1
-shot nes-scrolled
-# Return launches Bill & Ted; Launcher writes to the first-setup fake RetroArch.
+shot bill-and-ted
 key Return
 wait 3
 expect-file emulators/RetroArch/launches.txt Bill & Ted's Excellent Video Game Adventure (USA).nes
-# Eight positions after Bill & Ted is Missing Game (CollectionInfo::itemIsLess).
+wait 2
+shot back-from-game
+# Eight more to Missing Game (USA), listed by include.txt with no file
 key Right x8
 wait 1
-# RetroFE.cpp displays a launch failure notice; timing and dismissal: tune on CI.
+shot missing-game
 key Return
 wait 2
 shot missing-game-notice
 expect-log It couldn't start
-# ManagerUI handles F10 to open Manage; notice interaction: tune on CI.
 key F10
 wait 1
 shot manage-from-nes
+key Escape
+wait 1
 quit

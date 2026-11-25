@@ -98,6 +98,10 @@ def parse_script(text):
                 if not re.fullmatch('[A-Za-z0-9_-]+', remainder):
                     raise ValueError('invalid shot name')
                 args = [remainder]
+            elif command == 'wait-drawn':
+                args = [float(remainder) if remainder else 60.0]
+                if not math.isfinite(args[0]) or args[0] <= 0:
+                    raise ValueError('invalid timeout')
             elif command == 'expect-file':
                 path, sep, value = remainder.partition(' ')
                 if not path or not make_test_install.valid_path(path):
@@ -384,6 +388,14 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                         if time.monotonic() >= end:
                             raise TimeoutError('wait-log timed out: ' + arguments[0])
                         pause(0.05)
+                elif operation == 'wait-drawn':
+                    # RetroFE takes several seconds to start on a CI runner (GStreamer's
+                    # plugin scan), and its window is black until the first page is drawn
+                    end = time.monotonic() + arguments[0]
+                    while is_blank(win.capture(window_handle)[2]):
+                        if time.monotonic() >= end:
+                            raise TimeoutError('the window stayed blank')
+                        pause(0.5)
                 elif operation == 'key':
                     virtual_key, count, hold = arguments
                     scan_code = win.user32.MapVirtualKeyW(virtual_key, 0)
@@ -415,10 +427,14 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                     if arguments[0] not in contents(log):
                         raise RuntimeError('text missing from log: ' + arguments[0])
                 elif operation == 'quit':
-                    win.post(window_handle, WM_CLOSE)
-                    end = min(deadline, time.monotonic() + 20)
-                    while process.poll() is None and time.monotonic() < end:
-                        time.sleep(0.05)
+                    # A second close: the first may only show Manage's unsaved-changes warning
+                    for attempt in range(2):
+                        win.post(window_handle, WM_CLOSE)
+                        end = min(deadline, time.monotonic() + 10)
+                        while process.poll() is None and time.monotonic() < end:
+                            time.sleep(0.05)
+                        if process.poll() is not None:
+                            break
                     if process.poll() is None:
                         raise TimeoutError('overall timeout' if time.monotonic() >= deadline else 'quit timed out')
                 current['ok'] = True
