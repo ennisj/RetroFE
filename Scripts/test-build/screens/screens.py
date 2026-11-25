@@ -329,7 +329,7 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             check()
-            time.sleep(min(0.05, end - time.monotonic()))
+            time.sleep(max(0.0, min(0.05, end - time.monotonic())))
 
     def contents(path):
         """A text file's contents, or nothing if it isn't there yet."""

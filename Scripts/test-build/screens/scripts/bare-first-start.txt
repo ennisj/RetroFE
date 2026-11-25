@@ -1,7 +1,8 @@
 # Builtin.cpp defaults to Home; Home::landing chooses Manage without collections.
 # RetroFE.cpp opens Manage automatically without settings.conf; timing: tune on CI.
-wait-log layout.xml
-wait 4
+# RetroFE logs nothing at its default level once the first page shows, and the
+# log is rewritten as settings load, so this waits a fixed time instead.
+wait 8
 shot first-start
 # ManagerUI handles F10 to close and reopen Manage.
 key F10

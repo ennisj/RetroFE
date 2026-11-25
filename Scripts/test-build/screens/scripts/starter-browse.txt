@@ -1,7 +1,8 @@
 # Builtin.cpp defaults to Home; RetroFE.cpp opens Manage when settings.conf is absent.
 # Home::landing chooses Browse when collections exist. Timing: tune on CI.
-wait-log layout.xml
-wait 4
+# RetroFE logs nothing at its default level once the first page shows, and the
+# log is rewritten as settings load, so this waits a fixed time instead.
+wait 8
 key F10
 wait 1
 shot main-menu
