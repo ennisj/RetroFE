@@ -41,6 +41,8 @@
 #include "../Source/Utility/Utils.h"
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <iostream>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -723,5 +725,20 @@ static Test::Suite firstSetup("first setup", [] {
         }
     });
 
+    // Scripts/test-build/screens uses this finished root to build its starter install.
+    if (s) {
+        const char* destination = std::getenv("RETROFE_KEEP_FIRST_SETUP");
+        if (destination && *destination) {
+            std::error_code ec;
+            fs::path target(destination);
+            bool usable = !fs::exists(target, ec) || (fs::is_directory(target, ec) && fs::is_empty(target, ec));
+            check(!ec && usable, "kept setup destination must be absent or empty");
+            if (!ec && usable) {
+                fs::copy(s->root, target, fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
+                check(!ec, "copy finished setup: " + ec.message());
+                if (!ec) std::cout << "Kept first setup in " << target.string() << std::endl;
+            }
+        }
+    }
     s.reset();
 });

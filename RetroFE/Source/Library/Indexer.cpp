@@ -47,7 +47,7 @@ void Indexer::rebuild()
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (running_) {
-            // Don't cancel: the running build publishes, then one more runs
+            // Let the running build finish, then scan again
             again_ = true;
             return;
         }
@@ -96,6 +96,9 @@ void Indexer::run()
         std::string failure;
         try {
             built = buildIndex(options_, callbacks);
+            if (options_.afterScan) {
+                options_.afterScan();   // tests pause here (LibraryTests)
+            }
         }
         catch (const std::exception& e) {
             failure = std::string("Building the library index failed: ") + e.what();
@@ -103,6 +106,15 @@ void Indexer::run()
         }
 
         std::unique_lock<std::mutex> lock(mutex_);
+        if (again_ && !cancel_) {
+            // Providers discard local edits on publication, so only publish a scan
+            // that no change interrupted; this result may have missed that write.
+            again_ = false;
+            status_.state = State::Building;
+            status_.progress = 0;
+            status_.phase = "Starting";
+            continue;
+        }
         if (built) {
             std::ostringstream ss;
             ss << "Indexed " << built->collections.size() << " collections and " << built->games.size()
@@ -120,16 +132,6 @@ void Indexer::run()
         }
         else {
             status_.state = State::Cancelled;
-        }
-        if (again_ && !cancel_) {
-            // Changes came in while this build ran: one more, which sees them all
-            again_ = false;
-            status_.state = State::Building;
-            status_.progress = 0;
-            status_.phase = "Starting";
-            lock.unlock();
-            idle_.notify_all();  // a snapshot was published
-            continue;
         }
         running_ = false;
         again_ = false;

@@ -701,6 +701,27 @@ Made while building the design review (M22); the option not taken in brackets.
 - **On Windows it shows only when the program didn't start:** RetroFE ignores
   a Windows program's exit code, so quitting a game normally shows nothing.
 
+### M34. Round 23 choices — Decided (2026-11-25)
+- **Driven from outside, not by a test mode in RetroFE:** key presses are
+  posted to the window as Windows messages (as earlier QA on the PC did), so
+  RetroFE's real input code runs and nothing test-only ships in it. Mouse
+  input to Manage isn't covered: posted clicks don't reach ImGui.
+- **The starter install is what the first-setup test leaves behind**, not
+  settings written by hand, so it can't drift from what Manage writes. Only
+  two things are added: the test's own launch record is removed, and one NES
+  game is listed without a file (`include.txt`) to show round 22's message.
+- **A failing script is a warning for now**, not a failed build, until the
+  scripts have passed for a few rounds; then it becomes a failure.
+- **Fixed waits, plus a wait for the first drawn frame:** RetroFE logs
+  almost nothing at its default level and its log is rewritten as settings
+  load, so the scripts don't wait on log lines.
+- **The OpenGL window flag (Windows only):** found by the first CI runs, which
+  crashed before drawing. A product fix rather than a workaround on the
+  runner, because a PC without a real OpenGL driver crashed the same way.
+- **Noticed, not fixed:** at 960x540 (the runner's screen is 1024x768) some
+  thin characters drop out of small text on Home ("v deos", "Ted s"). It is
+  probably the half-size window; check Home on the PC at full size.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
@@ -858,7 +879,12 @@ The full reasoning, with the options considered for each, is in
   configuration) only when it's a menu or can become one. Otherwise they go in
   "Main", so a games collection never gets a menu.txt.
 - **LB10.** The index is an immutable snapshot, rebuilt in the background. A
-  change never cancels a running build: the build publishes, then one more follows.
+  change never cancels a running build: its result is discarded and another
+  follows; only a build uninterrupted by changes publishes. (Revised in round 23:
+  it used to publish the interrupted build, which could have missed the change, so
+  a just-deleted launcher came back in Manage's list for a moment. A long burst of
+  changes now delays the snapshot; a warm rebuild takes under a second and no
+  Manage action writes for longer than that.)
 
 ### LB11. `launcher = a, b, c` uses `a` (fork compat) — Decided
 - OneSauce/RetroFE Plus data names a default and its alternatives; 25

@@ -1,0 +1,42 @@
+# Starter install (the first-setup test's finished install): Browse the NES list,
+# start a game through the fake RetroArch, and a listed game whose file is missing.
+# No settings.conf, so RetroFE starts in Manage's hub (RetroFE.cpp, "nothing set
+# up yet: start in the manager"); Back closes it.
+wait-drawn
+wait 2
+shot first-start
+key Escape
+wait 2
+shot home
+# Home's Browse opens Main, whose first entry is NES (the setup's menu order)
+key Return
+wait 2
+shot main-menu
+key Return
+wait 2
+shot nes-list
+# Aeon Nox's game list is horizontal. Sorted by title (CollectionInfo::itemIsLess):
+# Addams Family, Arch Rivals, Bill & Ted, Castlevania, Contra, Duck Hunt,
+# Excitebike, Legend of Zelda, Little Lancelot, Mike Tyson, Missing Game, ...
+key Right x2
+wait 1
+shot bill-and-ted
+key Return
+wait 3
+expect-file emulators/RetroArch/launches.txt Bill & Ted's Excellent Video Game Adventure (USA).nes
+wait 2
+shot back-from-game
+# Eight more to Missing Game (USA), listed by include.txt with no file
+key Right x8
+wait 1
+shot missing-game
+key Return
+wait 2
+shot missing-game-notice
+expect-log It couldn't start
+key F10
+wait 1
+shot manage-from-nes
+key Escape
+wait 1
+quit

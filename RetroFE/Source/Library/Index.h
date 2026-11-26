@@ -43,6 +43,7 @@ namespace Library
         std::string firstCollection;
         bool games = true;             // list every system's games (the slow part)
         bool metadata = true;          // read titles etc. from meta.db
+        std::function<void()> afterScan;   // tests only: called after each Indexer scan, before it's published
     };
 
     // What a collection is; a collection can be several at once

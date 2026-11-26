@@ -1,0 +1,29 @@
+# Bare install (RetroFE-Bare): the first start, Manage's hub and its first screens.
+# With no settings.conf and no systems, RetroFE starts in Manage's hub
+# (RetroFE.cpp, "nothing set up yet: start in the manager").
+wait-drawn
+wait 2
+shot first-start
+# The hub's first item has the focus: open it, then back to the hub
+key Return
+wait 1
+shot hub-first-item
+key Escape
+wait 1
+key Down
+key Return
+wait 1
+shot hub-second-item
+key Escape
+wait 1
+# Back on the hub closes Manage, leaving the built-in empty page
+key Escape
+wait 2
+shot browse-empty
+# F10 (controls.manager) opens Settings
+key F10
+wait 1
+shot settings
+key Escape
+wait 1
+quit

@@ -32,10 +32,10 @@ reads everything itself, so it runs on a worker thread and in the unit tests.
   increases with every new snapshot, and `error` when a build failed. Show the
   progress while there's no index yet.
 - `rebuild()` and `changed()` never cancel a running build. The running build
-  finishes and publishes, then exactly one more build runs and picks up every
-  change made meanwhile. A burst of edits therefore still produces snapshots;
-  it can't keep restarting a build that never finishes. Only the destructor and
-  `cancel()` stop a build.
+  finishes, but if another was requested its result is discarded and another
+  build runs. Only a build uninterrupted by changes publishes, so its snapshot
+  includes the writes made before it started. A sustained burst can delay
+  publication. Only the destructor and `cancel()` stop a build.
 - `indexer.index()` returns a `std::shared_ptr<const Index>`. A snapshot never
   changes after it's published, so read it without locks. Hold the pointer for as long as a screen
   shows its data. A rebuild publishes a new snapshot and leaves yours alone.
@@ -508,7 +508,7 @@ These are simplified or not modelled:
 - The index is immutable and rebuilt in the background after each change. A
   rebuild takes under a second when the disk cache is warm. Screens never see
   half-built state, and the library needs no locks beyond the snapshot swap.
-- Changes never cancel a running build: it publishes, and one more build follows.
+- Changes never cancel a running build: its result is discarded and another build follows.
 - Per-game and per-page lookups are precomputed at build time:
   - the page lists of games (`itemsOf`);
   - which merged collections show a game;

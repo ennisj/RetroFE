@@ -35,8 +35,8 @@ namespace Library
     // pending, for the Manage hub to reload RetroFE when it closes, and asks
     // for a fresh build; the old snapshot stays available until the new one
     // is ready. A build that's running is never cancelled by a change: it
-    // finishes and publishes, and one more build then starts, so a burst of
-    // edits still gets snapshots out (each picking up every change so far).
+    // finishes and is discarded if another build was requested. Only a build
+    // uninterrupted by changes publishes, including every write so far.
     class Indexer
     {
     public:

@@ -4,6 +4,34 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 23 — Windows CI runs the real program and takes screenshots (2026-11-25)
+
+Unit tests: 7,517 → 7,532 checks (Windows CI), and the test-build scripts'
+tests from 12 to 28. Choices in M34 of [DECISIONS.md](DECISIONS.md).
+
+- **Screenshots from every Windows CI run.** `Scripts/test-build/screens`
+  starts `retrofe.exe` in a window on the runner, presses keys in it as a
+  keyboard would, and takes a screenshot after each step. Two scripts so far:
+  - a bare install: the first start in Manage's hub, its first two screens,
+    the empty Browse page and Settings;
+  - the install the first-setup test leaves behind: Home, the NES list, a
+    game started through the fake RetroArch (the command it got is checked),
+    and a listed game whose file is missing, showing round 22's message.
+
+  The pictures are published as `screens-<commit>.zip` on the `ci-screens`
+  pre-release, so they can be checked without the PC ([CI.md](CI.md)).
+- **RetroFE no longer crashes at start without an OpenGL driver** (a virtual
+  machine, some Remote Desktop sessions, Windows' basic display driver, the
+  CI runner). Its window asked for OpenGL although Windows draws with
+  Direct3D 11; it now does only when an OpenGL renderer is chosen
+  (`SDLRenderDriver`). Linux and macOS are unchanged. GLOBAL_SETTINGS.md now
+  gives the right default, `direct3d11`.
+- **A launcher deleted in Manage no longer comes back in the list for a
+  moment.** CI caught it once: when an edit arrived while the library was
+  being re-read, that read was still shown though it could predate the edit.
+  Now it is thrown away and read again; only a read no edit interrupted is
+  shown (LB10 revised).
+
 ## Round 22 — a game that doesn't start from Browse says why (2026-11-25)
 
 Unit tests: 7,508 → 7,517 checks (Windows CI). Choices in M33 of

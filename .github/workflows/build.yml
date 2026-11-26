@@ -19,6 +19,7 @@ on:
       - 'RetroFE/Tests/**'
       - 'Scripts/test-build/**/*.py'
       - 'Scripts/test-build/fixtures/**'
+      - 'Scripts/test-build/screens/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   pull_request:
@@ -33,6 +34,7 @@ on:
       - 'RetroFE/Tests/**'
       - 'Scripts/test-build/**/*.py'
       - 'Scripts/test-build/fixtures/**'
+      - 'Scripts/test-build/screens/**'
       - '.github/workflows/**'
       - '.github/scripts/**'
   workflow_dispatch:
@@ -145,6 +147,9 @@ jobs:
       # Failing checks and the "N/M checks passed" line are repeated as annotations,
       # like the build's errors
       shell: pwsh
+      env:
+        # The first-setup test leaves its finished install here for the screens step
+        RETROFE_KEEP_FIRST_SETUP: ${{ runner.temp }}\first-setup
       run: |
         ctest --test-dir RetroFE/Build -C Release -V 2>&1 | Tee-Object -Variable out
         $failed = $LASTEXITCODE -ne 0
@@ -154,6 +159,77 @@ jobs:
         $lines | Where-Object { $_ -match 'checks passed' } | Select-Object -Last 1 |
           ForEach-Object { '::notice::' + ($_ -replace '^\d+: ', '').Trim() }
         if ($failed) { throw "The unit tests failed" }
+
+    - name: Check screens in the real program
+      # Scripts/test-build/screens: retrofe.exe in a window on this runner, in a bare and a
+      # Starter-like test install, driven by key presses posted to its window, with a
+      # screenshot after each step (README there). While the scripts are being tuned, a
+      # failing script is a warning, not a failed build (DECISIONS M34).
+      id: screens
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        $out = "dist\screens"
+        New-Item -ItemType Directory -Force $out | Out-Null
+        $failed = @()
+        foreach ($script in Get-ChildItem "Scripts\test-build\screens\scripts\*.txt" | Sort-Object Name) {
+          $kind = $script.BaseName.Split('-')[0]
+          $install = Join-Path $env:RUNNER_TEMP "screens-$($script.BaseName)"
+          $setup = @()
+          if ($kind -eq 'starter') { $setup = @('--setup', "$env:RUNNER_TEMP\first-setup") }
+          python -I Scripts\test-build\screens\screens.py install --kind $kind `
+            --exe RetroFE\Build\Release\retrofe.exe --dlls Package\Environment\Windows\retrofe `
+            --common Package\Environment\Common @setup $install
+          if ($LASTEXITCODE -ne 0) { $failed += "$($script.BaseName): the install couldn't be made"; continue }
+          python -I Scripts\test-build\screens\screens.py run --install $install --script $script.FullName `
+            --out "$out\$($script.BaseName)" 2>&1 | Tee-Object -Variable lines
+          if ($LASTEXITCODE -ne 0) {
+            $why = ($lines | ForEach-Object { "$_" } | Where-Object { $_ -match '^FAIL ' } | Select-Object -First 1)
+            $failed += "$($script.BaseName): $why"
+            if ($why -match 'exit code 0xC') {
+              # A crash: run it once more under the debugger, whose stack and module list
+              # go into the published zip as cdb.txt
+              $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+              if (Test-Path $cdb) {
+                $log = "$out\$($script.BaseName)\cdb.txt"
+                $p = Start-Process $cdb -WorkingDirectory $install -PassThru -NoNewWindow `
+                  -RedirectStandardOutput $log -ArgumentList @('-g', '-G', '-c', '".lastevent; kv 40; lm; q"',
+                  "`"$install\retrofe\retrofe.exe`"", '-fullscreen', 'no', '-horizontal', '960', '-vertical', '540')
+                if (-not $p.WaitForExit(90000)) { $p.Kill(); "cdb timed out" | Add-Content $log }
+              }
+              else { "::warning::No cdb.exe at $cdb" }
+            }
+          }
+        }
+        $shots = (Get-ChildItem -Recurse "$out\*.png").Count
+        "::notice::Screens: $shots screenshots from $((Get-ChildItem $out -Directory).Count) scripts"
+        $failed | ForEach-Object { '::warning::' + $_.Replace('%', '%25') }
+        if ($failed) { throw "A screens script failed" }
+
+    - name: Publish the screenshots
+      # Every run's screenshots go to the ci-screens pre-release as screens-<commit>.zip
+      # (the 30 newest are kept), downloadable without signing in, so they can be
+      # reviewed without the Actions log.
+      if: always() && github.event_name == 'push' && steps.screens.outcome != 'skipped'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $tag = 'ci-screens'
+        if (-not (Test-Path dist\screens)) { "No screenshots"; exit 0 }
+        $name = "screens-$($env:GITHUB_SHA.Substring(0, 8)).zip"
+        Compress-Archive -Path dist\screens\* -DestinationPath "dist\$name" -Force
+        gh release view $tag *> $null
+        if ($LASTEXITCODE -ne 0) {
+          gh release create $tag --prerelease --target $env:GITHUB_SHA --title 'CI screenshots' `
+            --notes 'Screenshots from Scripts/test-build/screens, one zip per commit (screens-<commit>.zip). Not a release.'
+          if ($LASTEXITCODE -ne 0) { throw "Could not create the ci-screens pre-release" }
+        }
+        gh release upload $tag "dist\$name" --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Could not upload $name" }
+        $old = gh release view $tag --json assets --jq '.assets | sort_by(.createdAt) | reverse | .[30:] | .[].name'
+        $old | Where-Object { $_ } | ForEach-Object { gh release delete-asset $tag $_ --yes }
+        "::notice::Screenshots: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/download/$tag/$name"
 
     - name: Publish the build for testing
       # Each push to feature/management-ui that passes replaces the management-ui-latest
