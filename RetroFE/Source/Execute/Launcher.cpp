@@ -443,13 +443,7 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	// Steps 1-5 (LaunchCommand::build): the launcher (with potential per-item
 	// override), its executable, the game's file, the arguments and the
 	// current directory, with variables substituted
-	LaunchCommand::Game game;
-	game.collection = collection;
-	game.itemCollection = collectionItem->collectionInfo->name;
-	game.itemLauncher = collectionItem->collectionInfo->launcher;
-	game.name = collectionItem->name;
-	game.file = collectionItem->file;
-	game.filepath = collectionItem->filepath;
+	LaunchCommand::Game game = LaunchCommand::gameFor(collection, *collectionItem);
 	LaunchCommand::Command command = LaunchCommand::build(config_, game);
 	if (!command.failure.empty()) {
 		failure_ = command.failure;

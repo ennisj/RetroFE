@@ -722,6 +722,24 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M41. Round 30 choices — Decided (2026-11-26)
+- **Tests use the product's code, not copies.** The first-setup test had its
+  own copy of how RetroFE loads its configuration, and it had drifted: no
+  `settings1-15.conf`, `settings_saved.conf`, numbered collection settings or
+  base layout path. Loading is now one function that RetroFE and the test
+  share (`ConfigurationLoader::load`), and so is the step that turns a list
+  entry into a game to start (`LaunchCommand::gameFor`).
+- **Starting the process stays separate in the test.** RetroFE's start keeps
+  handles for window and attract-mode handling and uses different Windows
+  flags; sharing a core risked changing how games start. The test's comment
+  says what it covers; the real start is covered by the screenshot scripts,
+  which start games in the real RetroFE.
+- **The test never starts RetroFE's log.** The built-in settings have a log
+  line, which would send the test's output to the install's log.txt.
+- **The SMB path is tested with a stand-in.** The test-drive scripts run over
+  a fake smbclient on a temporary folder, and the result must equal the
+  mounted-folder run. One real run against the PC is still owed.
+
 ### M40. Round 29 choices — Decided (2026-11-26)
 - **No game database is shipped.** Titles and years come from the
   `meta/hyperlist` files of the install the games come from (OneSauce's copy

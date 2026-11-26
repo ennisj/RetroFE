@@ -147,7 +147,7 @@ bool Configuration::import(const std::string& collection, const std::string& key
             retVal = retVal && parseLine(collection, "", line, lineCount);
 
             // Check if the line contains the log level setting
-            if (properties_.find(OPTION_LOG) != properties_.end()) {
+            if (loggingEnabled_ && properties_.find(OPTION_LOG) != properties_.end()) {
                 StartLogging(this); // Start logging with the specified level
             }
         }
@@ -173,7 +173,7 @@ bool Configuration::import(const std::string& collection, const std::string& key
             retVal = retVal && parseLine(collection, keyPrefix, line, lineCount);
 
             // Check if the line contains the log level setting
-            if (properties_.find(OPTION_LOG) != properties_.end()) {
+            if (loggingEnabled_ && properties_.find(OPTION_LOG) != properties_.end()) {
                 StartLogging(this); // Start logging with the specified level
             }
         }
@@ -198,7 +198,7 @@ bool Configuration::importString(const std::string& keyPrefix, const std::string
     }
 
     // Start logging if the text set a log level
-    if (properties_.find(OPTION_LOG) != properties_.end()) {
+    if (loggingEnabled_ && properties_.find(OPTION_LOG) != properties_.end()) {
         StartLogging(this);
     }
 

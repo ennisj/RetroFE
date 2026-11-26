@@ -5,7 +5,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import testdrive, make_test_install as maker, deploy_test_build as deploy
 
 
-class TestBuild(unittest.TestCase):
+class Fixture:
+    """A source, fixtures, a drive folder and a faked download, for both drive kinds."""
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -41,6 +42,8 @@ class TestBuild(unittest.TestCase):
         self.fixture_patch.start()
         self.addCleanup(self.fixture_patch.stop)
 
+
+class TestBuild(Fixture, unittest.TestCase):
     def run_make(self, *extra):
         with patch.object(sys, 'argv', ['make_test_install.py', '--fixtures', 'starter', '--source', str(self.source), '--path', str(self.drive), *extra]):
             return maker.main()
@@ -179,6 +182,68 @@ class TestBuild(unittest.TestCase):
             (path / 'retrofe.exe').touch()
         (self.drive / 'RetroFE-Empty').mkdir()
         self.assertEqual(deploy.discover_installs(drive), ['RetroFE-A', 'RetroFE-Z'])
+
+class TestSmb(Fixture, unittest.TestCase):
+    """The same runs over Smb, with a stand-in smbclient on a temporary folder."""
+    def setUp(self):
+        super().setUp()
+        import types, shutil
+        self.local_drive = self.drive
+        self.drive = self.root / 'smb'
+        self.drive.mkdir()
+        credentials = self.root / 'credentials'
+        credentials.write_text('user\npassword\n')
+        self.credentials = str(credentials)
+        prefix = r'\\host\share'
+        def mapped(path):
+            if not isinstance(path, str) or '/' in path or not (path == prefix or path.startswith(prefix + '\\')):
+                raise ValueError('invalid SMB path: ' + str(path))
+            parts = path[len(prefix):].strip('\\').split('\\')
+            if any(p in ('.', '..') for p in parts): raise ValueError('invalid SMB path')
+            return self.drive.joinpath(*parts)
+        client = types.ModuleType('smbclient')
+        path = types.ModuleType('smbclient.path')
+        copy = types.ModuleType('smbclient.shutil')
+        client.path, client.shutil = path, copy
+        client.register_session = lambda host, username, password: self.assertEqual((host, username, password), ('host', 'user', 'password'))
+        client.open_file = lambda path, mode: open(mapped(path), mode)
+        client.makedirs = lambda path, exist_ok: os.makedirs(mapped(path), exist_ok=exist_ok)
+        client.listdir = lambda path: os.listdir(mapped(path))
+        client.rename = lambda a, b: os.rename(mapped(a), mapped(b))
+        path.isdir = lambda p: os.path.isdir(mapped(p))
+        path.exists = lambda p: os.path.exists(mapped(p))
+        path.getsize = lambda p: os.path.getsize(mapped(p))
+        copy.rmtree = lambda p: shutil.rmtree(mapped(p))
+        modules = patch.dict(sys.modules, {'smbclient': client, 'smbclient.path': path, 'smbclient.shutil': copy})
+        modules.start()
+        self.addCleanup(modules.stop)
+
+    def run_make(self, *extra):
+        with patch.object(sys, 'argv', ['make', '--fixtures', 'starter', '--source', str(self.source), '--host', 'host', '--share', 'share', '--credentials', self.credentials, *extra]):
+            return maker.main()
+
+    def test_smb_matches_local(self):
+        def tree(root):
+            return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+        with patch.object(sys, 'argv', ['make', '--fixtures', 'starter', '--source', str(self.source), '--path', str(self.local_drive)]):
+            self.assertEqual(maker.main(), 0)
+        self.assertEqual(self.run_make(), 0)
+        self.assertEqual(tree(self.local_drive), tree(self.drive))
+        for root, args in [(self.local_drive, ['--path', str(self.local_drive)]), (self.drive, ['--host', 'host', '--share', 'share', '--credentials', self.credentials])]:
+            (root / 'RetroFE-Starter/retrofe/retrofe.exe').write_bytes(b'old')
+            with patch.object(sys, 'argv', ['deploy', *args]): self.assertEqual(deploy.main(), 0)
+        self.assertEqual(tree(self.local_drive), tree(self.drive))
+
+    def test_reset_restores_after_failure(self):
+        self.assertEqual(self.run_make(), 0)
+        (self.drive / 'RetroFE-Starter/original').write_text('kept')
+        def fail(drive, name, build):
+            testdrive.write(drive, drive.join(name, 'partial'), b'partial')
+            raise OSError('failed')
+        with patch.object(maker, 'deploy_build', side_effect=fail):
+            self.assertEqual(self.run_make('--reset'), 1)
+        self.assertEqual((self.drive / 'RetroFE-Starter/original').read_text(), 'kept')
+        self.assertEqual(len(list((self.drive / 'backups').glob('RetroFE-Starter-*-failed/partial'))), 1)
 
 
 if __name__ == '__main__': unittest.main()
