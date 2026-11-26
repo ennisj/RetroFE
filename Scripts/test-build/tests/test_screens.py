@@ -145,6 +145,36 @@ class ScreensTests(unittest.TestCase):
         self.assertEqual(set((nes / 'include.txt').read_text().splitlines()), {'First', 'Second', 'Missing Game (USA)'})
         self.assertEqual((nes / 'settings.conf').read_bytes(), b'launcher = NES\r\nlist.extensions = nes,dat\r\nlist.includeMissingItems = true\r\n')
 
+    def test_setup_install(self):
+        """Only the pre-setup emulator and downloads reach the install."""
+        handover = self.root / 'handover'
+        retroarch = handover / 'root/emulators/RetroArch'
+        (retroarch / 'cores').mkdir(parents=True)
+        (retroarch / 'info').mkdir()
+        (retroarch / 'retroarch.exe').touch()
+        (retroarch / 'launches.txt').touch()
+        (handover / 'root/settings.conf').touch()
+        (handover / 'downloads').mkdir()
+        (handover / 'downloads/game.nes').touch()
+        output = self.install('setup', handover)
+        self.assertTrue((output / 'downloads/game.nes').is_file())
+        self.assertTrue((output / 'emulators/RetroArch/retroarch.exe').is_file())
+        self.assertFalse((output / 'settings.conf').exists())
+        self.assertFalse((output / 'emulators/RetroArch/launches.txt').exists())
+
+    def test_setup_requires_handover(self):
+        with self.assertRaises(ValueError):
+            self.install('setup')
+        with self.assertRaises(ValueError):
+            self.install('setup', self.setup)
+
+    def test_wait_file_parse(self):
+        self.assertEqual(screens.parse_script('wait-file "a b/file" 12')[0]['args'], ['a b/file', 12])
+        self.assertEqual(screens.parse_script('expect-file "a b/file" text')[0]['args'], ['a b/file', 'text'])
+        for command in ('wait-file ../bad', 'wait-file x 0', 'wait-file x nope'):
+            with self.assertRaises(ValueError):
+                screens.parse_script(command)
+
     def test_nonempty_output_refused(self):
         """Do not overwrite an existing install."""
         self.install('bare')

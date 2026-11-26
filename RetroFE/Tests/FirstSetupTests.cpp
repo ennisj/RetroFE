@@ -727,7 +727,9 @@ static Test::Suite firstSetup("first setup", [] {
             bool usable = !fs::exists(target, ec) || (fs::is_directory(target, ec) && fs::is_empty(target, ec));
             check(!ec && usable, "kept setup destination must be absent or empty");
             if (!ec && usable) {
-                fs::copy(s->root, target, fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
+                fs::create_directories(target, ec);
+                if (!ec) fs::copy(s->root, target / "root", fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
+                if (!ec) fs::copy(s->downloads, target / "downloads", fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
                 check(!ec, "copy finished setup: " + ec.message());
                 if (!ec) std::cout << "Kept first setup in " << target.string() << std::endl;
             }
