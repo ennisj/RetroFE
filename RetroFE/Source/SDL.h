@@ -84,6 +84,10 @@ public:
     {
         return rotation_[index];
     }
+    static bool isMirrored(int index)
+    {
+        return mirror_[index];
+    }
 
 private:
     static std::vector<SDL_Window *>   window_;
