@@ -95,6 +95,11 @@ shot add-games-form
 key Return
 wait 3
 shot browser-places
+# The places list can open with focus on an earlier choice: Left pages up
+# within a results list (FormWidget::pageResults), so two reach the top row
+key Left x2
+wait 1
+shot browser-places-top
 key Return
 wait 2
 shot browser-root
