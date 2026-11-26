@@ -611,7 +611,7 @@ void SystemProvider::enter(const Screen& screen)
     if (isForm(screen, "-add-games") && importSystem_ != screen.param("id")) {
         import_.stop(); updateImport();
         import_.reset();
-        importFolder_.clear(); importSubfolders_ = true;
+        importFolder_.clear(); importSubfolders_ = true; importArtwork_ = true;
         importSystem_ = screen.param("id");
     }
     if (!videos_ && isForm(screen, "-add")) syncAddLaunchers();
@@ -1347,6 +1347,13 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 {
     if (key == "importFrom") return importFolder_;
     if (key == "importSubfolders") return yesNo(importSubfolders_);
+    if (key == "importArtwork") return yesNo(importArtwork_);
+    if (key == "importArtworkFound") return yesNo(import_.status().artworkFound);
+    if (key == "importArtworkCount") {
+        auto state = import_.status();
+        return "Artwork for " + std::to_string(state.artworkGames) + " of " + std::to_string(state.found) + " games"
+            + (state.systemArtwork ? ", and the system's art" : "");
+    }
     if (key == "importRunning") return yesNo(import_.status().running);
     if (key == "importCount") {
         auto state = import_.status();
@@ -1540,6 +1547,7 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 
 void SystemProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
+    if (key == "importArtwork") { if (!import_.status().running) importArtwork_ = iequals(value, "yes") || iequals(value, "true"); return; }
     if (key == "importFrom" || key == "importSubfolders") {
         updateImport();
         if (import_.status().running && import_.status().copying) return;
@@ -2558,6 +2566,10 @@ GameImport::Request SystemProvider::importRequest(const Screen& screen) const
         request.destinationLabel = (inside ? relative : request.into).make_preferred().string();
         request.extensions = r->extensions;
         request.hierarchy = r->romHierarchy;
+        request.copyArtwork = importArtwork_;
+        auto properties = idx->properties;
+        auto name = r->name;
+        request.mediaPath = [properties, name](const std::string& type, bool system) { return fs::path(properties.mediaPath(name, type, system)); };
     }
     return request;
 }

@@ -342,6 +342,16 @@ Up/Down and Select reach every field and button; Back returns to the system.
 - **From** opens the folder browser. Its count uses the system's extensions,
   including their case, just like Browse. **Include subfolders** starts on;
   changing it counts again on a worker thread.
+- **Copy artwork too** appears, on, when From has a `medium_artwork` or
+  `system_artwork` folder beside it (a RetroFE or OneSauce collection's
+  layout). Its note says how many of the games found have artwork and whether
+  there is system art. After the games, each game's files and media folders
+  in every artwork type are copied, then all of the system art. Artwork named
+  after games that aren't being added stays behind and is counted. It goes
+  where RetroFE reads this system's media: `collections.<system>.media.<type>`,
+  then `media.basePath`, then `baseMediaPath`. An artwork folder that can't
+  be read is reported and the games are still copied. Turn it off to copy
+  games only.
 - **Into** shows the games folder: `list.path` (the first folder if several),
   otherwise `<baseItemPath>/<system>`, otherwise `collections/<system>/roms`.
 - **Copy games** makes that folder if needed and copies matching files without
@@ -355,7 +365,8 @@ Up/Down and Select reach every field and button; Back returns to the system.
 - An existing name with the same size is counted as already there. A different
   size is a conflict: the existing file stays and the new file is skipped.
   The result counts conflicts and missing references and names the first few.
-  Free space is checked for the games and companions before any copying.
+  Free space is checked for the games, companions and artwork before any
+  copying.
 - Copying runs in the background with progress and **Stop**. Stop, Back or
   closing Manage stops the job, removes its partial file and keeps completed
   files. The result stays on the screen. The Library rescans after copies,

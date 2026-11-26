@@ -535,6 +535,8 @@ static Test::Suite firstSetup("first setup", [] {
                        system.name + ": into its games folder");
             s->model.set("system:importFrom", s->downloads + "/" + system.name + "/roms");
             s->waitForImport();
+            checkEqual(s->model.get("system:importArtwork"), "yes", system.name + ": artwork enabled");
+            checkEqual(s->model.get("system:importArtworkFound"), "yes", system.name + ": artwork found");
             checkEqual(s->model.get("system:importMessage"), count + " games found", system.name + ": found");
             check(s->model.runAction("system.copyGames").ok, system.name + ": Copy starts");
             s->waitForImport();
@@ -668,20 +670,10 @@ static Test::Suite firstSetup("first setup", [] {
         check(argv == std::vector<std::string>({ "/emu/retroarch", "-L", "/emu/a b.so", "/roms/Bill & Ted's (USA).nes" }), "the argv elsewhere");
     });
 
-    // Checklist step 6: the artwork copied by hand into collections/<System>/,
+    // Checklist step 6: the artwork imported with the games,
     // then a game's and a system's Media screens
-    run("first setup i: artwork copied by hand shows on the Media screens", [&] {
+    run("first setup i: imported artwork shows on the Media screens", [&] {
         if (!s) return;
-        for (const System& system : systems()) {
-            for (const char* folder : { "medium_artwork", "system_artwork" }) {
-                std::error_code ec;
-                fs::copy(s->downloads + "/" + system.name + "/" + folder, s->root + "/collections/" + system.name + "/" + folder,
-                         fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-                check(!ec, system.name + ": " + folder + " copied: " + ec.message());
-            }
-        }
-        s->rescan();
-
         const std::string nes = "Nintendo Entertainment System";
         const std::map<std::string, std::string> extensions = {
             { "artwork_front", ".jpg" }, { "logo", ".png" }, { "video", ".mp4" }, { "story", ".txt" }
@@ -703,6 +695,7 @@ static Test::Suite firstSetup("first setup", [] {
                 checkEqual(readFile(file), nes + "/medium_artwork/" + type + "/" + name + extension, name + ": " + type + " is its own file");
             }
         }
+        check(!fs::exists(fs::path(s->root) / "collections" / nes / "medium_artwork" / "logo" / "Metroid (USA).png"), "Metroid art without a game was left");
         const std::string excitebike = "Excitebike (Japan, USA)";
         s->open("game-media", { { "collection", nes }, { "id", excitebike } });
         std::map<std::string, std::string> details;
