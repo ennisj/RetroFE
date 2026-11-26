@@ -4,6 +4,19 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 29 — Add games brings titles and years (2026-11-26)
+
+Unit tests: 7,564 → 7,580 checks (Windows CI). Choices in M40 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Games added from another RetroFE install show their titles and years.**
+  When the From folder is a system's `roms` folder in another install, Add
+  games finds that system's metadata (`meta/hyperlist`, `meta/mamelist`),
+  including OneSauce's, which keeps it in `appdata/retrofe` apart from the
+  games. A new switch, **Copy titles and years too**, on by default, copies it
+  after the games and artwork under this system's name. A different file you
+  already have is kept. RetroFE reads the new titles when Manage closes.
+
 ## Round 28 — small text stays whole on small screens (2026-11-26)
 
 Unit tests: 7,556 → 7,564 checks (Windows CI). Choices in M39 of

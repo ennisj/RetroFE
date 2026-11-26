@@ -722,6 +722,24 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M40. Round 29 choices — Decided (2026-11-26)
+- **No game database is shipped.** Titles and years come from the
+  `meta/hyperlist` files of the install the games come from (OneSauce's copy
+  has one per system), so Add games brings that system's file along, as it
+  brings artwork (M36). A shipped database would raise licensing questions,
+  and RetroArch's lists name games differently from the artwork.
+- **Two places are looked in, no wider search:** beside the games
+  (`<root>/collections/<System>/roms` with `<root>/meta`), and OneSauce's split
+  layout, games in `content/retrofe` and metadata in `appdata/retrofe`.
+- **The whole file is copied, renamed for the destination system's metadata
+  type.** Entries for games not copied are harmless and serve later imports.
+  A different file of that type already there is kept and the new one skipped:
+  never merged, since the user may have their own.
+- **Copied files get the current time.** RetroFE re-imports metadata only when
+  `meta/` is newer than `meta.db`; a copy keeping the source's date could be
+  ignored.
+- **Types compare case-sensitively,** as RetroFE's own metadata lookup does.
+
 ### M39. Round 28 choices — Decided (2026-11-26)
 - **Measured before fixing:** the same Home screen on CI at 1920, 1280 and
   960 wide showed clean text at the first two and missing strokes only at
