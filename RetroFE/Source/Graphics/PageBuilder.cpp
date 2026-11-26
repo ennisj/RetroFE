@@ -15,6 +15,7 @@
 */
 
 #include "PageBuilder.h"
+#include "ScreenFontSize.h"
 #include "LayoutPages.h"
 #include "LayoutCompat.h"
 #include "MenuXml.h"
@@ -1028,6 +1029,27 @@ void PageBuilder::loadReloadableImages(const xml_node<>* layout, const std::stri
 	}
 }
 
+float PageBuilder::fontScreenScale(int monitor) const
+{
+	if (monitor < 0 || monitor >= SDL::getScreenCount() || layoutWidth_ <= 0 || layoutHeight_ <= 0) {
+		return 1.0f;
+	}
+	int width = SDL::getWindowWidth(monitor);
+	int height = SDL::getWindowHeight(monitor);
+	if (SDL_Window* window = SDL::getWindow(monitor)) {
+		SDL_GetWindowSize(window, &width, &height);
+	}
+	if (SDL::getRotation(monitor) % 2 == 1) {
+		std::swap(width, height);
+	}
+	float scaleX = static_cast<float>(width) / layoutWidth_;
+	float scaleY = static_cast<float>(height) / layoutHeight_;
+	if (SDL::isMirrored(monitor)) {
+		scaleY /= 2.0f;
+	}
+	return std::min(scaleX, scaleY);
+}
+
 FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>* defaults, int monitor, const SDL_Color* colorOverride)
 {
 	xml_attribute<> const* fontXml = component->first_attribute("font");
@@ -1081,6 +1103,7 @@ FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>*
 		fontColor = *colorOverride;
 	}
 
+	fontSize = screenFontSize(fontSize, fontScreenScale(monitor));
 	fontCache_->loadFont(fontName, fontSize, fontColor, monitor);
 	return fontCache_->getFont(fontName, fontSize, fontColor, monitor);
 }
@@ -1310,6 +1333,7 @@ void PageBuilder::buildForms(xml_node<>* layout, Page* page, int monitor)
 			std::string fontPath = Configuration::convertToAbsolutePath(
 				Utils::combinePath(Configuration::layoutsPath(), layoutKey, ""), headingFont->value());
 			int loadSize = static_cast<int>(number(componentXml, "loadFontSize", static_cast<float>(fontSize_)));
+			loadSize = screenFontSize(loadSize, fontScreenScale(helpMonitor));
 			if (fontCache_->loadFont(fontPath, loadSize, headingColor, helpMonitor)) {
 				help->setFont(FormHelp::FontRole::Heading, fontCache_->getFont(fontPath, loadSize, headingColor, helpMonitor));
 			}

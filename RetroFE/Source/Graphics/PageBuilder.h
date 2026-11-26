@@ -96,6 +96,7 @@ private:
     Configuration &config_;
     int screenHeight_{ 0 };
     int screenWidth_{ 0 };
+    float fontScreenScale(int monitor) const;
     int layoutHeight_{ 0 };
     int layoutWidth_{ 0 };
     int monitor_{ 0 };

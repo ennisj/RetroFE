@@ -722,6 +722,18 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M39. Round 28 choices — Decided (2026-11-26)
+- **Measured before fixing:** the same Home screen on CI at 1920, 1280 and
+  960 wide showed clean text at the first two and missing strokes only at
+  half size, where shrinking a glyph picture by two samples every other
+  pixel. So it's a small-screen problem, not a bug at full size.
+- **The fix is the font's size, not the drawing:** fonts are drawn at the
+  size they appear when the window is smaller than the theme (never larger
+  than the theme asks, never below 8 px). Text keeps its size and place;
+  letter spacing can shift by a pixel where the font's hinting differs.
+- **The fonts follow the window size when the theme loads,** like the rest
+  of the theme; a window resized later gets them when the theme reloads.
+
 ### M38. Round 27 choices — Decided (2026-11-26)
 - **Screenshot scripts fail the build** once they have proven steady (M34
   said "after a few passing rounds"): bare and Starter passed about 15 runs
