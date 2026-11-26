@@ -392,6 +392,7 @@ set(RETROFE_SOURCES
 	"${RETROFE_DIR}/Source/Control/KeyboardHandler.cpp"
 	"${RETROFE_DIR}/Source/Control/MouseButtonHandler.cpp"
 	"${RETROFE_DIR}/Source/Database/Configuration.cpp"
+	"${RETROFE_DIR}/Source/Database/ConfigurationLoader.cpp"
 	"${RETROFE_DIR}/Source/Database/DB.cpp"
 	"${RETROFE_DIR}/Source/Database/GlobalOpts.cpp"
     "${RETROFE_DIR}/Source/Database/HiScores.cpp"
@@ -572,6 +573,7 @@ if(RETROFE_BUILD_TESTS)
 		${RETROFE_TEST_SOURCES}
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
 		"${RETROFE_DIR}/Source/Database/Configuration.cpp"
+	"${RETROFE_DIR}/Source/Database/ConfigurationLoader.cpp"
 		"${RETROFE_DIR}/Source/Database/GlobalOpts.cpp"
 		"${RETROFE_DIR}/Source/Execute/LaunchCommand.cpp"
 		"${RETROFE_DIR}/Source/Forms/BuiltinForms.cpp"

@@ -68,7 +68,7 @@ def stage(drive, name, source, entries):
             if drive.exists(dest) and drive.getsize(dest) == length:
                 skipped += 1
                 continue
-            drive.makedirs(os.path.dirname(dest) if isinstance(drive, Local) else dest.rsplit('\\', 1)[0])
+            drive.makedirs(drive.dirname(dest))
             with open(path, 'rb') as inp, drive.open(dest, 'wb') as out:
                 shutil.copyfileobj(inp, out)
             copied += 1

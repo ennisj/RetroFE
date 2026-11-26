@@ -48,6 +48,8 @@ public:
     void getMediaPropertyAbsolutePath(const std::string& collectionName, const std::string& mediaType, std::string &value);
     void getMediaPropertyAbsolutePath(const std::string& collectionName, const std::string& mediaType, bool system, std::string &value);
     void getCollectionAbsolutePath(const std::string& collectionName, std::string &value);
+    bool loggingEnabled() const { return loggingEnabled_; }
+    void setLoggingEnabled(bool enabled) { loggingEnabled_ = enabled; }
     bool StartLogging(Configuration* config);
     void printProperties() const;
     void dumpPropertiesToFile(const std::string& filename);
@@ -68,6 +70,7 @@ private:
     using PropertiesType = std::unordered_map<std::string, std::string>;
     typedef std::pair<std::string, std::string> PropertiesPair;
 
+    bool loggingEnabled_ = true;
     PropertiesType properties_;
     static std::string layoutsPath_;
 

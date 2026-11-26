@@ -27,6 +27,7 @@
 #include "../Source/Collection/CollectionInfoBuilder.h"
 #include "../Source/Collection/Item.h"
 #include "../Source/Database/Configuration.h"
+#include "../Source/Database/ConfigurationLoader.h"
 #include "../Source/Database/DB.h"
 #include "../Source/Database/MetadataDatabase.h"
 #include "../Source/Execute/LaunchCommand.h"
@@ -157,42 +158,14 @@ namespace
         return !a.empty() && fs::equivalent(fs::path(a), b, ec);
     }
 
-    // This is a copy of Main.cpp's ImportConfiguration, not the product function:
-    // settings.conf or the built-in defaults, the
-    // launchers, and each collection's settings, info and launcher files.
-    // Without the log setting: it starts logging, which sends this process's
-    // output to the install's log.txt.
-    void loadConfiguration(Configuration& config, const std::string& root)
+    // RetroFE's own loading (Main.cpp uses it too), but never starting the log:
+    // that would send this process's output to the install's log.txt. Kept off
+    // for good, since the built-in settings have a log line and later imports
+    // would otherwise start it.
+    void loadConfiguration(Configuration& config, const std::string&)
     {
-        std::string settings = Utils::combinePath(root, "settings.conf");
-        std::string text = fs::exists(settings) ? readFile(settings) : std::string(Builtin::settings);
-        std::string kept;
-        for (const std::string& line : lines(text)) {
-            if (Utils::trimEnds(line.substr(0, line.find('='))) != "log") kept += line + "\n";
-        }
-        config.importString("", kept);
-        std::error_code ec;
-        for (const auto& entry : fs::directory_iterator(Utils::combinePath(root, "launchers." + Utils::getOSType()), ec)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".conf") {
-                config.import("launchers." + entry.path().stem().string(), entry.path().string());
-            }
-        }
-        std::string collections = Utils::combinePath(root, "collections");
-        for (const auto& entry : fs::directory_iterator(collections, ec)) {
-            std::string collection = entry.path().filename().string();
-            if (!entry.is_directory() || collection.empty() || collection[0] == '_') continue;
-            std::string prefix = "collections." + collection;
-            for (const char* file : { "settings.conf", "info.conf" }) {
-                std::string path = Utils::combinePath(collections, collection, file);
-                if (fs::exists(path)) config.import(collection, prefix, path, false);
-            }
-            std::string own = Utils::combinePath(collections, collection, "launcher." + Utils::getOSType() + ".conf");
-            if (!fs::exists(own)) own = Utils::combinePath(collections, collection, "launcher.conf");
-            if (fs::exists(own)) {
-                config.import(collection, "collectionLaunchers." + collection, own, false);
-                if (!config.propertyExists(prefix + ".launcher")) config.setProperty(prefix + ".launcher", collection);
-            }
-        }
+        config.setLoggingEnabled(false);
+        ConfigurationLoader::load(config, {}, {}, false);
     }
 
     // How the fake RetroArch was started: one entry per run of it
@@ -229,7 +202,10 @@ namespace
     // This test starts the process itself; LaunchCommand::build, windowsCommandLine
     // and unixArgv are product code. Launcher::execute() also makes paths absolute,
     // looks programs up on PATH and uses ShellExecuteEx for non-.exe programs on Windows.
-    // This copy starts the command at its core and waits:
+    // It does not cover window handling, attract mode, optional waits, priority,
+    // ServoStik or gameplay timing. Windows startup flags differ, and this test
+    // waits at most 30 seconds and checks the exit code. On Unix it reports
+    // chdir/exec failure with distinct exit codes. It starts the command with:
     // CreateProcess with its command line on Windows, fork and execvp with
     // its argv elsewhere, both in its current directory. "" when it ran and
     // exited 0, else what happened.
@@ -632,14 +608,7 @@ static Test::Suite firstSetup("first setup", [] {
             check(item != nullptr, name + " is in " + system.name);
             if (!item) continue;
 
-            // This Item-to-Game mapping is a copy of Launcher::run(), not product code.
-            LaunchCommand::Game game;
-            game.collection = item->collectionInfo->name;
-            game.itemCollection = item->collectionInfo->name;
-            game.itemLauncher = item->collectionInfo->launcher;
-            game.name = item->name;
-            game.file = item->file;
-            game.filepath = item->filepath;
+            LaunchCommand::Game game = LaunchCommand::gameFor(item->collectionInfo->name, *item);
             LaunchCommand::Command command = LaunchCommand::build(config, game);
             checkEqual(command.failure, "", name + ": it can start");
             checkEqual(command.launcher, system.launcher, name + ": with its system's launcher");

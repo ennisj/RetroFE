@@ -43,3 +43,5 @@ Run `make_test_install.py --fixtures starter` first. On the PC, start `RetroFE-S
 Windows CI also runs the real program in both kinds of install and publishes screenshots of each step: [screens/README.md](screens/README.md) and [docs/CI.md](../../docs/CI.md).
 
 With `RETROFE_KEEP_FIRST_SETUP` set, the test keeps the finished install in `root/` and the staged files in sibling `downloads/` for the screens installs.
+
+The SMB path is covered by tests using a stand-in for smbclient; it still needs a real run against the PC.

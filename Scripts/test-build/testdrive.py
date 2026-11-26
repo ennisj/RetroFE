@@ -6,7 +6,7 @@
 #   <install>\layouts\Aeon Nox\      updated with it (copied over: nothing is deleted)
 # An install's retrofe\ folder gets RetroFE's DLLs (Package/Environment/Windows/retrofe) the
 # first time. See README.md next to this script.
-import hashlib, io, os, posixpath, shutil, sys, urllib.request, zipfile
+import hashlib, io, ntpath, os, posixpath, shutil, sys, urllib.request, zipfile
 
 RELEASE = 'https://github.com/ennisj/RetroFE/releases/download/management-ui-latest/'
 ZIP = 'RetroFE-management-ui-windows-x64.zip'
@@ -19,6 +19,7 @@ class Local:
     """The drive as a mounted folder."""
     def __init__(self, root): self.root = root
     def join(self, *parts): return os.path.join(self.root, *parts)
+    def dirname(self, path): return os.path.dirname(path)
     def isdir(self, path): return os.path.isdir(path)
     def exists(self, path): return os.path.exists(path)
     def makedirs(self, path): os.makedirs(path, exist_ok=True)
@@ -40,6 +41,7 @@ class Smb:
         smbclient.register_session(host, username=user, password=password)
         self.root = rf'\\{host}\{share}'
     def join(self, *parts): return '\\'.join([self.root] + [p.replace('/', '\\') for p in parts])
+    def dirname(self, path): return ntpath.dirname(path)
     def isdir(self, path): return self.c.path.isdir(path)
     def exists(self, path): return self.c.path.exists(path)
     def makedirs(self, path): self.c.makedirs(path, exist_ok=True)
@@ -56,7 +58,7 @@ def fetch(name):
 
 
 def write(drive, path, data):
-    drive.makedirs(os.path.dirname(path) if isinstance(drive, Local) else path.rsplit('\\', 1)[0])
+    drive.makedirs(drive.dirname(path))
     with drive.open(path, 'wb') as out:
         out.write(data)
 

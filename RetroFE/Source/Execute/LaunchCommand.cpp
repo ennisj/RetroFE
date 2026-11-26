@@ -15,6 +15,8 @@
  */
 
 #include "LaunchCommand.h"
+#include "../Collection/Item.h"
+#include "../Collection/CollectionInfo.h"
 #include "../Database/Configuration.h"
 #include "../Library/Files.h"
 #include "../Library/Properties.h"
@@ -306,4 +308,16 @@ std::vector<std::string> unixArgv(const std::string& executable, const std::stri
 	return argVector;
 }
 
+}
+
+LaunchCommand::Game LaunchCommand::gameFor(const std::string& collection, const Item& item)
+{
+    Game game;
+    game.collection = collection;
+    game.itemCollection = item.collectionInfo->name;
+    game.itemLauncher = item.collectionInfo->launcher;
+    game.name = item.name;
+    game.file = item.file;
+    game.filepath = item.filepath;
+    return game;
 }

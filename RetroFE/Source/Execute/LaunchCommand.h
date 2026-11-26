@@ -22,8 +22,10 @@ class Configuration;
 
 // What Launcher::run() works out before it starts a game (the launcher, the
 // game's file, the program, its arguments and folder), and what
-// Launcher::execute() hands the OS. No SDL, page or item, so the tests run
+// Launcher::execute() hands the OS. No SDL or page (an item only for gameFor), so the tests run
 // the same code.
+class Item;
+
 namespace LaunchCommand
 {
 	// Windows can start a shell target without obtaining a process handle.
@@ -42,6 +44,8 @@ namespace LaunchCommand
 		std::string file;                // its file name without extension, when not its name
 		std::string filepath;            // its folder, when not the collection's games folder
 	};
+
+	Game gameFor(const std::string& collection, const Item& item);
 
 	struct Command
 	{
