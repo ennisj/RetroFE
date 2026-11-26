@@ -4,6 +4,19 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 28 — small text stays whole on small screens (2026-11-26)
+
+Unit tests: 7,556 → 7,564 checks (Windows CI). Choices in M39 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Thin letters no longer drop out** when the window is half the theme's
+  size or smaller (a 960x540 window for Aeon Nox's 1920x1080, or a
+  low-resolution cabinet). Home read "Your co ect ons ... Back br ngs you
+  here aga n" there; it reads in full now, apostrophes included. RetroFE
+  used to draw each font large and shrink it; when the window is smaller
+  than the theme, it now draws the font at the size it appears. Nothing
+  changes at full size.
+
 ## Round 27 — the screenshot checks can fail the build (2026-11-26)
 
 Unit tests unchanged (7,556 checks). Choices in M38 of
