@@ -352,6 +352,15 @@ Up/Down and Select reach every field and button; Back returns to the system.
   then `media.basePath`, then `baseMediaPath`. An artwork folder that can't
   be read is reported and the games are still copied. Turn it off to copy
   games only.
+- **Copy titles and years too** (on by default) appears when the From folder
+  is a system's `roms` folder in another RetroFE install and that install has
+  metadata for the system: `meta/hyperlist` or `meta/mamelist` files named for
+  its metadata type. For OneSauce, whose games are in `content/retrofe` and
+  whose metadata is in `appdata/retrofe`, both are looked in. The whole files
+  are copied after the games and artwork, renamed for this system's metadata
+  type (a suffix after the first dot is kept), and RetroFE imports them the
+  next time it starts or reloads. If this install already has a different file
+  for that type, yours is kept and the new one is skipped.
 - **Into** shows the games folder: `list.path` (the first folder if several),
   otherwise `<baseItemPath>/<system>`, otherwise `collections/<system>/roms`.
 - **Copy games** makes that folder if needed and copies matching files without

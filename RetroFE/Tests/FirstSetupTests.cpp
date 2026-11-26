@@ -537,6 +537,7 @@ static Test::Suite firstSetup("first setup", [] {
             s->waitForImport();
             checkEqual(s->model.get("system:importArtwork"), "yes", system.name + ": artwork enabled");
             checkEqual(s->model.get("system:importArtworkFound"), "yes", system.name + ": artwork found");
+            checkEqual(s->model.get("system:importMetadataFound"), "no", system.name + ": metadata toggle hidden without metadata");
             checkEqual(s->model.get("system:importMessage"), count + " games found", system.name + ": found");
             check(s->model.runAction("system.copyGames").ok, system.name + ": Copy starts");
             s->waitForImport();
@@ -549,6 +550,14 @@ static Test::Suite firstSetup("first setup", [] {
             check(contains(s->model.get("system:importMessage"), "No new games: all " + count + " are already in"),
                   system.name + ": all already there: " + s->model.get("system:importMessage"));
         }
+        s->open("system-add-games", { { "id", systems().front().name } });
+        std::string metaSource = s->root + "/metadata-source";
+        writeFile(metaSource + "/collections/Example/roms/a.nes", "game");
+        writeFile(metaSource + "/meta/hyperlist/Example.xml", "metadata");
+        s->model.set("system:importFrom", metaSource + "/collections/Example/roms");
+        s->waitForImport();
+        checkEqual(s->model.get("system:importMetadataFound"), "yes", "metadata toggle shown when found");
+        checkEqual(s->model.get("system:importMetadata"), "yes", "metadata toggle defaults on");
         // Not kept in More games: a new system doesn't read subfolders, so Add games puts every game in one folder
         check(fs::exists(s->root + "/collections/Nintendo Entertainment System/roms/Contra (USA).nes"), "Contra is beside the others");
     });
