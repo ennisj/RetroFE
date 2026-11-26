@@ -722,6 +722,22 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M37. Round 26 choices — Decided (2026-11-26)
+- **One system, one core in the real window** (NES with `fceumm`); the
+  first-setup unit test still covers all three systems. Typing is kept to
+  the launcher's name: the system takes the name and extensions its core's
+  `.info` file suggests, so `dat` isn't added and Little Lancelot isn't
+  copied (11 games, not 12).
+- **The setup install is what exists before the first step:** the bare
+  install, the stand-in RetroArch and the downloads, taken from the
+  first-setup test's hand-over (now `root\` and `downloads\`).
+- **Waits are for what can be seen** where possible (`wait-drawn` after
+  Manage closes and RetroFE reloads, `wait-file` for the copy and the
+  launch); fixed pauses only between key presses.
+- **Found while tuning, fixed in the product:** the browser's focus jumping
+  to `C:\` as its places list filled in. The script still presses Left
+  twice there, which is harmless now.
+
 ### M36. Round 25 choices — Decided (2026-11-26)
 - **Artwork is looked for beside the games folder** (`../medium_artwork`,
   `../system_artwork`), the layout of a RetroFE or OneSauce system, so a
