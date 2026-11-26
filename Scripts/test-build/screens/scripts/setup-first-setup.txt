@@ -5,8 +5,6 @@
 # FormWidget handles form navigation (FormView.cpp is the ImGui renderer).
 # Counts in BrowserForms/BrowserProvider depend on focus and listing: tune on CI.
 wait-drawn
-# TEMPORARY: checks that a soft-fail script's failure is only a warning
-expect-file no-such-file-on-purpose.txt
 wait 2
 shot first-start
 # BuiltinForms manage: the first link is "Add your first launcher/emulator".
