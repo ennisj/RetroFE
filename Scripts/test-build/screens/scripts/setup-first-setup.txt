@@ -5,12 +5,10 @@
 # Counts in BrowserForms/BrowserProvider depend on focus and listing: tune on CI.
 wait-drawn
 wait 2
-shot t01
 shot first-start
 # BuiltinForms manage: first link is Add your first launcher.
 key Return
 wait 1
-shot t02
 # EmulatorsForms emulator-new: Name, Program, Arguments, Core, Create.
 # WM_CHAR becomes SDL_TEXTINPUT; ManagerUI closes the on-screen keyboard.
 key Return
@@ -19,131 +17,134 @@ key Return
 key Down
 key Return
 wait 2
-shot t03
 # BrowserForms: RetroFE's folder, then emulators/RetroArch/retroarch.exe.
 # Folder ordering and focus: tune on CI.
 key Return
 wait 1
-shot t04
 key Down x2
 key Return
 wait 1
-shot t05
 key Down
 key Return
 wait 1
-shot t06
 key Down x3
 key Return
 wait 1
-shot t07
 # Choose RetroArch preset and its fceumm core: tune on CI.
 key Down
 key Right
 key Down
 key Return
 wait 2
-shot t08
 key Return
 wait 1
-shot t09
 key Down x2
 key Return
 wait 1
-shot t10
 key Down
 key Return
 wait 1
-shot t11
 key Down
 key Return
 wait 1
-shot t12
 key Down
 key Return
 wait 1
-shot t13
 key Down x3
 key Return
 wait 2
-shot t14
-# Create returns to the hub; open Launchers (focus/count: tune on CI).
+# Create returns to the hub (focus on "Add your first system"); open Launchers
+# to show the new launcher. Hub rows (BuiltinForms manage, after a launcher
+# exists): Add your first system, Apply changes now, Games, Menus, Systems,
+# Videos, Launchers, Themes: Launchers is the 7th.
 key Down x6
 key Return
 wait 1
-shot t15
 shot launcher-list
-# BuiltinForms: Back to hub, first-system link; SystemForms orders launcher,
-# name, menu, folder, extensions, Add. Suggested extensions are left unchanged.
+# Back to the hub, where focus stays on Launchers: six up to the first row
 key Escape
 wait 1
-shot t16
-key Return
+key Up x6
 wait 1
-shot t17
-key Down
-key Return
-type Nintendo Entertainment System
-key Return
-key Down x4
+shot hub-before-system
+# SystemForms system-add: Launcher (the only launcher, NES, is chosen), then
+# Name and Extensions suggested from fceumm's .info file ("Nintendo
+# Entertainment System", fds,nes,unf,unif: no typing; dat isn't added, so
+# Little Lancelot isn't copied), List it in (Main), Games folder (default),
+# then Add system: five down from Launcher. Tune on CI.
 key Return
 wait 2
-shot t18
+shot system-form
+key Down x5
+wait 1
+shot system-form-add-focused
+key Return
+wait 2
 shot system-added
-# Hub firstGames opens Add games. BrowserForms: downloads/Nintendo Entertainment
-# System/roms, then Use this folder. Focus/counts: tune on CI.
-key Escape
-wait 1
-shot t19
-key Return
-wait 1
-shot t20
+# Created: the system's own screen opens; Add games is its first link
+# (SystemForms {addGamesLink}). Tune on CI.
 key Return
 wait 2
-shot t21
+shot add-games-form
+# From opens the folder browser (BrowserForms file-browser): places first,
+# RetroFE's folder on top. In a folder: Use this folder, .., then the entries
+# by name. RetroFE's folder: .., downloads -> Down x2 (focus starts on Use
+# this folder: tune on CI). downloads: .., MAME, Nintendo Entertainment
+# System -> Down x3. NES: .., medium_artwork, roms -> Down x3. roms: Use this
+# folder is focused -> Return.
+key Return
+wait 2
+shot browser-places
 key Return
 wait 1
-shot t22
-key Down
+shot browser-root
+key Down x2
 key Return
 wait 1
-shot t23
-key Down
+shot browser-downloads
+key Down x3
 key Return
 wait 1
-shot t24
-key Down
+shot browser-nes
+key Down x3
 key Return
 wait 1
-shot t25
+shot browser-roms
 key Return
 wait 3
-shot t26
-# SystemForms defaults Include subfolders and Copy artwork to on.
+shot add-games-from-chosen
+# SystemForms addGamesForm: From, Include subfolders (on), Copy artwork too
+# (on), then Copy games: three down from From.
 key Down x3
+wait 1
+shot copy-focused
 key Return
 wait-file "collections/Nintendo Entertainment System/roms/Addams Family, The (USA).nes" 45
 wait 3
-shot t27
 expect-file "collections/Nintendo Entertainment System/medium_artwork/logo/Addams Family, The (USA).png"
 shot copied-games
-# Back closes Manage; Home Browse opens Main then NES. Aeon Nox sorts titles.
+# Back out: Add games -> the system -> the hub -> Manage closes (Back on the
+# hub closes it). One at a time, to see where each lands.
 key Escape
+wait 1
+shot back-1
+key Escape
+wait 1
+shot back-2
 key Escape
 wait 3
-shot t28
 shot home
+# Home: Browse opens Main, then NES, the only system (starter-browse does the
+# same); its first game, sorted by title, is Addams Family, The (USA).
 key Return
 wait 2
-shot t29
+shot main-menu
 key Return
 wait 2
-shot t30
 shot nes-list
 key Return
 wait-file emulators/RetroArch/launches.txt 30
 expect-file emulators/RetroArch/launches.txt Addams Family, The (USA).nes
 wait 2
-shot t31
 shot game-started
 quit
