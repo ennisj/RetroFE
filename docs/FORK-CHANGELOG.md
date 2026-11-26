@@ -4,6 +4,20 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 25 — Add games brings the artwork (2026-11-26)
+
+Unit tests: 7,539 → 7,552 checks (Windows CI). Choices in M36 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Copy artwork too.** When the folder you add games from has
+  `medium_artwork` or `system_artwork` beside it (how RetroFE and OneSauce
+  lay out a system), Add games offers to copy the artwork as well, and it's
+  on. Each game's pictures, videos and stories come along, folders of
+  pictures included, plus the system's own art. They go where RetroFE reads
+  that system's artwork, and files already there are treated as for games.
+- The Starter checklist no longer has you copy artwork by hand, and the
+  first-setup test checks the copied artwork on the Media screens.
+
 ## Round 24 — review fixes for rounds 22–23 (2026-11-25)
 
 Unit tests: 7,532 → 7,539 checks (Windows CI); test-build scripts' tests
