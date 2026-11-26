@@ -36,11 +36,15 @@ namespace Manager
             std::string destinationLabel;
             bool subfolders = true;
             bool hierarchy = false;
+            bool copyArtwork = false;
+            std::function<std::filesystem::path(const std::string&, bool)> mediaPath;
         };
         struct Status
         {
             bool running = false, copying = false, changed = false;
             size_t found = 0, copied = 0, already = 0, conflicts = 0, missing = 0;
+            size_t artworkGames = 0, artworkCopied = 0, artworkAlready = 0, artworkConflicts = 0, artworkLeft = 0;
+            bool artworkFound = false, systemArtwork = false;
             unsigned generation = 0;
             std::string message;
         };

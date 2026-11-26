@@ -218,7 +218,7 @@ namespace Manager
 
         GameImport import_;
         std::string importFolder_, importSystem_;
-        bool importSubfolders_ = true;
+        bool importSubfolders_ = true, importArtwork_ = true;
         unsigned importObserved_ = 0;
         void updateImport();
         GameImport::Request importRequest(const Screen& screen) const;

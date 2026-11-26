@@ -148,4 +148,67 @@ static Test::Suite imports("game imports", [] {
         check(!fs::exists(r.into / "tracks/audio.bin") && !fs::exists(r.into / "tracks/audio.bin.retrofe-part"), "Stop removes partial file");
         check(done.message.find("Stopped. Copied 2 games into " + r.into.string() + "; 1 file a game refers to is missing.") == 0, "Stop and missing file reported");
     });
+    run("add games: artwork", [] {
+        std::string root = makeRoot("import-artwork");
+        writeFile(root + "/source/roms/sub/Contra.nes", "game");
+        writeFile(root + "/source/medium_artwork/logo/Contra.png", "logo");
+        writeFile(root + "/source/medium_artwork/fanart/Contra/one.jpg", "picture");
+        writeFile(root + "/source/medium_artwork/logo/Other.png", "other");
+        writeFile(root + "/source/system_artwork/nested/logo.png", "system");
+        GameImport::Request r;
+        r.from = root + "/source/roms"; r.into = root + "/dest/roms"; r.extensions = { "nes" };
+        r.hierarchy = true; r.copyArtwork = true;
+        r.mediaPath = [root](const std::string& type, bool system) { return fs::path(root) / "custom" / (system ? "system" : type); };
+        std::atomic<bool> stop{ false };
+        auto count = GameImport::run(r, false, stop);
+        check(count.artworkFound && count.artworkGames == 1 && count.systemArtwork && count.artworkLeft == 1, "count matching and unrelated artwork");
+        auto noSpace = GameImport::run(r, true, stop, [](const fs::path&) { return uintmax_t(5); });
+        check(noSpace.message.find("Not enough free space") != std::string::npos && !fs::exists(r.into), "space includes artwork before copying");
+        auto done = GameImport::run(r, true, stop);
+        check(done.copied == 1 && done.artworkCopied == 3 && done.artworkLeft == 1, "game and selected artwork copied");
+        check(fs::exists(fs::path(root) / "custom/logo/Contra.png") && fs::exists(fs::path(root) / "custom/fanart/Contra/one.jpg") && fs::exists(fs::path(root) / "custom/system/nested/logo.png"), "custom destinations and media folder");
+        check(!fs::exists(fs::path(root) / "custom/logo/Other.png"), "other game artwork left");
+        writeFile(root + "/custom/logo/Contra.png", "different size");
+        done = GameImport::run(r, true, stop);
+        check(done.artworkAlready == 2 && done.artworkConflicts == 1 && done.message.find("Contra.png") != std::string::npos, "artwork already and conflict counted and named");
+        r.into = root + "/off/roms"; r.copyArtwork = false;
+        r.mediaPath = [root](const std::string& type, bool) { return fs::path(root) / "off" / type; };
+        done = GameImport::run(r, true, stop);
+        check(done.copied == 1 && !fs::exists(fs::path(root) / "off/logo"), "toggle off");
+        r.into = root + "/stop/roms"; r.copyArtwork = true;
+        r.mediaPath = [root](const std::string& type, bool system) { return fs::path(root) / "stop" / (system ? "system" : type); };
+        done = GameImport::run(r, true, stop, {}, [&](const std::string& message) {
+            if (message.find("one.jpg") != std::string::npos && fs::exists(fs::path(root) / "stop/fanart/Contra/one.jpg.retrofe-part")) stop = true;
+        });
+        check(stop && !fs::exists(fs::path(root) / "stop/fanart/Contra/one.jpg.retrofe-part") && !fs::exists(fs::path(root) / "stop/fanart/Contra/one.jpg"), "stop removes partial artwork");
+    });
+    run("add games: no artwork beside the games folder", [] {
+        std::string root = makeRoot("import-no-artwork");
+        writeFile(root + "/source/roms/Contra.nes", "game");
+        writeFile(root + "/source/artwork/logo/Contra.png", "not RetroFE's layout");
+        GameImport::Request r;
+        r.from = root + "/source/roms"; r.into = root + "/dest/roms"; r.extensions = { "nes" };
+        r.copyArtwork = true;
+        r.mediaPath = [root](const std::string& type, bool) { return fs::path(root) / "media" / type; };
+        std::atomic<bool> stop{ false };
+        auto count = GameImport::run(r, false, stop);
+        check(!count.artworkFound && count.artworkGames == 0, "nothing found");
+        auto done = GameImport::run(r, true, stop);
+        checkEqual(done.message, "Copied 1 game into " + r.into.string() + ".", "the message is as before");
+        check(!fs::exists(fs::path(root) / "media"), "no media folder made");
+    });
+    run("add games: the artwork message", [] {
+        std::string root = makeRoot("import-artwork-message");
+        writeFile(root + "/source/roms/Contra.nes", "game");
+        writeFile(root + "/source/medium_artwork/logo/Contra.png", "logo");
+        writeFile(root + "/source/medium_artwork/logo/Other.png", "other");
+        GameImport::Request r;
+        r.from = root + "/source/roms"; r.into = root + "/dest/roms"; r.extensions = { "nes" };
+        r.copyArtwork = true;
+        r.mediaPath = [root](const std::string& type, bool) { return fs::path(root) / "media" / type; };
+        std::atomic<bool> stop{ false };
+        auto done = GameImport::run(r, true, stop);
+        checkEqual(done.message, "Copied 1 game into " + r.into.string() + ". Artwork: copied 1 file; 1 file for other games was left.",
+                   "one of each, in words");
+    });
 });

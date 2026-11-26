@@ -261,6 +261,8 @@ const char* const addGamesForm = R"(
   <note bind="{p}:status"/>
   <folder label="From" bind="{p}:importFrom" status="{p}:importCount" hint="Choose a folder" enabledWhen="!{p}:importRunning"/>
   <toggle label="Include subfolders" bind="{p}:importSubfolders" enabledWhen="!{p}:importRunning"/>
+  <toggle label="Copy artwork too" bind="{p}:importArtwork" visibleWhen="{p}:importArtworkFound" enabledWhen="!{p}:importRunning"/>
+  <note bind="{p}:importArtworkCount" visibleWhen="{p}:importArtworkFound"/>
   <value label="Into" bind="{p}:importInto"/>
   <note bind="{p}:importLayout"/>
   <note bind="{p}:importMessage"/>

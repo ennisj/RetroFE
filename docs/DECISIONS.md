@@ -722,6 +722,18 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M36. Round 25 choices — Decided (2026-11-26)
+- **Artwork is looked for beside the games folder** (`../medium_artwork`,
+  `../system_artwork`), the layout of a RetroFE or OneSauce system, so a
+  copy of OneSauce needs no extra choice. Other layouts (EmulationStation,
+  LaunchBox) aren't read.
+- **Only the artwork of the games being added** is copied, matched by file
+  name; artwork for other games (Metroid without its game) stays behind and
+  is counted. Art named by title or by a parent game needs a game database
+  (item 2 of the to-do list).
+- **Artwork problems don't stop the games:** an unreadable artwork folder is
+  reported and the games are still copied.
+
 ### M35. Round 24 choices — Decided (2026-11-25)
 - **An outside review after a chain of rounds** (rounds 22–23, Claude
   Fable 5.1, given the commits and goals only). Its seven findings were each
