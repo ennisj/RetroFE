@@ -4,6 +4,28 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 24 — review fixes for rounds 22–23 (2026-11-25)
+
+Unit tests: 7,532 → 7,539 checks (Windows CI); test-build scripts' tests
+from 28 to 30. An outside review of rounds 22 and 23 found these; choices in
+M35 of [DECISIONS.md](DECISIONS.md).
+
+- **Windows: no "It didn't start" for a game that did.** A program started
+  some other way (a shortcut, a `steam://` link) can leave RetroFE nothing to
+  wait for; Browse showed the failure message for it. Now it shows only when
+  the program really didn't start, as M33 meant.
+- **Opening Manage no longer throws away a library read in progress.** Since
+  round 23 any new request discarded the read; now only an edit does.
+  Manage's screens also tell the library about an edit before updating their
+  own lists, closing the last small gap where an old read could undo it.
+- **The screenshot check is stricter:** a crash while RetroFE closes and a
+  black screenshot after the first frame now fail the script, and round 22's
+  message is checked on screen (the area where it appears must change), not
+  only in the log.
+- **Publishing the screenshots can't fail the build** or stop the test build
+  from being published, and nothing is published from a cancelled run.
+- **`-createconfig` writes the real renderer default**, `direct3d11`.
+
 ## Round 23 — Windows CI runs the real program and takes screenshots (2026-11-25)
 
 Unit tests: 7,517 → 7,532 checks (Windows CI), and the test-build scripts'
