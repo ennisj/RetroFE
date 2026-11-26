@@ -263,6 +263,8 @@ const char* const addGamesForm = R"(
   <toggle label="Include subfolders" bind="{p}:importSubfolders" enabledWhen="!{p}:importRunning"/>
   <toggle label="Copy artwork too" bind="{p}:importArtwork" visibleWhen="{p}:importArtworkFound" enabledWhen="!{p}:importRunning"/>
   <note bind="{p}:importArtworkCount" visibleWhen="{p}:importArtworkFound"/>
+  <toggle label="Copy titles and years too" bind="{p}:importMetadata" visibleWhen="{p}:importMetadataFound" enabledWhen="!{p}:importRunning"/>
+  <note bind="{p}:importMetadataCount" visibleWhen="{p}:importMetadataFound"/>
   <value label="Into" bind="{p}:importInto"/>
   <note bind="{p}:importLayout"/>
   <note bind="{p}:importMessage"/>

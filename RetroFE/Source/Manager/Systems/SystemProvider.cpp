@@ -611,7 +611,7 @@ void SystemProvider::enter(const Screen& screen)
     if (isForm(screen, "-add-games") && importSystem_ != screen.param("id")) {
         import_.stop(); updateImport();
         import_.reset();
-        importFolder_.clear(); importSubfolders_ = true; importArtwork_ = true;
+        importFolder_.clear(); importSubfolders_ = true; importArtwork_ = true; importMetadata_ = true;
         importSystem_ = screen.param("id");
     }
     if (!videos_ && isForm(screen, "-add")) syncAddLaunchers();
@@ -1347,6 +1347,9 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 {
     if (key == "importFrom") return importFolder_;
     if (key == "importSubfolders") return yesNo(importSubfolders_);
+    if (key == "importMetadata") return yesNo(importMetadata_);
+    if (key == "importMetadataFound") return yesNo(import_.status().metadataFound);
+    if (key == "importMetadataCount") return "Titles and years from " + import_.status().metadataDescription;
     if (key == "importArtwork") return yesNo(importArtwork_);
     if (key == "importArtworkFound") return yesNo(import_.status().artworkFound);
     if (key == "importArtworkCount") {
@@ -1547,6 +1550,7 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 
 void SystemProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
+    if (key == "importMetadata") { if (!import_.status().running) importMetadata_ = iequals(value, "yes") || iequals(value, "true"); return; }
     if (key == "importArtwork") { if (!import_.status().running) importArtwork_ = iequals(value, "yes") || iequals(value, "true"); return; }
     if (key == "importFrom" || key == "importSubfolders") {
         updateImport();
@@ -2567,6 +2571,9 @@ GameImport::Request SystemProvider::importRequest(const Screen& screen) const
         request.extensions = r->extensions;
         request.hierarchy = r->romHierarchy;
         request.copyArtwork = importArtwork_;
+        request.copyMetadata = importMetadata_;
+        request.installRoot = root();
+        request.metadataType = r->metadataType;
         auto properties = idx->properties;
         auto name = r->name;
         request.mediaPath = [properties, name](const std::string& type, bool system) { return fs::path(properties.mediaPath(name, type, system)); };

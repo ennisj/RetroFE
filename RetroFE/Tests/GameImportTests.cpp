@@ -16,6 +16,7 @@
 #include "TestSupport.h"
 #include "../Source/Manager/Systems/GameImport.h"
 #include <atomic>
+#include <chrono>
 
 namespace fs = std::filesystem;
 using namespace Test;
@@ -210,5 +211,50 @@ static Test::Suite imports("game imports", [] {
         auto done = GameImport::run(r, true, stop);
         checkEqual(done.message, "Copied 1 game into " + r.into.string() + ". Artwork: copied 1 file; 1 file for other games was left.",
                    "one of each, in words");
+    });
+    run("add games: metadata layouts and safeguards", [] {
+        std::string root = makeRoot("import-metadata");
+        fs::path source = fs::path(root) / "plain";
+        writeFile((source / "collections/Source/roms/a.nes").string(), "game");
+        writeFile((source / "meta/hyperlist/Source.xml").string(), "metadata content");
+        writeFile((source / "meta/mamelist/Source.extra.XML").string(), "mame content");
+        writeFile((source / "meta/hyperlist/Other.xml").string(), "other");
+        fs::last_write_time(source / "meta/hyperlist/Source.xml", fs::file_time_type::clock::now() - std::chrono::hours(240));
+        GameImport::Request r;
+        r.from = source / "collections/Source/roms"; r.into = fs::path(root) / "dest/roms";
+        r.installRoot = fs::path(root) / "dest"; r.metadataType = "Target"; r.extensions = { "nes" }; r.copyMetadata = true;
+        std::atomic<bool> stop{ false };
+        auto count = GameImport::run(r, false, stop);
+        check(count.metadataFound && count.metadataDescription.find("Source.xml") != std::string::npos, "metadata discovered");
+        auto noSpace = GameImport::run(r, true, stop, [](const fs::path&) { return uintmax_t(5); });
+        check(noSpace.message.find("Not enough free space") != std::string::npos && !fs::exists(r.into), "metadata included in space check");
+        auto done = GameImport::run(r, true, stop);
+        check(fs::exists(r.installRoot / "meta/hyperlist/Target.xml") && fs::exists(r.installRoot / "meta/mamelist/Target.extra.xml"), "target type and both folders");
+        check(!fs::exists(r.installRoot / "meta/hyperlist/Other.xml"), "other type excluded");
+        check(fs::last_write_time(r.installRoot / "meta/hyperlist/Target.xml") > fs::file_time_type::clock::now() - std::chrono::hours(1), "copied timestamp is recent");
+        done = GameImport::run(r, true, stop);
+        check(done.message.find("Target.xml was already there") != std::string::npos, "same file reported");
+        fs::remove(r.installRoot / "meta/hyperlist/Target.xml");
+        writeFile((r.installRoot / "meta/hyperlist/Target.custom.xml").string(), "mine");
+        done = GameImport::run(r, true, stop);
+        check(done.message.find("kept your meta/hyperlist/Target.custom.xml") != std::string::npos && !fs::exists(r.installRoot / "meta/hyperlist/Target.xml"), "different target file kept and named");
+        r.installRoot = fs::path(root) / "off"; r.copyMetadata = false;
+        GameImport::run(r, true, stop);
+        check(!fs::exists(r.installRoot / "meta"), "metadata toggle off");
+        r.from = fs::path(root) / "outside/roms"; writeFile((r.from / "a.nes").string(), "game");
+        check(!GameImport::run(r, false, stop).metadataFound, "outside collections is invisible");
+        fs::path install = fs::path(root) / "split";
+        r.from = install / "content/retrofe/collections/Source/roms";
+        writeFile((r.from / "a.nes").string(), "game");
+        writeFile((install / "appdata/retrofe/collections/Source/settings.conf").string(), "list.metadataType = Custom\n");
+        writeFile((install / "appdata/retrofe/meta/hyperlist/Custom.xml").string(), "split metadata");
+        r.installRoot = fs::path(root) / "splitdest"; r.into = r.installRoot / "roms"; r.copyMetadata = true;
+        done = GameImport::run(r, true, stop);
+        check(done.metadataFound && fs::exists(r.installRoot / "meta/hyperlist/Target.xml"), "split layout and source setting honoured");
+        r.installRoot = fs::path(root) / "stopped-meta"; r.into = r.installRoot / "roms";
+        done = GameImport::run(r, true, stop, {}, [&](const std::string& message) {
+            if (message.find("Custom.xml") != std::string::npos && fs::exists(r.installRoot / "meta/hyperlist/Target.xml.retrofe-part")) stop = true;
+        });
+        check(stop && !fs::exists(r.installRoot / "meta/hyperlist/Target.xml.retrofe-part") && !fs::exists(r.installRoot / "meta/hyperlist/Target.xml"), "stop removes partial metadata");
     });
 });
