@@ -589,11 +589,11 @@ Forms::Model::Result EmulatorProvider::rename(const Manager::Screen& screen)
     if (!edit.ok) {
         return result;
     }
+    services_.library->changed("launcher " + newName);
     patchDeleted(LauncherScope::Global, id);
     entries_.push_back(makeEntry(-1, newName, newName, LauncherScope::Global, "", executable,
                                  Emulators::checkExecutable(*index, executable).state, users));
     sortEntries();
-    services_.library->changed("launcher " + newName);
     renameTo_.clear();
     renameFor_.clear();
     // The rename screen took the launcher's place (startRename): the launcher
@@ -1069,8 +1069,8 @@ Forms::Model::Result EmulatorProvider::create()
     if (!edit.ok) {
         return result;
     }
-    patchCreated(launcher.name, launcher.executable);
     services_.library->changed("launcher " + launcher.name);
+    patchCreated(launcher.name, launcher.executable);
     draft_.load("", {});   // created: the next visit starts afresh
     result.ok = true;
     result.back = true;
@@ -1193,8 +1193,8 @@ Forms::Model::Result EmulatorProvider::runAction(const std::string& action, cons
         Library::EditResult edit = services_.editor->removeLauncher(*index, scope, id);
         result.message = edit.message;
         if (edit.ok) {
-            patchDeleted(scope, id);
             services_.library->changed("launcher " + id);
+            patchDeleted(scope, id);
             result.ok = true;
             result.back = true;
         }

@@ -2373,6 +2373,7 @@ Forms::Model::Result GameProvider::storyAction(const std::string& action, const 
     result.ok = edit.ok;
     result.message = edit.message;
     if (edit.ok) {
+        changed("game story");
         // Read again from disk: the story text is cheap to look up now, and the
         // screen should show what was written
         forgetSlot("story");
@@ -2382,7 +2383,6 @@ Forms::Model::Result GameProvider::storyAction(const std::string& action, const 
             media_.slots["story"] = Library::gameMedia(*idx, *record, "story", MediaKind::Text);
             loadStory(screen);
         }
-        changed("game story");
     }
     return result;
 }

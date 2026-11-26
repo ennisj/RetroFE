@@ -722,6 +722,20 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M35. Round 24 choices — Decided (2026-11-25)
+- **An outside review after a chain of rounds** (rounds 22–23, Claude
+  Fable 5.1, given the commits and goals only). Its seven findings were each
+  checked against the code before fixing; all held.
+- **Windows: a start without a process handle counts as started.** RetroFE
+  can't know how such a program ended, so it doesn't claim a failure; the
+  reason stays in `log.txt`.
+- **A completed build isn't published after `cancel()`.** Only the destructor
+  and `cancel()` call it, so nothing is waiting for that snapshot.
+- **The notice is checked by comparing pixels** of the bottom of the screen
+  before and after the failed start (the clock at the top is left out). On
+  CI every changed pixel lies inside the notice, so without it the check
+  fails.
+
 ### M15. Linux build packages were installed in WSL — Decided
 - To compile and test on Linux locally, the packages the Linux CI workflow
   uses were installed in your WSL Ubuntu (`apt-get install`, via passwordless
@@ -882,9 +896,10 @@ The full reasoning, with the options considered for each, is in
   change never cancels a running build: its result is discarded and another
   follows; only a build uninterrupted by changes publishes. (Revised in round 23:
   it used to publish the interrupted build, which could have missed the change, so
-  a just-deleted launcher came back in Manage's list for a moment. A long burst of
-  changes now delays the snapshot; a warm rebuild takes under a second and no
-  Manage action writes for longer than that.)
+  a just-deleted launcher came back in Manage's list for a moment. Only a change
+  discards a running build; a plain rebuild publishes it and then scans again.
+  Edits arriving faster than scans can delay the snapshot. Current Manage changes
+  are individual user actions, and imports notify once at the end.)
 
 ### LB11. `launcher = a, b, c` uses `a` (fork compat) — Decided
 - OneSauce/RetroFE Plus data names a default and its alternatives; 25

@@ -32,6 +32,7 @@ wait 1
 shot missing-game
 key Return
 wait 2
+expect-differs missing-game 0.05 0.75 0.95 0.95
 shot missing-game-notice
 expect-log It couldn't start
 key F10

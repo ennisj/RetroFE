@@ -463,7 +463,16 @@ bool Launcher::run(std::string collection, Item* collectionItem, Page* currentPa
 	// Step 6: Execute the command
 	if (!execute(executablePath, args, currentDirectory, true, currentPage, isAttractMode, collectionItem)) {
 		LOG_ERROR("Launcher", "Execution failed for: " + executablePath);
-		failure_ = "It didn't start, or ended with an error: " + executablePath + " (see log.txt).";
+		// On Windows a program started some other way (a shortcut, a steam:// link) can
+		// leave no process to wait for: it started, so Browse shows no failure
+#ifdef WIN32
+		const bool windows = true;
+#else
+		const bool windows = false;
+#endif
+		if (LaunchCommand::executionFailed(false, started_, windows)) {
+			failure_ = "It didn't start, or ended with an error: " + executablePath + " (see log.txt).";
+		}
 		return false;
 	}
 

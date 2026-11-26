@@ -70,6 +70,8 @@ def parse_script(text):
         stripped = raw.strip()
         if not stripped or stripped.startswith('#'):
             continue
+        if steps and steps[-1]['op'] == 'quit':
+            raise ValueError(f'line {line}: nothing may follow quit')
         parts = stripped.split(None, 1)
         command = parts[0]
         remainder = parts[1] if len(parts) > 1 else ''
@@ -98,6 +100,14 @@ def parse_script(text):
                 if not re.fullmatch('[A-Za-z0-9_-]+', remainder):
                     raise ValueError('invalid shot name')
                 args = [remainder]
+            elif command == 'expect-differs':
+                fields = remainder.split()
+                if len(fields) != 5 or not re.fullmatch('[A-Za-z0-9_-]+', fields[0]):
+                    raise ValueError('expected shot name and four region fractions')
+                coords = [float(value) for value in fields[1:]]
+                if not all(math.isfinite(value) and 0 <= value <= 1 for value in coords) or not (coords[0] < coords[2] and coords[1] < coords[3]):
+                    raise ValueError('invalid region')
+                args = [fields[0]] + coords
             elif command == 'wait-drawn':
                 args = [float(remainder) if remainder else 60.0]
                 if not math.isfinite(args[0]) or args[0] <= 0:
@@ -133,6 +143,20 @@ def png(width, height, rgb):
 def is_blank(rgb):
     """A blank capture has the same colour at every pixel."""
     return bool(rgb) and all((rgb[index:index + 3] == rgb[:3] for index in range(0, len(rgb), 3)))
+
+
+def region_differs(width, height, before, after, region):
+    """Ignore channel differences of at most 8 and require 0.1% changed pixels."""
+    left, top, right, bottom = region
+    x0, y0 = int(left * width), int(top * height)
+    x1, y1 = math.ceil(right * width), math.ceil(bottom * height)
+    changed = 0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            offset = (y * width + x) * 3
+            if any(abs(before[offset + c] - after[offset + c]) > 8 for c in range(3)):
+                changed += 1
+    return changed > (x1 - x0) * (y1 - y0) * 0.001
 
 
 def exit_text(code):
@@ -372,6 +396,8 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
         if not window_handle:
             raise TimeoutError('window did not appear within 30 seconds' if time.monotonic() < deadline else 'overall timeout')
         shots = 0
+        saved_shots = {}
+        drawn = False
         for step in steps:
             current = dict(line=step['line'], command=step['command'], ok=False, seconds=0, message='', shot=None)
             result['steps'].append(current)
@@ -396,6 +422,7 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                         if time.monotonic() >= end:
                             raise TimeoutError('the window stayed blank')
                         pause(0.5)
+                    drawn = True
                 elif operation == 'key':
                     virtual_key, count, hold = arguments
                     scan_code = win.user32.MapVirtualKeyW(virtual_key, 0)
@@ -418,6 +445,18 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                     (out / name).write_bytes(png(shot_width, shot_height, rgb))
                     current['shot'] = name
                     current['blank'] = is_blank(rgb)
+                    saved_shots[arguments[0]] = (shot_width, shot_height, rgb)
+                    if drawn and current['blank']:
+                        raise RuntimeError('blank screenshot')
+                elif operation == 'expect-differs':
+                    if arguments[0] not in saved_shots:
+                        raise RuntimeError('unknown shot: ' + arguments[0])
+                    old_width, old_height, old_rgb = saved_shots[arguments[0]]
+                    new_width, new_height, new_rgb = win.capture(window_handle)
+                    if (old_width, old_height) != (new_width, new_height):
+                        raise RuntimeError('screenshot dimensions changed')
+                    if not region_differs(new_width, new_height, old_rgb, new_rgb, arguments[1:]):
+                        raise RuntimeError('screenshot region did not differ: ' + arguments[0])
                 elif operation == 'expect-file':
                     path = root / arguments[0]
                     if not path.is_file():
@@ -438,6 +477,8 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                             break
                     if process.poll() is None:
                         raise TimeoutError('overall timeout' if time.monotonic() >= deadline else 'quit timed out')
+                    if process.returncode != 0:
+                        raise RuntimeError('RetroFE exited with exit code ' + exit_text(process.returncode) + ' after quit')
                 current['ok'] = True
                 current['message'] = 'ok'
             finally:

@@ -65,6 +65,7 @@ void Indexer::rebuild()
     }
     cancel_ = false;
     again_ = false;
+    changedDuringBuild_ = false;
     running_ = true;
     status_.state = State::Building;
     status_.progress = 0;
@@ -106,16 +107,11 @@ void Indexer::run()
         }
 
         std::unique_lock<std::mutex> lock(mutex_);
-        if (again_ && !cancel_) {
-            // Providers discard local edits on publication, so only publish a scan
-            // that no change interrupted; this result may have missed that write.
-            again_ = false;
-            status_.state = State::Building;
-            status_.progress = 0;
-            status_.phase = "Starting";
-            continue;
+        // A changed scan may have missed a write; never publish it, even on cancel.
+        if (changedDuringBuild_) {
+            built.reset();
         }
-        if (built) {
+        if (built && !cancel_) {
             std::ostringstream ss;
             ss << "Indexed " << built->collections.size() << " collections and " << built->games.size()
                << " games in " << built->seconds << " s";
@@ -132,6 +128,14 @@ void Indexer::run()
         }
         else {
             status_.state = State::Cancelled;
+        }
+        if (again_ && !cancel_) {
+            again_ = false;
+            changedDuringBuild_ = false;
+            status_.state = State::Building;
+            status_.progress = 0;
+            status_.phase = "Starting";
+            continue;
         }
         running_ = false;
         again_ = false;
@@ -177,6 +181,11 @@ void Indexer::changed(const std::string& what)
         pendingFlag_ = true;
         if (!what.empty()) {
             pending_.push_back(what);
+        }
+        if (running_) {
+            changedDuringBuild_ = true;
+            again_ = true;
+            return;
         }
     }
     rebuild();

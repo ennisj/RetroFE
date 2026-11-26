@@ -1426,11 +1426,11 @@ Forms::Model::Result MenuProvider::finish(const EditResult& edit, const std::str
     result.info = edit.ok && edit.files.empty();   // nothing written: "... is already in ..."
     // A failure part way can still have changed files: re-read whenever any were touched
     if (!edit.files.empty()) {
-        local_++;
-        forget();
         if (services_.library) {
             services_.library->changed(what);
         }
+        local_++;
+        forget();
     }
     return result;
 }
