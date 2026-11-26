@@ -1,3 +1,4 @@
+# soft-fail: still settling (DECISIONS M38); a failure is a warning, not a failed build
 # First setup with the real window. controls.conf maps Return to Select, B to
 # Back, Left/Right to directions and Up/Down to playlist controls; ManagerUI
 # handles Escape as Back and the form navigation maps the directional controls.

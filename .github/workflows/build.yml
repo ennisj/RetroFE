@@ -163,17 +163,19 @@ jobs:
     - name: Check screens in the real program
       # Scripts/test-build/screens: retrofe.exe in a window on this runner, in a bare and a
       # Starter-like test install, driven by key presses posted to its window, with a
-      # screenshot after each step (README there). While the scripts are being tuned, a
-      # failing script is a warning, not a failed build (DECISIONS M34).
+      # screenshot after each step (README there). A failing script fails the build, except
+      # one marked "# soft-fail" at its top, which is still being tuned: a warning for that
+      # one (DECISIONS M34, M38).
       id: screens
-      continue-on-error: true
       shell: pwsh
       run: |
         $out = "dist\screens"
         New-Item -ItemType Directory -Force $out | Out-Null
         $failed = @()
+        $soft = @()
         foreach ($script in Get-ChildItem "Scripts\test-build\screens\scripts\*.txt" | Sort-Object Name) {
           $kind = $script.BaseName.Split('-')[0]
+          $isSoft = [bool](Get-Content $script.FullName | Where-Object { $_ -match '^# soft-fail\b' })
           $install = Join-Path $env:RUNNER_TEMP "screens-$($script.BaseName)"
           $setup = @()
           if ($kind -eq 'starter') { $setup = @('--setup', "$env:RUNNER_TEMP\first-setup\root") }
@@ -181,13 +183,17 @@ jobs:
           python -I Scripts\test-build\screens\screens.py install --kind $kind `
             --exe RetroFE\Build\Release\retrofe.exe --dlls Package\Environment\Windows\retrofe `
             --common Package\Environment\Common @setup $install
-          if ($LASTEXITCODE -ne 0) { $failed += "$($script.BaseName): the install couldn't be made"; continue }
+          if ($LASTEXITCODE -ne 0) {
+            $why = "$($script.BaseName): the install couldn't be made"
+            if ($isSoft) { $soft += $why } else { $failed += $why }
+            continue
+          }
           $timeout = if ($kind -eq 'setup') { 240 } else { 120 }
           python -I Scripts\test-build\screens\screens.py run --install $install --script $script.FullName `
             --out "$out\$($script.BaseName)" --timeout $timeout 2>&1 | Tee-Object -Variable lines
           if ($LASTEXITCODE -ne 0) {
             $why = ($lines | ForEach-Object { "$_" } | Where-Object { $_ -match '^FAIL ' } | Select-Object -First 1)
-            $failed += "$($script.BaseName): $why"
+            if ($isSoft) { $soft += "$($script.BaseName) (soft-fail): $why" } else { $failed += "$($script.BaseName): $why" }
             if ($why -match 'exit code 0xC') {
               # A crash: run it once more under the debugger, whose stack and module list
               # go into the published zip as cdb.txt
@@ -205,8 +211,12 @@ jobs:
         }
         $shots = (Get-ChildItem -Recurse "$out\*.png").Count
         "::notice::Screens: $shots screenshots from $((Get-ChildItem $out -Directory).Count) scripts"
-        $failed | ForEach-Object { '::warning::' + $_.Replace('%', '%25') }
+        $soft | ForEach-Object { '::warning::' + $_.Replace('%', '%25') }
+        $failed | ForEach-Object { '::error::' + $_.Replace('%', '%25') }
         if ($failed) { throw "A screens script failed" }
+        # A soft-failing script (or cdb) leaves a non-zero $LASTEXITCODE, which Actions would
+        # turn into a failed step
+        exit 0
 
     - name: Publish the screenshots
       # Every run's screenshots go to the ci-screens pre-release as screens-<commit>.zip
