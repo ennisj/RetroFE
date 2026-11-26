@@ -149,6 +149,12 @@ namespace Forms
         size_t total = 0;         // how many there are in all
     };
 
+    // A newly opened browser follows the first result until the user navigates.
+    inline bool keepBrowserResult(const std::string& form, bool navigated, bool restored)
+    {
+        return form != "file-browser" || navigated || restored;
+    }
+
     // Where the user was on a form, so returning to it puts them back there
     struct Focus
     {

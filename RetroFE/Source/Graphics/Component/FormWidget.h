@@ -362,6 +362,8 @@ private:
     std::string wantedFocus_;     // focusOn's field not shown yet: focused when it is, until the user moves
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key
+    bool navigated_ = false;      // user input since this screen opened
+    bool restoredFocus_ = false;  // returning to a previously visited screen
     bool manualScroll_ = false;
     float scroll_ = 0.0f;
     int pageRows_ = 10;           // rows that fit, for paging through results

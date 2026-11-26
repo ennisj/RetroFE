@@ -4,6 +4,24 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 26 — the first setup, done in the real window on CI (2026-11-26)
+
+Unit tests: 7,552 → 7,556 checks (Windows CI); test-build scripts' tests
+from 30 to 33. Choices in M37 of [DECISIONS.md](DECISIONS.md).
+
+- **A third screenshot script does the first setup with the keyboard**, in
+  the real `retrofe.exe` on the CI runner: Manage opens by itself, adds a
+  RetroArch launcher for the NES core (choosing `retroarch.exe` and the core
+  in the browser), adds the NES system with the name and extensions the core
+  suggests, adds its games with their artwork, closes Manage, and starts a
+  game from Browse through the stand-in RetroArch. 29 screenshots, one per
+  step. Until now only the first-setup unit test did this, through Manage's
+  code without its screens.
+- **The browser no longer jumps to `C:\` when it opens.** Its list of places
+  fills in two steps, and the selection followed the drive instead of
+  staying on RetroFE's folder at the top. Now it stays on the top row until
+  you move.
+
 ## Round 25 — Add games brings the artwork (2026-11-26)
 
 Unit tests: 7,539 → 7,552 checks (Windows CI). Choices in M36 of

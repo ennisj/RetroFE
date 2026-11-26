@@ -1,0 +1,183 @@
+# First setup with the real window. controls.conf maps Return to Select, B to
+# Back, Left/Right to directions and Up/Down to playlist controls; ManagerUI
+# handles Escape as Back and the form navigation maps the directional controls.
+# FormWidget handles form navigation (FormView.cpp is the ImGui renderer).
+# Counts in BrowserForms/BrowserProvider depend on focus and listing: tune on CI.
+wait-drawn
+wait 2
+shot first-start
+# BuiltinForms manage: the first link is "Add your first launcher/emulator".
+key Return
+wait 1
+# EmulatorsForms emulator-new: Name (focused), Program, Arguments, Core (once a
+# RetroArch preset is chosen), Working folder, Restarts RetroFE, Runs (a value,
+# not focusable), Create launcher. Select on a text field opens the on-screen
+# keyboard; posted WM_CHAR arrives as SDL_TEXTINPUT; Select again closes it.
+key Return
+type NES
+key Return
+wait 1
+shot launcher-name
+# Every browser (BrowserForms file-browser) opens on its places list, which
+# loads in two steps: the drives first, then RetroFE's folder, recent folders,
+# Downloads and Desktop above them, with focus kept on the row it had. So wait,
+# then Left twice (a page up within a results list, FormWidget::pageResults) to
+# reach the top row, RetroFE's folder.
+key Down
+key Return
+wait 3
+key Left x2
+wait 1
+shot program-places
+# A file browser has no "Use this folder": .., then folders and matching files
+# by name. RetroFE's folder: .., downloads, emulators -> Down x2. emulators:
+# .., RetroArch -> Down. RetroArch: .., cores, info, retroarch.exe -> Down x3.
+key Return
+wait 2
+key Down x2
+key Return
+wait 2
+key Down
+key Return
+wait 2
+key Down x3
+key Return
+wait 2
+shot program-chosen
+# Arguments: Right picks the RetroArch preset (-L core), which shows Core
+key Down
+key Right
+wait 1
+shot retroarch-preset
+key Down
+key Return
+wait 3
+key Left x2
+wait 1
+shot core-places
+# RetroFE's folder -> emulators (Down x2) -> RetroArch (Down) -> cores (Down)
+# -> .., fceumm_libretro.dll (Down)
+key Return
+wait 2
+key Down x2
+key Return
+wait 2
+key Down
+key Return
+wait 2
+key Down
+key Return
+wait 2
+key Down
+key Return
+wait 2
+shot core-chosen
+# From Core: Working folder, Restarts RetroFE, Create launcher
+key Down x3
+wait 1
+shot create-focused
+key Return
+wait 2
+shot launcher-created
+# Create returns to the hub (focus on "Add your first system"); open Launchers
+# to show the new launcher. Hub rows (BuiltinForms manage, after a launcher
+# exists): Add your first system, Apply changes now, Games, Menus, Systems,
+# Videos, Launchers, Themes: Launchers is the 7th.
+key Down x6
+key Return
+wait 1
+shot launcher-list
+# Back to the hub, where focus stays on Launchers: six up to the first row
+key Escape
+wait 1
+key Up x6
+wait 1
+shot hub-before-system
+# SystemForms system-add: Launcher (the only launcher, NES, is chosen), then
+# Name and Extensions suggested from fceumm's .info file ("Nintendo
+# Entertainment System", fds,nes,unf,unif: no typing; dat isn't added, so
+# Little Lancelot isn't copied), List it in (Main), Games folder (default),
+# then Add system: five down from Launcher. Tune on CI.
+key Return
+wait 2
+shot system-form
+key Down x5
+wait 1
+shot system-form-add-focused
+key Return
+wait 2
+shot system-added
+# Created: the system's own screen opens; Add games is its first link
+# (SystemForms {addGamesLink}). Tune on CI.
+key Return
+wait 2
+shot add-games-form
+# From opens the folder browser (BrowserForms file-browser): places first,
+# RetroFE's folder on top. In a folder: Use this folder (focused), .., then
+# the folders by name. RetroFE's folder: .., collections (made by Add
+# system), downloads -> Down x3. downloads: .., MAME, Nintendo Entertainment
+# System -> Down x3. NES: .., medium_artwork, roms -> Down x3. roms: Use this
+# folder -> Return. Listing a folder takes a moment: 2 s after each Return.
+key Return
+wait 3
+shot browser-places
+# The places list can open with focus on an earlier choice: Left pages up
+# within a results list (FormWidget::pageResults), so two reach the top row
+key Left x2
+wait 1
+shot browser-places-top
+key Return
+wait 2
+shot browser-root
+key Down x3
+key Return
+wait 2
+shot browser-downloads
+key Down x3
+key Return
+wait 2
+shot browser-nes
+key Down x3
+key Return
+wait 2
+shot browser-roms
+key Return
+wait 3
+shot add-games-from-chosen
+# Back from the browser, focus is on Copy games already (the form's primary
+# button: its help line says "Select: Copy games"); Include subfolders and
+# Copy artwork too start on.
+key Return
+wait-file "collections/Nintendo Entertainment System/roms/Addams Family, The (USA).nes" 45
+wait 3
+expect-file "collections/Nintendo Entertainment System/medium_artwork/logo/Addams Family, The (USA).png"
+shot copied-games
+# Back out: Add games -> the system -> the hub -> Manage closes (Back on the
+# hub closes it). One at a time, to see where each lands.
+key Escape
+wait 1
+shot back-1
+key Escape
+wait 1
+shot back-2
+key Escape
+# Closing Manage with changes reloads RetroFE: the window is black until the
+# reloaded page draws
+wait 1
+wait-drawn 60
+wait 2
+shot home
+# Home: Browse opens Main, then NES, the only system (starter-browse does the
+# same); its first game, sorted by title, is Addams Family, The (USA).
+key Return
+wait 2
+shot main-menu
+key Return
+wait 2
+shot nes-list
+key Return
+wait-file emulators/RetroArch/launches.txt 30
+expect-file emulators/RetroArch/launches.txt Addams Family, The (USA).nes
+wait 2
+shot game-started
+quit

@@ -54,6 +54,21 @@ namespace
 static Test::Suite renderingSuite("rendering", [] {
     using Forms::FocusTarget;
 
+    run("browser results follow the first row until navigation", [] {
+        const std::vector<std::string> grown = { "RetroFE", "C:", "D:" };
+        auto focused = [&](bool navigated) {
+            const std::string previous = navigated ? "D:" : "C:";
+            for (const auto& item : grown) {
+                if (!Forms::keepBrowserResult("file-browser", navigated, false) || item == previous) return item;
+            }
+            return std::string();
+        };
+        checkEqual(focused(false), "RetroFE", "growth without input focuses the first place");
+        checkEqual(focused(true), "D:", "growth after Down keeps the chosen place");
+        check(Forms::keepBrowserResult("file-browser", false, true), "returning restores the saved row");
+        check(Forms::keepBrowserResult("other", false, false), "other forms keep their row");
+    });
+
     run("ellipsize keeps text that fits", [] {
         checkEqual(Forms::ellipsize("Own file", 80.0f, measure), "Own file", "exactly as wide");
         checkEqual(Forms::ellipsize("", 0.0f, measure), "", "empty");

@@ -112,11 +112,21 @@ def parse_script(text):
                 args = [float(remainder) if remainder else 60.0]
                 if not math.isfinite(args[0]) or args[0] <= 0:
                     raise ValueError('invalid timeout')
-            elif command == 'expect-file':
-                path, sep, value = remainder.partition(' ')
+            elif command in ('expect-file', 'wait-file'):
+                match = re.fullmatch(r'(?:"([^"]+)"|(\S+))(?:\s+(.*))?', remainder)
+                if not match:
+                    raise ValueError('expected path [text or timeout]')
+                path = match.group(1) or match.group(2)
+                value = match.group(3)
                 if not path or not make_test_install.valid_path(path):
                     raise ValueError('invalid relative path')
-                args = [path, value.lstrip() if sep else None]
+                if command == 'wait-file':
+                    timeout = float(value) if value else 30.0
+                    if not math.isfinite(timeout) or timeout <= 0:
+                        raise ValueError('invalid timeout')
+                    args = [path, timeout]
+                else:
+                    args = [path, value]
             elif command == 'quit':
                 if remainder:
                     raise ValueError('quit takes no arguments')
@@ -173,14 +183,19 @@ def install(kind, exe, dlls, common, out, setup=None):
     out, exe, dlls, common = map(Path, (out, exe, dlls, common))
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         raise ValueError('OUT exists and is not empty')
-    if kind == 'starter' and (not setup):
-        raise ValueError('starter requires --setup')
+    if kind in ('starter', 'setup') and not setup:
+        raise ValueError(kind + ' requires --setup')
     if kind == 'bare' and setup:
         raise ValueError('bare rejects --setup')
     if not exe.is_file() or not dlls.is_dir() or (not (common / 'layouts' / 'Aeon Nox').is_dir()):
         raise ValueError('missing executable, DLL directory, or layout')
     if setup:
         setup = Path(setup)
+    if kind == 'setup':
+        retroarch = setup / 'root' / 'emulators' / 'RetroArch'
+        if not all((retroarch / name).is_dir() for name in ('cores', 'info')) or not (retroarch / 'retroarch.exe').is_file() or not (setup / 'downloads').is_dir():
+            raise ValueError('setup needs RetroArch and downloads')
+    if kind == 'starter':
         if not (setup / 'collections').is_dir() or not any(((setup / name).is_dir() for name in ('launchers.windows', 'launchers.linux'))):
             raise ValueError('setup needs collections and an OS launchers directory')
         if (setup / 'retrofe' / 'retrofe.exe').exists() or (setup / 'layouts').exists():
@@ -192,7 +207,14 @@ def install(kind, exe, dlls, common, out, setup=None):
             shutil.copy2(file, retro / file.name)
     shutil.copy2(exe, retro / 'retrofe.exe')
     shutil.copytree(common / 'layouts' / 'Aeon Nox', out / 'layouts' / 'Aeon Nox')
-    if setup:
+    if kind == 'setup':
+        destination = out / 'emulators' / 'RetroArch'
+        destination.mkdir(parents=True)
+        shutil.copy2(retroarch / 'retroarch.exe', destination)
+        for name in ('cores', 'info'):
+            shutil.copytree(retroarch / name, destination / name)
+        shutil.copytree(setup / 'downloads', out / 'downloads')
+    if kind == 'starter':
         # The setup may not replace files supplied by the bare install.
         for source in setup.rglob('*'):
             destination = out / source.relative_to(setup)
@@ -457,6 +479,13 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                         raise RuntimeError('screenshot dimensions changed')
                     if not region_differs(new_width, new_height, old_rgb, new_rgb, arguments[1:]):
                         raise RuntimeError('screenshot region did not differ: ' + arguments[0])
+                elif operation == 'wait-file':
+                    end = time.monotonic() + arguments[1]
+                    while not (root / arguments[0]).is_file():
+                        check()
+                        if time.monotonic() >= end:
+                            raise TimeoutError('wait-file timed out: ' + arguments[0])
+                        pause(0.05)
                 elif operation == 'expect-file':
                     path = root / arguments[0]
                     if not path.is_file():
@@ -515,7 +544,7 @@ def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='action', required=True)
     installer = sub.add_parser('install')
-    installer.add_argument('--kind', choices=['bare', 'starter'], required=True)
+    installer.add_argument('--kind', choices=['bare', 'starter', 'setup'], required=True)
     installer.add_argument('--exe', required=True)
     installer.add_argument('--dlls', required=True)
     installer.add_argument('--common', required=True)

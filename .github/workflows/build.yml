@@ -176,13 +176,15 @@ jobs:
           $kind = $script.BaseName.Split('-')[0]
           $install = Join-Path $env:RUNNER_TEMP "screens-$($script.BaseName)"
           $setup = @()
-          if ($kind -eq 'starter') { $setup = @('--setup', "$env:RUNNER_TEMP\first-setup") }
+          if ($kind -eq 'starter') { $setup = @('--setup', "$env:RUNNER_TEMP\first-setup\root") }
+          if ($kind -eq 'setup') { $setup = @('--setup', "$env:RUNNER_TEMP\first-setup") }
           python -I Scripts\test-build\screens\screens.py install --kind $kind `
             --exe RetroFE\Build\Release\retrofe.exe --dlls Package\Environment\Windows\retrofe `
             --common Package\Environment\Common @setup $install
           if ($LASTEXITCODE -ne 0) { $failed += "$($script.BaseName): the install couldn't be made"; continue }
+          $timeout = if ($kind -eq 'setup') { 240 } else { 120 }
           python -I Scripts\test-build\screens\screens.py run --install $install --script $script.FullName `
-            --out "$out\$($script.BaseName)" 2>&1 | Tee-Object -Variable lines
+            --out "$out\$($script.BaseName)" --timeout $timeout 2>&1 | Tee-Object -Variable lines
           if ($LASTEXITCODE -ne 0) {
             $why = ($lines | ForEach-Object { "$_" } | Where-Object { $_ -match '^FAIL ' } | Select-Object -First 1)
             $failed += "$($script.BaseName): $why"
