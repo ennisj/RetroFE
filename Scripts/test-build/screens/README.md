@@ -17,7 +17,7 @@ Scripts use one command per line; blank lines and lines starting with `#` are ig
 - `shot NAME`, `expect-file PATH [TEXT]`, `expect-log TEXT`, `quit` (nothing may follow `quit`)
 - `expect-differs SHOTNAME LEFT TOP RIGHT BOTTOM` captures again and compares the specified region with an earlier named shot. Coordinates are fractions from 0 to 1. More than 0.1% of region pixels must change by over 8 in at least one RGB channel, allowing minor capture noise; choose a region that excludes unrelated animation such as the clock.
 
-File paths are relative to the install; quote paths containing spaces. Key names include arrows, Return, Escape, Space, Tab, Backspace, Delete, Home, End, PageUp, PageDown, F1–F12, letters and digits. `type` posts character messages. The whole script is validated before launch. A failure exits 1 and is recorded in results.json.
+File paths are relative to the install; quote paths containing spaces. Key names include arrows, Return, Escape, Space, Tab, Backspace, Delete, Home, End, PageUp, PageDown, F1–F12, letters and digits. `type` posts character messages. The whole script is validated before launch. A failure exits 1 and is recorded in results.json. On CI a failing script fails the build, unless a line at its top starts with `# soft-fail` (a warning instead, for a script still being tuned).
 
 Pictures need human review for appearance. This cannot validate real GPUs, real emulators, or ImGui mouse input: posted mouse clicks do not reach ImGui. Windows capture and input need Windows CI; portable parsing, image encoding and install construction are tested on Linux.
 
