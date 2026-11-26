@@ -4,6 +4,16 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 30 — tests check the real code (2026-11-26)
+
+Unit tests: 7,580 checks (Windows CI), unchanged. Choices in M41 of
+[DECISIONS.md](DECISIONS.md).
+
+- **No visible change.** RetroFE's configuration loading moved into its own
+  file so the first-setup test runs exactly what RetroFE runs; the test's own
+  copy had fallen behind. The test-install scripts' network-share path is now
+  tested too.
+
 ## Round 29 — Add games brings titles and years (2026-11-26)
 
 Unit tests: 7,564 → 7,580 checks (Windows CI). Choices in M40 of
