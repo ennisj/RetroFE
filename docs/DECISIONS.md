@@ -882,9 +882,10 @@ The full reasoning, with the options considered for each, is in
   change never cancels a running build: its result is discarded and another
   follows; only a build uninterrupted by changes publishes. (Revised in round 23:
   it used to publish the interrupted build, which could have missed the change, so
-  a just-deleted launcher came back in Manage's list for a moment. A long burst of
-  changes now delays the snapshot; a warm rebuild takes under a second and no
-  Manage action writes for longer than that.)
+  a just-deleted launcher came back in Manage's list for a moment. Only a change
+  discards a running build; a plain rebuild publishes it and then scans again.
+  Edits arriving faster than scans can delay the snapshot. Current Manage changes
+  are individual user actions, and imports notify once at the end.)
 
 ### LB11. `launcher = a, b, c` uses `a` (fork compat) — Decided
 - OneSauce/RetroFE Plus data names a default and its alternatives; 25

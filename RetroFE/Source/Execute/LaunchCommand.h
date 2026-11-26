@@ -26,6 +26,12 @@ class Configuration;
 // the same code.
 namespace LaunchCommand
 {
+	// Windows can start a shell target without obtaining a process handle.
+	inline bool executionFailed(bool executeOk, bool started, bool windows)
+	{
+		return !executeOk && !(windows && started);
+	}
+
 	// The game, as run() reads it from its Item
 	struct Game
 	{

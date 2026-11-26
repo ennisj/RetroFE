@@ -19,6 +19,13 @@
 #include <filesystem>
 
 static Test::Suite launchCommand("launch command", [] {
+    Test::run("execution failure follows platform start semantics", [] {
+        using namespace Test;
+        check(!LaunchCommand::executionFailed(true, true, true), "successful execution has no failure");
+        check(!LaunchCommand::executionFailed(false, true, true), "Windows shell target started without a handle");
+        check(LaunchCommand::executionFailed(false, false, true), "Windows target did not start");
+        check(LaunchCommand::executionFailed(false, true, false), "Unix nonzero exit is a failure");
+    });
     Test::run("missing and present game files", [] {
         using namespace Test;
         std::string root = makeRoot("launch-command");

@@ -35,7 +35,7 @@ namespace Library
     // pending, for the Manage hub to reload RetroFE when it closes, and asks
     // for a fresh build; the old snapshot stays available until the new one
     // is ready. A build that's running is never cancelled by a change: it
-    // finishes and is discarded if another build was requested. Only a build
+    // finishes and is discarded if a change arrived during it. Only a build
     // uninterrupted by changes publishes, including every write so far.
     class Indexer
     {
@@ -87,6 +87,7 @@ namespace Library
         Status status_;
         bool running_ = false;
         bool again_ = false;          // another build was asked for while one ran
+        bool changedDuringBuild_ = false; // the running scan may have missed a write
         std::vector<std::string> pending_;
         bool pendingFlag_ = false;
     };

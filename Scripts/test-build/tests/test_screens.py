@@ -55,6 +55,23 @@ class ScreensTests(unittest.TestCase):
         self.assertEqual(steps[3]['args'], [' a b  '])
         self.assertEqual(steps[1]['args'], ['hello world', 2])
 
+    def test_region_difference(self):
+        before = bytes(10 * 10 * 3)
+        inside = bytearray(before)
+        inside[(7 * 10 + 5) * 3] = 100
+        outside = bytearray(before)
+        outside[0] = 100
+        region = (0.2, 0.5, 0.8, 1.0)
+        self.assertFalse(screens.region_differs(10, 10, before, before, region))
+        self.assertTrue(screens.region_differs(10, 10, before, inside, region))
+        self.assertFalse(screens.region_differs(10, 10, before, outside, region))
+
+    def test_expect_differs_parse(self):
+        self.assertEqual(screens.parse_script('expect-differs view 0.1 0.5 0.9 1')[0]['args'], ['view', 0.1, 0.5, 0.9, 1.0])
+        for command in ('expect-differs view 0 0 2 1', 'expect-differs view 0 1 1 0', 'quit\nwait 1'):
+            with self.assertRaises(ValueError):
+                screens.parse_script(command)
+
     def test_wait_drawn(self):
         """wait-drawn takes an optional timeout, 60 seconds by default."""
         self.assertEqual(screens.parse_script('wait-drawn\n')[0]['args'], [60.0])

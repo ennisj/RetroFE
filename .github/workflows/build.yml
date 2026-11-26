@@ -105,7 +105,7 @@ jobs:
   windows:
     runs-on: windows-2022
     name: Windows x64
-    # Only to publish the management-ui-latest pre-release (last step)
+    # Publish the management-ui-latest and ci-screens pre-releases
     permissions:
       contents: write
 
@@ -210,13 +210,14 @@ jobs:
       # Every run's screenshots go to the ci-screens pre-release as screens-<commit>.zip
       # (the 30 newest are kept), downloadable without signing in, so they can be
       # reviewed without the Actions log.
-      if: always() && github.event_name == 'push' && steps.screens.outcome != 'skipped'
+      if: ${{ !cancelled() && github.event_name == 'push' && steps.screens.outcome != 'skipped' }}
+      continue-on-error: true
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         $tag = 'ci-screens'
-        if (-not (Test-Path dist\screens)) { "No screenshots"; exit 0 }
+        if (-not (Test-Path dist\screens) -or -not (Get-ChildItem dist\screens -File -Recurse)) { "No screenshot files to publish"; exit 0 }
         $name = "screens-$($env:GITHUB_SHA.Substring(0, 8)).zip"
         Compress-Archive -Path dist\screens\* -DestinationPath "dist\$name" -Force
         gh release view $tag *> $null
@@ -228,8 +229,12 @@ jobs:
         gh release upload $tag "dist\$name" --clobber
         if ($LASTEXITCODE -ne 0) { throw "Could not upload $name" }
         $old = gh release view $tag --json assets --jq '.assets | sort_by(.createdAt) | reverse | .[30:] | .[].name'
-        $old | Where-Object { $_ } | ForEach-Object { gh release delete-asset $tag $_ --yes }
+        $old | Where-Object { $_ } | ForEach-Object {
+          gh release delete-asset $tag $_ --yes
+          if ($LASTEXITCODE -ne 0) { "::warning::Could not delete screenshot asset $_" }
+        }
         "::notice::Screenshots: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/download/$tag/$name"
+        exit 0
 
     - name: Publish the build for testing
       # Each push to feature/management-ui that passes replaces the management-ui-latest

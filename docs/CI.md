@@ -9,7 +9,7 @@ The GitHub Actions workflows are in `.github/workflows`.
 - on pushes to `master`, `feature/**` and `ci/**` branches, and on pull requests to `master` and `feature/**`, when something under `RetroFE/CMake`, `RetroFE/Source`, `RetroFE/ThirdParty`, `RetroFE/ThirdPartyMac`, `RetroFE/Tests`, Python files under `Scripts/test-build`, `Scripts/test-build/fixtures`, `Scripts/test-build/screens`, `.github/workflows` or `.github/scripts` changes
 - by hand: `gh workflow run build.yml --ref <branch>`, or "Run workflow" on the Actions tab
 
-A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`), except to publish: `release-windows.yml` for releases and `build.yml`'s Windows job for the test build below.
+A pull request from a `feature/**` branch gets two runs per push: one for the push and one for the pull request. Both run the same jobs. A newer push to a branch cancels that branch's run still in progress, except on `master`, where every run finishes. The workflows only read the repository (`permissions: contents: read`), except to publish: `release-windows.yml` for releases and `build.yml`'s Windows job for the test build and ci-screens screenshots below.
 
 It has four jobs:
 

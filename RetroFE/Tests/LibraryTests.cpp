@@ -1024,6 +1024,71 @@ static void runLibraryTests()
         check(indexer.changesPending() && indexer.wait(10000) && indexer.status().generation == 2, "a change rebuilds and is pending");
     });
 
+    run("library: rebuild during a scan publishes both builds", [&] {
+        ScanOptions options;
+        options.root = makeInstall("lib-rebuild-during-scan");
+        std::mutex mutex;
+        std::condition_variable ready;
+        int scans = 0;
+        int released = 0;
+        options.afterScan = [&] {
+            std::unique_lock<std::mutex> lock(mutex);
+            int scan = ++scans;
+            ready.notify_all();
+            ready.wait(lock, [&] { return released >= scan; });
+        };
+        Indexer indexer(options);
+        indexer.rebuild();
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            ready.wait(lock, [&] { return scans == 1; });
+        }
+        indexer.rebuild();
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            released = 1;
+            ready.notify_all();
+            ready.wait(lock, [&] { return scans == 2; });
+        }
+        check(indexer.status().generation == 1 && indexer.index(), "the first scan was published");
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            released = 2;
+            ready.notify_all();
+        }
+        check(indexer.wait(10000) && indexer.status().generation == 2, "the requested rebuild also published");
+    });
+
+    run("library: cancel after a change does not publish the scan", [&] {
+        ScanOptions options;
+        options.root = makeInstall("lib-cancel-changed-scan");
+        std::mutex mutex;
+        std::condition_variable ready;
+        bool scanned = false;
+        bool released = false;
+        options.afterScan = [&] {
+            std::unique_lock<std::mutex> lock(mutex);
+            scanned = true;
+            ready.notify_all();
+            ready.wait(lock, [&] { return released; });
+        };
+        Indexer indexer(options);
+        indexer.rebuild();
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            ready.wait(lock, [&] { return scanned; });
+        }
+        indexer.changed("edit");
+        indexer.cancel();
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            released = true;
+            ready.notify_all();
+        }
+        check(indexer.wait(10000) && indexer.status().generation == 0 && !indexer.index(),
+              "the changed scan was not published on cancel");
+    });
+
     run("library: changes during a scan precede the first publication", [&] {
         std::string root = makeInstall("lib-interrupted-scan");
         std::mutex mutex;
