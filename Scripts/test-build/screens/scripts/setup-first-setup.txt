@@ -161,7 +161,11 @@ key Escape
 wait 1
 shot back-2
 key Escape
-wait 3
+# Closing Manage with changes reloads RetroFE: the window is black until the
+# reloaded page draws
+wait 1
+wait-drawn 60
+wait 2
 shot home
 # Home: Browse opens Main, then NES, the only system (starter-browse does the
 # same); its first game, sorted by title, is Addams Family, The (USA).
