@@ -101,6 +101,8 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     wantedFocus_.clear();
     focusedField_ = nullptr;
     focusedItem_.clear();
+    navigated_ = false;
+    restoredFocus_ = false;
     manualScroll_ = false;
     scroll_ = 0.0f;
     status_.clear();
@@ -128,6 +130,7 @@ void FormWidget::restoreFocus(const Forms::Focus& focus)
     }
     focusedField_ = Forms::fieldAt(*form_, focus.field);
     focusedItem_ = focus.item;
+    restoredFocus_ = focus.field >= 0;
     scroll_ = focus.scroll;
     focus_ = -1;
     barFocus_ = -1;
@@ -762,7 +765,7 @@ void FormWidget::resolveFocus(int previousFocus, int previousBar)
         if (!rows_[i].focusable || rows_[i].field != focusedField_) {
             continue;
         }
-        if (rows_[i].item == focusedItem_) {
+        if (Forms::keepBrowserResult(form_->id, navigated_, restoredFocus_) && rows_[i].item == focusedItem_) {
             focus_ = static_cast<int>(i);
             break;
         }
@@ -956,6 +959,7 @@ bool FormWidget::navigate(Nav nav)
     if (stale_ || rows_.empty()) {
         buildRows();
     }
+    navigated_ = true;
     stale_ = true;   // whatever happens next shows on the next draw
     wantedFocus_.clear();   // the user is moving on: an action's focus request is dropped
 
