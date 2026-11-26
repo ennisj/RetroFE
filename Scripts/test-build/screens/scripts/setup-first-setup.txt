@@ -144,11 +144,9 @@ shot browser-roms
 key Return
 wait 3
 shot add-games-from-chosen
-# SystemForms addGamesForm: From, Include subfolders (on), Copy artwork too
-# (on), then Copy games: three down from From.
-key Down x3
-wait 1
-shot copy-focused
+# Back from the browser, focus is on Copy games already (the form's primary
+# button: its help line says "Select: Copy games"); Include subfolders and
+# Copy artwork too start on.
 key Return
 wait-file "collections/Nintendo Entertainment System/roms/Addams Family, The (USA).nes" 45
 wait 3
