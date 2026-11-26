@@ -4,6 +4,18 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 27 — the screenshot checks can fail the build (2026-11-26)
+
+Unit tests unchanged (7,556 checks). Choices in M38 of
+[DECISIONS.md](DECISIONS.md).
+
+- **A screenshot script that fails now fails the Windows build**, and the
+  test build isn't published from it. Until now a failure was only a
+  warning. The bare and Starter scripts have passed every run since round
+  23. The first-setup script from round 26 stays a warning for now: a
+  `# soft-fail` line at the top of a script marks one that is still
+  settling.
+
 ## Round 26 — the first setup, done in the real window on CI (2026-11-26)
 
 Unit tests: 7,552 → 7,556 checks (Windows CI); test-build scripts' tests

@@ -722,6 +722,17 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M38. Round 27 choices — Decided (2026-11-26)
+- **Screenshot scripts fail the build** once they have proven steady (M34
+  said "after a few passing rounds"): bare and Starter passed about 15 runs
+  in a row. The first-setup script passed only its last two runs and
+  depends most on timing, so it carries `# soft-fail` until it has passed
+  a few rounds too; then the line is removed.
+- **The policy lives in each script**, not in the workflow, so a new script
+  starts strict unless it says otherwise.
+- **Checked on CI** with a deliberate failure in the soft script: the build
+  passed with a warning naming it.
+
 ### M37. Round 26 choices — Decided (2026-11-26)
 - **One system, one core in the real window** (NES with `fceumm`); the
   first-setup unit test still covers all three systems. Typing is kept to
