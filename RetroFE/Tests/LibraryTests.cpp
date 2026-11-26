@@ -1024,6 +1024,49 @@ static void runLibraryTests()
         check(indexer.changesPending() && indexer.wait(10000) && indexer.status().generation == 2, "a change rebuilds and is pending");
     });
 
+    run("library: changes during a scan precede the first publication", [&] {
+        std::string root = makeInstall("lib-interrupted-scan");
+        std::mutex mutex;
+        std::condition_variable ready;
+        int scans = 0;
+        int released = 0;
+        ScanOptions options;
+        options.root = root;
+        options.afterScan = [&] {
+            std::unique_lock<std::mutex> lock(mutex);
+            int scan = ++scans;
+            ready.notify_all();
+            ready.wait(lock, [&] { return released >= scan; });
+        };
+        Indexer indexer(options);
+        indexer.rebuild();
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            ready.wait(lock, [&] { return scans == 1; });
+        }
+        writeFile(root + "/collections/NES/roms/metroid.nes", "x");
+        indexer.changed("new game");
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            released = 1;
+            ready.notify_all();
+            ready.wait(lock, [&] { return scans == 2; });
+        }
+        check(indexer.status().generation == 0 && !indexer.index()
+              && indexer.status().state == Indexer::State::Building,
+              "the interrupted scan was not published");
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            released = 2;
+            ready.notify_all();
+        }
+        check(indexer.wait(10000), "rebuild settles");
+        auto index = indexer.index();
+        check(indexer.status().generation == 1 && indexer.status().state == Indexer::State::Ready,
+              "exactly one snapshot was published");
+        check(index && index->findGame("NES", "metroid") >= 0, "the first snapshot includes the write");
+    });
+
     run("library: a file that changed since its original was kept is never deleted", [&] {
         std::string root = makeRoot("lib-backups-changed");
         std::string path = root + "/collections/A/medium_artwork/logo/a.png";
@@ -1087,21 +1130,19 @@ static void runLibraryTests()
         check(MetadataOverrides::newestChange(root) > fs::last_write_time(root + "/meta.db"), "RetroFE will re-import");
     });
 
-    run("library: a burst of changes still publishes snapshots", [&] {
+    run("library: a burst of changes eventually publishes a snapshot", [&] {
         std::string root = makeInstall("lib-burst");
         ScanOptions options;
         options.root = root;
         Indexer indexer(options);
         indexer.rebuild();
-        // Changes every millisecond for half a second: snapshots must still come out
+        // Changes every millisecond for half a second, then let the index settle
         auto start = std::chrono::steady_clock::now();
         int changes = 0;
         while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
             indexer.changed("edit " + std::to_string(changes++));
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        check(indexer.status().generation >= 2, "snapshots were published during the burst ("
-              + std::to_string(indexer.status().generation) + ")");
         writeFile(root + "/collections/NES/roms/metroid.nes", "x");
         indexer.changed("edit " + std::to_string(changes++));
         check(indexer.wait(20000), "settles");

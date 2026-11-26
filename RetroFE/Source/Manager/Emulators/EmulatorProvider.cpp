@@ -179,7 +179,7 @@ const Library::Index* EmulatorProvider::current()
     unresolved_.clear();
     searchedIn_ = nullptr;
     checkedExecutable_ = "\x01";
-    updating_ = false;   // a new snapshot includes every write made so far
+    updating_ = false;   // Indexer publishes only builds uninterrupted by changes
     if (!index) {
         return nullptr;
     }

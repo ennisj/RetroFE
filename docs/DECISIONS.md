@@ -879,7 +879,12 @@ The full reasoning, with the options considered for each, is in
   configuration) only when it's a menu or can become one. Otherwise they go in
   "Main", so a games collection never gets a menu.txt.
 - **LB10.** The index is an immutable snapshot, rebuilt in the background. A
-  change never cancels a running build: the build publishes, then one more follows.
+  change never cancels a running build: its result is discarded and another
+  follows; only a build uninterrupted by changes publishes. (Revised in round 23:
+  it used to publish the interrupted build, which could have missed the change, so
+  a just-deleted launcher came back in Manage's list for a moment. A long burst of
+  changes now delays the snapshot; a warm rebuild takes under a second and no
+  Manage action writes for longer than that.)
 
 ### LB11. `launcher = a, b, c` uses `a` (fork compat) — Decided
 - OneSauce/RetroFE Plus data names a default and its alternatives; 25
