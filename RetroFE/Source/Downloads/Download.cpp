@@ -148,7 +148,8 @@ namespace Downloads
             keep.insert(finals[i]);
             keep.insert(part);
             keep.insert(validator);
-            already += fs::exists(finals[i]) ? sizeOf(finals[i]) : sizeOf(part);
+            std::error_code existsError;
+            already += fs::exists(finals[i], existsError) ? sizeOf(finals[i]) : sizeOf(part);
         }
         uint64_t remoteTotal = total;
         if (!sizesKnown) total = 0;
@@ -161,9 +162,9 @@ namespace Downloads
         // Earlier versions' leftovers would only take up space
         std::error_code ec;
         if (fs::is_directory(folder, ec)) {
-            for (const auto& entry : fs::directory_iterator(folder, ec)) {
-                if (!keep.count(entry.path())) {
-                    fs::remove_all(entry.path(), ec);
+            for (auto it = fs::directory_iterator(folder, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+                if (!keep.count(it->path())) {
+                    fs::remove_all(it->path(), ec);
                 }
             }
         }
@@ -250,8 +251,22 @@ namespace Downloads
                     std::ifstream in(validatorFile, std::ios::binary);
                     std::getline(in, transfer.validator);
                 }
-                auto report = [&](uint64_t received, uint64_t) {
-                    return !progress || progress(done + received, total);
+                bool noSpace = false;
+                auto report = [&](uint64_t received, uint64_t responseTotal) {
+                    uint64_t effectiveTotal = total ? total : (responseTotal ? done + responseTotal : 0);
+                    if (!total && responseTotal && !noSpace) {
+                        uint64_t available = 0;
+                        std::error_code spaceError;
+                        fs::path folder = fs::path(part).parent_path();
+                        bool known = freeSpace ? freeSpace(folder.string(), available) : false;
+                        if (!freeSpace) { auto space = fs::space(folder, spaceError); known = !spaceError; available = space.available; }
+                        if (known && available < spaceNeeded(responseTotal, received)) {
+                            noSpace = true;
+                            result.error = "Not enough free space for " + displayName(file.url);
+                            return false;
+                        }
+                    }
+                    return !progress || progress(done + received, effectiveTotal);
                 };
                 bool ok = http_->download(file.url, part, partSize, report, transfer);
                 if (!transfer.validator.empty()) {
@@ -262,6 +277,7 @@ namespace Downloads
                     fs::remove(validatorFile, ec);
                 }
                 if (!ok) {
+                    if (noSpace) return false;
                     if (transfer.cancelled) {
                         result.cancelled = true;
                         result.error = "Cancelled";

@@ -562,7 +562,8 @@ offers what was just installed, chosen already when it's the one new launcher.
   again), and **Check again** asks again. That's the only time RetroFE asks:
   nothing is checked when RetroFE starts or Manage opens. A note above the
   list says when the check couldn't be made: offline, or GitHub's limit of 60
-  checks an hour reached, with the time to try again. **RetroArch cores**
+  requests an hour reached (six requests per check, about ten checks an hour;
+  unauthenticated 304 responses count), with the time to try again. **RetroArch cores**
   shows once RetroArch is installed.
 - **An emulator's screen** says what it is, the installed and available
   versions, the download's size, where it comes from

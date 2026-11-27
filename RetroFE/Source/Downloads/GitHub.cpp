@@ -259,7 +259,7 @@ void readGitHubReleases(const std::string& repo, const std::string& cacheFolder,
     }
 
     int64_t retryAfter = number(response.headers, "retry-after");
-    if (response.status == 429 || response.status == 403) {
+    if (response.status == 429 || response.headers.count("retry-after") || (response.status == 403 && number(response.headers, "x-ratelimit-remaining") == 0)) {
         // Don't ask again until GitHub says to (or for a while, if it doesn't say)
         int64_t reset = number(response.headers, "x-ratelimit-reset");
         int64_t until = retryAfter >= 0 ? now + retryAfter : reset > now ? reset : now + 15 * 60;

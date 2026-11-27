@@ -119,6 +119,47 @@ namespace
         }
     };
 
+    class BlockedHttp : public ServingHttp
+    {
+    public:
+        std::atomic<bool> entered{ false }, release{ false };
+        bool download(const std::string&, const std::string&, uint64_t,
+                      const Progress& progress, Transfer& transfer) override
+        {
+            entered = true;
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            while (!release && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (progress && !progress(0, 1)) { transfer.cancelled = true; return false; }
+            transfer.error = "blocked";
+            return false;
+        }
+    };
+
+    class BlockedCheckHttp : public ServingHttp
+    {
+    public:
+        std::atomic<bool> entered{ false }, release{ false };
+        bool request(const std::string& url, const std::vector<std::string>& headers, Response& response) override
+        {
+            if (url.find("api.github.com") != std::string::npos && !entered.exchange(true)) {
+                auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+                while (!release && std::chrono::steady_clock::now() < deadline)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return ServingHttp::request(url, headers, response);
+        }
+    };
+
+    class ThrowingHttp : public ServingHttp
+    {
+    public:
+        bool download(const std::string&, const std::string&, uint64_t, const Progress&, Transfer&) override
+        {
+            throw std::runtime_error("test download failure");
+        }
+    };
+
     void writeInstalled(const std::string& root, const std::string& id, const std::string& name, const std::string& version,
                         const std::vector<Downloads::InstalledFile>& files = {})
     {
@@ -402,7 +443,7 @@ static Test::Suite downloadScreens("download screens", [] {
         f.model->setScreen("download-emulators", {});
         check(f.waitForJob(), "checked");
         std::string status = f.model->get("download:checkStatus");
-        check(contains(status, "GitHub's limit of 60 checks an hour") && contains(status, "Check again after "), "the limit, and when: " + status);
+        check(contains(status, "GitHub's limit of 60 requests an hour") && contains(status, "Check again after "), "the limit, and when: " + status);
         checkEqual(f.detail("emulator-flycast"), "Not installed, not checked (GitHub's limit)", "every entry waits");
     });
 
@@ -459,6 +500,38 @@ static Test::Suite downloadScreens("download screens", [] {
         checkEqual(f.model->actionProblem("download.remove"), "It isn't installed.", "nothing to remove");
     });
 
+    run("download screens: leaving does not join a blocked request", [] {
+        auto http = std::make_unique<BlockedHttp>();
+        BlockedHttp* fake = http.get();
+        serveDuckStation(*http, "archive");
+        Fixture f(makeRoot("download-blocked"), std::move(http));
+        f.model->setScreen("download-emulator", { { "id", "emulator-duckstation" } });
+        check(f.model->runAction("download.install").ok, "install starts");
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!fake->entered && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        check(fake->entered, "request entered");
+        auto before = std::chrono::steady_clock::now();
+        f.model->leaving(f.model->screen());
+        check(std::chrono::steady_clock::now() - before < std::chrono::seconds(1), "leaving returns before request");
+        checkEqual(f.model->get("download:progress"), "Stopping...", "stopping displayed");
+        checkEqual(f.model->actionProblem("download.install"), "Stopping...", "new job refused");
+        fake->release = true;
+        check(f.waitForJob(), "worker collected after release");
+        check(f.model->actionProblem("download.install").empty(), "new job permitted");
+    });
+
+    run("download screens: worker exceptions are reported", [] {
+        std::string root = makeRoot("download-throw");
+        auto http = std::make_unique<ThrowingHttp>();
+        serveDuckStation(*http, "archive");
+        Fixture f(root, std::move(http));
+        f.model->setScreen("download-emulator", { { "id", "emulator-duckstation" } });
+        check(f.model->runAction("download.install").ok, "install starts");
+        check(f.waitForJob(), "exception ends job");
+        checkEqual(f.model->get("download:message"), "Something went wrong: test download failure", "exception shown");
+        check(f.model->severity("download:message") == Forms::Severity::Error, "exception is an error");
+    });
+
     run("download screens: Stop, and leaving the screen, stop a download", [] {
         std::string root = makeRoot("download-stop");
         auto http = std::make_unique<StallingHttp>();
@@ -472,7 +545,10 @@ static Test::Suite downloadScreens("download screens", [] {
         check(f.model->get("download:runningHere") == "yes" && f.model->get("download:installingHere") == "yes", "Stop and the leaving note show");
         checkEqual(f.model->actionProblem("download.remove"), "Wait for the current download to finish, or stop it.", "one job at a time");
         Forms::Model::Result stopped = f.model->runAction("download.stop");
-        check(stopped.ok && f.model->get("download:running") == "no", "Stop ends the job");
+        check(stopped.ok && f.model->get("download:running") == "yes", "Stop requests cancellation");
+        checkEqual(f.model->get("download:progress"), "Stopping...", "stopping shown");
+        checkEqual(f.model->actionProblem("download.install"), "Stopping...", "another install waits");
+        check(f.waitForJob(), "stopped job collected");
         checkEqual(f.model->get("download:message"), "Stopped. Install again to continue where it left off.", "it says so");
         check(f.model->severity("download:message") == Forms::Severity::Warning, "as a warning");
         check(!fs::exists(root + "/launchers.windows/DuckStation.conf") && !fs::exists(root + "/emulators/DuckStation"), "nothing installed");
@@ -483,7 +559,29 @@ static Test::Suite downloadScreens("download screens", [] {
         check(f.model->get("download:running") == "yes", "still running under another screen");
         f.model->setScreen("download-emulator", duck);
         checkEqual(f.model->leaving(f.model->screen()), "", "leaving isn't held up");
-        checkEqual(f.model->get("download:running"), "no", "leaving the screen stopped it");
+        checkEqual(f.model->get("download:running"), "yes", "leaving requests stop without joining");
+        check(f.waitForJob(), "left job collected");
+    });
+
+    run("download screens: cores wait for another job", [] {
+        std::string root = makeRoot("download-cores-wait");
+        Downloads::InstalledFile program;
+        program.path = "RetroArch/retroarch.exe";
+        writeInstalled(root, "emulator-retroarch", "RetroArch", "1.0", { program });
+        auto http = std::make_unique<BlockedCheckHttp>();
+        BlockedCheckHttp* fake = http.get();
+        for (const auto& entry : Downloads::emulators()) http->documents[releasesUrl(entry.repo)] = "[]";
+        http->documents[Downloads::coreIndexUrl] = "2026-10-28 3610a686 genesis_plus_gx_libretro.dll.zip\n";
+        Fixture f(root, std::move(http));
+        f.model->setScreen("download-emulators", {});
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!fake->entered && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        check(fake->entered, "release check blocked");
+        f.model->setScreen("download-cores", {});
+        checkEqual(f.model->get("download:coresStatus"), "Waiting for the release check...", "waiting shown");
+        fake->release = true;
+        check(f.waitForJob(), "release check and core list finish");
+        check(f.model->rows("download:cores", 100).items.size() == 1, "cores loaded after release check");
     });
 
     run("download screens: RetroArch's cores", [] {

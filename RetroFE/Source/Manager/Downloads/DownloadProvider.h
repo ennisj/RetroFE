@@ -156,6 +156,8 @@ namespace Manager
         std::string jobTarget_;
         bool emulatorsOpen_ = false;   // download-emulators is open (so Back to it doesn't check again)
         bool coresOpen_ = false;
+        bool coreOpen_ = false;
+        Screen coreScreen_;
         std::string coreSystem_ = "all";
     };
 }
