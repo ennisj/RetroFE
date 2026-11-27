@@ -470,7 +470,7 @@ static Test::Suite downloadScreens("download screens", [] {
         check(f.waitFor("download:progress", "Downloading "), "downloading: " + f.model->get("download:progress"));
         checkEqual(f.model->get("download:progress"), "Downloading 1 of 3 MB", "in MB");
         check(f.model->get("download:runningHere") == "yes" && f.model->get("download:installingHere") == "yes", "Stop and the leaving note show");
-        checkEqual(f.model->actionProblem("download.remove"), "It isn't installed.", "one job at a time");
+        checkEqual(f.model->actionProblem("download.remove"), "Wait for the current download to finish, or stop it.", "one job at a time");
         Forms::Model::Result stopped = f.model->runAction("download.stop");
         check(stopped.ok && f.model->get("download:running") == "no", "Stop ends the job");
         checkEqual(f.model->get("download:message"), "Stopped. Install again to continue where it left off.", "it says so");
@@ -544,7 +544,9 @@ static Test::Suite downloadScreens("download screens", [] {
         auto system = Forms::parse(Forms::builtinForm("system-add"), error);
         const Forms::Field* choice = system ? Forms::findField(*system, "system:addLauncher") : nullptr;
         const Forms::Field* link = system ? Forms::findField(*system, "download-emulators") : nullptr;
-        check(choice && link && link->type == Forms::FieldType::Link && link == choice + 1, "Add a system: right after the Launcher choice");
+        // After the choice and the note under it (why there's no launcher to choose, when there isn't)
+        check(choice && link && link->type == Forms::FieldType::Link && link == choice + 2 && (choice + 1)->bind == "system:addLauncherNote",
+              "Add a system: right after the Launcher choice");
         auto hub = Forms::parse(Forms::builtinForm("manage"), error);
         const Forms::Field* first = hub ? Forms::findField(*hub, "emulator-new") : nullptr;
         check(first && first->label == "Add your first launcher/emulator", "the bare hub's link opens Add a launcher, one Select from downloads");
