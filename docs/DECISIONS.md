@@ -757,6 +757,19 @@ Your request. What each emulator publishes was checked on 2026-11-27.
   Linux and macOS launcher's arguments and portable mode (Windows' arguments
   are reused; the design doc marks each row unverified). A drive used on both
   Windows and Linux shares what's installed per emulator.
+- **Adversarial review before merging (Claude Fable 5.1, your yes), checked
+  before fixing:** critical, an archive's own links could carry a file
+  outside the emulator's folder during unpacking (a `./link/...` name passed
+  the name check, and the physical link check ran only after unpacking).
+  Now every folder is made one part at a time with each part checked with
+  lstat, "." and empty parts are refused, and each link is checked when it's
+  made. Also: explicit modes (0755/0644) instead of the umask; Windows backs
+  up a user's linked file by content again; a leftover disk image mount is
+  detached; a rolling build replaced on the server is re-read once; curl's
+  status from curl itself and SIGPIPE ignored; the write-through check at
+  install now tested. Accepted (design doc "Limits"): link-to-folder changes
+  in an update fail safe; a core from another OS on a shared drive is left
+  on removal; Stop isn't seen during `hdiutil attach`.
 
 ### M49. Round 36: Linux and macOS back on every push — Decided (2026-11-27)
 - **Linux x86_64 and arm64 passed at once** after weeks of Windows-only work

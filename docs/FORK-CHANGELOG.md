@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 39 — emulator downloads on Linux and macOS (2026-11-27)
 
-Unit tests: 8,577 → 9,246 checks (Windows CI); Linux and macOS pass too.
+Unit tests: 8,577 → 9,273 checks (Windows CI); Linux and macOS pass too.
 Choices in M50 of [DECISIONS.md](DECISIONS.md).
 
 - **Download an emulator works on Linux and macOS** with what each emulator
@@ -20,6 +20,11 @@ Choices in M50 of [DECISIONS.md](DECISIONS.md).
   image is opened read-only and its app copied out. Launchers go in
   `launchers.linux` or `launchers.apple`.
 - Downloads use libcurl outside Windows.
+- **Reviewed before merging** (Claude Fable 5.1, your yes): a crafted archive
+  could have written outside the emulator's folder through its own links
+  while unpacking; fixed, with the attack as a test. Also fixed: files and
+  folders get fixed permissions whatever the umask, a disk image is never
+  left mounted, and a few smaller points (M50).
 
 ## Round 38 — a larger test install (2026-11-27)
 
