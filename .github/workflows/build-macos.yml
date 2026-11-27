@@ -11,8 +11,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
-    name: Build macos-14-universal
+    runs-on: macos-15
+    name: Build macos-15-universal
 
     steps:
       - name: Check out repository code

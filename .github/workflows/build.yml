@@ -282,7 +282,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "Could not publish the pre-release" }
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     name: macOS arm64 (Homebrew)
     # Homebrew's libraries, as a developer's Mac would have them; build-macos.yml makes
     # the universal RetroFE.app against the frameworks instead
