@@ -84,6 +84,8 @@ namespace Downloads
     {
         std::function<bool(const std::string& image, const std::string& mountPoint, std::string& error)> attach;
         std::function<void(const std::string& mountPoint)> detach;
+        // Whether an image is attached there (macOS: another device than its parent folder)
+        std::function<bool(const std::string& mountPoint)> mounted;
     };
     ImageOpener systemImageOpener();
 
@@ -143,6 +145,8 @@ namespace Downloads
     private:
         bool stage(const Package& package, const std::vector<std::string>& downloads, const std::string& staging, std::string& error);
         bool commit(const std::string& staging, std::string& error);
+        // Removes a staging folder, detaching a disk image still attached in it first
+        void clearStaging(const std::string& staging) const;
         // "" if the package id and kind may write this file, otherwise why not
         std::string refusal(const InstalledFile& file, const std::string& id, const std::string& kind) const;
 

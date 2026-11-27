@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -124,11 +125,29 @@ namespace
         return true;
     }
 
-    // What's at a path, without following a link
+    // What's at a path, without following a link. On Windows links are
+    // followed, as they always were there: only Linux and macOS install links,
+    // so only they treat a link as a link.
     fs::file_status statusOf(const fs::path& path)
     {
         std::error_code ec;
+#ifdef _WIN32
+        return fs::status(path, ec);
+#else
         return fs::symlink_status(path, ec);
+#endif
+    }
+
+    // Whether a folder listing's entry is a link (never on Windows, as statusOf)
+    bool isLinkEntry(const fs::directory_entry& entry)
+    {
+#ifdef _WIN32
+        (void)entry;
+        return false;
+#else
+        std::error_code ec;
+        return entry.is_symlink(ec);
+#endif
     }
 
     // Whether anything is at a path, a link included (fs::exists follows links)
@@ -235,15 +254,84 @@ namespace
     }
 
     // What's kept of an archive's stored mode: its executable bits, read and
-    // write for the owner, never write for others, never setuid, setgid or sticky
+    // write for the owner, never write for others, never setuid, setgid or
+    // sticky. Nothing stored: 0644, whatever the process's umask.
     uint32_t keptMode(uint32_t stored)
     {
 #ifdef _WIN32
         (void)stored;
         return 0;
 #else
-        return stored == 0 ? 0 : ((stored & 0755) | 0600);
+        return stored == 0 ? 0644 : ((stored & 0755) | 0600);
 #endif
+    }
+
+    // A folder this module made: 0755 off Windows, whatever the umask
+    void folderMode(const fs::path& folder)
+    {
+#ifdef _WIN32
+        (void)folder;
+#else
+        std::error_code ec;
+        fs::permissions(folder, fs::perms(0755), fs::perm_options::replace, ec);
+#endif
+    }
+
+    // Whether every part of a '/'-separated name is a real name: no empty part
+    // ("a//b", "a/") and no "." ("./a", "a/./b"), so each spelling is one path
+    bool plainName(const std::string& name)
+    {
+        if (name.empty()) return false;
+        size_t start = 0;
+        while (true) {
+            size_t slash = name.find('/', start);
+            std::string part = name.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+            if (part.empty() || part == ".") return false;
+            if (slash == std::string::npos) return true;
+            start = slash + 1;
+        }
+    }
+
+    // Makes the folders name (relative to base, '/' separated) is in, one at
+    // a time, never through a link: each part that's there is checked with
+    // lstat, and a link or a file there refuses. The first `trusted` parts may
+    // be links (the user's own emulator folder). New folders are 0755.
+    bool makeFolders(const fs::path& base, const std::string& name, size_t trusted, std::string& error)
+    {
+        std::error_code ec;
+        if (!fs::is_directory(base, ec)) {
+            fs::create_directories(base, ec);
+            if (!fs::is_directory(base, ec)) {
+                error = "Could not create " + pathForMessage(base);
+                return false;
+            }
+            folderMode(base);
+        }
+        fs::path at = base;
+        size_t start = 0;
+        size_t parts = 0;
+        for (size_t slash = name.find('/'); slash != std::string::npos; slash = name.find('/', start)) {
+            at /= fs::u8path(name.substr(start, slash - start));
+            start = slash + 1;
+            fs::file_status status = statusOf(at);
+            if (++parts > trusted && fs::is_symlink(status)) {
+                error = "Refusing to write through the link " + name.substr(0, slash) + ", which can't be done safely: " + name;
+                return false;
+            }
+            if (!fs::exists(status)) {
+                fs::create_directory(at, ec);
+                if (!fs::is_directory(statusOf(at))) {
+                    error = "Could not create " + pathForMessage(at);
+                    return false;
+                }
+                folderMode(at);
+            }
+            else if (!fs::is_directory(fs::status(at, ec))) {
+                error = "Can't install " + name + ": a file is in the way of its folder";
+                return false;
+            }
+        }
+        return true;
     }
 
     // Moves a file or link, copying when it has to cross drives. A link where
@@ -251,7 +339,7 @@ namespace
     bool moveFile(const fs::path& from, const fs::path& to, std::string& error)
     {
         std::error_code ec;
-        fs::create_directories(to.parent_path(), ec);
+        if (!fs::is_directory(to.parent_path(), ec)) fs::create_directories(to.parent_path(), ec);
         fs::rename(from, to, ec);
         if (!ec) return true;
         if (isLink(from)) {
@@ -344,9 +432,14 @@ namespace
         {
         }
 
-        // May name (relative to the emulator's folder) be staged, as a link or not?
+        // May name (relative to the emulator's folder) be staged, as a link or
+        // not? Its folders are made here, never through a link.
         bool allowed(const std::string& name, bool link, std::string& error)
         {
+            if (!plainName(name)) {
+                error = published + " has a name that can't be installed safely: " + name;
+                return false;
+            }
             const std::string key = lower(name);
             for (size_t slash = key.find('/'); slash != std::string::npos; slash = key.find('/', slash + 1)) {
                 if (links.count(key.substr(0, slash))) {
@@ -368,7 +461,7 @@ namespace
 #endif
             }
             names.insert(key);
-            return true;
+            return makeFolders(into, name, 0, error);
         }
 
         void add(const std::string& name, const fs::path& staged, uint64_t size, const std::string& sha256,
@@ -393,6 +486,13 @@ namespace
             }
             fs::path out = into / fs::u8path(name);
             if (!makeLink(target, out, error)) return false;
+            // Followed now, through the links made so far (and again once all are made)
+            if (!staysInside(into, name)) {
+                std::error_code ec;
+                fs::remove(out, ec);
+                error = published + " has a link that leads outside its folder, so it can't be installed safely: " + name + " -> " + target;
+                return false;
+            }
             Downloads::Sha256 hash;
             hash.update(target.data(), target.size());
             add(name, out, target.size(), hash.hex(), 0, target);
@@ -452,9 +552,8 @@ namespace
                 if (!staging.addLink(name, target, error)) return false;
                 continue;
             }
-            fs::path out = staging.into / entryPath;
+            fs::path out = staging.into / entryPath;   // its folders made by allowed(), never through a link
             std::error_code ec;
-            fs::create_directories(out.parent_path(), ec);
             if (isLink(out)) fs::remove(out, ec);   // an earlier entry of the same name: never write through it
             std::ofstream file(out, std::ios::binary | std::ios::trunc);
             Downloads::Sha256 hash;
@@ -495,7 +594,6 @@ namespace
         if (!staging.allowed(program, false, error)) return false;
         fs::path out = staging.into / fs::u8path(program);
         std::error_code ec;
-        fs::create_directories(out.parent_path(), ec);
         if (!fs::copy_file(fs::path(path), out, fs::copy_options::overwrite_existing, ec) || ec) {
             error = "Could not stage " + staging.published + ": " + ec.message();
             return false;
@@ -542,9 +640,8 @@ namespace
                 if (!staging.addLink(name, linkTarget(from), error)) return false;
                 continue;
             }
-            fs::path out = staging.into / fs::u8path(name);
+            fs::path out = staging.into / fs::u8path(name);   // its folders made by allowed()
             std::error_code copyError;
-            fs::create_directories(out.parent_path(), copyError);
             if (!fs::copy_file(from, out, fs::copy_options::overwrite_existing, copyError) || copyError) {
                 error = "Could not copy " + name + " from " + staging.published + ": " + copyError.message();
                 return false;
@@ -723,6 +820,12 @@ ImageOpener systemImageOpener()
         error = "Could not open the disk image";
         return false;
     };
+    // Mounted: a different device from the folder it's in
+    opener.mounted = [](const std::string& mountPoint) {
+        struct stat at {}, parent {};
+        std::string above = fs::path(mountPoint).parent_path().string();
+        return stat(mountPoint.c_str(), &at) == 0 && stat(above.c_str(), &parent) == 0 && at.st_dev != parent.st_dev;
+    };
     opener.detach = [](const std::string& mountPoint) {
         if (!hdiutil({ "detach", mountPoint }, 120) && !hdiutil({ "detach", "-force", mountPoint }, 120)) {
             LOG_WARNING("Downloads", "Could not detach the disk image at " + mountPoint);
@@ -749,6 +852,30 @@ bool isDiskImage(const std::string& path)
     char magic[4] = {};
     file.read(magic, 4);
     return file.gcount() == 4 && magic[0] == 'k' && magic[1] == 'o' && magic[2] == 'l' && magic[3] == 'y';
+}
+
+// Where a disk image is attached while its .app is copied: staging/<id>/mount, absolute
+static std::string mountPointOf(const std::string& staging)
+{
+    std::error_code ec;
+    fs::path mount = fs::absolute(fs::path(staging) / "mount", ec);
+    return (ec ? fs::path(staging) / "mount" : mount).string();
+}
+
+void Installer::clearStaging(const std::string& staging) const
+{
+    // A disk image still attached there (RetroFE stopped while copying) is
+    // detached first, so nothing on it is deleted and it isn't left mounted
+    const std::string mount = mountPointOf(staging);
+    if (imageOpener_.mounted && imageOpener_.detach && imageOpener_.mounted(mount)) {
+        imageOpener_.detach(mount);
+        if (imageOpener_.mounted(mount)) {
+            LOG_WARNING("Downloads", "Leaving " + pathForMessage(fs::path(staging)) + ": a disk image is still attached there");
+            return;
+        }
+    }
+    std::error_code ec;
+    fs::remove_all(staging, ec);
 }
 
 std::string Installer::manifestPath(const std::string& id) const
@@ -886,19 +1013,19 @@ bool Installer::install(const Package& package, const std::vector<std::string>& 
 
     std::string staging = (fs::path(folder_) / "staging" / package.id).string();
     std::error_code ec;
-    fs::remove_all(staging, ec);
+    clearStaging(staging);
     if (!stage(package, downloads, staging, error)) {
-        fs::remove_all(staging, ec);
+        clearStaging(staging);
         return false;
     }
 
     // From here on an interruption is finished by recover()
     if (!writeText(fs::path(staging) / ".ready", "", error)) {
-        fs::remove_all(staging, ec);
+        clearStaging(staging);
         return false;
     }
     if (!commit(staging, error)) {
-        fs::remove_all(staging, ec);
+        clearStaging(staging);
         return false;
     }
     return true;
@@ -948,23 +1075,25 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
                 error = "A disk image can only be installed on macOS";
                 return false;
             }
-            // Attached read-only in staging, the .app copied out, and always detached
-            fs::path mount = fs::path(staging) / "mount";
+            // Attached read-only in staging (full paths, whatever RetroFE's root
+            // is), the .app copied out, and always detached: after a failed or
+            // timed-out attach too
+            const std::string mountPoint = mountPointOf(staging);
             std::error_code ec;
-            fs::create_directories(mount, ec);
-            const std::string mountPoint = mount.string();
-            if (!imageOpener_.attach(downloads[i], mountPoint, error)) {
-                if (error.empty()) error = "Could not open " + files.published;
-                fs::remove(mount, ec);
-                return false;
-            }
+            fs::create_directories(mountPoint, ec);
+            fs::path image = fs::absolute(fs::path(downloads[i]), ec);
+            if (ec) image = fs::path(downloads[i]);
             struct Detach
             {
                 const ImageOpener& opener;
                 const std::string& at;
                 ~Detach() { opener.detach(at); }
             } detach{ imageOpener_, mountPoint };
-            if (!copyFromImage(mount, emulator->appFolder, files, stop_, error)) return false;
+            if (!imageOpener_.attach(image.string(), mountPoint, error)) {
+                if (error.empty()) error = "Could not open " + files.published;
+                return false;
+            }
+            if (!copyFromImage(fs::path(mountPoint), emulator->appFolder, files, stop_, error)) return false;
             continue;
         }
         uint64_t archiveOffset;
@@ -1003,6 +1132,8 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
             file.file.path = path;
             file.file.sha256 = sha256File(staged);
             file.file.portable = true;
+            file.file.mode = keptMode(0);   // 0644 off Windows
+            applyMode(staged, file.file.mode);
             planned.push_back(file);
         }
     }
@@ -1151,7 +1282,8 @@ bool Installer::commit(const std::string& staging, std::string& error)
 
     for (Step& step : steps) {
         if (present(step.staged)) {
-            if (!moveFile(step.staged, step.destination, error)) {
+            // Its folders one at a time, never through a link (the emulator's own folder may be the user's)
+            if (!makeFolders(fs::path(emulators_), step.file.path, 1, error) || !moveFile(step.staged, step.destination, error)) {
                 rollBack();
                 error += ". Nothing was changed.";
                 return false;
@@ -1238,7 +1370,7 @@ bool Installer::commit(const std::string& staging, std::string& error)
     }
 
     if (changed) installMessage_ = " Replaced " + std::to_string(changed) + (changed == 1 ? " changed file; backups are in " : " changed files; backups are in ") + pathForMessage(backups) + ".";
-    fs::remove_all(staging, ec);
+    clearStaging(staging);
     LOG_NOTICE("Downloads", "Installed " + manifest.id + " " + manifest.version + " (" + std::to_string(manifest.files.size()) + " files)");
     return true;
 }
@@ -1296,7 +1428,7 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
     if (const Emulator* entry = manifest.kind == "emulator" ? findEmulator(id) : nullptr) {
         fs::path folder = fs::path(emulators_) / fromUtf8(entry->folder);
         for (auto it = fs::recursive_directory_iterator(folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            if (it->is_symlink(ec) || it->is_regular_file(ec)) removal.left.push_back(utf8(fs::path(entry->folder) / it->path().lexically_relative(folder)));
+            if (isLinkEntry(*it) || it->is_regular_file(ec)) removal.left.push_back(utf8(fs::path(entry->folder) / it->path().lexically_relative(folder)));
         }
         std::sort(removal.left.begin(), removal.left.end());
     }
@@ -1315,7 +1447,7 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
         if (const Emulator* entry = findEmulator(id)) {
             fs::path folder = fs::path(emulators_) / fromUtf8(entry->folder);
             for (auto it = fs::recursive_directory_iterator(folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-                if (!it->is_symlink(ec) && it->is_directory(ec)) {
+                if (!isLinkEntry(*it) && it->is_directory(ec)) {
                     InstalledFile file;
                     file.path = utf8(fs::path(entry->folder) / it->path().lexically_relative(folder));
                     left.files.push_back(file);
@@ -1353,7 +1485,7 @@ void Installer::recover()
             // commit() has put back anything it changed; don't try again every time
             LOG_ERROR("Downloads", "Could not finish installing " + name + ": " + error);
         }
-        fs::remove_all(entry.path(), ec);
+        clearStaging(path);
     }
 }
 
