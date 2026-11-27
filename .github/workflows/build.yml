@@ -87,11 +87,24 @@ jobs:
       run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
 
     - name: Build
-      # As many jobs as cores: an unbounded make -j runs the runner out of memory
-      run: cmake --build RetroFE/Build --parallel "$(nproc)"
+      # As many jobs as cores: an unbounded make -j runs the runner out of memory.
+      # Compiler errors and failed checks are repeated as annotations, which (unlike
+      # the log) can be read without signing in to GitHub
+      run: |
+        set -o pipefail
+        if ! cmake --build RetroFE/Build --parallel "$(nproc)" 2>&1 | tee build.log; then
+          grep -E "error:|Error [0-9]|undefined reference|ld: |fatal" build.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
 
     - name: Run the unit tests
-      run: ctest --test-dir RetroFE/Build --output-on-failure
+      run: |
+        set -o pipefail
+        if ! ctest --test-dir RetroFE/Build --output-on-failure 2>&1 | tee test.log; then
+          grep -E "FAIL|Failed|Exception|checks passed" test.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
+        grep -E "checks passed" test.log | head -1 | while IFS= read -r line; do echo "::notice::${line//%/%25}"; done
 
     - name: Check that retrofe starts
       # --version prints and exits before any window opens
@@ -299,10 +312,23 @@ jobs:
       run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
 
     - name: Build
-      run: cmake --build RetroFE/Build --parallel "$(sysctl -n hw.ncpu)"
+      # Compiler errors and failed checks are repeated as annotations, which (unlike
+      # the log) can be read without signing in to GitHub
+      run: |
+        set -o pipefail
+        if ! cmake --build RetroFE/Build --parallel "$(sysctl -n hw.ncpu)" 2>&1 | tee build.log; then
+          grep -E "error:|Error [0-9]|undefined reference|ld: |fatal" build.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
 
     - name: Run the unit tests
-      run: ctest --test-dir RetroFE/Build --output-on-failure
+      run: |
+        set -o pipefail
+        if ! ctest --test-dir RetroFE/Build --output-on-failure 2>&1 | tee test.log; then
+          grep -E "FAIL|Failed|Exception|checks passed" test.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
+        grep -E "checks passed" test.log | head -1 | while IFS= read -r line; do echo "::notice::${line//%/%25}"; done
 
     - name: Check that retrofe starts
       env:
