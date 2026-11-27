@@ -236,8 +236,10 @@ std::vector<Release> Service::check(const Progress& progress, const std::atomic<
     return releases;
 }
 
-Outcome Service::installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop)
+Outcome Service::installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop,
+                                bool* mismatch)
 {
+    if (mismatch) *mismatch = false;
     std::string problem = checkPackage(package);
     if (problem.empty()) problem = installer_.folderRefusal(package);
     if (!problem.empty()) return failed(problem);
@@ -254,6 +256,7 @@ Outcome Service::installPackage(const Package& package, bool updating, const Pro
         return !stopping(stop);
     }, result);
     if (!fetched) {
+        if (mismatch) *mismatch = result.mismatch;
         LOG_WARNING("Downloads", package.id + ": " + result.error);
         if (!result.cancelled) downloader.discard(package.id);
         return result.cancelled ? stopped() : failed(result.error);
@@ -318,7 +321,27 @@ Outcome Service::install(const std::string& id, const Progress& progress, const 
         outcome.message = entry->name + " " + current->second.version + " is installed and up to date.";
         return outcome;
     }
-    return installPackage(package, updating, progress, stop);
+    bool mismatch = false;
+    Outcome outcome = installPackage(package, updating, progress, stop, &mismatch);
+    if (outcome.ok || !mismatch || !entry->rolling) return outcome;
+
+    // A rolling release's build is replaced in place, so the list read earlier
+    // may name the previous build's SHA-256: read it again, once, and retry
+    // only if it now names another download
+    report(progress, "Checking " + entry->name + " again...");
+    ReleaseList fresh;
+    readLatest(*entry, cacheFolder(), http_.get(), now ? now() : static_cast<int64_t>(std::time(nullptr)), fresh, 0);
+    if (fresh.packages.empty() || fresh.packages[0].files.empty() || package.files.empty()) return outcome;
+    const Package& again = fresh.packages[0];
+    if (again.files[0].sha256 == package.files[0].sha256 && again.files[0].url == package.files[0].url) return outcome;
+    LOG_NOTICE("Downloads", package.id + ": the rolling build changed on the server; downloading it again");
+    if (updating && compareVersions(again.version, current->second.version) <= 0) {
+        Outcome upToDate;
+        upToDate.ok = true;
+        upToDate.message = entry->name + " " + current->second.version + " is installed and up to date.";
+        return upToDate;
+    }
+    return installPackage(again, updating, progress, stop);
 }
 
 Outcome Service::remove(const std::string& id, const Progress& progress, const std::atomic<bool>* stop)

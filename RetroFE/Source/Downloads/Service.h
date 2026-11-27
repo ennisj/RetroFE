@@ -163,7 +163,9 @@ namespace Downloads
         std::function<bool(const std::string& folder, uint64_t& available)> freeSpace;
 
     private:
-        Outcome installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop);
+        // mismatch: set when the download wasn't what the release list said (its SHA-256 or size)
+        Outcome installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop,
+                               bool* mismatch = nullptr);
         Release checkOne(size_t entry, const std::map<std::string, Manifest>& installed, int64_t maxAge);
         void readCoreList(CoreList& list, std::vector<Package>& packages);
         std::string cacheFolder() const;
