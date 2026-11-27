@@ -15,29 +15,96 @@
  */
 #include "Emulators.h"
 #include "GitHub.h"
-#include "Index.h"
 #include "Hash.h"
-#include "../Library/Edits.h"
-#include "../Manager/Emulators/Launchers.h"
-#include <filesystem>
+#include "Http.h"
 #include "JsonFields.h"
+#include "../Library/Edits.h"
+#include "../Library/RetroArch.h"
+#include "../Manager/Emulators/Launchers.h"
 #include <nlohmann/json.hpp>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <regex>
 #include <set>
-#include <ctime>
-#include <fstream>
 #include <sstream>
-#include "Http.h"
-#include "../Library/RetroArch.h"
 
 using nlohmann::json;
-namespace J = Catalog::JsonFields;
+namespace fs = std::filesystem;
+namespace J = Downloads::JsonFields;
 
-namespace Catalog
+namespace
 {
+    const char* const libretroStable = "https://buildbot.libretro.com/stable/";
+    const char* const libretroNightly = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/";
+
+    std::string readText(const fs::path& path)
+    {
+        std::ifstream file(path, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    }
+
+    bool writeText(const fs::path& path, const std::string& text)
+    {
+        std::error_code ec;
+        fs::create_directories(path.parent_path(), ec);
+        fs::path temp = path;
+        temp += ".tmp";
+        {
+            std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+            file << text;
+            if (!file) return false;
+        }
+        fs::rename(temp, path, ec);
+        if (ec) fs::remove(temp, ec);
+        return !ec;
+    }
+
+    bool isSha256(const std::string& hex)
+    {
+        return hex.size() == 64 && hex.find_first_not_of("0123456789abcdef") == std::string::npos;
+    }
+
+    // Where an entry's downloads may come from
+    std::string originOf(const Downloads::Emulator& entry)
+    {
+        return entry.id == "retroarch" ? libretroStable : "https://github.com/" + entry.repo + "/releases/download/";
+    }
+
+    // A URL on origin that doesn't climb out of it
+    bool fromOrigin(const std::string& url, const std::string& origin)
+    {
+        return Downloads::isHttpsUrl(url) && url.rfind(origin, 0) == 0 && url.size() > origin.size()
+            && url.find("..") == std::string::npos && url.find('\\') == std::string::npos;
+    }
+
+    Library::ScanOptions windowsLibrary(const std::string& root, bool games)
+    {
+        Library::ScanOptions options;
+        options.root = root;
+        options.os = "windows";
+        options.metadata = false;
+        options.games = games;
+        return options;
+    }
+}
+
+namespace Downloads
+{
+
+bool isCoreName(const std::string& core)
+{
+    return core.size() <= 80 && std::regex_match(core, std::regex("[a-z0-9_][a-z0-9_-]*"));
+}
+
 bool isCoreId(const std::string& id)
 {
-    return std::regex_match(id, std::regex("core-[a-z0-9_][a-z0-9_-]*"));
+    return id.rfind("core-", 0) == 0 && isCoreName(id.substr(5));
+}
+
+std::string coreUrl(const std::string& core)
+{
+    return std::string(libretroNightly) + core + "_libretro.dll.zip";
 }
 
 std::string coreLauncherName(const std::string& name)
@@ -54,7 +121,7 @@ std::string coreLauncherName(const std::string& name)
     return result;
 }
 
-void parseCoreIndex(const std::string& text, const std::string& source, const std::string& root, std::vector<Package>& packages)
+void parseCoreIndex(const std::string& text, const std::string& root, std::vector<Package>& packages)
 {
     std::istringstream lines(text);
     std::string line;
@@ -67,56 +134,51 @@ void parseCoreIndex(const std::string& text, const std::string& source, const st
         const int days[] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
         if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month-1] + (month == 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0))) continue;
         std::string stem = m[5];
-        if (!seen.insert(stem).second) continue;
-        auto info = Library::RetroArch::readConfigFile((std::filesystem::path(root) / "emulators/RetroArch/info" / (stem + "_libretro.info")).string());
+        if (!isCoreName(stem) || !seen.insert(stem).second) continue;
+        auto info = Library::RetroArch::readConfigFile((fs::path(root) / "emulators/RetroArch/info" / (stem + "_libretro.info")).string());
         Package package;
         package.id = "core-" + stem;
         package.kind = "core";
-        package.source = source;
         package.name = info["corename"].empty() ? stem : info["corename"];
         package.system = info["systemname"];
         package.description = info["display_name"];
         package.version = m[1].str() + "-" + m[2].str() + "-" + m[3].str();
-        package.requirements.push_back({ "emulator-retroarch", "" });
         PackageFile file;
-        file.url = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/" + stem + "_libretro.dll.zip";
-        file.target = "emulators";
-        file.path = "RetroArch/cores";
+        file.url = coreUrl(stem);
+        file.folder = "RetroArch/cores";
         file.crc32 = static_cast<uint32_t>(std::stoul(m[4], nullptr, 16));
         package.files.push_back(file);
         packages.push_back(package);
     }
 }
 
-void readCores(const SourceConfig& source, const std::string& cacheFolder, const std::string& root, Http* http, SourceContents& contents)
+void readCores(const std::string& cacheFolder, const std::string& root, Http* http, CoreIndex& index)
 {
-    Manifest manifest;
-    std::string error;
-    if (!readManifest((std::filesystem::path(cacheFolder).parent_path() / "installed/emulator-retroarch.json").string(), manifest, error)) {
-        contents.warnings.push_back("Install RetroArch first");
-        return;
-    }
-    auto folder = std::filesystem::path(cacheFolder) / source.name;
-    std::error_code ec;
-    std::filesystem::create_directories(folder, ec);
-    auto read = [](const std::filesystem::path& path) {
-        std::ifstream file(path, std::ios::binary);
-        return std::string(std::istreambuf_iterator<char>(file), {});
-    };
-    std::string text = read(folder / "cores.index"), modified = read(folder / "cores.modified");
+    index = CoreIndex();
+    fs::path folder(cacheFolder);
+    std::string text = readText(folder / "cores.index");
+    std::string modified = readText(folder / "cores.modified");
     Http::Response response;
     std::vector<std::string> headers;
-    if (!modified.empty()) headers.push_back("If-Modified-Since: " + modified);
-    if (http && http->request("https://buildbot.libretro.com/nightly/windows/x86_64/latest/.index-extended", headers, response) && response.status == 200) {
+    if (!text.empty() && !modified.empty()) headers.push_back("If-Modified-Since: " + modified);
+    bool answered = http && http->request(coreIndexUrl, headers, response);
+    if (answered && response.status == 200) {
         text = response.body;
-        std::ofstream(folder / "cores.index", std::ios::binary) << text;
-        std::ofstream(folder / "cores.modified", std::ios::binary) << response.headers["last-modified"];
+        writeText(folder / "cores.index", text);
+        std::string lastModified = response.headers["last-modified"];
+        if (lastModified.find_first_of("\r\n") != std::string::npos) lastModified.clear();
+        writeText(folder / "cores.modified", lastModified);
     }
-    else if (response.status != 304) {
-        contents.fromCache = true;
-        contents.warnings.push_back("Could not read libretro's core list; using the last copy");
+    else if (!(answered && response.status == 304 && !text.empty())) {
+        if (text.empty()) {
+            index.error = !http ? "Downloading isn't supported on this system yet"
+                        : "Could not read libretro's core list" + (response.error.empty() ? std::string() : ": " + response.error);
+            return;
+        }
+        index.fromCache = true;
+        index.warnings.push_back("Could not read libretro's core list; using the last copy");
     }
-    parseCoreIndex(text, source.name, root, contents.packages);
+    parseCoreIndex(text, root, index.packages);
 }
 
 const std::vector<Emulator>& emulators()
@@ -124,21 +186,21 @@ const std::vector<Emulator>& emulators()
     static const std::vector<Emulator> entries = {
         { "retroarch", "RetroArch", "RetroArch", "libretro/RetroArch", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "https://buildbot.libretro.com/stable/<version>/windows/x86_64/RetroArch.7z", "7z", "RetroArch-Win64/",
-          "retroarch.exe", {}, "", "", "Runs games through libretro cores.", "", "" },
+          "retroarch.exe", {}, "", "", "Runs games through libretro cores." },
         { "mame", "MAME", "MAME", "mamedev/mame", R"(^mame0([0-9]+)$)", "<tag>b_x64.exe", "sfx", "",
-          "mame.exe", {}, "MAME", R"(%ITEM_NAME% -rompath "%ITEM_DIRECTORY%.")", "Arcade machine emulator.", "Arcade", "zip,7z,chd" },
+          "mame.exe", {}, "MAME", R"(%ITEM_NAME% -rompath "%ITEM_DIRECTORY%.")", "Arcade machine emulator." },
         { "duckstation", "DuckStation", "DuckStation", "stenzek/duckstation", R"(^v(0\.1-[0-9]+)$)",
           "duckstation-windows-x64-release.zip", "zip", "", "duckstation-qt-x64-ReleaseLTCG.exe", { "portable.txt" },
-          "DuckStation", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation emulator.", "PlayStation", "cue,chd,bin,img,iso,m3u,pbp,ecm,mds,psexe,psf,minipsf" },
+          "DuckStation", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation emulator." },
         { "pcsx2", "PCSX2", "PCSX2", "PCSX2/pcsx2", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "pcsx2-v<version>-windows-x64-Qt.7z", "7z", "", "pcsx2-qt.exe", { "portable.txt" },
-          "PCSX2", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation 2 emulator.", "PlayStation 2", "iso,chd,cso,zso,gz,elf,irx,m3u,cue,bin,img,mdf,nrg,dump" },
+          "PCSX2", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation 2 emulator." },
         { "ppsspp", "PPSSPP", "PPSSPP", "hrydgard/ppsspp", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "PPSSPP-v<version>-Windows-x64.zip", "zip", "", "PPSSPPWindows64.exe", {},
-          "PPSSPP", R"(--fullscreen "%ITEM_FILEPATH%")", "Sony PSP emulator.", "PSP", "iso,cso,chd,pbp,elf,prx" },
+          "PPSSPP", R"(--fullscreen "%ITEM_FILEPATH%")", "Sony PSP emulator." },
         { "flycast", "Flycast", "Flycast", "flyinghead/flycast", R"(^v([0-9]+\.[0-9]+(?:\.[0-9]+)?)$)",
           "flycast-win64-<version>.zip", "zip", "", "flycast.exe", {},
-          "Flycast", R"("%ITEM_FILEPATH%")", "Sega Dreamcast and NAOMI emulator.", "Dreamcast", "chd,cdi,gdi,cue,m3u,elf,dat,zip,7z,lst" }
+          "Flycast", R"("%ITEM_FILEPATH%")", "Sega Dreamcast and NAOMI emulator." }
     };
     return entries;
 }
@@ -149,17 +211,22 @@ const Emulator* findEmulator(const std::string& packageId)
     return nullptr;
 }
 
-bool parseEmulatorReleases(const std::string& text, const Emulator& entry, const std::string& source,
+bool parseEmulatorReleases(const std::string& text, const Emulator& entry,
                            std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error)
 {
     json releases = json::parse(text, nullptr, false);
-    if (!releases.is_array()) { error = "GitHub's answer isn't a list of releases"; return false; }
+    if (!releases.is_array()) {
+        std::string message = J::text(releases, "message");
+        error = message.empty() ? "GitHub's answer isn't a list of releases" : "GitHub says: " + message;
+        return false;
+    }
     Package best;
+    const std::regex tagRule(entry.tagRule);
     for (const auto& release : releases) {
         if (!release.is_object() || J::flag(release, "draft") || J::flag(release, "prerelease")) continue;
         std::string tag = J::text(release, "tag_name");
         std::smatch match;
-        if (!std::regex_match(tag, match, std::regex(entry.tagRule))) continue;
+        if (!std::regex_match(tag, match, tagRule)) continue;
         std::string version = match[1];
         if (entry.id == "mame") version = "0." + version;
         if (entry.id == "duckstation") version.replace(version.find('-'), 1, ".");
@@ -180,18 +247,14 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry, const
             J::count(asset, "size", file.size);
             break;
         }
-        std::string origin = libretro ? "https://buildbot.libretro.com/stable/"
-            : "https://github.com/" + entry.repo + "/releases/download/";
-        if (!file.url.empty() && (file.url.rfind(origin, 0) != 0 || !isAllowedLocation(file.url))) {
+        if (!file.url.empty() && !fromOrigin(file.url, originOf(entry))) {
             warnings.push_back(entry.name + " " + tag + ": download URL is outside its release origin");
             continue;
         }
         if (file.url.empty()) continue;
         if (!best.version.empty() && compareVersions(version, best.version) <= 0) continue;
-        file.target = "emulators";
-        file.path = entry.folder;
+        file.folder = entry.folder;
         best = Package();
-        best.source = source;
         best.id = "emulator-" + entry.id;
         best.name = entry.name;
         best.kind = "emulator";
@@ -204,10 +267,44 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry, const
     return true;
 }
 
-std::string createEmulatorLauncher(const std::string& root, const std::string& catalog, Manifest& manifest)
+std::string checkPackage(const Package& package)
+{
+    if (!isValidId(package.id) || package.files.empty()) return "That isn't a download RetroFE knows.";
+    if (package.kind == "emulator") {
+        const Emulator* entry = findEmulator(package.id);
+        if (!entry) return "Only emulators of RetroFE's built-in list can be installed.";
+        for (const PackageFile& file : package.files) {
+            if (file.folder != entry->folder) return entry->name + " may only be installed in emulators/" + entry->folder + ".";
+            if (file.crc32) return "Only cores are checked by CRC-32.";
+            if (!fromOrigin(file.url, originOf(*entry))) return entry->name + " is only downloaded from " + originOf(*entry);
+            if (entry->id == "retroarch") {
+                // libretro publishes no checksum for RetroArch.7z: only its own server, over HTTPS
+                if (!package.noChecksum && file.sha256.empty()) return "This release has no checksum, so RetroFE won't install it.";
+                if (!file.sha256.empty() && !isSha256(file.sha256)) return "This release's checksum isn't a SHA-256.";
+            }
+            else if (!isSha256(file.sha256)) {
+                return "This release has no checksum, so RetroFE won't install it.";
+            }
+        }
+        return "";
+    }
+    if (package.kind == "core") {
+        if (!isCoreId(package.id)) return "That isn't a RetroArch core.";
+        const std::string core = package.id.substr(5);
+        if (package.files.size() != 1) return "A core is one download.";
+        const PackageFile& file = package.files[0];
+        if (file.url != coreUrl(core)) return "Cores are only downloaded from libretro's nightly builds.";
+        if (!file.crc32) return "libretro's list has no CRC-32 for this core, so RetroFE won't install it.";
+        if (file.folder != "RetroArch/cores") return "Cores may only be installed in emulators/RetroArch/cores.";
+        return "";
+    }
+    return "Only emulators and RetroArch cores can be downloaded.";
+}
+
+std::string createEmulatorLauncher(const std::string& root, const std::string& downloadsFolder, Manifest& manifest)
 {
     std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
-    const Emulator* entry = findEmulator(manifest.id);
+    const Emulator* entry = manifest.kind == "emulator" ? findEmulator(manifest.id) : nullptr;
     Emulator core;
     if (manifest.kind == "core" && isCoreId(manifest.id)) {
         core.folder = "RetroArch";
@@ -218,26 +315,22 @@ std::string createEmulatorLauncher(const std::string& root, const std::string& c
     }
     if (!entry) return "";
     if (entry->launcher.empty()) return " Add a core next from Cores.";
-    Library::ScanOptions options;
-    options.root = root;
-    options.os = "windows";
-    options.metadata = false;
-    auto index = Library::buildIndex(options);
+    auto index = Library::buildIndex(windowsLibrary(root, false));
     if (!index) return " Could not read the library to create the launcher.";
     if (index->findLauncher(Library::LauncherScope::Global, entry->launcher) >= 0)
         return "; a launcher called " + entry->launcher + " already exists, so it was left as it is.";
     Library::Editor editor(root);
     Library::Editor::NewLauncher launcher;
     launcher.name = entry->launcher;
-    launcher.executable = Emulators::portablePath(root, (std::filesystem::path(root) / "emulators" / entry->folder / entry->program).string(), "windows");
+    launcher.executable = Emulators::portablePath(root, (fs::path(root) / "emulators" / entry->folder / entry->program).string(), "windows");
     launcher.arguments = entry->arguments;
     auto result = editor.addLauncher(*index, launcher);
     if (!result.ok) return " Launcher " + entry->launcher + " was left alone: " + result.message;
     manifest.launcherPath = "launchers.windows/" + entry->launcher + ".conf";
-    manifest.launcherSha256 = sha256File(std::filesystem::path(root) / manifest.launcherPath);
+    manifest.launcherSha256 = sha256File(fs::path(root) / manifest.launcherPath);
     manifest.launcherName = entry->launcher;
     std::string error;
-    if (!writeManifest((std::filesystem::path(catalog) / "installed" / (manifest.id + ".json")).string(), manifest, error)) return " " + error;
+    if (!writeManifest((fs::path(downloadsFolder) / "installed" / (manifest.id + ".json")).string(), manifest, error)) return " " + error;
     return ", with the launcher " + entry->launcher + ".";
 }
 
@@ -245,7 +338,7 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
 {
     if (manifest.launcherPath.empty()) return "";
     std::lock_guard<std::recursive_mutex> lock(Library::libraryWriteMutex());
-    const Emulator* entry = findEmulator(manifest.id);
+    const Emulator* entry = manifest.kind == "emulator" ? findEmulator(manifest.id) : nullptr;
     Emulator core;
     if (manifest.kind == "core" && isCoreId(manifest.id) &&
         (manifest.launcherName == "RetroArch" || manifest.launcherName.rfind("RetroArch ", 0) == 0) &&
@@ -253,16 +346,13 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
         core.launcher = manifest.launcherName;
         entry = &core;
     }
+    // Only the launcher the built-in list says it created, never a path from the manifest alone
     if (!entry || entry->launcher.empty() || manifest.launcherPath != "launchers.windows/" + entry->launcher + ".conf") return "";
-    auto path = std::filesystem::path(root) / manifest.launcherPath;
+    auto path = fs::path(root) / manifest.launcherPath;
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) return "";
+    if (!fs::exists(path, ec)) return "";
     if (sha256File(path) != manifest.launcherSha256) return " Kept launcher " + entry->launcher + " because it has changed.";
-    Library::ScanOptions options;
-    options.root = root;
-    options.os = "windows";
-    options.metadata = false;
-    auto index = Library::buildIndex(options);
+    auto index = Library::buildIndex(windowsLibrary(root, true));
     if (!index) return " Kept launcher " + entry->launcher + ": could not read its users.";
     int launcher = index->findLauncher(Library::LauncherScope::Global, entry->launcher);
     if (launcher < 0) return "";
@@ -279,35 +369,4 @@ std::string removeEmulatorLauncher(const std::string& root, const Manifest& mani
     return result.ok ? " Removed launcher " + entry->launcher + "." : " Kept launcher " + entry->launcher + ": " + result.message;
 }
 
-void readEmulators(const SourceConfig& source, const std::string& cacheFolder, Http* http, SourceContents& contents, const std::string& root)
-{
-#ifndef _WIN32
-    (void)source; (void)cacheFolder; (void)http; (void)root;
-    contents.error = "Emulator downloads are Windows-only for now";
-#else
-    readCores(source, cacheFolder, root.empty() ? std::filesystem::path(cacheFolder).parent_path().parent_path().string() : root, http, contents);
-    bool limitWarning = false;
-    for (const auto& entry : emulators()) {
-        SourceConfig github;
-        github.name = source.name;
-        github.repo = entry.repo;
-        SourceContents one;
-        readGitHubReleases(github, cacheFolder, http, static_cast<int64_t>(std::time(nullptr)), one,
-            [&](const std::string& text, std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error) {
-                return parseEmulatorReleases(text, entry, source.name, packages, warnings, error);
-            }, entry.id);
-        contents.packages.insert(contents.packages.end(), one.packages.begin(), one.packages.end());
-        auto warn = [&](const std::string& message) {
-            if (message.find("GitHub's limit") != std::string::npos) {
-                if (limitWarning) return;
-                limitWarning = true;
-            }
-            contents.warnings.push_back(message);
-        };
-        for (const auto& warning : one.warnings) warn(warning);
-        if (!one.error.empty()) warn(entry.name + ": " + one.error);
-        contents.fromCache = contents.fromCache || one.fromCache;
-    }
-#endif
-}
 }
