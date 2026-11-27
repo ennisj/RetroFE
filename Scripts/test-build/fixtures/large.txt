@@ -1,0 +1,88 @@
+# Large test install: full game lists and metadata for Manage and Browse.
+# Folder names other than MAME, Nintendo Entertainment System and Sega Genesis are unconfirmed.
+# Check with --dry-run when the share is back; a roms/ line that is missing stops the run,
+# so fix or remove it. ROMs and artwork stay on the share, not in the repository.
+
+[collections => collections/]
+
+# MAME
+MAME/roms/
+MAME/system_artwork/ ?
+MAME/medium_artwork/logo/ ?
+MAME/medium_artwork/artwork_front/ ?
+MAME/medium_artwork/story/ ?
+
+# Nintendo Entertainment System
+Nintendo Entertainment System/roms/
+Nintendo Entertainment System/system_artwork/ ?
+Nintendo Entertainment System/medium_artwork/logo/ ?
+Nintendo Entertainment System/medium_artwork/artwork_front/ ?
+Nintendo Entertainment System/medium_artwork/story/ ?
+
+# Super Nintendo Entertainment System
+Super Nintendo Entertainment System/roms/
+Super Nintendo Entertainment System/system_artwork/ ?
+Super Nintendo Entertainment System/medium_artwork/logo/ ?
+Super Nintendo Entertainment System/medium_artwork/artwork_front/ ?
+Super Nintendo Entertainment System/medium_artwork/story/ ?
+
+# Sega Genesis
+Sega Genesis/roms/
+Sega Genesis/system_artwork/ ?
+Sega Genesis/medium_artwork/logo/ ?
+Sega Genesis/medium_artwork/artwork_front/ ?
+Sega Genesis/medium_artwork/story/ ?
+
+# Sega Master System
+Sega Master System/roms/
+Sega Master System/system_artwork/ ?
+Sega Master System/medium_artwork/logo/ ?
+Sega Master System/medium_artwork/artwork_front/ ?
+Sega Master System/medium_artwork/story/ ?
+
+# Atari 2600
+Atari 2600/roms/
+Atari 2600/system_artwork/ ?
+Atari 2600/medium_artwork/logo/ ?
+Atari 2600/medium_artwork/artwork_front/ ?
+Atari 2600/medium_artwork/story/ ?
+
+# Nintendo Game Boy
+Nintendo Game Boy/roms/
+Nintendo Game Boy/system_artwork/ ?
+Nintendo Game Boy/medium_artwork/logo/ ?
+Nintendo Game Boy/medium_artwork/artwork_front/ ?
+Nintendo Game Boy/medium_artwork/story/ ?
+
+# Nintendo Game Boy Color
+Nintendo Game Boy Color/roms/
+Nintendo Game Boy Color/system_artwork/ ?
+Nintendo Game Boy Color/medium_artwork/logo/ ?
+Nintendo Game Boy Color/medium_artwork/artwork_front/ ?
+Nintendo Game Boy Color/medium_artwork/story/ ?
+
+# Nintendo Game Boy Advance
+Nintendo Game Boy Advance/roms/
+Nintendo Game Boy Advance/system_artwork/ ?
+Nintendo Game Boy Advance/medium_artwork/logo/ ?
+Nintendo Game Boy Advance/medium_artwork/artwork_front/ ?
+Nintendo Game Boy Advance/medium_artwork/story/ ?
+
+# TurboGrafx-16
+TurboGrafx-16/roms/
+TurboGrafx-16/system_artwork/ ?
+TurboGrafx-16/medium_artwork/logo/ ?
+TurboGrafx-16/medium_artwork/artwork_front/ ?
+TurboGrafx-16/medium_artwork/story/ ?
+
+[appdata]
+meta/hyperlist/MAME.xml ?
+meta/hyperlist/Nintendo Entertainment System.xml ?
+meta/hyperlist/Super Nintendo Entertainment System.xml ?
+meta/hyperlist/Sega Genesis.xml ?
+meta/hyperlist/Sega Master System.xml ?
+meta/hyperlist/Atari 2600.xml ?
+meta/hyperlist/Nintendo Game Boy.xml ?
+meta/hyperlist/Nintendo Game Boy Color.xml ?
+meta/hyperlist/Nintendo Game Boy Advance.xml ?
+meta/hyperlist/TurboGrafx-16.xml ?
