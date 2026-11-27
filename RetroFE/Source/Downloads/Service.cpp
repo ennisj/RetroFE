@@ -58,11 +58,33 @@ namespace
         if (progress) progress(text, done, total);
     }
 
+    // The cache folder of an entry's release list: its id on Windows, as
+    // always; elsewhere one per platform, so a drive used on several systems
+    // doesn't mix their lists (Linux's DuckStation reads another endpoint)
+    std::string cacheEntry(const Downloads::Emulator& entry)
+    {
+        using Downloads::Platform;
+        switch (Downloads::platform()) {
+        case Platform::WindowsX64: return entry.id;
+        case Platform::LinuxX64: return entry.id + "-linux-x86_64";
+        case Platform::LinuxArm64: return entry.id + "-linux-arm64";
+        case Platform::MacArm64: return entry.id + "-macos-arm64";
+        case Platform::MacX64: return entry.id + "-macos-x86_64";
+        default: return entry.id + "-other";
+        }
+    }
+
+    // "No Linux arm64 build"
+    std::string noBuild()
+    {
+        return "No " + Downloads::platformName(Downloads::platform()) + " build";
+    }
+
     // The latest release an entry's GitHub list offers
     void readLatest(const Downloads::Emulator& entry, const std::string& cacheFolder, Downloads::Http* http, int64_t now,
                     Downloads::ReleaseList& list, int64_t maxAge)
     {
-        Downloads::readGitHubReleases(entry.repo, cacheFolder, entry.id, http, now,
+        Downloads::readGitHubReleases(entry.repo, cacheFolder, cacheEntry(entry), http, now,
             [&](const std::string& text, std::vector<Downloads::Package>& packages, std::vector<std::string>& warnings, std::string& error) {
                 return Downloads::parseEmulatorReleases(text, entry, packages, warnings, error);
             }, list, entry.latestOnly, maxAge);
@@ -78,7 +100,13 @@ namespace
             }
             if (warning.find("outside its release origin") != std::string::npos) return warning;
         }
-        return "No release of " + entry.name + " for Windows x64 was found";
+        return "No release of " + entry.name + " for " + Downloads::platformName(Downloads::platform()) + " was found";
+    }
+
+    // emulators\DuckStation on Windows, emulators/DuckStation elsewhere, as messages name a folder
+    std::string emulatorFolder(const std::string& folder)
+    {
+        return (Downloads::platform() == Downloads::Platform::WindowsX64 ? "emulators\\" : "emulators/") + folder;
     }
 
     // "a, b and 3 more"
@@ -115,11 +143,7 @@ Service::Service(const std::string& root, std::unique_ptr<Http> http)
 
 bool Service::supported() const
 {
-#if defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
-    return http_ != nullptr;
-#else
-    return false;
-#endif
+    return platform() != Platform::Other && http_ != nullptr;
 }
 
 std::string Service::cacheFolder() const
@@ -148,6 +172,8 @@ std::vector<EmulatorStatus> Service::list(const Progress& progress, const std::a
         status.folder = entry.folder;
         status.description = entry.description;
         status.launcher = entry.launcher;
+        status.available = entry.available();
+        if (!status.available) status.unavailable = noBuild();
         auto found = installed.find(status.id);
         if (found != installed.end()) {
             status.installedVersion = found->second.version;
@@ -166,6 +192,12 @@ Release Service::checkOne(size_t index, const std::map<std::string, Manifest>& i
     release.name = entry.name;
     auto found = installed.find(release.id);
     if (found != installed.end()) release.installedVersion = found->second.version;
+    if (!entry.available()) {
+        // Nothing to ask GitHub
+        release.available = false;
+        release.error = noBuild();
+        return release;
+    }
 
     ReleaseList list;
     readLatest(entry, cacheFolder(), http_.get(), now ? now() : static_cast<int64_t>(std::time(nullptr)), list, maxAge);
@@ -252,7 +284,7 @@ Outcome Service::installPackage(const Package& package, bool updating, const Pro
     }
     LOG_NOTICE("Downloads", "Installed " + package.id + " " + package.version);
     const Emulator* emulator = !updating && package.kind == "emulator" ? findEmulator(package.id) : nullptr;
-    std::string message = emulator ? package.name + " is installed in emulators\\" + emulator->folder
+    std::string message = emulator ? package.name + " is installed in " + emulatorFolder(emulator->folder)
                                    : (updating ? "Updated to " : "Installed ") + package.name + " " + package.version;
     if (!emulator || launcherMessage.empty() || launcherMessage.front() == ' ') message += ".";
     if (!updating && package.kind == "core") {
@@ -270,6 +302,7 @@ Outcome Service::install(const std::string& id, const Progress& progress, const 
     if (!entry) return failed("That isn't an emulator RetroFE can download.");
     installer_.recover();
     if (!http_) return failed("Downloading isn't supported on this system yet.");
+    if (!entry->available()) return failed(noBuild() + " of " + entry->name + ".");
 
     report(progress, "Checking " + entry->name + "...");
     auto installed = installer_.installed();
@@ -319,7 +352,7 @@ Outcome Service::remove(const std::string& id, const Progress& progress, const s
     if (!removal.left.empty()) {
         std::vector<std::string> names;
         for (const std::string& path : removal.left) names.push_back(path.substr(entry->folder.size() + 1));
-        message += " Left in emulators\\" + entry->folder + ": " + someNames(names) + ".";
+        message += " Left in " + emulatorFolder(entry->folder) + ": " + someNames(names) + ".";
     }
     LOG_NOTICE("Downloads", "Removed " + id);
     outcome.message = message;
@@ -328,6 +361,10 @@ Outcome Service::remove(const std::string& id, const Progress& progress, const s
 
 void Service::readCoreList(CoreList& list, std::vector<Package>& packages)
 {
+    if (!coresOffered(platform())) {
+        list.error = "RetroArch has no " + platformName(platform()) + " build, so there are no cores";
+        return;
+    }
     auto installed = installer_.installed();
     if (!installed.count("emulator-retroarch")) {
         list.error = "Install RetroArch first";

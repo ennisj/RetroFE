@@ -163,6 +163,8 @@ namespace
 }
 
 static Suite downloads("downloads", [] {
+    // These check the Windows x64 table, whatever RetroFE runs on (DownloadsPlatformTests checks the others)
+    Downloads::usePlatform(Downloads::Platform::WindowsX64);
     std::string error;
 
     // --- libretro's cores ------------------------------------------------------
@@ -1362,4 +1364,5 @@ static Suite downloads("downloads", [] {
         check(contains(parentNow.message, "Left in emulators\\RetroArch: info/genesis_plus_gx_libretro.info"), "says what was left: " + parentNow.message);
         checkEqual(service.installCore("genesis_plus_gx").message, "Install RetroArch first.", "cores need RetroArch");
     });
+    Downloads::usePlatform(Downloads::hostPlatform());
 });
