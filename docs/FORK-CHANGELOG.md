@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 37 — Add a launcher opens on Name (2026-11-27)
 
-Unit tests: 8,569 → CHECKS checks (Windows CI). Choice in M47 of
+Unit tests: 8,569 → 8,577 checks (Windows CI). Choice in M47 of
 [DECISIONS.md](DECISIONS.md).
 
 - **Add a launcher opens with focus on Name**; Download an emulator stays
