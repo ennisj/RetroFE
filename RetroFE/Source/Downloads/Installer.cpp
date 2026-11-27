@@ -287,7 +287,7 @@ namespace
     {
         std::error_code ec;
         fs::path stop = stopAt.lexically_normal();
-        while (!folder.empty() && folder.lexically_normal() != stop && fs::is_directory(folder, ec) && fs::is_empty(folder, ec)) {
+        while (!folder.empty() && folder.lexically_normal() != stop && fs::is_directory(fs::symlink_status(folder, ec)) && fs::is_empty(folder, ec)) {
             fs::remove(folder, ec);
             folder = folder.parent_path();
         }
@@ -792,13 +792,13 @@ std::string Installer::refusal(const InstalledFile& file, const std::string& id,
 #ifndef _WIN32
     // Nothing is written through a link inside the emulator's folder (one an
     // earlier version installed); the folder itself may be the user's link
-    const fs::path relative = fromUtf8(file.path);
-    fs::path parent = root;
-    auto last = std::prev(relative.end());
-    for (auto part = relative.begin(); part != relative.end() && part != last; ++part) {
-        parent /= *part;
-        if (part != relative.begin() && isLink(parent)) {
-            return "Refusing to write through the link " + pathForMessage(parent.lexically_relative(root)) + ": " + file.path;
+    // The path is split here, not by iterating an fs::path: libc++'s path
+    // iterator is an input iterator, on which std::prev(end()) does nothing
+    for (size_t slash = file.path.find('/'); slash != std::string::npos; slash = file.path.find('/', slash + 1)) {
+        const std::string folder = file.path.substr(0, slash);   // each folder the file is in, never the file
+        if (folder.find('/') == std::string::npos) continue;     // the emulator's own folder
+        if (isLink(root / fromUtf8(folder))) {
+            return "Refusing to write through the link " + folder + ": " + file.path;
         }
     }
 #endif
@@ -994,8 +994,7 @@ bool Installer::stage(const Package& package, const std::vector<std::string>& do
 #endif
         for (const auto& name : emulator->portableFiles) {
             std::string path = emulator->folder + "/" + name;
-            std::error_code ec;
-            if (fs::exists(fs::path(emulators_) / fromUtf8(path), ec)) continue;
+            if (present(fs::path(emulators_) / fromUtf8(path))) continue;
             if (std::any_of(planned.begin(), planned.end(), [&](const PlannedFile& file) { return fileKey(file.file) == lower(path); })) continue;
             fs::path staged = fs::path(staging) / "files" / "portable" / fromUtf8(name);
             if (!writeText(staged, "", error)) return false;
