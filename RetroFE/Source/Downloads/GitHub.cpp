@@ -168,7 +168,7 @@ std::string parseSha256File(const std::string& text, const std::string& fileName
 }
 
 void readGitHubReleases(const std::string& repo, const std::string& cacheFolder, const std::string& entry,
-                        Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result, bool latestOnly)
+                        Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result, bool latestOnly, int64_t maxAge)
 {
     result = ReleaseList();
     if (!isValidRepository(repo) || !isValidId(entry)) {
@@ -195,6 +195,7 @@ void readGitHubReleases(const std::string& repo, const std::string& cacheFolder,
         std::string error;
         if (haveCache && parse(cached, packages, warnings, error)) {
             result.packages = packages;
+            result.checked = state.checked;
             result.warnings = warnings;
             if (!problem.empty()) {
                 result.fromCache = true;
@@ -213,7 +214,7 @@ void readGitHubReleases(const std::string& repo, const std::string& cacheFolder,
         limited();
         return;
     }
-    if (haveCache && now >= state.checked && now - state.checked < gitHubRecheckSeconds) {
+    if (haveCache && now >= state.checked && now - state.checked < maxAge) {
         useCache("");
         return;
     }
@@ -223,7 +224,7 @@ void readGitHubReleases(const std::string& repo, const std::string& cacheFolder,
     }
 
     std::vector<std::string> headers = { "Accept: application/vnd.github+json", "X-GitHub-Api-Version: 2022-11-28" };
-    // Asking only for changes: an unchanged list costs nothing against the limit
+    // Ask for changes using the cached ETag; even a 304 counts against the limit.
     if (haveCache && !state.etag.empty()) {
         headers.push_back("If-None-Match: " + state.etag);
     }
@@ -254,6 +255,7 @@ void readGitHubReleases(const std::string& repo, const std::string& cacheFolder,
         state.blockedUntil = 0;
         writeState(stateFile, state);
         result.packages = packages;
+        result.checked = state.checked;
         result.warnings = warnings;
         return;
     }

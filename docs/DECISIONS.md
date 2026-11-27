@@ -730,6 +730,23 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M46. Round 35: GitHub's limit — Decided (2026-11-27)
+GitHub allows 60 unauthenticated API requests an hour per address and a
+check of the six emulators costs six. Options weighed: (1) reuse results
+longer; (2) check one emulator at a time; (3) an optional GitHub token;
+(4) a version list published daily by the fork's own CI.
+- **Chosen now (your choice): (1).** Opening the screen reuses a check up to
+  an hour old; Check again asks unless the last check is under a minute old;
+  an install uses the version the screen showed. Emulators release every few
+  weeks, so an hour's delay costs nothing. The screen shows when versions
+  were checked.
+- **Kept for later: (4),** when releases are published: one request per
+  check and no limit, at the cost of the fork running a daily job and users
+  trusting it to pass on GitHub's checksums (download addresses stay pinned).
+- **Not done:** (2) loses the list's "update available"; (3) stores a secret
+  on the cabinet for a problem few will meet; reading GitHub's web pages
+  instead of the API gives no checksums.
+
 ### M45. Round 34: review of round 33 — Decided (2026-11-27)
 An adversarial review (Claude Fable 5.1, your yes) of round 33 found no
 critical defect; each finding was checked before fixing.

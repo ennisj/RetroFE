@@ -23,11 +23,10 @@
 
 // Reading a GitHub repository's list of releases, for the built-in emulator
 // list. GitHub allows 60 unauthenticated requests an hour, so each entry's
-// list is kept with its ETag under cache/<entry>/ and fetched at most once a
-// minute. Unauthenticated 304 responses count; six requests per check allow
-// about ten checks per hour. It does not ask while GitHub says the limit is
-// reached (cache/rate-limit.json,
-// shared by every entry).
+// list is kept with its ETag under cache/<entry>/. Unauthenticated 304
+// responses count; six requests per check allow about ten checks an hour.
+// It does not ask while GitHub says the limit is reached
+// (cache/rate-limit.json, shared by every entry).
 namespace Downloads
 {
     class Http;
@@ -51,15 +50,18 @@ namespace Downloads
         std::vector<std::string> warnings;
         std::string error;          // set when nothing could be read
         bool fromCache = false;     // GitHub couldn't be asked or answered; this is the last copy
+        int64_t checked = 0;        // last successful fetch or confirmation (seconds since 1970)
         int64_t retryAt = 0;        // GitHub's limit is reached until then (seconds since 1970); 0 if it isn't
     };
+
+    // Releases usually come out every few weeks; conserve GitHub's 60 requests an hour.
+    constexpr int64_t gitHubAutomaticMaxAge = 60 * 60;
+    constexpr int64_t gitHubFreshMaxAge = 60;
 
     // Reads repo's releases into result, through the cache in
     // cacheFolder/<entry>/. now is seconds since 1970. http may be null: then
     // only the cache is read.
     void readGitHubReleases(const std::string& repo, const std::string& cacheFolder, const std::string& entry,
-                            Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result, bool latestOnly = false);
+                            Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result, bool latestOnly = false, int64_t maxAge = gitHubFreshMaxAge);
 
-    // How long a fetched list is used without asking again
-    constexpr int64_t gitHubRecheckSeconds = 60;
 }

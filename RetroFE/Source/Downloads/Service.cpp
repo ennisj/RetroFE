@@ -60,12 +60,12 @@ namespace
 
     // The latest release an entry's GitHub list offers
     void readLatest(const Downloads::Emulator& entry, const std::string& cacheFolder, Downloads::Http* http, int64_t now,
-                    Downloads::ReleaseList& list)
+                    Downloads::ReleaseList& list, int64_t maxAge)
     {
         Downloads::readGitHubReleases(entry.repo, cacheFolder, entry.id, http, now,
             [&](const std::string& text, std::vector<Downloads::Package>& packages, std::vector<std::string>& warnings, std::string& error) {
                 return Downloads::parseEmulatorReleases(text, entry, packages, warnings, error);
-            }, list, entry.latestOnly);
+            }, list, entry.latestOnly, maxAge);
     }
 
     // Why a list offered nothing, for the screen
@@ -158,7 +158,7 @@ std::vector<EmulatorStatus> Service::list(const Progress& progress, const std::a
     return result;
 }
 
-Release Service::checkOne(size_t index, const std::map<std::string, Manifest>& installed)
+Release Service::checkOne(size_t index, const std::map<std::string, Manifest>& installed, int64_t maxAge)
 {
     const Emulator& entry = emulators()[index];
     Release release;
@@ -168,10 +168,11 @@ Release Service::checkOne(size_t index, const std::map<std::string, Manifest>& i
     if (found != installed.end()) release.installedVersion = found->second.version;
 
     ReleaseList list;
-    readLatest(entry, cacheFolder(), http_.get(), now ? now() : static_cast<int64_t>(std::time(nullptr)), list);
+    readLatest(entry, cacheFolder(), http_.get(), now ? now() : static_cast<int64_t>(std::time(nullptr)), list, maxAge);
     release.warnings = list.warnings;
     release.fromCache = list.fromCache;
     release.retryAt = list.retryAt;
+    release.checked = list.checked;
     if (list.packages.empty()) {
         release.error = nothingOffered(entry, list);
         return release;
@@ -188,7 +189,7 @@ Release Service::checkOne(size_t index, const std::map<std::string, Manifest>& i
     return release;
 }
 
-std::vector<Release> Service::check(const Progress& progress, const std::atomic<bool>* stop)
+std::vector<Release> Service::check(const Progress& progress, const std::atomic<bool>* stop, bool fresh)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     installer_.recover();
@@ -197,7 +198,7 @@ std::vector<Release> Service::check(const Progress& progress, const std::atomic<
     const size_t count = emulators().size();
     for (size_t i = 0; i < count && !stopping(stop); i++) {
         report(progress, "Checking " + emulators()[i].name + "...", i, count);
-        releases.push_back(checkOne(i, installed));
+        releases.push_back(checkOne(i, installed, fresh ? gitHubFreshMaxAge : gitHubAutomaticMaxAge));
     }
     report(progress, "", releases.size(), count);
     return releases;
@@ -275,7 +276,7 @@ Outcome Service::install(const std::string& id, const Progress& progress, const 
     auto current = installed.find(id);
     const bool updating = current != installed.end();
     ReleaseList list;
-    readLatest(*entry, cacheFolder(), http_.get(), now ? now() : static_cast<int64_t>(std::time(nullptr)), list);
+    readLatest(*entry, cacheFolder(), http_.get(), now ? now() : static_cast<int64_t>(std::time(nullptr)), list, gitHubAutomaticMaxAge);
     if (list.packages.empty()) return failed(nothingOffered(*entry, list) + ".");
     const Package& package = list.packages[0];
     if (updating && compareVersions(package.version, current->second.version) <= 0) {
