@@ -382,14 +382,482 @@ namespace Downloads
 }
 
 #else
+#include "Package.h"
+#include <curl/curl.h>
+#include <cstdlib>
+#include <fstream>
+#include <mutex>
+
+namespace
+{
+    std::string describe(CURLcode code)
+    {
+        switch (code) {
+        case CURLE_COULDNT_RESOLVE_HOST:
+        case CURLE_COULDNT_RESOLVE_PROXY:     return "The server's name couldn't be found";
+        case CURLE_COULDNT_CONNECT:           return "Couldn't connect to the server";
+        case CURLE_OPERATION_TIMEDOUT:        return "The server took too long to answer";
+        case CURLE_PARTIAL_FILE:
+        case CURLE_RECV_ERROR:
+        case CURLE_SEND_ERROR:
+        case CURLE_GOT_NOTHING:
+        case CURLE_HTTP2:
+        case CURLE_HTTP2_STREAM:              return "The connection was lost";
+        case CURLE_PEER_FAILED_VERIFICATION:
+        case CURLE_SSL_CONNECT_ERROR:
+        case CURLE_SSL_CACERT_BADFILE:
+        case CURLE_SSL_CERTPROBLEM:           return "The server's security certificate isn't valid";
+        case CURLE_UNSUPPORTED_PROTOCOL:
+        case CURLE_URL_MALFORMAT:
+        case CURLE_TOO_MANY_REDIRECTS:        return "That isn't a valid address";
+        default:                              return std::string("Network error: ") + curl_easy_strerror(code);
+        }
+    }
+
+    // Network failures other than a bad address or certificate may clear up
+    bool retryable(CURLcode code)
+    {
+        switch (code) {
+        case CURLE_UNSUPPORTED_PROTOCOL:
+        case CURLE_URL_MALFORMAT:
+        case CURLE_TOO_MANY_REDIRECTS:
+        case CURLE_PEER_FAILED_VERIFICATION:
+        case CURLE_SSL_CONNECT_ERROR:
+        case CURLE_SSL_CACERT_BADFILE:
+        case CURLE_SSL_CERTPROBLEM:
+        case CURLE_WRITE_ERROR:
+        case CURLE_ABORTED_BY_CALLBACK:
+        case CURLE_OUT_OF_MEMORY:
+            return false;
+        default:
+            return code != CURLE_OK;
+        }
+    }
+
+    // One request as it goes: the answer so far, and where its body goes
+    struct Exchange
+    {
+        CURL* curl = nullptr;
+        int status = 0;
+        std::map<std::string, std::string> headers;   // the latest answer's (after redirects, the last)
+        bool redirectRefused = false;
+        bool failed = false;                          // the body's sink or progress said stop
+        std::function<bool(const char* data, size_t size)> body;
+        std::function<bool()> progress;               // false cancels
+    };
+
+    // libcurl calls these from C: nothing may be thrown through it
+    size_t onHeader(char* data, size_t size, size_t count, void* user)
+    {
+        auto& exchange = *static_cast<Exchange*>(user);
+        const size_t length = size * count;
+        try {
+            std::string line(data, length);
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+            int status = Downloads::HttpText::statusOf(line);
+            if (status > 0) {
+                // A new answer: a redirect's, or the next after 100 Continue
+                exchange.status = status;
+                exchange.headers.clear();
+                return length;
+            }
+            std::string name, value;
+            if (!Downloads::HttpText::header(line, name, value)) return length;
+            exchange.headers[name] = value;
+            if (name == "location" && exchange.status >= 300 && exchange.status < 400) {
+                char* current = nullptr;
+                curl_easy_getinfo(exchange.curl, CURLINFO_EFFECTIVE_URL, &current);
+                if (!Downloads::HttpText::redirectAllowed(current ? current : "", value)) {
+                    exchange.redirectRefused = true;
+                    return 0;   // stops the transfer
+                }
+            }
+            return length;
+        }
+        catch (...) {
+            exchange.failed = true;
+            return 0;
+        }
+    }
+
+    size_t onBody(char* data, size_t size, size_t count, void* user)
+    {
+        auto& exchange = *static_cast<Exchange*>(user);
+        const size_t length = size * count;
+        try {
+            // A redirect's own body isn't the answer
+            if (exchange.status >= 300 && exchange.status < 400 && exchange.headers.count("location")) return length;
+            if (exchange.body && !exchange.body(data, length)) {
+                exchange.failed = true;
+                return 0;
+            }
+            return length;
+        }
+        catch (...) {
+            exchange.failed = true;
+            return 0;
+        }
+    }
+
+    int onProgress(void* user, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+    {
+        auto& exchange = *static_cast<Exchange*>(user);
+        try {
+            if (exchange.progress && !exchange.progress()) {
+                exchange.failed = true;
+                return 1;
+            }
+            return 0;
+        }
+        catch (...) {
+            exchange.failed = true;
+            return 1;
+        }
+    }
+
+    class CurlHttp : public Downloads::Http
+    {
+    public:
+        CurlHttp() : curl_(curl_easy_init()) {}
+        ~CurlHttp() override
+        {
+            if (curl_) curl_easy_cleanup(curl_);
+        }
+        CurlHttp(const CurlHttp&) = delete;
+        CurlHttp& operator=(const CurlHttp&) = delete;
+
+        bool ready() const { return curl_ != nullptr; }
+
+        bool get(const std::string& url, std::string& body, std::string& error) override
+        {
+            body.clear();
+            const size_t limit = 64 * 1024 * 1024;   // indexes are small; don't let one fill memory
+            Exchange exchange;
+            exchange.body = [&](const char* data, size_t size) {
+                if (body.size() + size > limit) {
+                    error = "The index is too large";
+                    return false;
+                }
+                body.append(data, size);
+                return true;
+            };
+            CURLcode code = perform(url, {}, false, exchange);
+            if (code != CURLE_OK) {
+                if (error.empty()) error = failure(code, exchange);
+                body.clear();
+                return false;
+            }
+            if (exchange.status != 200) {
+                error = "The server answered " + std::to_string(exchange.status);
+                body.clear();
+                return false;
+            }
+            return true;
+        }
+
+        bool request(const std::string& url, const std::vector<std::string>& headers, Response& response) override
+        {
+            response = Response();
+            std::vector<std::string> lines;
+            for (const std::string& line : headers) {
+                // A header can't carry another one with it
+                if (line.find_first_of("\r\n") == std::string::npos) lines.push_back(line);
+            }
+            const size_t limit = 64 * 1024 * 1024;
+            Exchange exchange;
+            exchange.body = [&](const char* data, size_t size) {
+                if (response.body.size() + size > limit) {
+                    response.error = "The answer is too large";
+                    return false;
+                }
+                response.body.append(data, size);
+                return true;
+            };
+            CURLcode code = perform(url, lines, false, exchange);
+            if (code != CURLE_OK) {
+                if (response.error.empty()) response.error = failure(code, exchange);
+                response.status = 0;
+                response.body.clear();
+                return false;
+            }
+            response.status = exchange.status;
+            response.headers = exchange.headers;
+            return true;
+        }
+
+        bool download(const std::string& url, const std::string& file, uint64_t offset,
+                      const Progress& progress, Transfer& transfer) override
+        {
+            std::string validator = transfer.validator;
+            transfer = Transfer();
+            if (!Downloads::isHttpsUrl(url)) {
+                transfer.error = "That isn't a valid address";
+                return false;
+            }
+            std::ofstream out;
+            bool opened = false;
+            uint64_t received = 0;
+            uint64_t total = 0;
+            auto report = [&] {
+                if (progress && !progress(received, total)) {
+                    transfer.cancelled = true;
+                    transfer.error = "Cancelled";
+                    return false;
+                }
+                return true;
+            };
+            Exchange exchange;
+            exchange.body = [&](const char* data, size_t size) {
+                using Downloads::HttpText::Answer;
+                if (!opened) {
+                    // The answer decides: the rest of the same file, or the whole of a new one
+                    Answer answer = Downloads::HttpText::answer(offset, exchange.status);
+                    if (answer == Answer::Fail || answer == Answer::Complete) return true;   // an error page: not the file
+                    transfer.resumed = answer == Answer::Resume;
+                    out.open(file, std::ios::binary | (transfer.resumed ? std::ios::app : std::ios::trunc));
+                    opened = true;
+                    if (!out) {
+                        transfer.error = "Could not write " + file;
+                        return false;
+                    }
+                    const uint64_t start = transfer.resumed ? offset : 0;
+                    uint64_t length = 0;
+                    auto found = exchange.headers.find("content-length");
+                    if (found != exchange.headers.end()) length = std::strtoull(found->second.c_str(), nullptr, 10);
+                    total = length > 0 ? start + length : 0;
+                    received = start;
+                    if (!report()) return false;
+                }
+                out.write(data, static_cast<std::streamsize>(size));
+                if (!out) {
+                    transfer.error = "Could not write " + file + " (is the drive full?)";
+                    return false;
+                }
+                received += size;
+                return report();
+            };
+            // While waiting for data too, so a stop isn't held up
+            exchange.progress = [&] {
+                if (!progress) return true;
+                if (!progress(opened ? received : offset, opened ? total : 0)) {
+                    transfer.cancelled = true;
+                    transfer.error = "Cancelled";
+                    return false;
+                }
+                return true;
+            };
+            CURLcode code = perform(url, Downloads::HttpText::resumeHeaders(offset, validator), true, exchange);
+            transfer.validator = Downloads::HttpText::validator(exchange.headers);
+            if (out.is_open()) out.close();
+            if (transfer.cancelled) return false;
+            if (!transfer.error.empty()) return false;   // couldn't write
+            if (code != CURLE_OK) {
+                transfer.error = failure(code, exchange);
+                transfer.retry = !exchange.redirectRefused && retryable(code);
+                return false;
+            }
+            using Downloads::HttpText::Answer;
+            Answer answer = Downloads::HttpText::answer(offset, exchange.status);
+            if (answer == Answer::Complete) {
+                // Nothing left to send: the file is already complete
+                transfer.resumed = true;
+                return true;
+            }
+            if (answer == Answer::Fail) {
+                transfer.error = "The server answered " + std::to_string(exchange.status);
+                transfer.retry = Downloads::HttpText::retryable(exchange.status);
+                return false;
+            }
+            if (!opened) {
+                // An empty answer: the file is empty, or left as it was
+                transfer.resumed = answer == Answer::Resume;
+                std::ofstream empty(file, std::ios::binary | (transfer.resumed ? std::ios::app : std::ios::trunc));
+                if (!empty) {
+                    transfer.error = "Could not write " + file;
+                    return false;
+                }
+            }
+            if (total > 0 && received < total) {
+                // The connection closed early without libcurl calling it an error
+                transfer.error = describe(CURLE_PARTIAL_FILE);
+                transfer.retry = true;
+                return false;
+            }
+            if (opened && !out) {
+                transfer.error = "Could not write " + file;
+                return false;
+            }
+            return true;
+        }
+
+    private:
+        static std::string failure(CURLcode code, const Exchange& exchange)
+        {
+            return exchange.redirectRefused ? "The server sent the download somewhere other than https://" : describe(code);
+        }
+
+        // Sends one request, following redirects only to https://. Downloads
+        // are https:// only; the index requests may also be http://.
+        CURLcode perform(const std::string& url, const std::vector<std::string>& headers, bool download, Exchange& exchange)
+        {
+            if (!curl_) return CURLE_FAILED_INIT;
+            curl_easy_reset(curl_);
+            exchange.curl = curl_;
+            curl_slist* list = nullptr;
+            for (const std::string& line : headers) {
+                curl_slist* longer = curl_slist_append(list, line.c_str());
+                if (!longer) {
+                    curl_slist_free_all(list);
+                    return CURLE_OUT_OF_MEMORY;
+                }
+                list = longer;
+            }
+            curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
+            curl_easy_setopt(curl_, CURLOPT_USERAGENT, "RetroFE");
+            curl_easy_setopt(curl_, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl_, CURLOPT_MAXREDIRS, 10L);
+#if LIBCURL_VERSION_NUM >= 0x075500
+            curl_easy_setopt(curl_, CURLOPT_PROTOCOLS_STR, download ? "https" : "http,https");
+            curl_easy_setopt(curl_, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
+            curl_easy_setopt(curl_, CURLOPT_PROTOCOLS, download ? static_cast<long>(CURLPROTO_HTTPS) : static_cast<long>(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+            curl_easy_setopt(curl_, CURLOPT_REDIR_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS));
+#endif
+            // As WinHTTP's: 15 s to connect, and give up when nothing arrives for 30 s
+            curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT, 15L);
+            curl_easy_setopt(curl_, CURLOPT_LOW_SPEED_LIMIT, 1L);
+            curl_easy_setopt(curl_, CURLOPT_LOW_SPEED_TIME, 30L);
+            curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, onHeader);
+            curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &exchange);
+            curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, onBody);
+            curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &exchange);
+            curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 0L);
+            curl_easy_setopt(curl_, CURLOPT_XFERINFOFUNCTION, onProgress);
+            curl_easy_setopt(curl_, CURLOPT_XFERINFODATA, &exchange);
+            if (list) curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, list);
+            CURLcode code = curl_easy_perform(curl_);
+            curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, nullptr);
+            curl_slist_free_all(list);
+            return code;
+        }
+
+        CURL* curl_ = nullptr;
+    };
+}
 
 namespace Downloads
 {
-    // Linux and macOS get libcurl later; until then nothing is downloaded there
     std::unique_ptr<Http> createHttp()
     {
-        return nullptr;
+        static std::once_flag once;
+        static bool initialised = false;
+        std::call_once(once, [] { initialised = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK; });
+        if (!initialised) return nullptr;
+        auto http = std::make_unique<CurlHttp>();
+        if (!http->ready()) return nullptr;
+        return http;
     }
 }
 
 #endif
+
+// The libcurl Http's text handling, built everywhere so it's tested everywhere
+#include "Package.h"
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+
+namespace Downloads::HttpText
+{
+    namespace
+    {
+        bool printable(const std::string& text)
+        {
+            return std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 0x20 && c <= 0x7e; });
+        }
+
+        std::string trimmed(const std::string& text)
+        {
+            size_t first = text.find_first_not_of(" \t");
+            if (first == std::string::npos) return "";
+            size_t last = text.find_last_not_of(" \t");
+            return text.substr(first, last - first + 1);
+        }
+    }
+
+    int statusOf(const std::string& line)
+    {
+        if (line.rfind("HTTP/", 0) != 0) return 0;
+        size_t space = line.find(' ');
+        if (space == std::string::npos || space + 4 > line.size()) return 0;
+        int status = 0;
+        for (size_t i = space + 1; i < space + 4; i++) {
+            if (!std::isdigit(static_cast<unsigned char>(line[i]))) return 0;
+            status = status * 10 + (line[i] - '0');
+        }
+        if (space + 4 < line.size() && line[space + 4] != ' ') return 0;
+        return status >= 100 ? status : 0;
+    }
+
+    bool header(const std::string& line, std::string& name, std::string& value)
+    {
+        size_t colon = line.find(':');
+        if (colon == std::string::npos || colon == 0 || !printable(line)) return false;
+        name = line.substr(0, colon);
+        if (name.find_first_of(" \t") != std::string::npos) return false;
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        value = trimmed(line.substr(colon + 1));
+        return true;
+    }
+
+    std::vector<std::string> resumeHeaders(uint64_t offset, const std::string& validator)
+    {
+        std::vector<std::string> headers;
+        if (offset == 0) return headers;
+        headers.push_back("Range: bytes=" + std::to_string(offset) + "-");
+        if (!validator.empty() && printable(validator)) headers.push_back("If-Range: " + validator);
+        return headers;
+    }
+
+    std::string validator(const std::map<std::string, std::string>& headers)
+    {
+        auto etag = headers.find("etag");
+        if (etag != headers.end() && !etag->second.empty() && etag->second.rfind("W/", 0) != 0) {
+            return printable(etag->second) ? etag->second : "";
+        }
+        auto modified = headers.find("last-modified");
+        if (modified != headers.end() && printable(modified->second)) return modified->second;
+        return "";
+    }
+
+    bool redirectAllowed(const std::string& url, const std::string& location)
+    {
+        std::string target = trimmed(location);
+        if (target.empty() || !printable(target)) return false;
+        // An absolute address starts with a scheme ("https:"); it must be https
+        size_t colon = target.find(':');
+        size_t slash = target.find_first_of("/?#");
+        bool absolute = colon != std::string::npos && colon > 0 && (slash == std::string::npos || colon < slash)
+            && std::isalpha(static_cast<unsigned char>(target[0]))
+            && std::all_of(target.begin(), target.begin() + static_cast<std::ptrdiff_t>(colon), [](unsigned char c) {
+                   return std::isalnum(c) || c == '+' || c == '-' || c == '.';
+               });
+        if (absolute) return isHttpsUrl(target);
+        // Relative ("/path", "//host/path", "file"): it stays on the scheme it came from
+        return isHttpsUrl(url);
+    }
+
+    Answer answer(uint64_t offset, int status)
+    {
+        if (offset > 0 && status == 206) return Answer::Resume;
+        if (offset > 0 && status == 416) return Answer::Complete;
+        if (status == 200) return Answer::Restart;
+        return Answer::Fail;
+    }
+
+    bool retryable(int status)
+    {
+        return status == 408 || status == 429 || status >= 500;
+    }
+}
