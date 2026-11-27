@@ -320,6 +320,18 @@ jobs:
           exit 1
         fi
 
+    - name: Show SDL2_mixer when the build fails
+      if: failure()
+      run: |
+        {
+          echo "pkg-config SDL2_mixer: $(pkg-config --modversion SDL2_mixer) $(pkg-config --libs SDL2_mixer)"
+          echo "pkg-config sdl2: $(pkg-config --modversion sdl2) $(pkg-config --libs sdl2)"
+          brew list --versions sdl2 sdl2-compat sdl2_mixer sdl3 2>&1
+          ls -l "$(brew --prefix)/lib" | grep -i -E "mixer|SDL2" || true
+          for lib in "$(brew --prefix)"/lib/libSDL2_mixer*.dylib; do echo "$lib: $(nm -gU "$lib" 2>/dev/null | grep -c Mix_) Mix_ symbols"; done
+          grep -o -E "SDL2_mixer[^ ]*" RetroFE/Build/CMakeFiles/retrofe.dir/link.txt | sort -u | head
+        } 2>&1 | while IFS= read -r line; do echo "::warning::${line//%/%25}"; done
+
     - name: Run the unit tests
       run: |
         set -o pipefail
