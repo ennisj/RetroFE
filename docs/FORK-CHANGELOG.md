@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 35 — fewer requests to GitHub (2026-11-27)
 
-Unit tests: 8,556 → CHECKS checks (Windows CI). Choice in M46 of
+Unit tests: 8,556 → 8,569 checks (Windows CI). Choice in M46 of
 [DECISIONS.md](DECISIONS.md).
 
 - **Opening Download an emulator reuses versions checked in the last
