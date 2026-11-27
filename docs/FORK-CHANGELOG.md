@@ -4,18 +4,6 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
-## Round 36 — Linux and macOS on every push (2026-11-27)
-
-Unit tests: 8,577 checks (Windows CI), all passing on Linux and macOS too.
-Choices in M49 of [DECISIONS.md](DECISIONS.md).
-
-- **CI builds and tests Linux (x86_64, arm64) and macOS on every push**, not
-  only for `master`; Windows-first (W4) has ended.
-- **macOS builds again:** on `macos-15`, and with Homebrew's SDL2_mixer
-  linked (its pkg-config file needs keg-only readline).
-- Linux and macOS build errors and failed checks are annotations, readable
-  without a GitHub login.
-
 ## Round 38 — a larger test install (2026-11-27)
 
 Unit tests unchanged; test-build scripts' tests from 36 to 39. Choices in
@@ -41,6 +29,18 @@ Unit tests: 8,569 → 8,577 checks (Windows CI). Choice in M47 of
 - Forms can name the field to focus when they open (`focus="..."`), in both
   of Manage's renderers; the ImGui one now also remembers the focused field
   across screens, as the layout-drawn one does.
+
+## Round 36 — Linux and macOS on every push (2026-11-27)
+
+Unit tests: 8,577 checks (Windows CI), all passing on Linux and macOS too.
+Choices in M49 of [DECISIONS.md](DECISIONS.md).
+
+- **CI builds and tests Linux (x86_64, arm64) and macOS on every push**, not
+  only for `master`; Windows-first (W4) has ended.
+- **macOS builds again:** on `macos-15`, and with Homebrew's SDL2_mixer
+  linked (its pkg-config file needs keg-only readline).
+- Linux and macOS build errors and failed checks are annotations, readable
+  without a GitHub login.
 
 ## Round 35 — fewer requests to GitHub (2026-11-27)
 
