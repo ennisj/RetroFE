@@ -66,9 +66,12 @@ Folders whose names start with `_` under `collections/` aren't systems.
 This is where emulators go, a folder each, named after it: `emulators/RetroArch/`,
 `emulators/MAME/`, `emulators/DuckStation/`. Its program and everything it ships go in
 that folder, and so do its own settings, when the emulator can keep them there (its
-"portable" mode). On Windows, Manage can download the built-in six (RetroArch and its
+"portable" mode). Manage can download the built-in six (RetroArch and its
 cores, MAME, DuckStation, PCSX2, PPSSPP, Flycast) into their folders here and make their
-launchers (Add a launcher → Download an emulator; see [MANAGER.md](MANAGER.md#downloading-emulators)).
+launchers (Add a launcher → Download an emulator; see [MANAGER.md](MANAGER.md#downloading-emulators)),
+on Windows, Linux and macOS, where each has a build. On Linux an AppImage is the
+program itself (`emulators/DuckStation/DuckStation.AppImage`); on macOS the folder
+holds the emulator's `.app` (`emulators/RetroArch/RetroArch.app/`).
 It only installs into a folder it made: if `emulators/MAME/` is already there, it says
 so and leaves it. For any other emulator, put it here yourself and add a launcher in
 Manage by choosing its program. Emulators can go anywhere, but here keeps the install
@@ -77,14 +80,18 @@ self-contained and movable, and a launcher's program inside the root is written 
 
 - **RetroArch** keeps its cores in `emulators/RetroArch/cores/` (its `libretro_directory`),
   their descriptions in `emulators/RetroArch/info/`, and BIOS files in
-  `emulators/RetroArch/system/`.
+  `emulators/RetroArch/system/`. Downloaded on Linux, its descriptions come in the
+  AppImage's portable home (`RetroArch-Linux-x86_64.AppImage.home/.config/retroarch/info/`),
+  on macOS in `RetroArch.app/Contents/Resources/info/`; downloaded cores still go in
+  `emulators/RetroArch/cores/` and their launchers name them by path.
 - **MAME:** RetroFE reads MAME's hiscores from `emulators/mame/hi/`.
 
 ### Launchers: `launchers.windows/<name>.conf`
 
 A launcher is a small text file naming a program and its arguments; a system says which
 launcher starts its games. Manage writes new launchers to `<root>/launchers.windows/`, the
-global launchers that any system can use, and writes paths inside the root as
+global launchers that any system can use (`launchers.linux/` and `launchers.apple/` on
+those systems, emulator downloads' launchers included), and writes paths inside the root as
 `%RETROFE_PATH%/...`, so moving the whole install doesn't break them:
 
 ```ini
