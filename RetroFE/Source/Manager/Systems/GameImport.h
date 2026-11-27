@@ -43,6 +43,7 @@ namespace Manager
         {
             bool running = false, copying = false, changed = false;
             size_t found = 0, copied = 0, already = 0, conflicts = 0, missing = 0;
+            size_t artworkUnusable = 0;
             size_t artworkGames = 0, artworkCopied = 0, artworkAlready = 0, artworkConflicts = 0, artworkLeft = 0;
             bool artworkFound = false, systemArtwork = false, metadataFound = false;
             std::string metadataDescription;

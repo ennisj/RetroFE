@@ -527,7 +527,7 @@ static Test::Suite firstSetup("first setup", [] {
                   system.name + ": all already there: " + s->model.get("system:importMessage"));
         }
         s->open("system-add-games", { { "id", systems().front().name } });
-        std::string metaSource = s->root + "/metadata-source";
+        std::string metaSource = s->base + "/metadata-source";
         writeFile(metaSource + "/collections/Example/roms/a.nes", "game");
         writeFile(metaSource + "/meta/hyperlist/Example.xml", "metadata");
         s->model.set("system:importFrom", metaSource + "/collections/Example/roms");

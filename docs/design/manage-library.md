@@ -546,8 +546,5 @@ These are simplified or not modelled:
 - **Favorites editing:** `addToPlaylist` allows `favorites`. RetroFE rewrites
   that file when a favourite is toggled in the frontend, so a Manage edit made
   while RetroFE holds the old list is lost unless RetroFE reloads first.
-- **The `needsRefresh` exe-time rule** (`<root>/retrofe/RetroFE.exe` older than
-  `meta/`) re-imports on every start once anything in `meta/` is newer than the
-  exe. It's left as it is; LB3 avoids triggering it.
 - **Names Windows can't represent in the ANSI code page** are skipped, as RetroFE
   can't open them either. Moving the library to UTF-8 paths would only help once RetroFE does too.

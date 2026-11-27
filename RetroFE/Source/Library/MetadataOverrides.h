@@ -84,6 +84,7 @@ namespace Library
 
         // The newest change time of the override folder and its files (for
         // RetroFE's refresh check); file_time_type::min() when there's none
+        bool requestImport(const std::string& root, std::string& error);
         std::filesystem::file_time_type newestChange(const std::string& root);
 
         // The row RetroFE's import would give a game from the shipped files, read

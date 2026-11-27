@@ -15,6 +15,8 @@
  */
 #include "GameImport.h"
 #include "../../Library/ConfFile.h"
+#include "../../Library/Files.h"
+#include "../../Library/MetadataOverrides.h"
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -164,7 +166,9 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
     std::vector<std::string> notes;
     fs::path partial;
     try {
-        if (!fs::is_directory(r.from)) throw std::runtime_error("Choose a folder that can be read.");
+        fs::path from = r.from.lexically_normal();
+        if (from.filename().empty()) from = from.parent_path();
+        if (!fs::is_directory(from)) throw std::runtime_error("Choose a folder that can be read.");
         std::vector<fs::path> games;
         auto accept = [&](const fs::directory_entry& entry) {
             if (stop || entry.is_symlink() || !entry.is_regular_file()) return;
@@ -181,11 +185,17 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
         // Artwork is indexed by the item filename stem, including for recursive games.
         fs::path medium, system;
         std::error_code scanError;
-        for (const auto& entry : fs::directory_iterator(r.from.parent_path(), scanError)) {
+        try {
+        for (const auto& entry : fs::directory_iterator(from.parent_path(), scanError)) {
             if (!entry.is_directory() || entry.is_symlink()) continue;
-            std::string name = lower(entry.path().filename().string());
+            std::string name;
+            if (!Library::narrowName(entry.path().filename(), name)) continue;
+            name = lower(name);
             if (name == "medium_artwork") medium = entry.path();
             if (name == "system_artwork") system = entry.path();
+        }
+        } catch (const std::exception& e) {
+            notes.push_back(std::string("The artwork folders could not be read: ") + e.what());
         }
         result.artworkFound = !medium.empty() || !system.empty();
         result.systemArtwork = !system.empty();
@@ -198,16 +208,22 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
             if (!medium.empty()) for (const auto& type : fs::directory_iterator(medium)) {
                 if (stop) break;
                 if (!type.is_directory() || type.is_symlink()) continue;
-                fs::path root = r.mediaPath ? r.mediaPath(type.path().filename().string(), false) : fs::path();
+                std::string typeName;
+                if (!Library::narrowName(type.path().filename(), typeName)) { result.artworkUnusable++; continue; }
+                fs::path root = r.mediaPath ? r.mediaPath(typeName, false) : fs::path();
                 for (const auto& item : fs::directory_iterator(type.path())) {
                     if (stop) break;
                     if (item.is_symlink()) continue;
                     bool directory = item.is_directory();
                     if (!directory && !item.is_regular_file()) continue;
-                    std::string name = lower((directory ? item.path().filename() : item.path().stem()).string());
+                    std::string name;
+                    if (!Library::narrowName(directory ? item.path().filename() : item.path().stem(), name)) { result.artworkUnusable++; continue; }
+                    name = lower(name);
                     bool match = names.count(name) != 0;
                     if (match) withArt.insert(name);
                     auto collect = [&](const fs::path& file, const fs::path& relative) {
+                        std::string usable;
+                        if (!Library::narrowName(relative, usable)) { result.artworkUnusable++; return; }
                         if (match) artwork.push_back({ file, root / relative, root });
                         else result.artworkLeft++;
                     };
@@ -224,22 +240,29 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
                 fs::path root = r.mediaPath ? r.mediaPath("", true) : fs::path();
                 for (fs::recursive_directory_iterator it(system), end; it != end && !stop; ++it) {
                     if (it->is_symlink()) { if (it->is_directory()) it.disable_recursion_pending(); continue; }
-                    if (it->is_regular_file()) artwork.push_back({ it->path(), root / it->path().lexically_relative(system), root });
+                    if (it->is_regular_file()) {
+                        fs::path relative = it->path().lexically_relative(system);
+                        std::string usable;
+                        if (!Library::narrowName(relative, usable)) { result.artworkUnusable++; continue; }
+                        artwork.push_back({ it->path(), root / relative, root });
+                    }
                 }
             }
         }
-        catch (const fs::filesystem_error& e) {
+        catch (const std::exception& e) {
             artwork.clear();
             if (notes.size() < 6) notes.push_back(std::string("The artwork couldn't be read, so none is copied: ") + e.what());
         }
         struct Metadata { fs::path source, target, root; };
         std::vector<Metadata> metadata;
-        fs::path collection = r.from.parent_path();
+        fs::path collection = from.parent_path();
         fs::path collections = collection.parent_path();
-        if (lower(collections.filename().string()) == "collections") {
+        std::string collectionsName;
+        if (Library::narrowName(collections.filename(), collectionsName) && lower(collectionsName) == "collections") {
             fs::path sourceRoot = collections.parent_path(), metaRoot;
             std::vector<fs::path> roots{ sourceRoot };
-            if (lower(sourceRoot.parent_path().filename().string()) == "content")
+            std::string parentName;
+            if (Library::narrowName(sourceRoot.parent_path().filename(), parentName) && lower(parentName) == "content")
                 roots.push_back(sourceRoot.parent_path().parent_path() / "appdata" / sourceRoot.filename());
             try {
                 for (const auto& root : roots) {
@@ -249,18 +272,20 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
                     std::string sourceType = collection.filename().string();
                     Library::ConfLayers settings((metaRoot / "collections" / collection.filename()).string(), Library::ConfLayers::collectionFileNames());
                     settings.load();
-                    if (settings.has("list.metadataType") && !settings.get("list.metadataType").empty()) sourceType = settings.get("list.metadataType");
+                    if (settings.has("metadata.type") && !settings.get("metadata.type").empty()) sourceType = settings.get("metadata.type");
                     else if (metaRoot != sourceRoot) {
                         Library::ConfLayers fallback(collection.string(), Library::ConfLayers::collectionFileNames());
                         fallback.load();
-                        if (fallback.has("list.metadataType") && !fallback.get("list.metadataType").empty()) sourceType = fallback.get("list.metadataType");
+                        if (fallback.has("metadata.type") && !fallback.get("metadata.type").empty()) sourceType = fallback.get("metadata.type");
                     }
                     for (const char* folder : { "hyperlist", "mamelist" }) {
                         fs::path dir = metaRoot / "meta" / folder;
                         if (!fs::exists(dir)) continue;
                         for (const auto& entry : fs::directory_iterator(dir)) {
-                            if (!entry.is_regular_file() || lower(entry.path().extension().string()) != ".xml") continue;
-                            std::string stem = entry.path().stem().string();
+                            std::string extension;
+                            if (!entry.is_regular_file() || !Library::narrowName(entry.path().extension(), extension) || lower(extension) != ".xml") continue;
+                            std::string stem;
+                            if (!Library::narrowName(entry.path().stem(), stem)) continue;
                             size_t dot = stem.find('.');
                             if (stem.substr(0, dot) != sourceType) continue;
                             fs::path relative = fs::path("meta") / folder / entry.path().filename();
@@ -273,10 +298,14 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
                     }
                     result.metadataFound = !metadata.empty();
                 }
-            } catch (const fs::filesystem_error& e) {
+            } catch (const std::exception& e) {
                 metadata.clear(); result.metadataFound = false; result.metadataDescription.clear();
                 notes.push_back(std::string("The metadata couldn't be read, so none is copied: ") + e.what());
             }
+        }
+        if (!metadata.empty() && (r.metadataType.empty() || r.metadataType.find_first_of("./\\") != std::string::npos)) {
+            metadata.clear(); result.metadataFound = false; result.metadataDescription.clear();
+            notes.push_back("Titles and years cannot be copied because the destination metadata type cannot match a metadata filename.");
         }
         if (!copy) {
             result.message = std::to_string(result.found) + (result.found == 1 ? " game found" : " games found");
@@ -321,7 +350,7 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
                 add(candidate, target.parent_path() / ref, false);
             }
         };
-        for (const auto& game : games) add(game, r.into / (r.hierarchy ? game.lexically_relative(r.from) : game.filename()), true);
+        for (const auto& game : games) add(game, r.into / (r.hierarchy ? game.lexically_relative(from) : game.filename()), true);
         if (r.copyArtwork && r.mediaPath) for (const auto& art : artwork) {
             std::string key = lower(art.target.lexically_normal().generic_string());
             auto existing = targets.find(key);
@@ -334,64 +363,71 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
             files.push_back({ art.source, art.target, false, true, art.root });
         }
         std::vector<std::string> metadataNotes;
-        if (r.copyMetadata && !r.installRoot.empty() && !r.metadataType.empty()) for (const auto& item : metadata) {
-            fs::path kept, same;
-            if (fs::exists(item.root)) for (const auto& entry : fs::directory_iterator(item.root)) {
-                std::string stem = entry.path().stem().string();
-                if (entry.is_regular_file() && lower(entry.path().extension().string()) == ".xml" && stem.substr(0, stem.find('.')) == r.metadataType) {
-                    if (entry.path().filename() == item.target.filename() && fs::file_size(entry.path()) == fs::file_size(item.source)) same = entry.path();
-                    else { kept = entry.path(); break; }
+        if (r.copyMetadata && !r.installRoot.empty()) for (const auto& item : metadata) {
+            try {
+                fs::path same, other;
+                if (fs::exists(item.root)) for (const auto& entry : fs::directory_iterator(item.root)) {
+                    std::string stem, filename, targetName;
+                    if (!entry.is_regular_file() || !Library::narrowName(entry.path().stem(), stem)
+                        || !Library::narrowName(entry.path().filename(), filename)
+                        || !Library::narrowName(item.target.filename(), targetName)
+                        || lower(entry.path().extension().string()) != ".xml"
+                        || stem.substr(0, stem.find('.')) != r.metadataType) continue;
+#ifdef _WIN32
+                    if (lower(filename) == lower(targetName)) same = entry.path();
+#else
+                    if (filename == targetName) same = entry.path();
+#endif
+                    else if (other.empty()) other = entry.path();
                 }
+                fs::path kept = !same.empty() ? same : other;
+                if (!kept.empty()) {
+                    std::string name = (fs::path("meta") / item.root.filename() / kept.filename()).generic_string();
+                    if (!same.empty() && fs::file_size(same) == fs::file_size(item.source)) metadataNotes.push_back(name + " was already there.");
+                    else metadataNotes.push_back("kept your " + name + ", which differs, and skipped the one beside the games.");
+                    continue;
+                }
+                files.push_back({ item.source, item.target, false, false, item.root, true });
+            } catch (const std::exception& e) {
+                if (notes.size() < 6) notes.push_back(std::string("Titles and years skipped: ") + e.what());
             }
-            if (!kept.empty()) {
-                std::string name = (fs::path("meta") / item.root.filename() / kept.filename()).generic_string();
-                metadataNotes.push_back("kept your " + name + ", which differs, and skipped the one beside the games.");
-                continue;
-            }
-            if (!same.empty()) {
-                metadataNotes.push_back((fs::path("meta") / item.root.filename() / same.filename()).generic_string() + " was already there.");
-                continue;
-            }
-            files.push_back({ item.source, item.target, false, false, item.root, true });
         }
-        uintmax_t bytes = 0;
+        struct Volume { uintmax_t bytes = 0; fs::path probe; bool games = false, art = false, meta = false; };
+        std::map<fs::path, Volume> volumes;
         for (const auto& file : files) if (!stop && !fs::exists(file.target)) {
+            fs::path destination = fs::absolute(file.target);
+            auto& volume = volumes[destination.root_path()];
             uintmax_t size = fs::file_size(file.source);
-            if (UINTMAX_MAX - bytes < size) throw std::runtime_error("The files are too large to copy.");
-            bytes += size;
+            if (UINTMAX_MAX - volume.bytes < size) throw std::runtime_error("The files are too large to copy.");
+            volume.bytes += size;
+            volume.games |= !file.art && !file.meta; volume.art |= file.art; volume.meta |= file.meta;
+            if (volume.probe.empty()) volume.probe = destination;
         }
-        fs::path drive = fs::absolute(r.into);
-        while (!fs::exists(drive) && drive.has_parent_path() && drive != drive.parent_path()) drive = drive.parent_path();
-        uintmax_t available = stop ? 0 : space ? space(drive) : fs::space(drive).available;
-        if (!stop && bytes > available) throw std::runtime_error("Not enough free space in the destination. Need " + std::to_string(bytes) + " bytes; " + std::to_string(available) + " available.");
-        // Media settings can place artwork on a different volume: check each
-        // artwork folder once (against everything, to keep it simple)
-        std::set<fs::path> artRoots;
-        for (const auto& file : files) if (file.art || file.meta) artRoots.insert(file.root);
-        for (const auto& artRoot : artRoots) if (!stop) {
-            fs::path artDrive = fs::absolute(artRoot);
-            while (!fs::exists(artDrive) && artDrive.has_parent_path() && artDrive != artDrive.parent_path()) artDrive = artDrive.parent_path();
-            uintmax_t artAvailable = space ? space(artDrive) : fs::space(artDrive).available;
-            if (bytes > artAvailable) throw std::runtime_error("Not enough free space in the artwork destination. Need " + std::to_string(bytes) + " bytes; " + std::to_string(artAvailable) + " available.");
+        for (const auto& pair : volumes) if (!stop) {
+            const auto& volume = pair.second;
+            fs::path probe = volume.probe;
+            while (!fs::exists(probe) && probe.has_parent_path() && probe != probe.parent_path()) probe = probe.parent_path();
+            uintmax_t available = space ? space(probe) : fs::space(probe).available;
+            if (volume.bytes > available) {
+                std::string kinds;
+                if (volume.games) kinds += "games";
+                if (volume.art) kinds += (kinds.empty() ? "" : ", ") + std::string("artwork");
+                if (volume.meta) kinds += (kinds.empty() ? "" : ", ") + std::string("titles and years");
+                throw std::runtime_error("Not enough free space for the " + kinds + ". Need " + std::to_string(volume.bytes) + " bytes; " + std::to_string(available) + " available.");
+            }
         }
         size_t at = 0;
         std::set<fs::path> copiedMetadata;
         for (const auto& file : files) {
             if (stop) break;
+            try {
             std::string message = "Copying " + std::to_string(++at) + " of " + std::to_string(files.size()) + ": " + file.source.filename().string();
             if (progress) progress(message);
-            if (file.meta && fs::exists(file.root)) {
-                fs::path kept;
-                for (const auto& entry : fs::directory_iterator(file.root)) {
-                    std::string stem = entry.path().stem().string();
-                    if (entry.is_regular_file() && !copiedMetadata.count(entry.path()) && lower(entry.path().extension().string()) == ".xml" && stem.substr(0, stem.find('.')) == r.metadataType) { kept = entry.path(); break; }
-                }
-                if (!kept.empty()) {
-                    std::string name = (fs::path("meta") / file.root.filename() / kept.filename()).generic_string();
-                    if (kept.filename() == file.target.filename() && fs::file_size(kept) == fs::file_size(file.source)) metadataNotes.push_back(name + " was already there.");
-                    else metadataNotes.push_back("kept your " + name + ", which differs, and skipped the one beside the games.");
-                    continue;
-                }
+            if (file.meta && fs::exists(file.target)) {
+                std::string name = (fs::path("meta") / file.root.filename() / file.target.filename()).generic_string();
+                if (fs::is_regular_file(file.target) && fs::file_size(file.target) == fs::file_size(file.source)) metadataNotes.push_back(name + " was already there.");
+                else metadataNotes.push_back("kept your " + name + ", which differs, and skipped the one beside the games.");
+                continue;
             }
             if (fs::exists(file.target)) {
                 if (fs::is_regular_file(file.target) && fs::file_size(file.target) == fs::file_size(file.source)) { if (file.art) result.artworkAlready++; else result.already++; }
@@ -399,7 +435,7 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
                 continue;
             }
             fs::path relative = fs::weakly_canonical(file.target).lexically_relative(fs::weakly_canonical((file.art || file.meta) ? file.root : r.into));
-            if (!below(relative)) throw std::runtime_error("Destination leaves the games folder: " + file.target.string());
+            if (!below(relative)) throw std::runtime_error(std::string(file.art ? "Destination leaves the artwork folder: " : file.meta ? "Destination leaves the titles and years folder: " : "Destination leaves the games folder: ") + file.target.string());
             fs::create_directories(file.target.parent_path());
             fs::path temporary = file.target;
             temporary += ".retrofe-part";
@@ -418,10 +454,10 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
             out.close();
             if (!out) throw std::runtime_error("Could not finish " + file.target.string());
             if (stop) { fs::remove(partial); partial.clear(); break; }
-            if (file.meta) fs::last_write_time(partial, fs::file_time_type::clock::now());
             if (!publish(partial, file.target)) {
                 fs::remove(partial); partial.clear();
-                if (file.art) result.artworkConflicts++; else result.conflicts++;
+                if (file.meta) metadataNotes.push_back("kept your " + file.target.filename().string() + ", which differs, and skipped the one beside the games.");
+                else if (file.art) result.artworkConflicts++; else result.conflicts++;
                 if (notes.size() < 6) notes.push_back("Kept " + file.target.string() + "; skipped " + file.source.string());
                 continue;
             }
@@ -429,8 +465,18 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
             result.changed = true;
             if (file.game) result.copied++;
             if (file.art) result.artworkCopied++;
-            if (file.meta) copiedMetadata.insert(file.target);
+            if (file.meta) {
+                copiedMetadata.insert(file.target);
+                std::string error;
+                if (!Library::MetadataOverrides::requestImport(r.installRoot.string(), error) && notes.size() < 6) notes.push_back(error);
+            }
             if (file.meta) metadataNotes.push_back("copied " + (fs::path("meta") / file.root.filename() / file.target.filename()).generic_string() + ".");
+            } catch (const std::exception& e) {
+                if (!partial.empty()) { std::error_code ec; fs::remove(partial, ec); partial.clear(); }
+                if (!file.art && !file.meta) throw;
+                if (file.art) result.artworkConflicts++;
+                if (notes.size() < 6) notes.push_back(std::string(file.art ? "Artwork skipped: " : "Titles and years skipped: ") + e.what());
+            }
         }
         std::string destination = r.destinationLabel.empty() ? r.into.string() : r.destinationLabel;
         if (!stop && result.copied == 0 && result.already > 0 && result.conflicts == 0 && result.missing == 0) {
@@ -456,10 +502,11 @@ Manager::GameImport::Status Manager::GameImport::run(const Request& r, bool copy
                 + (result.artworkLeft == 1 ? " file for other games was left" : " files for other games were left");
             result.message += ".";
         }
+        if (result.artworkUnusable) result.message += " " + std::to_string(result.artworkUnusable) + " artwork files with names RetroFE can't use were left.";
         for (const auto& note : metadataNotes) result.message += " Titles and years: " + note;
     }
     catch (const std::exception& e) {
-        result.message = e.what();
+        result.message = result.copied ? "Copied " + std::to_string(result.copied) + " games before the error. " + e.what() : e.what();
         if (!partial.empty()) { std::error_code ec; fs::remove(partial, ec); }
     }
     for (const auto& note : notes) result.message += " " + note;

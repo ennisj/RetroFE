@@ -359,7 +359,7 @@ Up/Down and Select reach every field and button; Back returns to the system.
   whose metadata is in `appdata/retrofe`, both are looked in. The whole files
   are copied after the games and artwork, renamed for this system's metadata
   type (a suffix after the first dot is kept), and RetroFE imports them the
-  next time it starts or reloads. If this install already has a different file
+  when Manage closes and RetroFE reloads, whether or not `metaLock` is on. If this install already has a different file
   for that type, yours is kept and the new one is skipped.
 - **Into** shows the games folder: `list.path` (the first folder if several),
   otherwise `<baseItemPath>/<system>`, otherwise `collections/<system>/roms`.

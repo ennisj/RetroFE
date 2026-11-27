@@ -133,7 +133,7 @@ The Settings form's Monitor choice writes `screenNum0`. Windowed RetroFE opens c
 ## METADATA OPTIONS
 | Option | Default | Type | Description | CoinOPS Added Feature |
 |--------|---------|------|-------------|-----------------------|
-| `metaLock` | `true` | `BOOLEAN` | Locks RetroFE from looking for XML changes and uses meta.db, faster loading when true | ✅ |
+| `metaLock` | `true` | `BOOLEAN` | Skips looking for XML changes for faster loading; Manage can still request a metadata re-import | ✅ |
 | `overwriteXML` | `false` | `BOOLEAN` | Allows metadata XMLs to be overwritten by files in a collection | |
 | `showParenthesis` | `true` | `BOOLEAN` | Show item information between () | |
 | `showSquareBrackets` | `true` | `BOOLEAN` | Show item information between [] | |
