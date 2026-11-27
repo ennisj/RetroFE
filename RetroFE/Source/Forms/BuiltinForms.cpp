@@ -93,7 +93,7 @@ Forms::BuiltinTable allForms()
     };
     for (auto section : { Forms::gamesForms, Forms::menusForms, Forms::systemsForms,
                           Forms::videosForms, Forms::emulatorsForms, Forms::themesForms,
-                          Forms::controlsForms, Forms::browserForms }) {
+                          Forms::controlsForms, Forms::browserForms, Forms::downloadsForms }) {
         Forms::BuiltinTable more = section();
         forms.insert(forms.end(), more.begin(), more.end());
     }
