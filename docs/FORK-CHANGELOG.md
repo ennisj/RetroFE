@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 34 — fixes from the review of round 33 (2026-11-27)
 
-Unit tests: 8,526 → CHECKS checks (Windows CI). Choices in M45 of
+Unit tests: 8,526 → 8,556 checks (Windows CI). Choices in M45 of
 [DECISIONS.md](DECISIONS.md).
 
 - **Downloads work when RetroFE is in a folder with accented letters**
