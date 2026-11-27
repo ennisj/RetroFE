@@ -730,6 +730,19 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M48. Round 38: the larger test install — Decided (2026-11-27)
+Your go-ahead (M30 had it "after Starter has been tried").
+- **Ten cartridge systems, full lists, no videos:** MAME, NES, SNES, Genesis,
+  Master System, Atari 2600, Game Boy, Game Boy Color, Game Boy Advance,
+  TurboGrafx-16. Disc systems and videos would make it tens of GB.
+- **Staged like a RetroFE root** (`collections\<System>\roms`, with
+  `meta\hyperlist` beside), so Add games copies artwork and titles from it
+  as it would from a real install.
+- **Set up through Manage, downloads included** (RetroArch and eight cores),
+  so the install also tries round 33's downloads.
+- **Not checked yet:** seven of the ten folder names (only NES, Genesis and
+  MAME are known); the share was offline. `--dry-run` checks them first.
+
 ### M46. Round 35: GitHub's limit — Decided (2026-11-27)
 GitHub allows 60 unauthenticated API requests an hour per address and a
 check of the six emulators costs six. Options weighed: (1) reuse results
