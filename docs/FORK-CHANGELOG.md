@@ -4,6 +4,23 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 31 — fixes from the review of rounds 25-30 (2026-11-27)
+
+Unit tests: 7,580 → 7,601 checks (Windows CI). Choices in M42 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Add games finds titles and years for systems that name their metadata**
+  (`metadata.type`), not only those using the folder name.
+- **Add games no longer refuses artwork for lack of space it doesn't need,**
+  and an odd artwork file name, or one artwork file that can't be copied, no
+  longer stops it: the games are copied and the message says what was left.
+- **Titles copied by Add games show up even with `metaLock=true`** (the
+  packaged setting), and RetroFE no longer re-reads every metadata file at
+  each start once one is newer than `retrofe.exe`.
+- **Text in mirror mode or a stretched window is as sharp as before round 28.**
+- CI: the first-setup script still only warns on a timing failure, but a crash
+  in it now fails the build.
+
 ## Round 30 — tests check the real code (2026-11-26)
 
 Unit tests: 7,580 checks (Windows CI), unchanged. Choices in M41 of

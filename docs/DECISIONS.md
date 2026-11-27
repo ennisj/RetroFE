@@ -722,6 +722,34 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M42. Round 31: review of rounds 25-30 — Decided (2026-11-27)
+An adversarial review (Claude Fable 5.1) of rounds 25-30 found four bugs, all
+in Add games; each was checked before fixing.
+- **Titles and years read the wrong setting** (`list.metadataType`; RetroFE's
+  is `metadata.type`). The brief named the wrong key and the test copied it.
+- **Free space is checked per volume, with only what goes there.** It used to
+  compare every artwork destination with the whole job, games included.
+- **A name Windows can't narrow no longer stops Add games:** such artwork or
+  metadata files are skipped and counted. Game files keep today's rule: RetroFE
+  can't open them either (names are narrow strings throughout).
+- **Titles' "already there" and "kept" are decided per file name;** a type
+  RetroFE can't match with a file (a dot or slash in it) hides the switch.
+- **`metaLock` keeps skipping the scan of `meta/`, but no longer blocks a
+  re-import Manage asks for.** Before, neither Add games' titles nor Manage's
+  existing re-import marker ever took effect with `metaLock=true`, which the
+  packaged settings use. RetroFE also re-imported every start once anything in
+  `meta/` was newer than `retrofe.exe`; now a newer `retrofe.exe` re-imports
+  once (`MetadataRefresh::needed`).
+- **One artwork or titles file failing no longer ends the job;** it's noted and
+  the rest continue.
+- **Fonts follow the larger axis scale** (round 28 used the smaller), so a
+  stretched window (mirror mode, 16:9 in 5:4) never magnifies text; and glyphs
+  sit at least 2 px apart, so small fonts don't bleed.
+- **`# soft-fail` is read from the first line only, and covers only ordinary
+  step failures:** a crash, or an install or startup failure, fails the build.
+- Left as they are: the file-browser focus test can't reach FormWidget without
+  a window (the fix read correct); artwork matching for emuarc systems.
+
 ### M41. Round 30 choices — Decided (2026-11-26)
 - **Tests use the product's code, not copies.** The first-setup test had its
   own copy of how RetroFE loads its configuration, and it had drifted: no
