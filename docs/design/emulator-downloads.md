@@ -147,7 +147,11 @@ version. macOS arm64 and x86_64 have the same table; their cores differ.
 - **Rolling releases:** DuckStation's Linux builds are only on the release tagged
   `latest` (not a pre-release; `/releases/latest` returns it). Its version is the
   release's `published_at` date as `YYYY.MM.DD`, so a newer build compares newer. Every
-  other entry keeps its tag rule. The asset still needs GitHub's SHA-256.
+  other entry keeps its tag rule. The asset still needs GitHub's SHA-256. The build is
+  replaced in place, so a list read earlier may name the last build's SHA-256: when the
+  download doesn't match, the list is read again at once (whatever its age) and, if it now
+  names another download, that one is fetched, once; otherwise the install fails as any
+  mismatch does.
 - **Launchers** go in `launchers.linux/` or `launchers.apple/` (`Downloads::launcherOs`,
   the names `Utils::getOSType()` gives), with `%RETROFE_PATH%/...` paths; a core's is
   `-L "%RETROFE_PATH%/emulators/RetroArch/cores/<core>_libretro.so" "%ITEM_FILEPATH%"`.
@@ -163,8 +167,12 @@ version. macOS arm64 and x86_64 have the same table; their cores differ.
   `Range` to continue, progress and Stop (also while waiting), 15 s to connect and give
   up after 30 s without data (WinHTTP's timeouts), downloads only over https://, and
   redirects followed only to https:// (libcurl's protocol limits, and each `Location`
-  checked). Its text handling (`Downloads::HttpText`: status lines, headers, Range,
-  validators, redirects, what an answer means) is built and tested everywhere.
+  checked). The status is libcurl's own (`CURLINFO_RESPONSE_CODE`); header lines are read
+  per answer (`HttpText::HeaderReader`: a status line starts an answer only after a blank
+  line, so one shaped like it among the headers is ignored). SIGPIPE is ignored for the
+  process once, when the first curl Http is made (`CURLOPT_NOSIGNAL` is set). Its text
+  handling (`Downloads::HttpText`: status lines, headers, Range, validators, redirects,
+  what an answer means) is built and tested everywhere.
 
 ### AppImages, disk images, permissions and links
 
@@ -173,29 +181,55 @@ version. macOS arm64 and x86_64 have the same table; their cores differ.
   with mode 0755, then committed like any file.
 - **DMG (macOS only):** the image must end with a UDIF trailer. It's attached with
   `hdiutil attach -readonly -nobrowse -noautoopen -mountpoint <staging>/<id>/mount`
-  (`/usr/bin/hdiutil` through `posix_spawn`, no shell, no input, at most five minutes),
-  the entry's `.app` folder is copied out with the same name checks as archive entries
-  (anything that isn't a file, folder or link is refused), and the image is always
-  detached (`hdiutil detach`, then `-force`), even when the copy fails. Nothing in the
-  image is opened or run. The opener is a hook (`Installer::setImageOpener`): elsewhere
-  there's none and a DMG can't be installed; tests give a fake.
+  (both full paths; `/usr/bin/hdiutil` through `posix_spawn`, no shell, no input, at most
+  five minutes), the entry's `.app` folder is copied out with the same checks as archive
+  entries (anything that isn't a file, folder or link is refused), and the image is always
+  detached (`hdiutil detach`, then `-force`, logged if both fail), even when the copy fails
+  or the attach failed or timed out. Before any staging folder is deleted (after an
+  install, a failure or in recovery) an image still attached there is detached first (the
+  mount point on another device than its folder); if it stays attached the folder is left.
+  Nothing in the image is opened or run. The opener is a hook
+  (`Installer::setImageOpener`: attach, detach, mounted): elsewhere there's none and a DMG
+  can't be installed; tests give a fake.
 - **Permissions:** unpacking zip (made on Unix or macOS: the external attributes' high
   16 bits) and 7z (the Unix extension, 0x8000: the attributes' high 16 bits) keeps the
   stored executable bits, with read and write for the owner, never write for others, and
   never setuid, setgid or sticky. The entry's program is made executable even when the
-  archive stored nothing. The mode is in the plan and the manifest (`"mode"`, at most
-  0777), reapplied after each move. Windows ignores modes, as before.
+  archive stored nothing. Whatever the process's umask, a file without a stored mode is
+  0644 (portable files too), the program and an AppImage 0755, and every folder the
+  installer makes (in staging and in `emulators/`) 0755. The mode is in the plan and the
+  manifest (`"mode"`, at most 0777), reapplied after each move. Windows ignores modes, as
+  before.
 - **Links (Linux and macOS):** an archive's (or image's) symbolic link is recreated only
   if its target is relative (no backslash, drive or control character) and, resolved from
   its own folder, names something strictly inside the emulator's folder; no entry may go
   inside a link, nor a link over a folder of entries. Once staged, and again once moved
   into place, every link is followed as the system follows it (through other links, a
   link's `..` taken from where it leads, at most 40) and must still stay inside; anything
-  else refuses the whole install as unsafe. Links are recorded in the manifest (`"link"`)
-  and checked again at commit, recovery and removal: an update or removal compares and
-  removes the link itself, never what it leads to, and keeps a link changed since; nothing
-  is written through a link inside the emulator's folder. Windows refuses link entries, as
-  it never installed them.
+  else refuses the whole install as unsafe. Each link is also followed as soon as it's
+  made, so none is left in staging leading out. Names (of files and links) may not have
+  empty or `.` parts (`./a`, `a//b`, `a/./b`), so one path has one spelling. Nothing is
+  ever written through a link, whatever its name's spelling (APFS ignores case, and not
+  only ASCII's): every folder a file goes in is made one at a time, from the emulator's
+  folder down, each part that's there checked with `lstat` (a link or a file refuses),
+  in staging and again at commit (where only the emulator's folder itself may be a link:
+  the user's, to another drive). Links are recorded in the manifest (`"link"`) and checked
+  again at commit, recovery and removal: an update or removal compares and removes the
+  link itself, never what it leads to, and keeps a link changed since.
+- **Windows** treats links as it always did (it follows them, and backs up and restores
+  by content). What changed in round 39: an archive entry that is a link (made on Unix)
+  is refused, and the install with it; before, it became a small file holding the link's
+  target.
+
+### Limits (accepted)
+
+- An update that turns a link into a folder, or a folder into a link, can't be installed
+  (it fails safe, nothing changed): remove the emulator and install it again.
+- A core installed by RetroFE on another system (a shared drive: `.dll` beside `.so`)
+  isn't this system's core, so removing cores here leaves it behind.
+- Stop isn't seen while `hdiutil attach` runs; it waits for it (at most its five minutes).
+- `curl_global_init` is only thread-safe from libcurl 7.84 (Ubuntu 24.04 has 8.5); RetroFE
+  calls it once, from the first download screen.
 
 ## How a release is found
 

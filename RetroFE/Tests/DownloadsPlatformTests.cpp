@@ -49,6 +49,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 namespace fs = std::filesystem;
 using namespace Test;
@@ -157,6 +160,7 @@ namespace
         int attached = 0, detached = 0;
         bool attachFails = false;
         std::string lastMount;
+        std::set<std::string> mounts;   // where an image is attached now
 
         ImageOpener opener()
         {
@@ -169,10 +173,13 @@ namespace
                 std::error_code ec;
                 fs::copy(contents, mountPoint, fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
                 if (ec) { error = ec.message(); return false; }
+                mounts.insert(mountPoint);
                 return true;
             };
+            result.mounted = [this](const std::string& mountPoint) { return mounts.count(mountPoint) > 0; };
             result.detach = [this](const std::string& mountPoint) {
                 detached++;
+                mounts.erase(mountPoint);
                 std::error_code ec;
                 for (auto it = fs::directory_iterator(mountPoint, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
                     fs::remove_all(it->path(), ec);
@@ -516,6 +523,13 @@ static Suite downloadsPlatforms("downloads on Linux and macOS", [] {
         check(!header("HTTP/1.1 200 OK", name, value) || name != "http/1.1 200 ok", "the status line isn't a header");
         check(!header("", name, value) && !header("No colon here", name, value) && !header("Bad Name: x", name, value)
               && !header(": x", name, value) && !header(std::string("Name: caf\xc3\xa9"), name, value), "only printable ASCII headers");
+        HeaderReader reader;
+        for (const char* line : { "HTTP/1.1 302 Found\r\n", "Location: https://b.example/x\r\n", "ETag: \"old\"\r\n", "\r\n",
+                                  "HTTP/2 200 \r\n", "content-length: 5\r\n", "HTTP/1.1 500 Not a status line here\r\n", "X-Broken\r\n",
+                                  "Last-Modified: Wed, 28 Oct 2026 12:00:00 GMT\r\n", "\r\n" }) reader.line(line);
+        check(reader.headers().size() == 2 && reader.headers().count("content-length") && reader.headers().count("last-modified"),
+              "only the last answer's headers; a status-shaped line among them doesn't start another");
+        check(!reader.headers().count("etag") && !reader.headers().count("location"), "the redirect's dropped");
         check(resumeHeaders(0, "\"v\"").empty(), "nothing to continue from the start");
         check(resumeHeaders(1024, "") == std::vector<std::string>{ "Range: bytes=1024-" }, "Range alone without a validator");
         check(resumeHeaders(1024, "\"v1\"") == std::vector<std::string>({ "Range: bytes=1024-", "If-Range: \"v1\"" }), "If-Range: only the same file");
@@ -673,11 +687,13 @@ static Suite downloadsPlatforms("downloads on Linux and macOS", [] {
         writeFile(root + "/server/not.dmg", "plain");
         check(!installer.install(package, { root + "/server/not.dmg" }, error) && contains(error, "isn't a disk image") && images.attached == 0, "not a disk image: " + error);
         images.attachFails = true;
-        check(!installer.install(package, { image }, error) && contains(error, "Could not open") && images.detached == 0, "attaching fails: " + error);
+        check(!installer.install(package, { image }, error) && contains(error, "Could not open") && images.detached == 1,
+              "attaching fails, and it's still detached (a timed-out attach may have mounted it): " + error);
         images.attachFails = false;
         check(installer.install(package, { image }, error), "installed: " + error);
-        check(images.attached == 2 && images.detached == 1, "attached and detached once");
-        check(fs::path(images.lastMount).parent_path() == fs::path(downloadsFolder) / "staging" / "emulator-retroarch", "mounted in staging");
+        check(images.attached == 2 && images.detached == 2 && images.mounts.empty(), "attached and detached");
+        check(fs::path(images.lastMount).is_absolute()
+              && fs::path(images.lastMount).parent_path() == fs::absolute(fs::path(downloadsFolder) / "staging" / "emulator-retroarch"), "mounted in staging, by its full path");
         checkEqual(readFile(root + "/emulators/RetroArch/RetroArch.app/Contents/MacOS/RetroArch"), "program", "the program");
         check(fs::exists(root + "/emulators/RetroArch/RetroArch.app/Contents/Resources/info/snes9x_libretro.info"), "its info files");
         check(!fs::exists(root + "/emulators/RetroArch/ReadMe.txt") && !fs::exists(root + "/emulators/RetroArch/Applications"), "only the .app");
@@ -710,6 +726,27 @@ static Suite downloadsPlatforms("downloads on Linux and macOS", [] {
         writeFile(empty.contents + "/Other.app/Contents/MacOS/Other", "x");
         refusing.setImageOpener(empty.opener());
         check(!refusing.install(package, { image }, error) && contains(error, "has no RetroArch.app") && empty.detached == 1, "no app: " + error);
+
+        // An install stopped while the image was attached: recovery detaches it before clearing staging
+        auto leftRoot = makeRoot("dmg-recover");
+        const std::string leftStaging = Service::downloadsFolder(leftRoot) + "/staging/emulator-retroarch";
+        const std::string leftMount = fs::absolute(fs::path(leftStaging) / "mount").string();
+        writeFile(leftMount + "/RetroArch.app/Contents/MacOS/RetroArch", "on the image");
+        FakeImages left;
+        left.mounts.insert(leftMount);
+        Installer recovering(Service::downloadsFolder(leftRoot), leftRoot + "/emulators");
+        recovering.setImageOpener(left.opener());
+        recovering.recover();
+        check(left.detached == 1 && left.mounts.empty(), "the leftover image was detached");
+        check(!fs::exists(leftStaging), "then staging was cleared");
+        FakeImages stuck;   // one that can't be detached: staging is left, not deleted through the mount
+        writeFile(leftMount + "/RetroArch.app/Contents/MacOS/RetroArch", "on the image");
+        stuck.mounts.insert(leftMount);
+        ImageOpener stubborn = stuck.opener();
+        stubborn.detach = [&stuck](const std::string&) { stuck.detached++; };
+        recovering.setImageOpener(stubborn);
+        recovering.recover();
+        check(stuck.detached == 1 && fs::exists(leftMount + "/RetroArch.app/Contents/MacOS/RetroArch"), "an image that stays attached isn't deleted from");
 #ifndef _WIN32
         writeFile(empty.contents + "/RetroArch.app/Contents/MacOS/RetroArch", "program");
         fs::create_symlink("../../../../outside", empty.contents + "/RetroArch.app/Contents/escape");
@@ -908,6 +945,188 @@ static Suite downloadsPlatforms("downloads on Linux and macOS", [] {
 #else
         check(true, "links are refused on Windows");
 #endif
+    });
+
+    run("staging: nothing is written through a link, however it's spelled", [&] {
+        OnPlatform scope(Platform::MacArm64);
+        const Emulator& entry = *findEmulator("emulator-ppsspp");
+        Package package = packageFor("ppsspp", "1.20.4", githubUrl(entry, "v1.20.4", "PPSSPPSDL-macOS-v1.20.4.zip"));
+        const std::string program = "PPSSPPSDL.app/Contents/MacOS/PPSSPPSDL";
+        auto root = makeRoot("staging-through-links");
+        Installer installer(Service::downloadsFolder(root), root + "/emulators");
+        fs::create_directories(root + "/launchers.linux");
+        // Two links that are each fine by name: l leads to a/x, and m, read by
+        // name, back to the folder; followed, m leads to RetroFE's own folder
+        const std::string deep = "PPSSPPSDL.app/a/b/c/d/e/f/g/l";
+        // Nine up: by name from a/b/c/d/e/f/g/l to the emulator's folder; followed,
+        // from l's a/x out of staging (files/0, files, its id, staging, downloads, manage) to the root
+        const std::string up = "../../../../../../../../../launchers.linux";
+        const std::vector<UnixEntry> chain = {
+            { program, "p", 0100755 },
+            { "PPSSPPSDL.app/a/x/keep", "k", 0100644 },
+            { deep, "../../../../../../x", 0120777 },
+            { "PPSSPPSDL.app/m", "a/b/c/d/e/f/g/l/" + up, 0120777 },
+            { "./PPSSPPSDL.app/m/evil.conf", "executable = evil", 0100644 },
+            { "PPSSPPSDL.app/m/evil.conf", "executable = evil", 0100644 } };
+        const std::string zip = root + "/server/ppsspp.zip";
+        check(makeUnixZip(zip, chain), "zip");
+        check(!installer.install(package, { zip }, error), "refused: " + error);
+        check(isSafeLink("PPSSPPSDL.app/m", "a/b/c/d/e/f/g/l/" + up), "the escaping link is fine by name, so only following it shows");
+        check(!fs::exists(root + "/launchers.linux/evil.conf"), "nothing written outside staging");
+        using SevenZipWriter::unixAttributes;
+        const std::string archive = root + "/server/ppsspp.7z";
+        std::vector<SevenZipWriter::Entry> sevenZip;
+        for (const UnixEntry& item : chain) sevenZip.push_back({ item.name, item.content, unixAttributes(item.mode) });
+        check(SevenZipWriter::write(archive, sevenZip), "the same as a 7z");
+        PackageFile& file = package.files[0];
+        file.url = githubUrl(entry, "v1.20.4", "PPSSPPSDL-macOS-v1.20.4.zip");
+        check(!installer.install(package, { archive }, error), "7z refused: " + error);
+        check(!fs::exists(root + "/launchers.linux/evil.conf"), "7z: nothing written outside staging");
+        check(!fs::exists(root + "/emulators/PPSSPP"), "nothing installed");
+
+        // Names with "." or empty parts are refused, so one path has one spelling
+        for (const std::string& name : { std::string("./PPSSPPSDL.app/x"), std::string("PPSSPPSDL.app/./x"), std::string("PPSSPPSDL.app//x") }) {
+            check(makeZip(zip, { { program, "p" }, { name, "x" } }), "zip: " + name);
+            check(!installer.install(package, { zip }, error) && contains(error, "safely"), "refused: " + name + ": " + error);
+        }
+#ifndef _WIN32
+        // Through a link by another spelling of its name
+        for (const std::string& name : { std::string("PPSSPPSDL.app/M/x"), std::string("PPSSPPSDL.app/m/./x"), std::string("./PPSSPPSDL.app/m/x"),
+                                         std::string("PPSSPPSDL.app/m//x") }) {
+            check(makeUnixZip(zip, { { program, "p", 0100755 }, { "PPSSPPSDL.app/m", "Contents", 0120777 }, { name, "through", 0100644 } }), "zip: " + name);
+            check(!installer.install(package, { zip }, error) && contains(error, "safely"), "refused: " + name + ": " + error);
+        }
+        check(!fs::exists(root + "/emulators/PPSSPP"), "none installed");
+#endif
+    });
+
+    run("commit: nothing is written through a link in the emulator's folder", [&] {
+#ifndef _WIN32
+        OnPlatform scope(Platform::MacArm64);
+        const Emulator& entry = *findEmulator("emulator-ppsspp");
+        Package package = packageFor("ppsspp", "1.20.4", githubUrl(entry, "v1.20.4", "PPSSPPSDL-macOS-v1.20.4.zip"));
+        const std::string program = "PPSSPPSDL.app/Contents/MacOS/PPSSPPSDL";
+        auto root = makeRoot("commit-through-links");
+        Installer installer(Service::downloadsFolder(root), root + "/emulators");
+        const std::string zip = root + "/server/ppsspp.zip";
+        const std::string folder = root + "/emulators/PPSSPP/";
+        // A link the user made inside the emulator's folder
+        check(makeUnixZip(zip, { { program, "p", 0100755 } }) && installer.install(package, { zip }, error), "v1: " + error);
+        fs::create_directories(root + "/outside");
+        fs::create_directory_symlink(root + "/outside", folder + "PPSSPPSDL.app/Contents/Resources");
+        check(makeUnixZip(zip, { { program, "p2", 0100755 }, { "PPSSPPSDL.app/Contents/Resources/data", "d", 0100644 } }), "v2 zip");
+        package.version = "1.20.5";
+        check(!installer.install(package, { zip }, error) && contains(error, "Refusing to write through the link PPSSPP/PPSSPPSDL.app/Contents/Resources"),
+              "the user's link refuses the update: " + error);
+        check(!fs::exists(root + "/outside/data") && readFile(folder + program) == "p", "nothing written through it, nothing changed");
+        fs::remove(folder + "PPSSPPSDL.app/Contents/Resources");
+        Installer::Removal removal;
+        check(installer.remove(package.id, removal, error), "removed");
+        fs::remove_all(root + "/emulators/PPSSPP");
+        fs::remove(installer.manifestPath(package.id));
+
+        // A link the last version installed, with a folder of files under it in the next
+        package.version = "1.20.4";
+        check(makeUnixZip(zip, { { program, "p", 0100755 }, { "PPSSPPSDL.app/Contents/lib", "MacOS", 0120777 } }) && installer.install(package, { zip }, error), "v1 with a link: " + error);
+        check(makeUnixZip(zip, { { program, "p2", 0100755 }, { "PPSSPPSDL.app/Contents/lib/x", "x", 0100644 } }), "v2 with a folder there");
+        package.version = "1.20.5";
+        check(!installer.install(package, { zip }, error) && contains(error, "Refusing to write through the link"), "refused (remove and reinstall): " + error);
+        check(!fs::exists(folder + "PPSSPPSDL.app/Contents/MacOS/x") && isLinkTo(folder + "PPSSPPSDL.app/Contents/lib", "MacOS"), "nothing written through the old link");
+        // The emulator's folder itself may be the user's link (to another drive)
+        auto moved = makeRoot("commit-folder-link");
+        fs::create_directories(moved + "/emulators");
+        fs::create_directories(moved + "/elsewhere/PPSSPP");
+        fs::create_directory_symlink(moved + "/elsewhere/PPSSPP", moved + "/emulators/PPSSPP");
+        Installer linked(Service::downloadsFolder(moved), moved + "/emulators");
+        package.version = "1.20.4";
+        check(makeUnixZip(zip, { { program, "p", 0100755 } }) && linked.install(package, { zip }, error), "into a linked emulator folder: " + error);
+        checkEqual(readFile(moved + "/elsewhere/PPSSPP/" + program), "p", "written where the user's link leads");
+#else
+        check(true, "links are refused on Windows");
+#endif
+    });
+
+    run("modes: files 0644, folders 0755, programs 0755, whatever the umask", [&] {
+#ifndef _WIN32
+        mode_t before = umask(0);
+        {
+            OnPlatform scope(Platform::MacArm64);
+            auto root = makeRoot("umask-modes");
+            Installer installer(Service::downloadsFolder(root), root + "/emulators");
+            const Emulator& ppsspp = *findEmulator("emulator-ppsspp");
+            const std::string zip = root + "/server/ppsspp.zip";
+            check(makeZip(zip, { { "PPSSPPSDL.app/Contents/MacOS/PPSSPPSDL", "p" }, { "PPSSPPSDL.app/Contents/Resources/a.txt", "a" } }), "a zip without modes");
+            check(installer.install(packageFor("ppsspp", "1.20.4", githubUrl(ppsspp, "v1.20.4", "PPSSPPSDL-macOS-v1.20.4.zip")), { zip }, error), "installed: " + error);
+            const std::string folder = root + "/emulators/PPSSPP/PPSSPPSDL.app/Contents/";
+            checkEqual(std::to_string(modeOf(folder + "Resources/a.txt")), std::to_string(0644), "a file");
+            checkEqual(std::to_string(modeOf(folder + "MacOS/PPSSPPSDL")), std::to_string(0755), "the program");
+            checkEqual(std::to_string(modeOf(folder + "Resources")), std::to_string(0755), "a folder");
+            checkEqual(std::to_string(modeOf(root + "/emulators/PPSSPP")), std::to_string(0755), "the emulator's folder");
+        }
+        {
+            OnPlatform scope(Platform::LinuxX64);
+            auto root = makeRoot("umask-appimage");
+            Installer installer(Service::downloadsFolder(root), root + "/emulators");
+            const std::string download = root + "/server/DuckStation-x64.AppImage";
+            writeFile(download, elf("x"));
+            const Emulator& duck = *findEmulator("emulator-duckstation");
+            check(installer.install(packageFor("duckstation", "2026.11.27", githubUrl(duck, "latest", "DuckStation-x64.AppImage")), { download }, error), "installed: " + error);
+            checkEqual(std::to_string(modeOf(root + "/emulators/DuckStation/DuckStation.AppImage")), std::to_string(0755), "the AppImage");
+            checkEqual(std::to_string(modeOf(root + "/emulators/DuckStation/portable.txt")), std::to_string(0644), "the portable file");
+        }
+        umask(before);
+#else
+        check(true, "Windows has no modes");
+#endif
+    });
+
+    run("rolling releases: a build replaced on the server is read again, once", [&] {
+        OnPlatform scope(Platform::LinuxX64);
+        // Serves the new build; the list names the old one until the download is asked for
+        class RebuiltHttp : public ServingHttp
+        {
+        public:
+            std::string listUrl, fresh;
+            int downloads = 0;
+            bool download(const std::string& url, const std::string& file, uint64_t offset, const Progress& progress, Transfer& transfer) override
+            {
+                downloads++;
+                if (!fresh.empty()) documents[listUrl] = fresh;
+                return ServingHttp::download(url, file, offset, progress, transfer);
+            }
+        };
+        const std::string latest = releasesUrl("stenzek/duckstation", true);
+        const std::string url = githubUrl(entryOf(Platform::LinuxX64, "duckstation"), "latest", "DuckStation-x64.AppImage");
+        auto attempt = [&](const std::string& root, bool listCatchesUp, Outcome& outcome) {
+            auto http = std::make_unique<RebuiltHttp>();
+            RebuiltHttp* fake = http.get();
+            for (const Emulator& entry : emulators()) fake->documents[releasesUrl(entry.repo, entry.latestOnly)] = "[]";
+            fake->documents[latest] = rollingRelease("2026-11-27T08:30:00Z", "DuckStation-x64.AppImage", elf("old build"));
+            fake->files[url] = elf("new build");
+            fake->listUrl = latest;
+            if (listCatchesUp) fake->fresh = rollingRelease("2026-11-28T08:30:00Z", "DuckStation-x64.AppImage", elf("new build"));
+            Service service(root, std::move(http));
+            int64_t time = 1000;
+            service.now = [&] { return time; };
+            service.freeSpace = [](const std::string&, uint64_t& available) { available = 1ull << 40; return true; };
+            service.check();
+            time += 10;
+            size_t asked = fake->requested.size();
+            outcome = service.install("emulator-duckstation");
+            return std::make_pair(fake->requested.size() - asked, fake->downloads);
+        };
+        Outcome outcome;
+        auto root = makeRoot("rolling-rebuilt");
+        auto counts = attempt(root, true, outcome);
+        check(outcome.ok, "installed the new build: " + outcome.message);
+        checkEqual(readFile(root + "/emulators/DuckStation/DuckStation.AppImage"), elf("new build"), "the new build");
+        check(counts.first == 1, "the list read again once: " + std::to_string(counts.first));
+        Manifest manifest;
+        check(readManifest(root + "/manage/downloads/installed/emulator-duckstation.json", manifest, error) && manifest.version == "2026.11.28", "its version");
+        auto stale = makeRoot("rolling-stale");
+        counts = attempt(stale, false, outcome);
+        check(!outcome.ok && contains(outcome.message, "checksum") && counts.first == 1, "still not matching: refused after one more look: " + outcome.message);
+        check(!fs::exists(stale + "/emulators/DuckStation"), "nothing installed");
     });
 
     // --- The screens ---------------------------------------------------------------
