@@ -93,7 +93,7 @@ jobs:
       run: |
         set -o pipefail
         if ! cmake --build RetroFE/Build --parallel "$(nproc)" 2>&1 | tee build.log; then
-          grep -E "error:|Error [0-9]|undefined reference|ld: |fatal" build.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          grep -E -A3 "error:|Undefined symbols|undefined reference|fatal" build.log | grep -v "^--$" | head -60 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
           exit 1
         fi
 
@@ -104,7 +104,6 @@ jobs:
           grep -E "FAIL|Failed|Exception|checks passed" test.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
           exit 1
         fi
-        grep -E "checks passed" test.log | head -1 | while IFS= read -r line; do echo "::notice::${line//%/%25}"; done
 
     - name: Check that retrofe starts
       # --version prints and exits before any window opens
@@ -317,7 +316,7 @@ jobs:
       run: |
         set -o pipefail
         if ! cmake --build RetroFE/Build --parallel "$(sysctl -n hw.ncpu)" 2>&1 | tee build.log; then
-          grep -E "error:|Error [0-9]|undefined reference|ld: |fatal" build.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          grep -E -A3 "error:|Undefined symbols|undefined reference|fatal" build.log | grep -v "^--$" | head -60 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
           exit 1
         fi
 
@@ -328,7 +327,6 @@ jobs:
           grep -E "FAIL|Failed|Exception|checks passed" test.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
           exit 1
         fi
-        grep -E "checks passed" test.log | head -1 | while IFS= read -r line; do echo "::notice::${line//%/%25}"; done
 
     - name: Check that retrofe starts
       env:
