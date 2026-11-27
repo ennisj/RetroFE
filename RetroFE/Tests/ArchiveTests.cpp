@@ -14,17 +14,16 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "TestSupport.h"
-#include "../Source/Catalog/Archive.h"
-#include "../Source/Catalog/Hash.h"
-#include "../Source/Catalog/Installer.h"
-#include "../Source/Catalog/Index.h"
+#include "../Source/Downloads/Archive.h"
+#include "../Source/Downloads/Hash.h"
+#include "../Source/Downloads/Package.h"
 #include "minizip/zip.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <map>
 
 using namespace Test;
-using namespace Catalog;
+using namespace Downloads;
 namespace fs = std::filesystem;
 
 namespace
