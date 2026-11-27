@@ -384,6 +384,7 @@ namespace Downloads
 #else
 #include "Package.h"
 #include <curl/curl.h>
+#include <csignal>
 #include <cstdlib>
 #include <fstream>
 #include <mutex>
@@ -438,12 +439,20 @@ namespace
     struct Exchange
     {
         CURL* curl = nullptr;
-        int status = 0;
-        std::map<std::string, std::string> headers;   // the latest answer's (after redirects, the last)
+        Downloads::HttpText::HeaderReader reader;     // the latest answer's headers (after redirects, the last)
         bool redirectRefused = false;
         bool failed = false;                          // the body's sink or progress said stop
         std::function<bool(const char* data, size_t size)> body;
         std::function<bool()> progress;               // false cancels
+
+        // The status libcurl read for the answer so far (0 before one)
+        int status() const
+        {
+            long code = 0;
+            if (curl) curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+            return static_cast<int>(code);
+        }
+        const std::map<std::string, std::string>& headers() const { return reader.headers(); }
     };
 
     // libcurl calls these from C: nothing may be thrown through it
@@ -453,18 +462,12 @@ namespace
         const size_t length = size * count;
         try {
             std::string line(data, length);
-            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
-            int status = Downloads::HttpText::statusOf(line);
-            if (status > 0) {
-                // A new answer: a redirect's, or the next after 100 Continue
-                exchange.status = status;
-                exchange.headers.clear();
-                return length;
-            }
+            exchange.reader.line(line);
             std::string name, value;
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
             if (!Downloads::HttpText::header(line, name, value)) return length;
-            exchange.headers[name] = value;
-            if (name == "location" && exchange.status >= 300 && exchange.status < 400) {
+            const int status = exchange.status();
+            if (name == "location" && status >= 300 && status < 400) {
                 char* current = nullptr;
                 curl_easy_getinfo(exchange.curl, CURLINFO_EFFECTIVE_URL, &current);
                 if (!Downloads::HttpText::redirectAllowed(current ? current : "", value)) {
@@ -486,7 +489,8 @@ namespace
         const size_t length = size * count;
         try {
             // A redirect's own body isn't the answer
-            if (exchange.status >= 300 && exchange.status < 400 && exchange.headers.count("location")) return length;
+            const int status = exchange.status();
+            if (status >= 300 && status < 400 && exchange.headers().count("location")) return length;
             if (exchange.body && !exchange.body(data, length)) {
                 exchange.failed = true;
                 return 0;
@@ -547,8 +551,8 @@ namespace
                 body.clear();
                 return false;
             }
-            if (exchange.status != 200) {
-                error = "The server answered " + std::to_string(exchange.status);
+            if (exchange.status() != 200) {
+                error = "The server answered " + std::to_string(exchange.status());
                 body.clear();
                 return false;
             }
@@ -580,8 +584,8 @@ namespace
                 response.body.clear();
                 return false;
             }
-            response.status = exchange.status;
-            response.headers = exchange.headers;
+            response.status = exchange.status();
+            response.headers = exchange.headers();
             return true;
         }
 
@@ -611,7 +615,7 @@ namespace
                 using Downloads::HttpText::Answer;
                 if (!opened) {
                     // The answer decides: the rest of the same file, or the whole of a new one
-                    Answer answer = Downloads::HttpText::answer(offset, exchange.status);
+                    Answer answer = Downloads::HttpText::answer(offset, exchange.status());
                     if (answer == Answer::Fail || answer == Answer::Complete) return true;   // an error page: not the file
                     transfer.resumed = answer == Answer::Resume;
                     out.open(file, std::ios::binary | (transfer.resumed ? std::ios::app : std::ios::trunc));
@@ -622,8 +626,8 @@ namespace
                     }
                     const uint64_t start = transfer.resumed ? offset : 0;
                     uint64_t length = 0;
-                    auto found = exchange.headers.find("content-length");
-                    if (found != exchange.headers.end()) length = std::strtoull(found->second.c_str(), nullptr, 10);
+                    auto found = exchange.headers().find("content-length");
+                    if (found != exchange.headers().end()) length = std::strtoull(found->second.c_str(), nullptr, 10);
                     total = length > 0 ? start + length : 0;
                     received = start;
                     if (!report()) return false;
@@ -647,7 +651,7 @@ namespace
                 return true;
             };
             CURLcode code = perform(url, Downloads::HttpText::resumeHeaders(offset, validator), true, exchange);
-            transfer.validator = Downloads::HttpText::validator(exchange.headers);
+            transfer.validator = Downloads::HttpText::validator(exchange.headers());
             if (out.is_open()) out.close();
             if (transfer.cancelled) return false;
             if (!transfer.error.empty()) return false;   // couldn't write
@@ -657,15 +661,15 @@ namespace
                 return false;
             }
             using Downloads::HttpText::Answer;
-            Answer answer = Downloads::HttpText::answer(offset, exchange.status);
+            Answer answer = Downloads::HttpText::answer(offset, exchange.status());
             if (answer == Answer::Complete) {
                 // Nothing left to send: the file is already complete
                 transfer.resumed = true;
                 return true;
             }
             if (answer == Answer::Fail) {
-                transfer.error = "The server answered " + std::to_string(exchange.status);
-                transfer.retry = Downloads::HttpText::retryable(exchange.status);
+                transfer.error = "The server answered " + std::to_string(exchange.status());
+                transfer.retry = Downloads::HttpText::retryable(exchange.status());
                 return false;
             }
             if (!opened) {
@@ -752,7 +756,12 @@ namespace Downloads
     {
         static std::once_flag once;
         static bool initialised = false;
-        std::call_once(once, [] { initialised = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK; });
+        std::call_once(once, [] {
+            // With CURLOPT_NOSIGNAL a connection closed under libcurl would raise
+            // SIGPIPE, which ends the process: ignore it, once, for the process
+            std::signal(SIGPIPE, SIG_IGN);
+            initialised = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+        });
         if (!initialised) return nullptr;
         auto http = std::make_unique<CurlHttp>();
         if (!http->ready()) return nullptr;
@@ -809,6 +818,23 @@ namespace Downloads::HttpText
         std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         value = trimmed(line.substr(colon + 1));
         return true;
+    }
+
+    void HeaderReader::line(std::string text)
+    {
+        while (!text.empty() && (text.back() == '\r' || text.back() == '\n')) text.pop_back();
+        if (text.empty()) {
+            start_ = true;   // the end of an answer's headers: another may follow (a redirect's next)
+            return;
+        }
+        const bool first = start_;
+        start_ = false;
+        if (first && statusOf(text) > 0) {
+            headers_.clear();
+            return;
+        }
+        std::string name, value;
+        if (header(text, name, value)) headers_[name] = value;
     }
 
     std::vector<std::string> resumeHeaders(uint64_t offset, const std::string& validator)
