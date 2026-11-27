@@ -55,8 +55,12 @@ void FormView::freeImages()
     discard_ = false;
 }
 
-void FormView::reset()
+void FormView::reset(const Forms::Focus& focus)
 {
+    focus_ = focus;
+    initialField_ = focus.field;
+    initialFocus_ = true;
+    form_ = nullptr;
     confirm_.cancel();
     editing_ = nullptr;
     result_.reset();
@@ -97,7 +101,9 @@ void FormView::draw(const Forms::Form& form, Forms::Model& model)
         pictures_.recheck();
     }
     pictures_.beginFrame(2);
+    form_ = &form;
     drawFields(form.fields, model);
+    initialFocus_ = false;
 }
 
 // Text is edited in a buffer and given to the model when the field is left,
@@ -192,6 +198,7 @@ void FormView::label(const Field& field)
 
 void FormView::drawNotes(const Field& field, Forms::Model& model)
 {
+    if (form_ && ImGui::IsItemFocused()) focus_.field = Forms::fieldIndex(*form_, &field);
     auto note = [&](const std::string& text, Forms::Severity severity = Forms::Severity::None) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelWidth());
         ImGui::PushTextWrapPos(0.0f);
@@ -223,6 +230,16 @@ void FormView::drawField(const Field& field, Forms::Model& model)
         return;
     }
     bool enabled = Forms::isEnabled(field, model);
+    bool focusable = field.type == FieldType::Text || field.type == FieldType::Folder
+        || field.type == FieldType::File || field.type == FieldType::Toggle
+        || field.type == FieldType::Number || field.type == FieldType::Choice
+        || field.type == FieldType::Button || field.type == FieldType::Link;
+    if (initialFocus_ && enabled && focusable && form_
+        && (field.type != FieldType::Button || model.actionProblem(field.action).empty())
+        && (initialField_ >= 0 ? Forms::fieldAt(*form_, initialField_) == &field
+                              : Forms::fieldMatches(field, form_->focus))) {
+        ImGui::SetKeyboardFocusHere();
+    }
     ImGui::BeginDisabled(!enabled);
 
     switch (field.type) {
@@ -244,6 +261,10 @@ void FormView::drawField(const Field& field, Forms::Model& model)
             first = false;
             ImGui::PushID(&child);
             if (child.type == FieldType::Button) {
+                if (initialFocus_ && enabled && Forms::isEnabled(child, model) && model.actionProblem(child.action).empty() && form_
+                    && (initialField_ >= 0 ? Forms::fieldAt(*form_, initialField_) == &child
+                                           : Forms::fieldMatches(child, form_->focus)))
+                    ImGui::SetKeyboardFocusHere();
                 drawButton(child, model, true);
             }
             else {
@@ -427,6 +448,10 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
             float detailNeeds = rowDetail.empty() ? 0.0f : textWidth(rowDetail);
             Forms::RowSplit split = Forms::splitRow(textWidth(row.label), detailNeeds, available, gap);
             std::string label = Forms::ellipsize(row.label, split.label, textWidth);
+            if (initialFocus_ && i == 0 && form_ && Forms::isEnabled(field, model)
+                && (initialField_ >= 0 ? Forms::fieldAt(*form_, initialField_) == &field
+                                      : Forms::fieldMatches(field, form_->focus)))
+                ImGui::SetKeyboardFocusHere();
             if (ImGui::Selectable((label + "##row").c_str())) {
                 if (!row.action.empty()) {
                     if (model.actionProblem(row.action).empty()) {
@@ -436,6 +461,10 @@ void FormView::drawResults(const Field& field, Forms::Model& model)
                 else {
                     open(field.open, Forms::rowParams(field, row), false);
                 }
+            }
+            if (form_ && ImGui::IsItemFocused()) {
+                focus_.field = Forms::fieldIndex(*form_, &field);
+                focus_.item = row.id;
             }
             if (split.detail > 0.0f) {
                 std::string detail = Forms::ellipsize(rowDetail, split.detail, textWidth);
@@ -457,6 +486,7 @@ void FormView::drawLink(const Field& field, Forms::Model& model)
     if (ImGui::Selectable((label + "##link").c_str())) {
         open(field.open, {}, true);
     }
+    if (form_ && ImGui::IsItemFocused()) focus_.field = Forms::fieldIndex(*form_, &field);
     // A link's help is a tooltip, so a list of links stays a list
     if (!field.help.empty() && (ImGui::IsItemHovered() || ImGui::IsItemFocused())) {
         ImGui::SetTooltip("%s", field.help.c_str());
@@ -548,6 +578,7 @@ void FormView::drawButton(const Field& field, Forms::Model& model, bool inRow)
     if (ImGui::Button(field.label.c_str()) && confirm_.select(field)) {
         result_ = model.runAction(field.action);
     }
+    if (form_ && ImGui::IsItemFocused()) focus_.field = Forms::fieldIndex(*form_, &field);
     ImGui::EndDisabled();
 
     // Say what's missing next to the button

@@ -38,7 +38,8 @@ public:
     void discardImages() { discard_ = true; }
 
     // A new screen: forgets the text being edited and any button waiting for confirmation
-    void reset();
+    void reset(const Forms::Focus& focus = {});
+    Forms::Focus focus() const { return focus_; }
 
     // Disarms a button waiting for confirmation; false if none was
     bool cancelConfirm();
@@ -76,6 +77,10 @@ private:
     void open(const std::string& form, const Forms::Params& params, bool keepParams);
     float labelWidth() const { return 170.0f * scale_; }
 
+    const Forms::Form* form_ = nullptr;
+    Forms::Focus focus_;
+    bool initialFocus_ = false;
+    int initialField_ = -1;
     float scale_ = 1.0f;
     TextureCache pictures_;
     bool discard_ = false;

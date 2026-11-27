@@ -1,12 +1,15 @@
 # Test builds on the Windows PC
 
-Each passing Windows CI run on `feature/management-ui` publishes the `management-ui-latest` pre-release ([docs/CI.md](../../docs/CI.md)). Each install below is its own RetroFE root, with its own settings and data. `RetroFE-Bare` is empty for first-run testing; `RetroFE-Starter` is a small first setup replayed by hand. A larger install can be added later.
+Each passing Windows CI run on `feature/management-ui` publishes the `management-ui-latest` pre-release ([docs/CI.md](../../docs/CI.md)). Each install below is its own RetroFE root, with its own settings and data. `RetroFE-Bare` is empty for first-run testing; `RetroFE-Starter` is a small first setup replayed by hand. `RetroFE-Large` exercises full game lists and metadata.
 
 ```
 \\JOHN-DESKTOP\retrofe\
 ├── RetroFE-Bare\retrofe\retrofe.exe
 ├── RetroFE-Starter\retrofe\retrofe.exe
+├── RetroFE-Large\retrofe\retrofe.exe
 ├── fixtures\starter\<System>\roms\
+├── fixtures\large\collections\<System>\roms\
+├── fixtures\large\meta\hyperlist\<System>.xml
 ├── builds\<date>-<commit>\
 └── backups\
 ```
@@ -19,9 +22,25 @@ python3 Scripts/test-build/make_test_install.py --fixtures starter --path /mnt/r
 python3 Scripts/test-build/make_test_install.py --fixtures starter --reset --path /mnt/remotes/JOHN-DESKTOP_retrofe
 ```
 
-Both scripts can use SMB instead of `--path`, with `--host`, `--share` and `--credentials` (the default credentials file contains the user name and password on separate lines). SMB needs the optional `smbprotocol` package. The fixture script prints the folders to choose in Manage. `--install NAME` selects another install; without `--reset` an existing install is left alone. Reset moves the whole install into `backups` before creating a fresh install, including any RetroArch installed in its `emulators` folder in checklist step 1; move it back or install it again. If deployment fails, the original is restored and the partial install is kept in `backups` with a `-failed` suffix. `--source DIR` overrides the default OneSauce collections folder. The OneSauce share is read-only: the script only reads it. `--path` must already be a folder and cannot overlap `--source` (including through symlinks). `--pc` selects the PC name in printed From paths (default `JOHN-DESKTOP`). The default install name cannot be `RetroFE-Bare`; select it explicitly with `--install RetroFE-Bare` if intended.
+Both scripts can use SMB instead of `--path`, with `--host`, `--share` and `--credentials` (the default credentials file contains the user name and password on separate lines). SMB needs the optional `smbprotocol` package. The fixture script prints the folders to choose in Manage. `--install NAME` selects another install; without `--reset` an existing install is left alone. Reset moves the whole install into `backups` before creating a fresh install, including any RetroArch installed in its `emulators` folder in checklist step 1; move it back or install it again. If deployment fails, the original is restored and the partial install is kept in `backups` with a `-failed` suffix. `--onesauce DIR` selects the OneSauce root; `--source DIR` and `--appdata DIR` override its collections and appdata/retrofe folders respectively. The OneSauce share is read-only: the script only reads it. `--path` must already be a folder and cannot overlap either source folder (including through symlinks). `--pc` selects the PC name in printed From paths (default `JOHN-DESKTOP`). The default install name cannot be `RetroFE-Bare`; select it explicitly with `--install RetroFE-Bare` if intended.
 
-Fixture manifests in `fixtures/<name>.txt` contain one path relative to the OneSauce collections folder per line. Blank lines and `#` comments are ignored. A trailing `/` copies a whole folder recursively; `source => target` stages it at another relative path. File and folder targets must match their source type; overlapping folder targets and Windows-invalid paths are rejected. All sources must exist before staging begins. Existing staged files of the same size are skipped; different sizes are replaced. The repository is public: ROMs and artwork never go in it, only their paths.
+Fixture manifests in `fixtures/<name>.txt` contain one path per line, relative to collections by default. `[collections]` and `[appdata]` select the source folder; a header such as `[collections => collections/]` adds a target prefix. A line ending in ` ?` is optional and is reported if missing. Blank lines and `#` comments are ignored. A trailing `/` copies a whole folder recursively; `source => target` stages it at another relative path. File and folder targets must match their source type; overlapping folder targets and Windows-invalid paths are rejected. All required sources must exist before staging begins. Existing staged files of the same size are skipped; different sizes are replaced. The repository is public: ROMs and artwork never go in it, only their paths.
+
+## Large install
+
+When the OneSauce share is back, check the folder names and size first, then stage and create the install:
+
+```sh
+python3 Scripts/test-build/make_test_install.py --fixtures large --dry-run
+python3 Scripts/test-build/make_test_install.py --fixtures large --path /mnt/remotes/JOHN-DESKTOP_retrofe
+```
+
+On the PC, start `RetroFE-Large\retrofe\retrofe.exe`:
+
+1. In Manage, choose **Add a launcher > Download an emulator > RetroArch**, then download these RetroArch cores: `fceumm` (NES), `snes9x` (SNES), `genesis_plus_gx` (Genesis and Master System), `stella` (Atari 2600), `gambatte` (Game Boy and Game Boy Color), `mgba` (Game Boy Advance), `mednafen_pce_fast` (TurboGrafx-16), and `mame2003_plus` (MAME; OneSauce's MAME sets are for it). Each core install creates a `RetroArch <core>` launcher.
+2. Add a system for each staged system, choosing its launcher above and naming it to match the staged folder.
+3. Add games from each staged `collections\<System>\roms` folder with **Copy artwork too** and **Copy titles and years too** on.
+4. In Browse, check for real titles and years where the hyperlist has them, check artwork, and start a game from each system. Record how long the first start and Add games take, and anything slow or wrong in lists of about 1,000 games.
 
 ## Starter checklist
 

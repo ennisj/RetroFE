@@ -9,10 +9,11 @@ shot first-start
 # BuiltinForms manage: the first link is "Add your first launcher/emulator".
 key Return
 wait 1
-# EmulatorsForms emulator-new: Download an emulator (a link, focused), Name,
+# EmulatorsForms emulator-new: Download an emulator (a link), Name (focused),
 # Program, Arguments, Core (once a RetroArch preset is chosen), Working folder,
 # Restarts RetroFE, Runs (a value, not focusable), Create launcher.
 shot add-launcher
+key Up
 # DownloadForms download-emulators: the six emulators are listed at once; the
 # check for releases that follows reads GitHub, so what it says varies on CI.
 key Return

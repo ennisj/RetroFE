@@ -99,6 +99,7 @@ void FormWidget::bind(const Forms::Form* form, Forms::Model* model)
     focusGuarded_ = false;
     shownFields_.clear();
     wantedFocus_.clear();
+    initialFocus_ = form && !form->focus.empty();
     focusedField_ = nullptr;
     focusedItem_.clear();
     navigated_ = false;
@@ -128,6 +129,7 @@ void FormWidget::restoreFocus(const Forms::Focus& focus)
     if (!form_) {
         return;
     }
+    if (focus.field >= 0) initialFocus_ = false;
     focusedField_ = Forms::fieldAt(*form_, focus.field);
     focusedItem_ = focus.item;
     restoredFocus_ = focus.field >= 0;
@@ -145,6 +147,7 @@ void FormWidget::focusOn(const std::string& key)
     if (!form_ || key.empty()) {
         return;
     }
+    initialFocus_ = false;
     wantedFocus_ = key;
     stale_ = true;   // buildRows focuses it if it's shown
 }
@@ -693,6 +696,23 @@ void FormWidget::focusBar(int index)
 
 void FormWidget::resolveFocus(int previousFocus, int previousBar)
 {
+    // The form preference is tried only once; a hidden field must not steal focus later.
+    bool initial = initialFocus_;
+    if (initial) {
+        std::vector<const Field*> fields;
+        std::vector<bool> focusable;
+        for (const Row& row : rows_) { fields.push_back(row.field); focusable.push_back(row.focusable); }
+        int chosen = Forms::initialFocusIndex(fields, focusable, form_->focus, -1);
+        if (chosen >= 0 && fields[chosen] && Forms::fieldMatches(*fields[chosen], form_->focus))
+            wantedFocus_ = form_->focus;
+        else
+            wantedFocus_.clear();
+        for (const auto& button : bar_) {
+            if (button.enabled && Forms::fieldMatches(*button.field, form_->focus)) wantedFocus_ = form_->focus;
+        }
+    }
+    initialFocus_ = false;
+
     // A field focusOn asked for takes focus once it's shown
     if (!wantedFocus_.empty()) {
         for (size_t i = 0; i < bar_.size(); i++) {
@@ -717,6 +737,8 @@ void FormWidget::resolveFocus(int previousFocus, int previousBar)
             }
         }
     }
+
+    if (initial) wantedFocus_.clear();
 
     // The focused button is in the bar
     focus_ = -1;

@@ -280,6 +280,22 @@ bool fieldMatches(const Field& field, const std::string& key)
     return !key.empty() && (field.action == key || field.bind == key || field.open == key);
 }
 
+int initialFocusIndex(const std::vector<const Field*>& fields, const std::vector<bool>& focusable, const std::string& key, int restored)
+{
+    auto canFocus = [&](int i) { return i >= 0 && i < static_cast<int>(fields.size())
+        && i < static_cast<int>(focusable.size()) && focusable[i]; };
+    if (canFocus(restored)) return restored;
+    if (restored < 0) {
+        for (int i = 0; i < static_cast<int>(fields.size()); ++i) {
+            if (canFocus(i) && fields[i] && fieldMatches(*fields[i], key)) return i;
+        }
+    }
+    for (int i = 0; i < static_cast<int>(fields.size()); ++i) {
+        if (canFocus(i)) return i;
+    }
+    return -1;
+}
+
 namespace
 {
     const Field* findIn(const std::vector<Field>& fields, const std::string& key)
@@ -366,6 +382,7 @@ std::unique_ptr<Form> parse(const std::string& xml, std::string& error)
     form->id = attribute(root, "id");
     form->title = attribute(root, "title");
     form->titleBind = attribute(root, "bind");
+    form->focus = attribute(root, "focus");
     parseFields(root, form->fields, form->id);
     return form;
 }

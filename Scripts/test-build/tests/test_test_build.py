@@ -54,13 +54,40 @@ class TestBuild(Fixture, unittest.TestCase):
                 self.manifest.write_text(line)
                 with self.assertRaises(ValueError): maker.manifest(self.manifest)
         self.manifest.write_text('# comment\n a => b\n')
-        self.assertEqual(maker.manifest(self.manifest), [('a', 'b')])
+        self.assertEqual(maker.manifest(self.manifest), [('collections', 'a', 'b', False)])
 
     def test_repo_manifests(self):
         # The committed lists parse: no bad paths, no duplicate targets
         for path in pathlib.Path(__file__).resolve().parents[1].glob('fixtures/*.txt'):
             with self.subTest(path=path.name):
                 self.assertTrue(maker.manifest(path))
+
+    def test_sections_optional_and_dry_run(self):
+        appdata = self.root / 'appdata'
+        (appdata / 'meta').mkdir(parents=True)
+        (appdata / 'meta/list.xml').write_bytes(b'xml')
+        self.manifest.write_text('[collections => collections/]\nNES/roms/\nNES/art/ ?\nmissing/ ?\n[appdata]\nmeta/list.xml ?\n')
+        out = io.StringIO()
+        with patch.object(sys, 'argv', ['make', '--fixtures', 'starter', '--source', str(self.source), '--appdata', str(appdata), '--dry-run']), contextlib.redirect_stdout(out):
+            self.assertEqual(maker.main(), 0)
+        self.assertIn('1 files, 1 bytes', out.getvalue())
+        self.assertIn('Total: 3 files, 7 bytes', out.getvalue())
+        self.assertIn('Not in OneSauce: collections: missing/', out.getvalue())
+        self.assertEqual(list(self.drive.iterdir()), [])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.run_make('--appdata', str(appdata)), 0)
+        self.assertEqual((self.drive / 'fixtures/starter/meta/list.xml').read_bytes(), b'xml')
+        self.assertIn(r'\\JOHN-DESKTOP\retrofe\fixtures\starter\collections\NES\roms', out.getvalue())
+        self.manifest.write_text('missing\n')
+        with patch.object(sys, 'argv', ['make', '--fixtures', 'starter', '--source', str(self.source), '--dry-run']):
+            self.assertEqual(maker.main(), 1)
+
+    def test_starter_entries_unchanged(self):
+        path = pathlib.Path(__file__).resolve().parents[1] / 'fixtures/starter.txt'
+        entries = maker.manifest(path)
+        self.assertTrue(all(section == 'collections' and not optional for section, _, _, optional in entries))
+        self.assertIn(('collections', 'Nintendo Entertainment System/roms/Contra (USA).nes', 'Nintendo Entertainment System/roms/More games/Contra (USA).nes', False), entries)
 
     def test_missing_before_copy(self):
         self.manifest.write_text('NES/roms/a.nes\nmissing\nmissing2\n')
@@ -109,7 +136,7 @@ class TestBuild(Fixture, unittest.TestCase):
                 self.manifest.write_text(line + '\n')
                 with self.assertRaises(ValueError): maker.manifest(self.manifest)
         self.manifest.write_bytes(b'\xef\xbb\xbfa => b\n')
-        self.assertEqual(maker.manifest(self.manifest), [('a', 'b')])
+        self.assertEqual(maker.manifest(self.manifest), [('collections', 'a', 'b', False)])
 
     def test_paths_rejected_before_writes(self):
         for path, source in [(self.root / 'missing', self.source),
@@ -238,6 +265,15 @@ class TestSmb(Fixture, unittest.TestCase):
             (root / 'RetroFE-Starter/retrofe/retrofe.exe').write_bytes(b'old')
             with patch.object(sys, 'argv', ['deploy', *args]): self.assertEqual(deploy.main(), 0)
         self.assertEqual(tree(self.local_drive), tree(self.drive))
+
+    def test_sections_and_optional_over_smb(self):
+        appdata = self.root / 'appdata'
+        appdata.mkdir()
+        (appdata / 'list.xml').write_bytes(b'xml')
+        self.manifest.write_text('[collections => collections/]\nNES/roms/\nmissing/ ?\n[appdata]\nlist.xml ?\n')
+        self.assertEqual(self.run_make('--appdata', str(appdata)), 0)
+        self.assertEqual((self.drive / 'fixtures/starter/collections/NES/roms/a.nes').read_bytes(), b'a')
+        self.assertEqual((self.drive / 'fixtures/starter/list.xml').read_bytes(), b'xml')
 
     def test_reset_restores_after_failure(self):
         self.assertEqual(self.run_make(), 0)

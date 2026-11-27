@@ -121,6 +121,7 @@ namespace Forms
         std::string id;
         std::string title;
         std::string titleBind;    // model key whose value replaces the title when set
+        std::string focus;        // field to focus when opened fresh
         std::vector<Field> fields;
     };
 
@@ -299,6 +300,7 @@ namespace Forms
     // (e.g. "game.launch", "settings:layout", "controls"). findField is the
     // first such field in document order, or nullptr.
     bool fieldMatches(const Field& field, const std::string& key);
+    int initialFocusIndex(const std::vector<const Field*>& fields, const std::vector<bool>& focusable, const std::string& key, int restored);
     const Field* findField(const Form& form, const std::string& key);
 
     // What a Results field says when it isn't showing every row, e.g.
