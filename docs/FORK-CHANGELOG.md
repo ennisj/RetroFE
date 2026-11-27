@@ -4,6 +4,29 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 33 — emulator downloads, without the Catalog (2026-11-27)
+
+Unit tests: 7,604 → CHECKS checks (Windows CI). Choices in M44 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Download an emulator** is back: the first row of Add a launcher, and a
+  link under Add a system's Launcher. It lists RetroArch, MAME, DuckStation,
+  PCSX2, PPSSPP and Flycast; each has its own screen with what's installed,
+  the newest release, its size and where it comes from, and Install,
+  Update and Remove. Installing puts it in `emulators/<name>/`, makes it
+  portable where it can, and creates its launcher.
+- **RetroArch cores** come from libretro's nightly builds, filtered by
+  system; each makes a "RetroArch <core>" launcher.
+- **Every install and update asks first** and names where the download
+  comes from. GitHub downloads must match GitHub's SHA-256; libretro
+  publishes none for RetroArch, which its screen says; cores are checked
+  against libretro's CRC-32.
+- **Nothing is checked for updates at start:** releases are read when the
+  download screen opens. There is still no Catalog, no package sources and
+  no self-update.
+- Downloads, installs in progress, what each install wrote, and backups
+  are kept in `manage/downloads/`.
+
 ## Round 32 — Add games keeps focus where it was (2026-11-27)
 
 Unit tests: 7,601 → 7,604 checks (Windows CI). Choices in M43 of [DECISIONS.md](DECISIONS.md).
