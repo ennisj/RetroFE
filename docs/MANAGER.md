@@ -931,6 +931,9 @@ under it), `enabledWhen` (a value that must
 be on, or `!value` for off; the field is greyed out otherwise), `visibleWhen`
 (the same, but the field is hidden) and `default`. On `<form>`, `bind` gives
 a value to use as the title when it has one, e.g. `bind="game:title"`.
+`focus="emulator:newName"` names a field by its binding, action, or open target
+to focus when the form first opens. If it is hidden or cannot take focus, the
+first focusable row is used; returning to a form restores its previous focus.
 
 Buttons in the pinned `<actions>` bar that save the fields use `primary="yes"` (Save, Add system, Create,
 or Use this file). After an edit, the Page down hint is green only when its

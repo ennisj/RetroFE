@@ -730,6 +730,17 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M47. Round 37: Add a launcher opens on Name — Decided (2026-11-27)
+- **Your choice:** focus starts on Name, with Download an emulator visible
+  just above, so someone with their own emulator types straight away and a
+  newcomer sees the download one row up. (Round 33, M44, had focus on the
+  link.)
+- **A general `focus` attribute on `<form>`**, applied only when a form is
+  opened fresh; a remembered focus (Back, after a reload) wins, and a hidden
+  field falls back to the first row.
+- **The ImGui renderer now remembers focus across screens** too, which it
+  needed for the same Back behaviour.
+
 ### M46. Round 35: GitHub's limit — Decided (2026-11-27)
 GitHub allows 60 unauthenticated API requests an hour per address and a
 check of the six emulators costs six. Options weighed: (1) reuse results

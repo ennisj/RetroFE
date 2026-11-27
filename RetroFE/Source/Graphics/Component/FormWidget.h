@@ -359,6 +359,7 @@ private:
     bool focusGuarded_ = false;   // focus landed on a Guarded row (Forms::refocusTarget) because rows
                                   // went away: Select there waits for the user to move first
     std::vector<const Forms::Field*> shownFields_;   // focusable fields of the last build, to tell new ones
+    bool initialFocus_ = false;   // apply the form preference on the first row build only
     std::string wantedFocus_;     // focusOn's field not shown yet: focused when it is, until the user moves
     const Forms::Field* focusedField_ = nullptr;  // kept across rebuilds
     std::string focusedItem_;     // and in a results list, the row's key

@@ -19,6 +19,7 @@
 
 #include "TestSupport.h"
 #include "../Source/Forms/Form.h"
+#include "../Source/Manager/Navigator.h"
 #include "../Source/Utility/FileStamp.h"
 #include <chrono>
 #include <filesystem>
@@ -53,6 +54,28 @@ namespace
 
 static Test::Suite renderingSuite("rendering", [] {
     using Forms::FocusTarget;
+
+    run("initial form focus and restoration", [] {
+        std::string error;
+        auto form = Forms::parse(Forms::builtinForm("emulator-new"), error);
+        check(form != nullptr, "launcher form parses");
+        if (!form) return;
+        checkEqual(form->focus, "emulator:newName", "focus attribute parses");
+        const Forms::Field* link = Forms::findField(*form, "download-emulators");
+        const Forms::Field* name = Forms::findField(*form, "emulator:newName");
+        check(link && name, "launcher link and name exist");
+        std::vector<const Forms::Field*> rows = { link, name };
+        check(Forms::initialFocusIndex(rows, { true, true }, form->focus, -1) == 1, "fresh launcher focuses Name");
+        Navigator nav;
+        nav.open("emulator-new");
+        Forms::Focus leaving;
+        leaving.field = Forms::fieldIndex(*form, link);
+        nav.push("download-emulators", {}, leaving);
+        check(nav.back(), "Back returns to launcher");
+        check(nav.current() && Forms::fieldAt(*form, nav.current()->focus.field) == link, "Back restores the download link");
+        check(Forms::initialFocusIndex(rows, { true, true }, form->focus, 0) == 0, "saved focus overrides the preference");
+        check(Forms::initialFocusIndex(rows, { true, false }, form->focus, -1) == 0, "hidden Name falls back to the first row");
+    });
 
     run("browser results follow the first row until navigation", [] {
         const std::vector<std::string> grown = { "RetroFE", "C:", "D:" };

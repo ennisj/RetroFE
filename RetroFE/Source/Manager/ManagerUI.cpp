@@ -267,7 +267,7 @@ bool ManagerUI::push(const std::string& form, const Forms::Params& params)
         setStatus("This screen isn't available (" + form + "). Check the log for details.", Forms::StatusKind::Error);
         return false;
     }
-    nav_.push(form, params, widget_ ? widget_->focus() : Forms::Focus{});
+    nav_.push(form, params, widget_ ? widget_->focus() : view_.focus());
     show();
     return true;
 }
@@ -407,7 +407,7 @@ void ManagerUI::show()
     capture_.clear();   // a capture belongs to the screen that asked for it
     leave_.reset();
     launches_.screenChanged();
-    view_.reset();
+    view_.reset(frame->focus);
     focusNext_ = true;
     open_ = true;
     if (!wasOpen) {

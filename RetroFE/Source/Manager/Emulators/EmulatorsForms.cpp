@@ -99,7 +99,7 @@ const char* const emulatorUsersForm = R"(
 // A new launcher: param:name prefills the name, param:from copies a launcher.
 // First, downloading one (Manager/Downloads), which makes its launcher too.
 const char* const emulatorNewForm = R"(
-<form id="emulator-new" title="Add a launcher">
+<form id="emulator-new" title="Add a launcher" focus="emulator:newName">
   <link label="Download an emulator" open="download-emulators"
         help="RetroArch, MAME, DuckStation and others: RetroFE downloads it into its emulators folder and makes the launcher."/>
   <note bind="emulator:newIntro" panel="yes"/>
