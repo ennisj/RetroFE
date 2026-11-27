@@ -50,7 +50,6 @@ concurrency:
 
 jobs:
   linux:
-    if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -88,11 +87,23 @@ jobs:
       run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
 
     - name: Build
-      # As many jobs as cores: an unbounded make -j runs the runner out of memory
-      run: cmake --build RetroFE/Build --parallel "$(nproc)"
+      # As many jobs as cores: an unbounded make -j runs the runner out of memory.
+      # Compiler errors and failed checks are repeated as annotations, which (unlike
+      # the log) can be read without signing in to GitHub
+      run: |
+        set -o pipefail
+        if ! cmake --build RetroFE/Build --parallel "$(nproc)" 2>&1 | tee build.log; then
+          grep -E -A3 "error:|Undefined symbols|undefined reference|fatal" build.log | grep -v "^--$" | head -60 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
 
     - name: Run the unit tests
-      run: ctest --test-dir RetroFE/Build --output-on-failure
+      run: |
+        set -o pipefail
+        if ! ctest --test-dir RetroFE/Build --output-on-failure 2>&1 | tee test.log; then
+          grep -E "FAIL|Failed|Exception|checks passed" test.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
 
     - name: Check that retrofe starts
       # --version prints and exits before any window opens
@@ -283,8 +294,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "Could not publish the pre-release" }
 
   macos:
-    if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-14
+    runs-on: macos-15
     name: macOS arm64 (Homebrew)
     # Homebrew's libraries, as a developer's Mac would have them; build-macos.yml makes
     # the universal RetroFE.app against the frameworks instead
@@ -296,15 +306,42 @@ jobs:
     - name: Install dependencies
       run: |
         brew install pkg-config sdl2 sdl2_image sdl2_mixer sdl2_ttf gstreamer minizip webp libusb
+        # SDL2_mixer's pkg-config file needs fluidsynth's, which needs readline's; readline is
+        # keg-only, so its pkg-config folder isn't searched unless added
+        echo "PKG_CONFIG_PATH=$(brew --prefix readline)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
 
     - name: Configure CMake
       run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
 
     - name: Build
-      run: cmake --build RetroFE/Build --parallel "$(sysctl -n hw.ncpu)"
+      # Compiler errors and failed checks are repeated as annotations, which (unlike
+      # the log) can be read without signing in to GitHub
+      run: |
+        set -o pipefail
+        if ! cmake --build RetroFE/Build --parallel "$(sysctl -n hw.ncpu)" 2>&1 | tee build.log; then
+          grep -E -A3 "error:|Undefined symbols|undefined reference|fatal" build.log | grep -v "^--$" | head -60 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
+
+    - name: Show SDL2_mixer when the build fails
+      if: failure()
+      run: |
+        {
+          echo "pkg-config SDL2_mixer: $(pkg-config --modversion SDL2_mixer) $(pkg-config --libs SDL2_mixer)"
+          echo "pkg-config sdl2: $(pkg-config --modversion sdl2) $(pkg-config --libs sdl2)"
+          brew list --versions sdl2 sdl2-compat sdl2_mixer sdl3 2>&1
+          ls -l "$(brew --prefix)/lib" | grep -i -E "mixer|SDL2" || true
+          for lib in "$(brew --prefix)"/lib/libSDL2_mixer*.dylib; do echo "$lib: $(nm -gU "$lib" 2>/dev/null | grep -c Mix_) Mix_ symbols"; done
+          grep -o -E "SDL2_mixer[^ ]*" RetroFE/Build/CMakeFiles/retrofe.dir/link.txt | sort -u | head
+        } 2>&1 | while IFS= read -r line; do echo "::warning::${line//%/%25}"; done
 
     - name: Run the unit tests
-      run: ctest --test-dir RetroFE/Build --output-on-failure
+      run: |
+        set -o pipefail
+        if ! ctest --test-dir RetroFE/Build --output-on-failure 2>&1 | tee test.log; then
+          grep -E "FAIL|Failed|Exception|checks passed" test.log | head -40 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+          exit 1
+        fi
 
     - name: Check that retrofe starts
       env:

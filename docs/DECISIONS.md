@@ -730,6 +730,22 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M49. Round 36: Linux and macOS back on every push — Decided (2026-11-27)
+- **Linux x86_64 and arm64 passed at once** after weeks of Windows-only work
+  (the worker builds with GCC on Linux every round).
+- **macOS needed three things:** GitHub retired the `macos-14` runner (now
+  `macos-15`, also for the by-hand app-bundle workflow); Homebrew's
+  SDL2_mixer pkg-config file can't resolve without keg-only readline, which
+  left every Mix_ function unlinked (CI adds readline's pkg-config folder;
+  CMake finds the library itself when pkg-config gives none); and errors
+  are now annotations, readable without a login.
+- **Noticed:** Homebrew's `sdl2` is `sdl2-compat` (SDL2 on SDL3), so macOS
+  builds against a different SDL than Windows and Linux; it builds and its
+  tests pass, nothing more is known.
+- **Still Windows-only in what users get:** emulator downloads (WinHTTP and
+  the six Windows builds), the screenshot checks and the published test
+  build. Each is a later choice.
+
 ### M48. Round 38: the larger test install — Decided (2026-11-27)
 Your go-ahead (M30 had it "after Starter has been tried").
 - **Ten cartridge systems, full lists, no videos:** MAME, NES, SNES, Genesis,
@@ -1043,6 +1059,8 @@ in Add games; each was checked before fixing.
   `master`, pull requests to it, and by hand. Code stays portable as
   before (the existing platform splits are kept), but a Linux or macOS
   failure doesn't hold up a round.
+- **Ended in round 36 (your go-ahead, 2026-11-27):** Linux and macOS run on
+  every push again and a failure holds up a round like Windows (M49).
 
 ### W5. Agents without the Windows desktop — Decided (2026-10-28)
 - From round 12 the orchestrating session runs on the Unraid server, not
