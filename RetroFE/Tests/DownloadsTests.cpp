@@ -504,6 +504,35 @@ static Suite downloads("downloads", [] {
         check(!bad.error.empty(), "only owner/name repositories");
     });
 
+    run("service uses separate automatic and fresh cache ages", [&] {
+        auto root = makeRoot("service-check-ages");
+        auto http = std::make_unique<FakeHttp>();
+        FakeHttp* fake = http.get();
+        for (const auto& entry : emulators()) {
+            auto url = "https://api.github.com/repos/" + entry.repo + (entry.latestOnly ? "/releases/latest" : "/releases?per_page=30");
+            fake->responses[url] = answer(200, entry.latestOnly ? R"({"tag_name":"v0"})" : "[]", { { "etag", entry.id } });
+        }
+        Service service(root, std::move(http));
+        int64_t time = 10000;
+        service.now = [&] { return time; };
+        service.check();
+        check(fake->requested.size() == 6, "initial check asks six times");
+        time += 1800;
+        service.check();
+        check(fake->requested.size() == 6, "automatic check after 30 minutes uses cache");
+        service.check({}, nullptr, true);
+        check(fake->requested.size() == 12, "fresh check after 30 minutes asks");
+        time += 30;
+        service.check({}, nullptr, true);
+        check(fake->requested.size() == 12, "fresh check after 30 seconds uses cache");
+        time += 3630;
+        service.check();
+        check(fake->requested.size() == 18, "automatic check after 61 minutes asks");
+        for (size_t i = 12; i < 18; i++) {
+            check(std::find(fake->sentHeaders[i].begin(), fake->sentHeaders[i].end(), "If-None-Match: " + emulators()[i - 12].id) != fake->sentHeaders[i].end(), "automatic check sends ETag");
+        }
+    });
+
     run("emulator entry ETags and shared rate limit", [&] {
         auto root = makeRoot("emulator-etags");
         FakeHttp http;

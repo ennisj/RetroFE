@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <ctime>
 #include <memory>
 #include <set>
 #include <string>
@@ -393,7 +394,11 @@ static Test::Suite downloadScreens("download screens", [] {
         f.model->setScreen("download-emulators", {});
         checkEqual(f.model->get("download:checkStatus"), "Checking for releases...", "checking in the background");
         check(f.waitForJob(), "the check finishes");
-        checkEqual(f.model->get("download:checkStatus"), "", "nothing wrong");
+        std::time_t checkedTime = static_cast<std::time_t>(f.seconds);
+        std::tm* local = std::localtime(&checkedTime);
+        char clock[16] = "";
+        std::strftime(clock, sizeof(clock), "%H:%M", local);
+        checkEqual(f.model->get("download:checkStatus"), std::string("Versions checked at ") + clock + ".", "cache check time shown");
         checkEqual(f.detail("emulator-retroarch"), "Installed 1.22.1, 1.22.2 available", "an update");
         checkEqual(f.detail("emulator-duckstation"), "Not installed, 0.1.12083 available", "not installed");
         checkEqual(f.detail("emulator-pcsx2"), "Installed 2.8.2", "up to date");
@@ -417,7 +422,15 @@ static Test::Suite downloadScreens("download screens", [] {
         f.model->update(0.01f);
         check(f.model->get("download:running") == "no" && fake->requested.size() == asked, "coming back doesn't check again");
 
-        // Check again asks again (within GitHub's minute it's the copy kept)
+        // Leaving the download screens and opening again reuses the cached lists.
+        f.model->leaving(f.model->screen());
+        f.model->setScreen("manage", {});
+        f.seconds += 1800;
+        f.model->setScreen("download-emulators", {});
+        check(f.waitForJob() && fake->requested.size() == asked, "opening again within an hour uses cache");
+        checkEqual(f.model->get("download:checkStatus"), std::string("Versions checked at ") + clock + ".", "reopening shows the original check time");
+
+        // Check again asks again
         f.seconds += 120;
         check(f.model->runAction("download.check").ok, "Check again");
         check(f.waitForJob() && fake->requested.size() == asked * 2, "asked again");

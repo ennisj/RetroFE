@@ -75,6 +75,7 @@ namespace Downloads
         bool updateAvailable = false;
         bool fromCache = false;         // GitHub couldn't be asked; this is the last copy
         std::string error;              // offline, no release, no checksum...
+        int64_t checked = 0;            // last successful GitHub fetch or confirmation
         int64_t retryAt = 0;            // GitHub's rate limit: asked again after this (seconds since 1970); 0 if not limited
         std::vector<std::string> warnings;
     };
@@ -125,10 +126,9 @@ namespace Downloads
         // The built-in entries with their installed versions. No network.
         std::vector<EmulatorStatus> list(const Progress& progress = {}, const std::atomic<bool>* stop = nullptr);
 
-        // Every entry's latest release, through the ETag cache (an unchanged
-        // list doesn't count against GitHub's 60 checks an hour). Never call
-        // it at RetroFE's start.
-        std::vector<Release> check(const Progress& progress = {}, const std::atomic<bool>* stop = nullptr);
+        // Every entry's latest release, through the ETag cache. A fresh check
+        // asks again after a minute; automatic checks reuse lists for an hour.
+        std::vector<Release> check(const Progress& progress = {}, const std::atomic<bool>* stop = nullptr, bool fresh = false);
 
         // Installs or updates an entry (its package id, from list()):
         // downloads and checks it, installs it, creates its portable files and,
@@ -159,7 +159,7 @@ namespace Downloads
 
     private:
         Outcome installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop);
-        Release checkOne(size_t entry, const std::map<std::string, Manifest>& installed);
+        Release checkOne(size_t entry, const std::map<std::string, Manifest>& installed, int64_t maxAge);
         void readCoreList(CoreList& list, std::vector<Package>& packages);
         std::string cacheFolder() const;
 

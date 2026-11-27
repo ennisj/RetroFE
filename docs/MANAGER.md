@@ -558,10 +558,10 @@ offers what was just installed, chosen already when it's the one new launcher.
 - **Download an emulator** lists the six with their state ("Not installed,
   1.22.2 available", "Installed 1.22.1, 1.22.2 available", "Installed
   1.22.2"). What's installed shows at once; the versions on offer are checked
-  in the background each time the screen opens (Back to it doesn't check
-  again), and **Check again** asks again. That's the only time RetroFE asks:
+  in the background when the screen opens, reusing versions checked within the
+  last hour. **Check again** asks GitHub, with a one-minute floor between requests. That's the only time RetroFE asks:
   nothing is checked when RetroFE starts or Manage opens. A note above the
-  list says when the check couldn't be made: offline, or GitHub's limit of 60
+  list shows when versions were last checked, or why a check couldn't be made: offline, or GitHub's limit of 60
   requests an hour reached (six requests per check, about ten checks an hour;
   unauthenticated 304 responses count), with the time to try again. **RetroArch cores**
   shows once RetroArch is installed.

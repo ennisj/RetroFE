@@ -4,6 +4,16 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 35 — fewer requests to GitHub (2026-11-27)
+
+Unit tests: 8,556 → CHECKS checks (Windows CI). Choice in M46 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Opening Download an emulator reuses versions checked in the last
+  hour** instead of asking GitHub again; **Check again** always asks (at
+  most once a minute). The screen says when the versions were checked
+  ("Versions checked at 14:05.").
+
 ## Round 34 — fixes from the review of round 33 (2026-11-27)
 
 Unit tests: 8,526 → 8,556 checks (Windows CI). Choices in M45 of

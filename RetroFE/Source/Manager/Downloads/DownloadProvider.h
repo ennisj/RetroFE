@@ -98,7 +98,7 @@ namespace Manager
         Forms::Model::Result runAction(const std::string& action, const Screen& screen) override;
 
     private:
-        enum class Job { None, Check, Install, Remove, Cores, InstallCore, RemoveCore };
+        enum class Job { None, Check, FreshCheck, Install, Remove, Cores, InstallCore, RemoveCore };
 
         struct Message
         {

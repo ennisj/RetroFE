@@ -156,7 +156,7 @@ void DownloadProvider::start(Job job, const std::string& target, const Screen& s
     jobTarget_ = target;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        progress_ = job == Job::Check ? "Checking for releases..."
+        progress_ = (job == Job::Check || job == Job::FreshCheck) ? "Checking for releases..."
                   : job == Job::Cores ? "Reading libretro's core list..." : "Starting...";
         done_ = total_ = 0;
         if (job == Job::Install || job == Job::Remove) messages_.erase(target);
@@ -265,8 +265,9 @@ void DownloadProvider::work(Downloads::Service& downloads, Job job, const std::s
     switch (job) {
     case Job::None:
         break;
-    case Job::Check: {
-        std::vector<Downloads::Release> releases = downloads.check(progress, &stop_);
+    case Job::Check:
+    case Job::FreshCheck: {
+        std::vector<Downloads::Release> releases = downloads.check(progress, &stop_, job == Job::FreshCheck);
         std::vector<Downloads::EmulatorStatus> statuses = downloads.list();
         std::lock_guard<std::mutex> lock(mutex_);
         statuses_ = statuses;
@@ -433,7 +434,7 @@ std::string DownloadProvider::emulatorState(const Downloads::EmulatorStatus& ent
 std::string DownloadProvider::checkStatus(Forms::Severity& severity) const
 {
     severity = Forms::Severity::None;
-    if (job_ == Job::Check) {
+    if ((job_ == Job::Check || job_ == Job::FreshCheck)) {
         return stop_ ? "Stopping..." : "Checking for releases...";
     }
     if (!checked_ || releases_.empty()) {
@@ -453,7 +454,11 @@ std::string DownloadProvider::checkStatus(Forms::Severity& severity) const
              + "). RetroFE may be offline: check the connection, then Check again.";
     }
     severity = Forms::Severity::None;
-    return "";
+    int64_t checked = 0;
+    for (const auto& offered : releases_) {
+        if (offered.checked > 0 && (checked == 0 || offered.checked < checked)) checked = offered.checked;
+    }
+    return checked > 0 ? "Versions checked at " + clockText(checked) + "." : "";
 }
 
 std::vector<std::string> DownloadProvider::warnings() const
@@ -498,7 +503,7 @@ std::string DownloadProvider::emulatorValue(const std::string& key, const Screen
             return offered->version + (offered->fromCache ? " (the last copy RetroFE found)" : "");
         }
         if (offered && !offered->error.empty()) return offered->error;
-        return job_ == Job::Check ? "Checking..." : "";
+        return (job_ == Job::Check || job_ == Job::FreshCheck) ? "Checking..." : "";
     }
     if (key == "size") return offered && offered->size > 0 ? Downloads::describeSize(offered->size) : "";
     if (key == "source") return sourceOf(*entry);
@@ -704,7 +709,7 @@ std::string DownloadProvider::actionProblem(const std::string& action, const Scr
     }
     if (busy()) {
         if (stop_) return "Stopping...";
-        return job_ == Job::Check ? "Still checking for releases..."
+        return (job_ == Job::Check || job_ == Job::FreshCheck) ? "Still checking for releases..."
              : job_ == Job::Cores ? "Still reading libretro's core list..." : busyText;
     }
     if (action == "check") {
@@ -754,7 +759,7 @@ Forms::Model::Result DownloadProvider::runAction(const std::string& action, cons
         result.message = "Stopping...";
     }
     else if (action == "check") {
-        start(Job::Check, "", screen);
+        start(Job::FreshCheck, "", screen);
     }
     else if (action == "checkCores") {
         start(Job::Cores, "", screen);
