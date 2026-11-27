@@ -159,6 +159,12 @@ else()
     pkg_search_module(SDL2 REQUIRED sdl2)
     pkg_search_module(SDL2_IMAGE REQUIRED SDL2_image)
     pkg_search_module(SDL2_MIXER REQUIRED SDL2_mixer)
+    if(APPLE AND NOT SDL2_MIXER_LIBRARIES)
+        # Homebrew's SDL2_mixer.pc needs fluidsynth's, which needs keg-only readline's:
+        # without readline on PKG_CONFIG_PATH, pkg-config finds SDL2_mixer but gives no libraries
+        find_library(SDL2_MIXER_LIBRARY SDL2_mixer HINTS /opt/homebrew/lib /usr/local/lib REQUIRED)
+        set(SDL2_MIXER_LIBRARIES "${SDL2_MIXER_LIBRARY}")
+    endif()
     pkg_search_module(SDL2_TTF REQUIRED SDL2_ttf)
     if(APPLE)
         # macOS's own zlib, which has no pkg-config file of its own

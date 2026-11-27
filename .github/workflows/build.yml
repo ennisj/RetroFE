@@ -306,6 +306,9 @@ jobs:
     - name: Install dependencies
       run: |
         brew install pkg-config sdl2 sdl2_image sdl2_mixer sdl2_ttf gstreamer minizip webp libusb
+        # SDL2_mixer's pkg-config file needs fluidsynth's, which needs readline's; readline is
+        # keg-only, so its pkg-config folder isn't searched unless added
+        echo "PKG_CONFIG_PATH=$(brew --prefix readline)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
 
     - name: Configure CMake
       run: cmake RetroFE/Source -BRetroFE/Build -DRETROFE_BUILD_TESTS=ON
