@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 33 — emulator downloads, without the Catalog (2026-11-27)
 
-Unit tests: 7,604 → CHECKS checks (Windows CI). Choices in M44 of
+Unit tests: 7,604 → 8,526 checks (Windows CI). Choices in M44 of
 [DECISIONS.md](DECISIONS.md).
 
 - **Download an emulator** is back: the first row of Add a launcher, and a
