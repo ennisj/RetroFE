@@ -545,6 +545,53 @@ A launcher's screen shows its program, arguments and working folder, with:
 Changes keep the original in `manage/backups` and take effect when RetroFE
 reloads, after you close Manage.
 
+### Downloading emulators
+
+RetroFE can download six emulators and make their launchers: RetroArch, MAME,
+DuckStation, PCSX2, PPSSPP and Flycast, the Windows x64 builds (elsewhere the
+screen only says "Emulator downloads are Windows-only for now."). **Download
+an emulator** is the first row of **Add a launcher** (which the bare
+install's "Add your first launcher/emulator" opens), and a link right after
+the Launcher choice of **Add a system**; coming back, the Launcher choice
+offers what was just installed, chosen already when it's the one new launcher.
+
+- **Download an emulator** lists the six with their state ("Not installed,
+  1.22.2 available", "Installed 1.22.1, 1.22.2 available", "Installed
+  1.22.2"). What's installed shows at once; the versions on offer are checked
+  in the background each time the screen opens (Back to it doesn't check
+  again), and **Check again** asks again. That's the only time RetroFE asks:
+  nothing is checked when RetroFE starts or Manage opens. A note above the
+  list says when the check couldn't be made: offline, or GitHub's limit of 60
+  checks an hour reached, with the time to try again. **RetroArch cores**
+  shows once RetroArch is installed.
+- **An emulator's screen** says what it is, the installed and available
+  versions, the download's size, where it comes from
+  (`github.com/stenzek/duckstation`, or libretro's server for RetroArch) and
+  its launcher. **Install** (or **Update**, when there's a newer version)
+  asks first, naming the source: "Download DuckStation from
+  github.com/stenzek/duckstation? RetroFE checks the published checksum, but
+  not what it contains." That question is the trust step, each time: no
+  setting remembers it. While it runs the screen shows the progress
+  ("Downloading 45 of 120 MB", "Installing...") and **Stop**; leaving the
+  screen stops the download too, and Install later continues it. The result
+  names the launcher made (e.g. `DuckStation`; RetroArch's come with its
+  cores). **Remove** removes the emulator's files and the launcher it made,
+  unless a system or game uses it or it was changed; settings, saves and
+  other files the emulator wrote stay, and the message lists them.
+  RetroArch's screen has **Cores**, and RetroArch can't be removed while
+  cores are installed.
+- **RetroArch cores** lists libretro's nightly Windows cores, installed ones
+  first, with a **System** choice. A core's screen works like an emulator's;
+  installing it makes the launcher `RetroArch <core name>`. libretro
+  publishes a CRC-32 for each core (checked) and no checksum for RetroArch
+  itself, which its screen says.
+
+Downloads, partial downloads and what's installed are kept in
+`manage/downloads/` ([FOLDERS.md](FOLDERS.md)); the emulators go in
+`emulators/<name>/`. A new launcher, like any change, applies after RetroFE
+reloads, when you close Manage. The design is in
+[design/emulator-downloads.md](design/emulator-downloads.md).
+
 ### RetroArch settings
 
 A game or system whose launcher runs RetroArch, and such a launcher on
@@ -872,7 +919,7 @@ one with `layouts/<layout>/forms/<screen>.xml`:
 | `note` | Text: `value`, or with `bind` a value from RetroFE; hidden when empty. `severity="warning"` (or `error`, `ok`) colors it when RetroFE doesn't say; `panel="yes"` puts it in a help panel instead of the rows when the page has one. |
 | `value` | A label and a read-only value, e.g. `<value label="Year" bind="game:year"/>`; hidden when empty |
 | `image` | A picture whose file `bind` gives, `rows` high (default 4), keeping its shape; hidden when there's no file or it can't be loaded |
-| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. `primary="yes"` applies to a button in the pinned `<actions>` bar. It marks the button that saves the fields; its Page down hint turns green after an edit when it can run. |
+| `button` | Runs an `action`. With `confirm="Delete this game?"` the first Select asks that, and a second one runs it; anything else cancels. `{bind:<key>}` in the question is that binding's value when it's asked, e.g. `confirm="Download {bind:download:name}?"`. `primary="yes"` applies to a button in the pinned `<actions>` bar. It marks the button that saves the fields; its Page down hint turns green after an edit when it can run. |
 | `link` | Opens the screen `open` (a form id), with this screen's parameters; `status` is shown on the right; help appears in the help panel, or on the hint line when there is no panel (ImGui: a tooltip) |
 | `results` | Rows to choose from, e.g. games matching a search. Select opens the screen `open` for that row: its id as the parameter `param` (default `id`), plus whatever else the row needs to find its record. `limit` rows at most (default 200), with a note saying how many there are in all; `empty` is shown when there are none. Left/Right page through them, or with `jump="letter"` jump to the previous or next letter; letterUp/letterDown do that in any list. A row that stands for a screen to go to rather than a record ("Add a launcher called lr-stella2014", a system's "Games  622 games") is drawn with the link marker, like a `link`. |
 
