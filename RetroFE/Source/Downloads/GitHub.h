@@ -24,8 +24,9 @@
 // Reading a GitHub repository's list of releases, for the built-in emulator
 // list. GitHub allows 60 unauthenticated requests an hour, so each entry's
 // list is kept with its ETag under cache/<entry>/ and fetched at most once a
-// minute, asking only for changes (which don't count against the limit), and
-// not at all while GitHub says the limit is reached (cache/rate-limit.json,
+// minute. Unauthenticated 304 responses count; six requests per check allow
+// about ten checks per hour. It does not ask while GitHub says the limit is
+// reached (cache/rate-limit.json,
 // shared by every entry).
 namespace Downloads
 {

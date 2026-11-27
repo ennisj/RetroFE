@@ -102,7 +102,7 @@ Downloads::Archive::~Archive() = default;
 Downloads::Archive::Form Downloads::Archive::detect(const std::string& path, uint64_t& offset)
 {
     offset = 0;
-    std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     std::array<unsigned char, 32> header{};
     file.read(reinterpret_cast<char*>(header.data()), header.size());
     size_t count = static_cast<size_t>(file.gcount());
@@ -140,7 +140,7 @@ bool Downloads::Archive::open(const std::string& path, const std::string& publis
         p.zip = unzOpen64(path.c_str());
         if (!p.zip) {
             // Some minizip versions cannot open an empty ZIP at offset zero.
-            std::ifstream file(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
+            std::ifstream file(std::filesystem::path(path), std::ios::binary | std::ios::ate);
             auto length = file.tellg();
             std::array<unsigned char, 22> end{};
             file.seekg(0);
@@ -174,7 +174,7 @@ bool Downloads::Archive::open(const std::string& path, const std::string& publis
     }
     initCrc();
     p.stream.base = offset;
-    p.stream.file.open(std::filesystem::u8path(path), std::ios::binary);
+    p.stream.file.open(std::filesystem::path(path), std::ios::binary);
     p.stream.file.seekg(static_cast<std::streamoff>(offset));
     LookToRead2_CreateVTable(&p.look, False);
     p.look.realStream = &p.stream;

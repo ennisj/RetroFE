@@ -75,7 +75,7 @@ const char* const downloadCoresForm = R"(
   <note bind="download:coresStatus" visibleWhen="download:hasRetroArch"/>
   <list label="Warnings" bind="download:coreWarnings" visibleWhen="download:hasCoreWarnings"/>
   <choice label="System" bind="download:coreSystem" options="download:coreSystems" visibleWhen="download:hasRetroArch"/>
-  <results bind="download:cores" open="download-core" param="core" limit="1000" visibleWhen="download:hasRetroArch"
+  <results bind="download:cores" open="download-core" param="core" limit="1000" visibleWhen="download:coresReady"
            empty="No cores listed."/>
   <actions>
     <button label="Check again" action="download.checkCores" visibleWhen="download:hasRetroArch"/>

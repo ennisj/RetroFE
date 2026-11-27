@@ -19,6 +19,7 @@
 #include "Hash.h"
 #include "JsonFields.h"
 #include "../Utility/Log.h"
+#include "../Library/Files.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
@@ -52,6 +53,7 @@ namespace
         return path.generic_u8string();
     }
 
+    // RetroFE path strings are native narrow; only archive and manifest relative names are UTF-8.
     fs::path fromUtf8(const std::string& path)
     {
         return fs::u8path(path);
@@ -80,6 +82,12 @@ namespace
         return true;
     }
 
+    std::string pathForMessage(const fs::path& path)
+    {
+        std::string result;
+        return Library::narrowName(path, result) ? result : "a path not representable in the current code page";
+    }
+
     // Write next to the file, then swap it in, so a crash can't leave half of it
     bool writeText(const fs::path& path, const std::string& text, std::string& error)
     {
@@ -91,14 +99,14 @@ namespace
             std::ofstream file(temp, std::ios::binary | std::ios::trunc);
             file << text;
             if (!file) {
-                error = "Could not write " + path.string();
+                error = "Could not write " + pathForMessage(path);
                 return false;
             }
         }
         fs::rename(temp, path, ec);
         if (ec) {
             fs::remove(temp, ec);
-            error = "Could not replace " + path.string();
+            error = "Could not replace " + pathForMessage(path);
             return false;
         }
         return true;
@@ -113,7 +121,7 @@ namespace
         if (!ec) return true;
         fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
         if (ec) {
-            error = "Could not write " + to.string() + ": " + ec.message();
+            error = "Could not write " + pathForMessage(to) + ": " + ec.message();
             return false;
         }
         fs::remove(from, ec);
@@ -276,7 +284,7 @@ namespace Downloads
 bool readManifest(const std::string& file, Manifest& manifest, std::string& error)
 {
     std::string text;
-    if (!readText(fs::u8path(file), text)) {
+    if (!readText(fs::path(file), text)) {
         error = "Could not read " + file;
         return false;
     }
@@ -319,7 +327,7 @@ bool writeManifest(const std::string& file, const Manifest& manifest, std::strin
     document["launcherSha256"] = manifest.launcherSha256;
     document["launcherName"] = manifest.launcherName;
     if (manifest.removed) document["removed"] = true;
-    return writeText(fs::u8path(file), document.dump(2), error);
+    return writeText(fs::path(file), document.dump(2), error);
 }
 
 Installer::Installer(const std::string& downloadsFolder, const std::string& emulatorsFolder)
@@ -357,7 +365,7 @@ std::string Installer::refusal(const InstalledFile& file, const std::string& id,
     }
     for (const std::string& folder : protectedFolders_) {
         if (!folder.empty() && (isInside(destination, folder) || destination.lexically_normal() == fs::path(folder).lexically_normal())) {
-            return "Refusing to write into " + fs::path(folder).filename().string() + ": " + file.path;
+            return "Refusing to write into " + pathForMessage(fs::path(folder).filename()) + ": " + file.path;
         }
     }
     return "";
@@ -367,15 +375,21 @@ std::map<std::string, Manifest> Installer::installed() const
 {
     std::map<std::string, Manifest> result;
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(fs::path(folder_) / "installed", ec)) {
+    for (auto it = fs::directory_iterator(fs::path(folder_) / "installed", ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        const auto& entry = *it;
         if (entry.path().extension() != ".json") continue;
+        std::string filename, stem;
+        if (!Library::narrowName(entry.path(), filename) || !Library::narrowName(entry.path().stem(), stem)) {
+            LOG_WARNING("Downloads", "Cannot read a manifest whose path is not representable in the current code page");
+            continue;
+        }
         Manifest manifest;
         std::string error;
-        if (!readManifest(entry.path().string(), manifest, error)) {
+        if (!readManifest(filename, manifest, error)) {
             LOG_WARNING("Downloads", error);
             continue;
         }
-        if (!manifest.removed && entry.path().stem().string() == manifest.id) {
+        if (!manifest.removed && stem == manifest.id) {
             result[manifest.id] = manifest;
         }
     }
@@ -389,9 +403,19 @@ std::string Installer::folderRefusal(const Package& package) const
         Manifest old;
         std::string ignored;
         bool owns = readManifest(manifestPath(package.id), old, ignored)
-            && (old.removed || std::any_of(old.files.begin(), old.files.end(), [&](const InstalledFile& file) {
+            && (std::any_of(old.files.begin(), old.files.end(), [&](const InstalledFile& file) {
                 return file.path.rfind(entry->folder + "/", 0) == 0;
             }));
+        if (owns && old.removed) {
+            std::set<std::string> left;
+            for (const auto& file : old.files) left.insert(file.path);
+            std::error_code ec;
+            fs::path folder = fs::path(emulators_) / fromUtf8(entry->folder);
+            for (auto it = fs::recursive_directory_iterator(folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+                if (!left.count(utf8(fs::path(entry->folder) / it->path().lexically_relative(folder)))) owns = false;
+            }
+            if (ec) { std::error_code existsError; if (fs::exists(folder, existsError) || existsError) owns = false; }
+        }
         if (!owns && hasContent(fs::path(emulators_) / fromUtf8(entry->folder))) {
             return "emulators/" + entry->folder + " is already there. Rename it, or add a launcher for it instead.";
         }
@@ -710,13 +734,16 @@ bool Installer::commit(const std::string& staging, std::string& error)
     for (const InstalledFile& file : manifest.files) {
         if (!file.backup.empty()) needed.insert(file.backup);
     }
-    for (const auto& entry : fs::directory_iterator(packageBackups, ec)) {
-        if (!needed.count(entry.path().filename().string())) {
+    for (auto it = fs::directory_iterator(packageBackups, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        const auto& entry = *it;
+        std::string name;
+        if (!Library::narrowName(entry.path().filename(), name)) continue;
+        if (!needed.count(name)) {
             fs::remove_all(entry.path(), ec);
         }
     }
 
-    if (changed) installMessage_ = " Replaced " + std::to_string(changed) + (changed == 1 ? " changed file; backups are in " : " changed files; backups are in ") + backups.string() + ".";
+    if (changed) installMessage_ = " Replaced " + std::to_string(changed) + (changed == 1 ? " changed file; backups are in " : " changed files; backups are in ") + pathForMessage(backups) + ".";
     fs::remove_all(staging, ec);
     LOG_NOTICE("Downloads", "Installed " + manifest.id + " " + manifest.version + " (" + std::to_string(manifest.files.size()) + " files)");
     return true;
@@ -789,6 +816,17 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
         left.kind = manifest.kind;
         left.version = manifest.version;
         left.removed = true;
+        for (const auto& path : removal.left) { InstalledFile file; file.path = path; left.files.push_back(file); }
+        if (const Emulator* entry = findEmulator(id)) {
+            fs::path folder = fs::path(emulators_) / fromUtf8(entry->folder);
+            for (auto it = fs::recursive_directory_iterator(folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+                if (it->is_directory(ec)) {
+                    InstalledFile file;
+                    file.path = utf8(fs::path(entry->folder) / it->path().lexically_relative(folder));
+                    left.files.push_back(file);
+                }
+            }
+        }
         std::string ignored;
         if (!writeManifest(manifestPath(id), left, ignored)) fs::remove(manifestPath(id), ec);
     }
@@ -803,16 +841,22 @@ bool Installer::remove(const std::string& id, Removal& removal, std::string& err
 void Installer::recover()
 {
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(fs::path(folder_) / "staging", ec)) {
-        if (!entry.is_directory()) continue;
+    for (auto it = fs::directory_iterator(fs::path(folder_) / "staging", ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        const auto& entry = *it;
+        std::string path, name;
+        if (!Library::narrowName(entry.path(), path) || !Library::narrowName(entry.path().filename(), name)) {
+            LOG_WARNING("Downloads", "Cannot recover a staging path not representable in the current code page");
+            continue;
+        }
+        if (!entry.is_directory(ec)) continue;
         if (fs::exists(entry.path() / ".ready", ec)) {
             std::string error;
-            if (commit(entry.path().string(), error)) {
-                LOG_NOTICE("Downloads", "Finished an interrupted install of " + entry.path().filename().string());
+            if (commit(path, error)) {
+                LOG_NOTICE("Downloads", "Finished an interrupted install of " + name);
                 continue;
             }
             // commit() has put back anything it changed; don't try again every time
-            LOG_ERROR("Downloads", "Could not finish installing " + entry.path().filename().string() + ": " + error);
+            LOG_ERROR("Downloads", "Could not finish installing " + name + ": " + error);
         }
         fs::remove_all(entry.path(), ec);
     }

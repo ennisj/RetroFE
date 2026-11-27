@@ -18,6 +18,7 @@
 #include "../../Downloads/Download.h"
 #include "../../Downloads/Emulators.h"
 #include "../../Library/Indexer.h"
+#include "../../Utility/Log.h"
 #include <algorithm>
 #include <ctime>
 #include <set>
@@ -99,7 +100,7 @@ const std::set<std::string>& DownloadProvider::keys()
         "supported", "unsupported", "running", "runningHere", "installingHere", "checkStatus", "hasWarnings",
         "retroArchInstalled", "needsRetroArch", "hasRetroArch", "name", "description", "folder", "system",
         "installed", "available", "size", "source", "launcher", "checks", "checksumNote", "progress", "message",
-        "isInstalled", "canInstall", "canUpdate", "isRetroArchInstalled", "coreSystem", "coresStatus", "hasCoreWarnings",
+        "isInstalled", "canInstall", "canUpdate", "isRetroArchInstalled", "coreSystem", "coresStatus", "hasCoreWarnings", "coresReady",
         // lists, rows and options
         "warnings", "coreWarnings", "emulators", "retroArchLink", "cores", "coreSystems",
         // actions
@@ -142,7 +143,11 @@ bool DownloadProvider::isRunningHere(const Screen& screen) const
 
 void DownloadProvider::start(Job job, const std::string& target, const Screen& screen)
 {
-    stopJob();
+    // Callers only start when nothing runs; never replace a live thread (that would terminate)
+    if (worker_.joinable()) {
+        stop_ = true;
+        collect();
+    }
     Downloads::Service* downloads = &service();
     stop_ = false;
     finished_ = false;
@@ -159,7 +164,23 @@ void DownloadProvider::start(Job job, const std::string& target, const Screen& s
     }
     generation_++;
     worker_ = std::thread([this, downloads, job, target] {
-        work(*downloads, job, target);
+        try {
+            work(*downloads, job, target);
+        }
+        catch (const std::exception& e) {
+            Downloads::Outcome outcome;
+            outcome.message = std::string("Something went wrong: ") + e.what();
+            LOG_ERROR("Downloads", outcome.message);
+            finish(job == Job::InstallCore || job == Job::RemoveCore ? "core-" + target : target, outcome);
+            if (job == Job::Cores) { std::lock_guard<std::mutex> lock(mutex_); coresRead_ = true; cores_.error = outcome.message; }
+        }
+        catch (...) {
+            Downloads::Outcome outcome;
+            outcome.message = "Something went wrong: unknown error";
+            LOG_ERROR("Downloads", outcome.message);
+            finish(job == Job::InstallCore || job == Job::RemoveCore ? "core-" + target : target, outcome);
+            if (job == Job::Cores) { std::lock_guard<std::mutex> lock(mutex_); coresRead_ = true; cores_.error = outcome.message; }
+        }
         finished_ = true;
         generation_++;
     });
@@ -171,7 +192,7 @@ void DownloadProvider::stopJob()
         return;
     }
     stop_ = true;
-    collect();
+    generation_++;
 }
 
 void DownloadProvider::collect()
@@ -210,6 +231,11 @@ void DownloadProvider::update(float dt)
     (void)dt;
     if (busy() && finished_) {
         collect();
+    }
+    if (!busy() && (coresOpen_ || coreOpen_) && !coresRead_ && retroArchInstalled()) {
+        Screen screen = coreOpen_ ? coreScreen_ : Screen{};
+        if (!coreOpen_) screen.form = "download-cores";
+        start(Job::Cores, targetOf(screen), screen);
     }
 }
 
@@ -332,6 +358,7 @@ void DownloadProvider::enter(const Screen& screen)
         hasRetroArch = retroArchInstalled();
         coresRead = coresRead_;
     }
+    if (isCoreScreen(screen)) { coreOpen_ = true; coreScreen_ = screen; }
     if (screen.form == "download-cores" && !coresOpen_) {
         coresOpen_ = true;
         if (hasRetroArch && !busy()) start(Job::Cores, "", screen);
@@ -352,6 +379,7 @@ std::string DownloadProvider::leaving(const Screen& screen)
     }
     if (screen.form == "download-emulators") emulatorsOpen_ = false;
     if (screen.form == "download-cores") coresOpen_ = false;
+    if (isCoreScreen(screen)) coreOpen_ = false;
     return "";
 }
 
@@ -406,16 +434,18 @@ std::string DownloadProvider::checkStatus(Forms::Severity& severity) const
 {
     severity = Forms::Severity::None;
     if (job_ == Job::Check) {
-        return "Checking for releases...";
+        return stop_ ? "Stopping..." : "Checking for releases...";
     }
     if (!checked_ || releases_.empty()) {
+        auto error = messages_.find("");
+        if (error != messages_.end()) { severity = error->second.severity; return error->second.text; }
         return "";
     }
     severity = Forms::Severity::Warning;
     int64_t retryAt = 0;
     for (const auto& offered : releases_) retryAt = std::max(retryAt, offered.retryAt);
     if (retryAt > 0) {
-        return "GitHub's limit of 60 checks an hour has been reached. Check again after " + clockText(retryAt) + ".";
+        return "GitHub's limit of 60 requests an hour has been reached. Check again after " + clockText(retryAt) + ".";
     }
     bool any = std::any_of(releases_.begin(), releases_.end(), [](const Downloads::Release& r) { return !r.version.empty(); });
     if (!any) {
@@ -440,6 +470,7 @@ std::vector<std::string> DownloadProvider::warnings() const
 
 std::string DownloadProvider::progressText() const
 {
+    if (stop_) return "Stopping...";
     if (contains(progress_, "Downloading") && (done_ > 0 || total_ > 0)) {
         return downloadText(done_, total_);
     }
@@ -535,11 +566,18 @@ std::string DownloadProvider::get(const std::string& key, const Screen& screen)
         return found != messages_.end() && !isRunningHere(screen) ? found->second.text : "";
     }
     if (key == "coresStatus") {
+        if (stop_ && busy()) return "Stopping...";
         if (job_ == Job::Cores) return progressText();
-        if (!coresRead_ || cores_.error.empty() || cores_.error == "Install RetroArch first") return "";
+        if (!coresRead_ && busy()) return "Waiting for the release check...";
+        if (!coresRead_) {
+            auto error = messages_.find("");
+            return error != messages_.end() ? error->second.text : "";
+        }
+        if (cores_.error.empty() || cores_.error == "Install RetroArch first") return "";
         return cores_.error + ".";
     }
     if (key == "hasCoreWarnings") return yesNo(!cores_.warnings.empty());
+    if (key == "coresReady") return yesNo(retroArchInstalled() && coresRead_);
     if (isEmulatorScreen(screen)) return emulatorValue(key, screen);
     if (isCoreScreen(screen)) return coreValue(key, screen);
     return "";
@@ -665,6 +703,7 @@ std::string DownloadProvider::actionProblem(const std::string& action, const Scr
         return Provider::actionProblem(action, screen);
     }
     if (busy()) {
+        if (stop_) return "Stopping...";
         return job_ == Job::Check ? "Still checking for releases..."
              : job_ == Job::Cores ? "Still reading libretro's core list..." : busyText;
     }
@@ -712,7 +751,7 @@ Forms::Model::Result DownloadProvider::runAction(const std::string& action, cons
     if (action == "stop") {
         stopJob();
         result.info = true;
-        result.message = "Stopped.";
+        result.message = "Stopping...";
     }
     else if (action == "check") {
         start(Job::Check, "", screen);

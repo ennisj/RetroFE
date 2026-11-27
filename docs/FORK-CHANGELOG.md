@@ -4,6 +4,28 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 34 — fixes from the review of round 33 (2026-11-27)
+
+Unit tests: 8,526 → 8,556 checks (Windows CI). Choices in M45 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Downloads work when RetroFE is in a folder with accented letters**
+  (e.g. `C:\Users\José\`); before, installing would have closed RetroFE.
+- **An unexpected error during a download shows on the screen** instead of
+  closing RetroFE.
+- **A download that fails to install is thrown away,** so the next Install
+  downloads it again rather than failing the same way.
+- **Back, Escape and Stop never freeze the screen:** the screen says
+  "Stopping..." until the download has stopped.
+- **RetroArch cores list themselves** even when opened while the release
+  check is still running.
+- **RetroArch's download shows its total and checks free space.**
+- **Only GitHub's real rate limit pauses checks** (another refusal, such as
+  a proxy's, is shown as an error); each check uses six of GitHub's 60
+  requests an hour.
+- **An emulator folder you replaced yourself** after removing that emulator
+  is no longer overwritten by Install.
+
 ## Round 33 — emulator downloads, without the Catalog (2026-11-27)
 
 Unit tests: 7,604 → 8,526 checks (Windows CI). Choices in M44 of

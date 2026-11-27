@@ -222,6 +222,7 @@ Outcome Service::installPackage(const Package& package, bool updating, const Pro
     }, result);
     if (!fetched) {
         LOG_WARNING("Downloads", package.id + ": " + result.error);
+        if (!result.cancelled) downloader.discard(package.id);
         return result.cancelled ? stopped() : failed(result.error);
     }
 
@@ -232,6 +233,7 @@ Outcome Service::installPackage(const Package& package, bool updating, const Pro
     installer_.setStopFlag(nullptr);
     if (!installed) {
         LOG_ERROR("Downloads", package.id + ": " + error);
+        if (error != "Stopped") downloader.discard(package.id);
         return error == "Stopped" ? stopped() : failed(error);
     }
     downloader.discard(package.id);

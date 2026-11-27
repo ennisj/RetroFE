@@ -102,8 +102,8 @@ way and can follow. Dolphin and RPCS3 don't publish Windows builds on GitHub rel
 ## How a release is found
 
 Each entry's releases are read from GitHub's API (`/repos/<repo>/releases`), cached in
-`manage/downloads/cache/<entry>/` with their `ETag`: a `304` costs nothing against
-GitHub's 60 checks an hour, a list is asked for at most once a minute, and when the limit
+`manage/downloads/cache/<entry>/` with their `ETag`: an unauthenticated `304` counts against
+GitHub's 60 requests an hour. Six requests per check allow about ten checks an hour; a list is asked for at most once a minute, and when the limit
 is reached no entry asks again until GitHub's reset time (`cache/rate-limit.json`, shared).
 When GitHub can't be asked, the last copy is shown with a warning. The highest version by
 the entry's tag rule wins, never a draft or pre-release; its asset needs GitHub's

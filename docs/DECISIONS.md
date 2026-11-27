@@ -730,6 +730,28 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M45. Round 34: review of round 33 — Decided (2026-11-27)
+An adversarial review (Claude Fable 5.1, your yes) of round 33 found no
+critical defect; each finding was checked before fixing.
+- **Fixed:** paths from RetroFE's folder are the ANSI code page, not UTF-8
+  (only archive entry names and manifest-relative names are UTF-8); no
+  exception leaves the worker thread; a failed install discards its
+  download; stopping doesn't join on the screen's thread (only quitting
+  does); the cores list starts once a running job ends; a 403 is the rate
+  limit only when GitHub says so; a removed emulator's leftover record owns
+  its folder only while the folder holds just what was left; RetroArch's
+  size comes from the response when libretro gives none.
+- **Corrected:** a 304 isn't free for unauthenticated requests, so a check
+  costs six of the 60 an hour.
+- **Checked and fine:** RetroArch 1.22.2's 7-Zip unpacks to 517 MB, under the
+  1 GiB per-block limit (it can take that much memory while unpacking).
+- **Left as they are:** a crash between writing the new install record and
+  clearing staging can leave files the new version dropped; stopping a
+  download from the Settings key stops it even if Manage then stays open;
+  an edited install record under `manage/` can name a "RetroArch ..."
+  launcher for Remove to delete (needs local access, which allows anything
+  anyway); redirects from libretro's server are followed, as a browser does.
+
 ### M44. Round 33: emulator downloads without the Catalog — Decided (2026-11-27)
 Your request: emulator downloads back, without the Catalog or self-update.
 - **The old code came back, trimmed** (from tag `catalog-last`): archives

@@ -546,6 +546,21 @@ static Suite downloads("downloads", [] {
         check(!none.error.empty() && none.packages.empty(), "no Http and no copy is an error");
     });
 
+    run("ordinary 403 does not block later checks", [&] {
+        auto root = makeRoot("ordinary-403");
+        FakeHttp http;
+        const auto& entry = emulators()[1];
+        std::string url = "https://api.github.com/repos/" + entry.repo + (entry.latestOnly ? "/releases/latest" : "/releases?per_page=30");
+        http.responses[url].status = 403;
+        auto parse = [](const std::string&, std::vector<Package>&, std::vector<std::string>&, std::string&) { return true; };
+        ReleaseList first;
+        readGitHubReleases(entry.repo, root, entry.id, &http, 1000, parse, first, entry.latestOnly);
+        check(contains(first.error, "403") && first.retryAt == 0, "ordinary 403 reports status");
+        ReleaseList second;
+        readGitHubReleases(entry.repo, root, entry.id, &http, 1100, parse, second, entry.latestOnly);
+        check(http.requested.size() == 2, "ordinary 403 does not block");
+    });
+
     run("check reports versions, checksums, offline and the rate limit", [&] {
         auto root = makeRoot("emulator-check");
         auto downloadsFolder = Service::downloadsFolder(root);
@@ -674,7 +689,7 @@ static Suite downloads("downloads", [] {
         check(installer.remove(package.id, removal, error) && removal.kept == 1, "remove keeps the changed file");
         check(removal.left == std::vector<std::string>({ "DuckStation/data/readme.txt", "DuckStation/settings.ini" }), "says what was left");
         Manifest left;
-        check(readManifest(installer.manifestPath(package.id), left, error) && left.removed && left.files.empty(), "a removed record");
+        check(readManifest(installer.manifestPath(package.id), left, error) && left.removed && left.files.size() == 3, "a removed record with retained files and folders");
         check(installer.installed().count(package.id) == 0, "not listed as installed");
         check(installer.install(package, { zip }, error), "reinstall into what it left: " + error);
         checkEqual(readFile(root + "/emulators/DuckStation/settings.ini"), "settings", "settings untouched");
@@ -683,6 +698,8 @@ static Suite downloads("downloads", [] {
         checkEqual(readFile(downloadsFolder + "/backups/" + package.id + "/before-0.1.12084/DuckStation/data/readme.txt"), "changed", "the changed file it replaced is backed up");
         check(installer.remove(package.id, removal, error) && removal.restored == 1, "remove puts it back");
         checkEqual(readFile(root + "/emulators/DuckStation/data/readme.txt"), "changed", "put back");
+        writeFile(root + "/emulators/DuckStation/user-copy.txt", "mine");
+        check(!installer.install(package, { zip }, error) && contains(error, "already there"), "new user file prevents reinstall");
         fs::remove_all(root + "/emulators/DuckStation");
         fs::remove(installer.manifestPath(package.id));
         writeFile(root + "/emulators/DuckStation/settings.ini", "someone else's");
@@ -1124,6 +1141,16 @@ static Suite downloads("downloads", [] {
         check(!downloader.fetch(package, nullptr, full), "refused");
         check(contains(full.error, "Not enough free space") && http.offsets.empty(), "before downloading: " + full.error);
 
+        Package unknown = remotePackage("unknown", "https://h.org/p.zip", content);
+        unknown.files[0].size = 0;
+        Downloader::Result unknownFull;
+        check(!downloader.fetch(unknown, nullptr, unknownFull) && contains(unknownFull.error, "Not enough free space"), "unknown size checked after response");
+        Downloader enough = testDownloader(&http, root + "/partial", delays);
+        uint64_t shownTotal = 0;
+        Downloader::Result unknownResult;
+        check(enough.fetch(unknown, [&](uint64_t, uint64_t total) { shownTotal = total; return true; }, unknownResult), "unknown size download succeeds");
+        check(shownTotal == content.size(), "response length shown as total");
+
         Downloader stoppable = testDownloader(&http, root + "/partial", delays);
         Downloader::Result stopped;
         check(!stoppable.fetch(package, [](uint64_t, uint64_t) { return false; }, stopped) && stopped.cancelled, "stopped");
@@ -1255,9 +1282,16 @@ static Suite downloads("downloads", [] {
         auto http = std::make_unique<ServingHttp>();
         ServingHttp* fake = http.get();
         fake->documents[coreIndexUrl] = "2026-10-28 3610a686 genesis_plus_gx_libretro.dll.zip\n";
-        fake->files[coreUrl("genesis_plus_gx")] = readFile(zip);
+        auto badZip = makeRoot("service-cores-bad-server") + "/core.zip";
+        check(makeZip(badZip, { { "genesis_plus_gx_libretro.dll", "wrong" } }), "bad core zip");
+        fake->files[coreUrl("genesis_plus_gx")] = readFile(badZip);
         Service service(root, std::move(http));
+        Outcome bad = service.installCore("genesis_plus_gx");
+        check(!bad.ok && contains(bad.message, "doesn't match"), "wrong CRC refused");
+        check(!fs::exists(downloadsFolder + "/partial/core-genesis_plus_gx"), "failed download discarded");
+        fake->files[coreUrl("genesis_plus_gx")] = readFile(zip);
         Outcome installed = service.installCore("genesis_plus_gx");
+        check(fake->offsets.size() == 2, "second install downloaded again");
         check(installed.ok && installed.libraryChanged, "core installed: " + installed.message);
         checkEqual(installed.message, "Genesis Plus GX is installed, with the launcher RetroArch Genesis Plus GX.", "core install names launcher");
         check(fs::exists(root + "/launchers.windows/RetroArch Genesis Plus GX.conf"), "core launcher written");
