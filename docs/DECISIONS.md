@@ -52,6 +52,14 @@ Behaviour that still needs a check on a real setup is tracked in
 ### L4. Fonts and artwork with unclear licences — Partly resolved, rest Deferred
 - **Your answer (2026-10-24): not for now.** The panel images and intro stay
   as they are; revisit before publishing release packages.
+- **Your answer (2026-11-27): still deferred, and the fork is not
+  commercial.** Raised again because the public `management-ui-latest`
+  pre-release already carries `layouts/Aeon Nox` (panels, intro, sounds), as
+  upstream RetroFE's own releases do; that's accepted. Being non-commercial
+  means the panels' possible CC BY-NC-SA 4.0 terms are met as long as the
+  credit (NOTICE.txt) stays and changed panels keep that licence. What's left
+  before a public release: the intro and sounds' unknown origin, and leaving
+  Arcades out of packages.
 - **Fixed in round 1:** Aeon Nox's `MC360.ttf` turned out to be Ubuntu
   Condensed shipped without its licence (removed; Roboto Condensed used
   instead). Its `BebasNeue.ttf` 1.002 had a no-redistribution EULA (replaced
