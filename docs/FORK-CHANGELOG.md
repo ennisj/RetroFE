@@ -4,6 +4,16 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 32 — the first-setup script can fail the build (2026-11-27)
+
+Unit tests unchanged (7,601 checks). Choice in M43 of
+[DECISIONS.md](DECISIONS.md).
+
+- **CI: the first-setup screenshot script now fails the build when a step
+  fails**, like the bare and Starter scripts. It has passed every run since
+  round 27, so its `# soft-fail` line is gone. The `# soft-fail` marker
+  still works for a new script that needs time to settle.
+
 ## Round 31 — fixes from the review of rounds 25-30 (2026-11-27)
 
 Unit tests: 7,580 → 7,601 checks (Windows CI). Choices in M42 of
