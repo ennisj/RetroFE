@@ -143,7 +143,11 @@ bool DownloadProvider::isRunningHere(const Screen& screen) const
 
 void DownloadProvider::start(Job job, const std::string& target, const Screen& screen)
 {
-    stopJob();
+    // Callers only start when nothing runs; never replace a live thread (that would terminate)
+    if (worker_.joinable()) {
+        stop_ = true;
+        collect();
+    }
     Downloads::Service* downloads = &service();
     stop_ = false;
     finished_ = false;
