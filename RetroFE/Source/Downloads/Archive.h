@@ -35,6 +35,11 @@ namespace Downloads
             uint64_t size;
             bool directory;
             uint32_t crc32 = 0;
+            // The Unix mode the archive stored (type and permission bits), or 0:
+            // a zip made on Unix or macOS (its external attributes' high 16 bits),
+            // a 7z with the Unix extension (0x8000; the attributes' high 16 bits)
+            uint32_t mode = 0;
+            bool symlink = false;   // a symbolic link; its data is the target
         };
         using Writer = std::function<bool(const void*, size_t)>;
 

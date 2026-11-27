@@ -18,6 +18,7 @@
 #include "Package.h"
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -38,7 +39,17 @@
 //
 // Only entries of the built-in list install anything (Emulators.h): an
 // emulator only under emulators/<its folder>/, a core only its own
-// emulators/RetroArch/cores/<core>_libretro.dll. Nothing extracted is run.
+// emulators/RetroArch/cores/<core>_libretro.dll (.so, .dylib). Nothing
+// extracted is run.
+//
+// Off Windows: an AppImage is installed as the entry's program, mode 0755,
+// once it's checked to be ELF; a macOS disk image is attached read-only
+// (hdiutil, never anything from the image) to copy the entry's .app out, and
+// always detached; the executable bits an archive stores are kept (never
+// setuid, setgid or sticky); and a symbolic link is recreated only when its
+// target is relative and stays inside the emulator's folder (anything else is
+// refused). Links are recorded in the manifest, so updates and removal handle
+// the link itself and never follow it. Windows refuses links, as before.
 namespace Downloads
 {
     struct InstalledFile
@@ -48,6 +59,8 @@ namespace Downloads
         std::string sha256;
         bool portable = false;  // a portable-mode file this module created, not one the archive had
         std::string backup;     // the backups/<id>/ folder holding the file this replaced, if any
+        std::string link;       // a symbolic link to this relative target (UTF-8), not a file
+        uint32_t mode = 0;      // its permission bits (0777 at most) off Windows; 0 = as created
     };
 
     struct Manifest
@@ -63,6 +76,22 @@ namespace Downloads
         bool removed = false;
     };
 
+    // Opens a disk image read-only at a folder, and closes it again. macOS's is
+    // hdiutil (attach -readonly -nobrowse -noautoopen -mountpoint, then detach);
+    // there's none elsewhere, so a DMG can't be installed there. Tests give
+    // their own.
+    struct ImageOpener
+    {
+        std::function<bool(const std::string& image, const std::string& mountPoint, std::string& error)> attach;
+        std::function<void(const std::string& mountPoint)> detach;
+    };
+    ImageOpener systemImageOpener();
+
+    // Whether a file starts as an ELF program does (what an AppImage is)
+    bool isElfFile(const std::string& path);
+    // Whether a file ends with a UDIF disk image's trailer ("koly")
+    bool isDiskImage(const std::string& path);
+
     class Installer
     {
     public:
@@ -72,7 +101,8 @@ namespace Downloads
 
         // Installs (or updates) from the downloaded files, one local path per
         // package file in the same order. Every file is an archive (zip, 7z or
-        // a self-extracting 7z, told apart by content).
+        // a self-extracting 7z, told apart by content), or what the entry's
+        // form says: an AppImage, or a disk image (macOS).
         bool install(const Package& package, const std::vector<std::string>& downloads, std::string& error);
 
         // After an install: " Replaced 2 changed files; backups are in ..." or ""
@@ -100,6 +130,9 @@ namespace Downloads
         // A folder that's never written, even inside emulators/
         void protect(const std::string& folder) { protectedFolders_.push_back(folder); }
 
+        // How a disk image is opened: systemImageOpener() unless a test sets another
+        void setImageOpener(ImageOpener opener) { imageOpener_ = std::move(opener); }
+
         // "" if package may be installed where it goes, otherwise why not: an
         // emulator's folder that exists and wasn't installed by this module
         // ("emulators/MAME is already there..."), or a core without RetroArch
@@ -118,6 +151,7 @@ namespace Downloads
         std::string emulators_;
         std::vector<std::string> protectedFolders_;
         const std::atomic<bool>* stop_ = nullptr;
+        ImageOpener imageOpener_;
     };
 
     bool readManifest(const std::string& file, Manifest& manifest, std::string& error);

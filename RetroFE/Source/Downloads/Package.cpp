@@ -156,4 +156,37 @@ bool isSafeRelativePath(const std::string& path)
     return true;
 }
 
+bool isSafeLink(const std::string& path, const std::string& target)
+{
+    if (path.empty() || target.empty() || target.size() > 4096 || target[0] == '/' || !isSafeRelativePath(path)) {
+        return false;
+    }
+    for (unsigned char c : target) {
+        if (c < 0x20 || c == 0x7f || c == '\\' || c == ':') return false;
+    }
+    // Where the link is, then each part of its target from there
+    std::vector<std::string> parts;
+    auto walk = [&parts](const std::string& text, size_t end) {
+        size_t start = 0;
+        while (start <= end && start < text.size()) {
+            size_t slash = text.find('/', start);
+            if (slash == std::string::npos || slash > end) slash = end;
+            std::string part = text.substr(start, slash - start);
+            start = slash + 1;
+            if (part.empty() || part == ".") continue;
+            if (part == "..") {
+                if (parts.empty()) return false;
+                parts.pop_back();
+            }
+            else {
+                parts.push_back(part);
+            }
+        }
+        return true;
+    };
+    size_t folder = path.find_last_of('/');
+    if (folder != std::string::npos && !walk(path, folder)) return false;
+    return walk(target, target.size()) && !parts.empty();
+}
+
 }
