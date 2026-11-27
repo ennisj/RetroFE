@@ -1247,7 +1247,7 @@ static Suite downloads("downloads", [] {
         Service service(root, std::move(http));
         int64_t seconds = 1000;
         service.now = [&] { return seconds; };
-        check(!service.supported() || fs::path::preferred_separator == '\\', "downloads are for Windows");
+        check(service.supported(), "downloads are supported where the list has builds");
 
         std::atomic<bool> stop{ true };
         Outcome cancelled = service.install("emulator-duckstation", {}, &stop);

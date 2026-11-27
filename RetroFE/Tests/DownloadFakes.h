@@ -51,6 +51,35 @@ namespace DownloadFakes
         return zipClose(zip, nullptr) == ZIP_OK;
     }
 
+    // An entry of a zip made on Unix: its mode (type and permission bits) is
+    // stored in the external attributes' high 16 bits; a link's content is its target
+    struct UnixEntry
+    {
+        std::string name;
+        std::string content;
+        uint32_t mode = 0100644;
+    };
+
+    // Writes a zip archive as Info-ZIP on Linux or macOS does ("made by" Unix)
+    inline bool makeUnixZip(const std::string& path, const std::vector<UnixEntry>& entries)
+    {
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        zipFile zip = zipOpen64(path.c_str(), APPEND_STATUS_CREATE);
+        if (!zip) return false;
+        for (const UnixEntry& entry : entries) {
+            zip_fileinfo info{};
+            info.external_fa = static_cast<uLong>(entry.mode) << 16;
+            if (zipOpenNewFileInZip4_64(zip, entry.name.c_str(), &info, nullptr, 0, nullptr, 0, nullptr, Z_DEFLATED, Z_DEFAULT_COMPRESSION,
+                                        0, -MAX_WBITS, DEF_MEM_LEVEL, Z_DEFAULT_STRATEGY, nullptr, 0, (3 << 8) | 20, 0, 0) != ZIP_OK) {
+                zipClose(zip, nullptr);
+                return false;
+            }
+            zipWriteInFileInZip(zip, entry.content.data(), static_cast<unsigned>(entry.content.size()));
+            zipCloseFileInZip(zip);
+        }
+        return zipClose(zip, nullptr) == ZIP_OK;
+    }
+
     // Serves fixed documents; anything else fails, as if offline
     class FakeHttp : public Downloads::Http
     {
