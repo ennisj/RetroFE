@@ -4,6 +4,20 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 32 — Add games keeps focus where it was (2026-11-27)
+
+Unit tests: 7,601 → 7,604 checks (Windows CI). Choices in M43 of [DECISIONS.md](DECISIONS.md).
+
+- **After choosing the From folder in Add games, focus stays on From.**
+  Until now it sometimes jumped to Copy games and sometimes didn't,
+  depending on how fast the games were counted, so a second Select could
+  either copy or reopen the browser. The rows are now locked only while
+  games are being copied, not while they are counted, and a toggle changed
+  during the count is kept. "Page down: Copy games" goes on to the copy.
+- CI: the first-setup screenshot script now fails the build when a step
+  fails, like the bare and Starter scripts. Its first strict run found the
+  bug above, which its `# soft-fail` line had hidden as a pass.
+
 ## Round 31 — fixes from the review of rounds 25-30 (2026-11-27)
 
 Unit tests: 7,580 → 7,601 checks (Windows CI). Choices in M42 of

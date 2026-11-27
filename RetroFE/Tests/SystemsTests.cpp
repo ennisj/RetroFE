@@ -634,9 +634,14 @@ static void runSystemsTests()
         std::string chosen = f.root + "/my-games";
         writeFile(chosen + "/game.zip", "game");
         f.model.set("system:importFrom", chosen);
+        checkEqual(f.model.get("system:importCopying"), "no", "counting is not copying");
+        auto from = Forms::findField(*form, "system:importFrom");
+        check(from && Forms::isEnabled(*from, f.model), "folder remains enabled while counting");
+        f.model.set("system:importArtwork", "no");
         auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while (f.model.get("system:importRunning") == "yes" && std::chrono::steady_clock::now() < until)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        checkEqual(f.model.get("system:importArtwork"), "no", "artwork choice survives counting");
         checkEqual(f.model.get("system:importMessage"), "1 game found", "worker count bound to screen");
         check(f.model.runAction("system.copyGames").ok, "copy starts through the form action");
         until = std::chrono::steady_clock::now() + std::chrono::seconds(10);

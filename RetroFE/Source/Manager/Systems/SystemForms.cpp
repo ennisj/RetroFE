@@ -259,11 +259,11 @@ const char* const systemAddForm = R"(
 const char* const addGamesForm = R"(
 <form id="{p}-add-games" title="Add games" bind="{p}:screenTitle">
   <note bind="{p}:status"/>
-  <folder label="From" bind="{p}:importFrom" status="{p}:importCount" hint="Choose a folder" enabledWhen="!{p}:importRunning"/>
-  <toggle label="Include subfolders" bind="{p}:importSubfolders" enabledWhen="!{p}:importRunning"/>
-  <toggle label="Copy artwork too" bind="{p}:importArtwork" visibleWhen="{p}:importArtworkFound" enabledWhen="!{p}:importRunning"/>
+  <folder label="From" bind="{p}:importFrom" status="{p}:importCount" hint="Choose a folder" enabledWhen="!{p}:importCopying"/>
+  <toggle label="Include subfolders" bind="{p}:importSubfolders" enabledWhen="!{p}:importCopying"/>
+  <toggle label="Copy artwork too" bind="{p}:importArtwork" visibleWhen="{p}:importArtworkFound" enabledWhen="!{p}:importCopying"/>
   <note bind="{p}:importArtworkCount" visibleWhen="{p}:importArtworkFound"/>
-  <toggle label="Copy titles and years too" bind="{p}:importMetadata" visibleWhen="{p}:importMetadataFound" enabledWhen="!{p}:importRunning"/>
+  <toggle label="Copy titles and years too" bind="{p}:importMetadata" visibleWhen="{p}:importMetadataFound" enabledWhen="!{p}:importCopying"/>
   <note bind="{p}:importMetadataCount" visibleWhen="{p}:importMetadataFound"/>
   <value label="Into" bind="{p}:importInto"/>
   <note bind="{p}:importLayout"/>
