@@ -209,7 +209,12 @@ class TestSmb(Fixture, unittest.TestCase):
         client.open_file = lambda path, mode: open(mapped(path), mode)
         client.makedirs = lambda path, exist_ok: os.makedirs(mapped(path), exist_ok=exist_ok)
         client.listdir = lambda path: os.listdir(mapped(path))
-        client.rename = lambda a, b: os.rename(mapped(a), mapped(b))
+        def rename(a, b):
+            source, target = mapped(a), mapped(b)
+            if target.exists():
+                raise FileExistsError(str(target))
+            os.rename(source, target)
+        client.rename = rename
         path.isdir = lambda p: os.path.isdir(mapped(p))
         path.exists = lambda p: os.path.exists(mapped(p))
         path.getsize = lambda p: os.path.getsize(mapped(p))

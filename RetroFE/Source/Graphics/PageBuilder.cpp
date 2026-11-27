@@ -1039,15 +1039,8 @@ float PageBuilder::fontScreenScale(int monitor) const
 	if (SDL_Window* window = SDL::getWindow(monitor)) {
 		SDL_GetWindowSize(window, &width, &height);
 	}
-	if (SDL::getRotation(monitor) % 2 == 1) {
-		std::swap(width, height);
-	}
-	float scaleX = static_cast<float>(width) / layoutWidth_;
-	float scaleY = static_cast<float>(height) / layoutHeight_;
-	if (SDL::isMirrored(monitor)) {
-		scaleY /= 2.0f;
-	}
-	return std::min(scaleX, scaleY);
+	return screenFontScale(width, height, layoutWidth_, layoutHeight_,
+	                       SDL::getRotation(monitor), SDL::isMirrored(monitor));
 }
 
 FontManager* PageBuilder::addFont(const xml_node<>* component, const xml_node<>* defaults, int monitor, const SDL_Color* colorOverride)

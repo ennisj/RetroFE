@@ -106,7 +106,7 @@ bool FontManager::initialize() {
         }
     }
 
-    const int GLYPH_SPACING = fontSize_ / 16; // Scale spacing with font size
+    const int GLYPH_SPACING = std::max(2, fontSize_ / 16); // Scale spacing with font size
 
     int x = 0, y = 0;
     int atlasHeight = 0;
