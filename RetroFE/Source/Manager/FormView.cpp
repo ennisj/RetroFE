@@ -531,7 +531,8 @@ void FormView::drawButton(const Field& field, Forms::Model& model, bool inRow)
     // A button with confirm="" asks first, with Yes and No in its place
     if (confirm_.armed() == &field) {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(field.confirm.c_str());
+        std::string question = Forms::confirmText(field, model);
+        ImGui::TextUnformatted(question.c_str());
         ImGui::SameLine();
         if (ImGui::Button("Yes") && confirm_.select(field) && problem.empty()) {
             result_ = model.runAction(field.action);

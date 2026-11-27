@@ -592,6 +592,30 @@ void runFormsTests()
         check(back.ok && back.back && back.open.empty(), "back");
     });
 
+    run("a confirmation reads {bind:key} from the model when it's shown", [&] {
+        std::string root = makeRoot("confirm-binds");
+        Configuration::absolutePath = root;
+        Configuration config;
+        ManagerModel model(config);
+        model.addProvider(std::make_unique<GameProvider>());
+        auto form = Forms::parse(R"(<form id="t"><actions>
+              <button label="Delete" action="game.save" confirm="Delete {bind:game:title}? {bind:game:notes}{a} {bind:game:title"/>
+              <button label="Plain" action="game.save" confirm="Delete this game?"/>
+            </actions></form>)", error);
+        check(form != nullptr && form->fields.size() == 1 && form->fields[0].children.size() == 2, "parsed: " + error);
+        if (!form || form->fields.empty() || form->fields[0].children.size() != 2) return;
+        const Forms::Field& button = form->fields[0].children[0];
+        checkEqual(button.confirm, "Delete {bind:game:title}? {bind:game:notes}{a} {bind:game:title", "kept as written");
+        model.setScreen("game", { { "id", "pacman" } });
+        checkEqual(Forms::confirmText(button, model), "Delete Game pacman? {a} {bind:game:title", "binds read; other braces kept");
+        model.setScreen("game", { { "id", "galaga" } });
+        model.set("game:notes", "Keep it.");
+        checkEqual(Forms::confirmText(button, model), "Delete Game galaga? Keep it.{a} {bind:game:title", "read again each time");
+        checkEqual(Forms::confirmText(form->fields[0].children[1], model), "Delete this game?", "plain text as it is");
+        Forms::Confirm confirm;
+        check(!confirm.select(button) && confirm.armed() == &button && confirm.select(button), "still asks first");
+    });
+
     run("leaving Settings with unsaved changes warns once, then drops them", [&] {
         std::string root = makeRoot("settings-leaving");
         writeFile(root + "/settings.conf", "hideMouse = no\n");
