@@ -22,6 +22,7 @@
 #include "../Library/RetroArch.h"
 #include "../Manager/Emulators/Launchers.h"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -205,6 +206,80 @@ const std::vector<Emulator>& emulators()
     return entries;
 }
 
+const std::vector<Emulator>& emulators(Platform platform)
+{
+    static const auto makeEntries = [](Platform platform) {
+        std::vector<Emulator> entries = emulators();
+        if (platform == Platform::WindowsX64) return entries;
+        const bool isLinux = platform == Platform::LinuxX64 || platform == Platform::LinuxArm64;
+        const bool arm = platform == Platform::LinuxArm64;
+        for (auto& entry : entries) {
+            entry.assetRule.clear();
+            entry.archive.clear();
+            entry.topFolder.clear();
+            entry.program.clear();
+            entry.portableFiles.clear();
+            if (entry.id == "retroarch" && !arm) {
+                if (isLinux) {
+                    entry.assetRule = "https://buildbot.libretro.com/stable/<version>/linux/x86_64/RetroArch.7z";
+                    entry.archive = "7z";
+                    entry.topFolder = "RetroArch-Linux-x86_64/";
+                    entry.program = "RetroArch-Linux-x86_64.AppImage";
+                } else {
+                    entry.assetRule = "https://buildbot.libretro.com/stable/<version>/apple/osx/universal/RetroArch_Metal.dmg";
+                    entry.archive = "dmg";
+                    entry.program = "RetroArch.app/Contents/MacOS/RetroArch";
+                }
+            } else if (entry.id == "duckstation") {
+                if (isLinux) {
+                    entry.tagRule = "^(latest)$";
+                    entry.latestOnly = true;
+                    entry.assetRule = arm ? "DuckStation-arm64.AppImage" : "DuckStation-x64.AppImage";
+                    entry.archive = "appimage";
+                    entry.program = entry.assetRule;
+                } else {
+                    entry.assetRule = "duckstation-mac-release.zip";
+                    entry.archive = "zip";
+                    entry.program = "DuckStation.app/Contents/MacOS/DuckStation";
+                }
+            } else if (entry.id == "pcsx2" && isLinux && !arm) {
+                entry.assetRule = "pcsx2-v<version>-linux-appimage-x64-Qt.AppImage";
+                entry.archive = "appimage";
+                entry.program = "pcsx2.AppImage";
+                entry.portableFiles = { "portable.txt" };
+            } else if (entry.id == "ppsspp") {
+                if (isLinux) {
+                    entry.assetRule = arm ? "PPSSPP-v<version>-anylinux-aarch64.AppImage" : "PPSSPP-v<version>-anylinux-x86_64.AppImage";
+                    entry.archive = "appimage";
+                    entry.program = "PPSSPP.AppImage";
+                } else {
+                    entry.assetRule = "PPSSPPSDL-macOS-v<version>.zip";
+                    entry.archive = "zip";
+                    entry.program = "PPSSPPSDL.app/Contents/MacOS/PPSSPPSDL";
+                }
+            } else if (entry.id == "flycast" && !arm) {
+                entry.assetRule = isLinux ? "flycast-x86_64-<version>.AppImage" : "flycast-macOS-<version>.zip";
+                entry.archive = isLinux ? "appimage" : "zip";
+                entry.program = isLinux ? "flycast.AppImage" : "Flycast.app/Contents/MacOS/Flycast";
+            }
+        }
+        return entries;
+    };
+    static const auto windows = makeEntries(Platform::WindowsX64);
+    static const auto linuxX64 = makeEntries(Platform::LinuxX64);
+    static const auto linuxArm64 = makeEntries(Platform::LinuxArm64);
+    static const auto macArm64 = makeEntries(Platform::MacArm64);
+    static const auto macX64 = makeEntries(Platform::MacX64);
+    switch (platform) {
+    case Platform::WindowsX64: return windows;
+    case Platform::LinuxX64: return linuxX64;
+    case Platform::LinuxArm64: return linuxArm64;
+    case Platform::MacArm64: return macArm64;
+    case Platform::MacX64: return macX64;
+    }
+    return windows;
+}
+
 const Emulator* findEmulator(const std::string& packageId)
 {
     for (const auto& entry : emulators()) if (packageId == "emulator-" + entry.id) return &entry;
@@ -231,7 +306,12 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry,
         if (!std::regex_match(tag, match, tagRule)) continue;
         std::string version = match[1];
         if (entry.id == "mame") version = "0." + version;
-        if (entry.id == "duckstation") version.replace(version.find('-'), 1, ".");
+        if (entry.id == "duckstation" && tag == "latest") {
+            std::string published = J::text(release, "published_at");
+            if (!std::regex_match(published, std::regex(R"(^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$)"))) continue;
+            version = published.substr(0, 10);
+            std::replace(version.begin(), version.end(), '-', '.');
+        } else if (entry.id == "duckstation") version.replace(version.find('-'), 1, ".");
         std::string wanted = entry.assetRule;
         for (const auto& replacement : { std::make_pair(std::string("<version>"), version), std::make_pair(std::string("<tag>"), tag) }) {
             size_t at = wanted.find(replacement.first);

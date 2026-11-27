@@ -43,6 +43,10 @@ namespace Downloads
         bool latestOnly = false; // use GitHub's latest stable release endpoint
     };
 
+    enum class Platform { WindowsX64, LinuxX64, LinuxArm64, MacArm64, MacX64 };
+
+    // Platform-specific entries can be inspected independently of the host OS.
+    const std::vector<Emulator>& emulators(Platform platform);
     const std::vector<Emulator>& emulators();
     // The entry whose package id ("emulator-<id>") this is, or nullptr
     const Emulator* findEmulator(const std::string& packageId);

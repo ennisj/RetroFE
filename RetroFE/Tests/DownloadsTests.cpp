@@ -408,6 +408,26 @@ static Suite downloads("downloads", [] {
         check(parseEmulatorReleases(R"([{"tag_name":"latest"},{"tag_name":"preview"},{"tag_name":"v2.9.148","prerelease":true}])", emulators()[2], packages, warnings, error) && packages.empty(), "rolling tags excluded");
     });
 
+    run("platform release tables and rolling DuckStation", [&] {
+        const auto& x64 = emulators(Platform::LinuxX64);
+        const auto& arm = emulators(Platform::LinuxArm64);
+        const auto& mac = emulators(Platform::MacArm64);
+        check(x64[0].archive == "7z" && x64[0].topFolder == "RetroArch-Linux-x86_64/", "Linux RetroArch archive");
+        check(arm[0].assetRule.empty() && arm[3].assetRule.empty() && arm[5].assetRule.empty(), "unavailable Linux arm64 builds");
+        check(mac[0].archive == "dmg" && mac[3].assetRule.empty(), "macOS RetroArch and unavailable PCSX2");
+        check(emulators(Platform::MacX64)[4].program == "PPSSPPSDL.app/Contents/MacOS/PPSSPPSDL", "macOS PPSSPP program");
+        check(emulators(Platform::WindowsX64)[1].program == "mame.exe", "Windows table");
+        const auto& entry = x64[2];
+        nlohmann::json release = { { "tag_name", "latest" }, { "published_at", "2026-11-27T12:00:00Z" },
+            { "assets", nlohmann::json::array({ { { "name", entry.assetRule },
+                { "browser_download_url", githubUrl(entry, "latest", entry.assetRule) },
+                { "digest", "sha256:" + std::string(64, 'a') } } }) } };
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        check(parseEmulatorReleases(release.dump(), entry, packages, warnings, error) && packages.size() == 1
+              && packages[0].version == "2026.11.27", "rolling release uses publication date");
+    });
+
     run("RetroArch download origin is pinned", [&] {
         auto entry = emulators()[0];
         entry.assetRule = "https://buildbot.libretro.com/other/RetroArch.7z";
