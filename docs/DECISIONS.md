@@ -736,6 +736,10 @@ Made while building the design review (M22); the option not taken in brackets.
   moving focus to Copy games after every pick, which would also make a
   mistaken pick one press from copying. The script uses Page Down, as the
   hint says.
+- **Open:** on CI the screenshot taken 1 s after Page Down still showed From
+  focused, though the following Return copied (so the jump had happened).
+  Whether a frame lags on the runner or in RetroFE isn't known yet; the
+  copy is what the script checks.
 
 ### M42. Round 31: review of rounds 25-30 — Decided (2026-11-27)
 An adversarial review (Claude Fable 5.1) of rounds 25-30 found four bugs, all

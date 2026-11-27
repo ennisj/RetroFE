@@ -6,7 +6,7 @@ reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
 ## Round 32 — Add games keeps focus where it was (2026-11-27)
 
-Choices in M43 of [DECISIONS.md](DECISIONS.md).
+Unit tests: 7,601 → 7,604 checks (Windows CI). Choices in M43 of [DECISIONS.md](DECISIONS.md).
 
 - **After choosing the From folder in Add games, focus stays on From.**
   Until now it sometimes jumped to Copy games and sometimes didn't,
