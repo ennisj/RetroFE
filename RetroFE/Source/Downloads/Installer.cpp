@@ -496,7 +496,7 @@ namespace
         fs::path out = staging.into / fs::u8path(program);
         std::error_code ec;
         fs::create_directories(out.parent_path(), ec);
-        if (!fs::copy_file(fs::u8path(path), out, fs::copy_options::overwrite_existing, ec) || ec) {
+        if (!fs::copy_file(fs::path(path), out, fs::copy_options::overwrite_existing, ec) || ec) {
             error = "Could not stage " + staging.published + ": " + ec.message();
             return false;
         }
@@ -734,7 +734,7 @@ ImageOpener systemImageOpener()
 
 bool isElfFile(const std::string& path)
 {
-    std::ifstream file(fs::u8path(path), std::ios::binary);
+    std::ifstream file(fs::path(path), std::ios::binary);   // native narrow, from RetroFE's folder
     char magic[4] = {};
     file.read(magic, 4);
     return file.gcount() == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
@@ -742,7 +742,7 @@ bool isElfFile(const std::string& path)
 
 bool isDiskImage(const std::string& path)
 {
-    std::ifstream file(fs::u8path(path), std::ios::binary | std::ios::ate);
+    std::ifstream file(fs::path(path), std::ios::binary | std::ios::ate);
     std::streamoff size = file ? static_cast<std::streamoff>(file.tellg()) : 0;
     if (size < 512) return false;
     file.seekg(size - 512);
