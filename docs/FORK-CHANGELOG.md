@@ -26,6 +26,9 @@ Unit tests: 7,604 → CHECKS checks (Windows CI). Choices in M44 of
   no self-update.
 - Downloads, installs in progress, what each install wrote, and backups
   are kept in `manage/downloads/`.
+- PCSX2 is read from GitHub's latest stable release (it publishes a
+  pre-release nearly every day); old releases without GitHub checksums no
+  longer fill the Warnings row.
 
 ## Round 32 — Add games keeps focus where it was (2026-11-27)
 

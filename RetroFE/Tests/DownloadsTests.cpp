@@ -453,16 +453,50 @@ static Suite downloads("downloads", [] {
         check(!checkPackage(package).empty(), "no file");
     });
 
+    run("release warnings follow the selected version", [&] {
+        const auto& entry = emulators()[5];
+        auto release = [&](const std::string& version, bool digest, bool origin) {
+            std::string tag = "v" + version;
+            std::string name = "flycast-win64-" + version + ".zip";
+            return nlohmann::json({ { "tag_name", tag }, { "assets", nlohmann::json::array({ {
+                { "name", name }, { "digest", digest ? "sha256:" + std::string(64, 'a') : "" },
+                { "browser_download_url", origin ? githubUrl(entry, tag, name) : "https://evil.example/file.zip" }
+            } }) } });
+        };
+        auto good = release("2.7", true, true);
+        auto old = release("2.5", false, true);
+        auto newer = release("2.8", false, true);
+        auto hostile = release("2.9", true, false);
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        check(parseEmulatorReleases(nlohmann::json::array({ old, good }).dump(), entry, packages, warnings, error) && packages.size() == 1 && warnings.empty(), "older missing digest suppressed regardless of order");
+        packages.clear(); warnings.clear();
+        check(parseEmulatorReleases(nlohmann::json::array({ good, newer, hostile }).dump(), entry, packages, warnings, error) && packages.size() == 1 && warnings.size() == 2, "newer digest and origin problems reported");
+        packages.clear(); warnings.clear();
+        check(parseEmulatorReleases(nlohmann::json::array({ old, hostile }).dump(), entry, packages, warnings, error) && packages.empty() && warnings.size() == 2, "all problems reported when no release is usable");
+        packages.clear(); warnings.clear();
+        check(parseEmulatorReleases(good.dump(), entry, packages, warnings, error) && packages.size() == 1 && packages[0].version == "2.7", "single object accepted for other entries");
+    });
+
     run("emulator release caches are separate per entry", [&] {
         auto root = makeRoot("emulator-cache");
         FakeHttp http;
         for (const auto& entry : emulators()) {
-            http.documents["https://api.github.com/repos/" + entry.repo + "/releases?per_page=30"] = "[]";
+            http.documents["https://api.github.com/repos/" + entry.repo + (entry.latestOnly ? "/releases/latest" : "/releases?per_page=30")] = "[]";
+            if (entry.latestOnly) {
+                std::string tag = "v2.8.2", name = "pcsx2-v2.8.2-windows-x64-Qt.7z";
+                http.documents["https://api.github.com/repos/" + entry.repo + "/releases/latest"] = nlohmann::json({
+                    { "tag_name", tag }, { "assets", nlohmann::json::array({ { { "name", name },
+                      { "browser_download_url", githubUrl(entry, tag, name) }, { "digest", "sha256:" + std::string(64, 'a') } } }) }
+                }).dump();
+            }
             ReleaseList list;
             readGitHubReleases(entry.repo, root, entry.id, &http, 1000,
                 [&](const std::string& text, std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& parseError) {
                     return parseEmulatorReleases(text, entry, packages, warnings, parseError);
-                }, list);
+                }, list, entry.latestOnly);
+            check(http.requested.back() == "https://api.github.com/repos/" + entry.repo + (entry.id == "pcsx2" ? "/releases/latest" : "/releases?per_page=30"), "entry endpoint: " + entry.id);
+            if (entry.latestOnly) check(list.packages.size() == 1 && list.packages[0].version == "2.8.2", "PCSX2 single release offered");
             check(list.error.empty() && fs::exists(root + "/" + entry.id + "/releases.json") && fs::exists(root + "/" + entry.id + "/state.json"), "entry cache: " + entry.id);
         }
         ReleaseList bad;
@@ -474,18 +508,18 @@ static Suite downloads("downloads", [] {
         auto root = makeRoot("emulator-etags");
         FakeHttp http;
         for (const auto& entry : emulators()) {
-            auto url = "https://api.github.com/repos/" + entry.repo + "/releases?per_page=30";
+            auto url = "https://api.github.com/repos/" + entry.repo + (entry.latestOnly ? "/releases/latest" : "/releases?per_page=30");
             http.responses[url] = answer(200, "[]", { { "etag", entry.id } });
             auto parse = [&](const std::string& text, std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& problem) {
                 return parseEmulatorReleases(text, entry, packages, warnings, problem);
             };
             ReleaseList first, recent, second;
-            readGitHubReleases(entry.repo, root, entry.id, &http, 1000, parse, first);
+            readGitHubReleases(entry.repo, root, entry.id, &http, 1000, parse, first, entry.latestOnly);
             auto requests = http.requested.size();
-            readGitHubReleases(entry.repo, root, entry.id, &http, 1030, parse, recent);
+            readGitHubReleases(entry.repo, root, entry.id, &http, 1030, parse, recent, entry.latestOnly);
             check(recent.error.empty() && http.requested.size() == requests, "a list checked under a minute ago isn't asked for again");
             http.responses[url].status = 304;
-            readGitHubReleases(entry.repo, root, entry.id, &http, 1100, parse, second);
+            readGitHubReleases(entry.repo, root, entry.id, &http, 1100, parse, second, entry.latestOnly);
             check(second.error.empty() && !second.fromCache, "304 uses entry cache");
             check(std::find(http.sentHeaders.back().begin(), http.sentHeaders.back().end(), "If-None-Match: " + entry.id) != http.sentHeaders.back().end(), "entry ETag sent");
         }
@@ -1128,7 +1162,7 @@ static Suite downloads("downloads", [] {
         auto http = std::make_unique<ServingHttp>();
         ServingHttp* fake = http.get();
         fake->files[url] = readFile(zip);
-        for (const auto& entry : emulators()) fake->documents["https://api.github.com/repos/" + entry.repo + "/releases?per_page=30"] = "[]";
+        for (const auto& entry : emulators()) fake->documents["https://api.github.com/repos/" + entry.repo + (entry.latestOnly ? "/releases/latest" : "/releases?per_page=30")] = "[]";
         fake->documents["https://api.github.com/repos/stenzek/duckstation/releases?per_page=30"] = nlohmann::json::array({ { { "tag_name", "v0.1-12083" },
             { "assets", nlohmann::json::array({ { { "name", "duckstation-windows-x64-release.zip" }, { "browser_download_url", url },
                                                   { "size", readFile(zip).size() }, { "digest", "sha256:" + sha256File(zip) } } }) } } }).dump();

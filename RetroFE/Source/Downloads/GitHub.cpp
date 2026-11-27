@@ -168,14 +168,14 @@ std::string parseSha256File(const std::string& text, const std::string& fileName
 }
 
 void readGitHubReleases(const std::string& repo, const std::string& cacheFolder, const std::string& entry,
-                        Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result)
+                        Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result, bool latestOnly)
 {
     result = ReleaseList();
     if (!isValidRepository(repo) || !isValidId(entry)) {
         result.error = "\"" + repo + "\" isn't a GitHub repository (owner/name)";
         return;
     }
-    std::string url = "https://api.github.com/repos/" + repo + "/releases?per_page=30";
+    std::string url = "https://api.github.com/repos/" + repo + (latestOnly ? "/releases/latest" : "/releases?per_page=30");
 
     fs::path folder = fs::path(cacheFolder) / entry;
     fs::path cacheFile = folder / "releases.json";

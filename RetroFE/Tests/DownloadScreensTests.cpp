@@ -347,7 +347,7 @@ static Test::Suite downloadScreens("download screens", [] {
         serveDuckStation(*fake, "zip");
         fake->documents[releasesUrl("libretro/RetroArch")] = R"([{"tag_name":"v1.22.2"}])";
         const std::string pcsx2 = "pcsx2-v2.8.2-windows-x64-Qt.7z";
-        fake->documents[releasesUrl("PCSX2/pcsx2")] = releaseList("v2.8.2", pcsx2, assetUrl("pcsx2", "v2.8.2", pcsx2), "7z");
+        fake->documents["https://api.github.com/repos/PCSX2/pcsx2/releases/latest"] = nlohmann::json::parse(releaseList("v2.8.2", pcsx2, assetUrl("pcsx2", "v2.8.2", pcsx2), "7z"))[0].dump();
         Fixture f(root, std::move(http));
         f.model->setScreen("download-emulators", {});
         checkEqual(f.model->get("download:checkStatus"), "Checking for releases...", "checking in the background");

@@ -40,6 +40,7 @@ namespace Downloads
         std::string program;
         std::vector<std::string> portableFiles;   // created empty if missing
         std::string launcher, arguments, description;   // launcher "" = none (RetroArch: per core)
+        bool latestOnly = false; // use GitHub's latest stable release endpoint
     };
 
     const std::vector<Emulator>& emulators();
@@ -50,7 +51,7 @@ namespace Downloads
     // whose tag matches the entry's rule, not a draft or pre-release, with the
     // entry's asset, a SHA-256 digest from GitHub and a download address on
     // GitHub's own release downloads (RetroArch: libretro's stable builds,
-    // which publish no checksum: noChecksum). False only when text isn't a list.
+    // which publish no checksum: noChecksum). Accepts a single release object too.
     bool parseEmulatorReleases(const std::string& text, const Emulator& emulator,
                                std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error);
 

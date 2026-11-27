@@ -194,7 +194,7 @@ const std::vector<Emulator>& emulators()
           "DuckStation", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation emulator." },
         { "pcsx2", "PCSX2", "PCSX2", "PCSX2/pcsx2", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "pcsx2-v<version>-windows-x64-Qt.7z", "7z", "", "pcsx2-qt.exe", { "portable.txt" },
-          "PCSX2", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation 2 emulator." },
+          "PCSX2", R"(-batch -fullscreen -- "%ITEM_FILEPATH%")", "Sony PlayStation 2 emulator.", true },
         { "ppsspp", "PPSSPP", "PPSSPP", "hrydgard/ppsspp", R"(^v([0-9]+\.[0-9]+\.[0-9]+)$)",
           "PPSSPP-v<version>-Windows-x64.zip", "zip", "", "PPSSPPWindows64.exe", {},
           "PPSSPP", R"(--fullscreen "%ITEM_FILEPATH%")", "Sony PSP emulator." },
@@ -215,12 +215,14 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry,
                            std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error)
 {
     json releases = json::parse(text, nullptr, false);
+    if (releases.is_object() && releases.contains("tag_name")) releases = json::array({ releases });
     if (!releases.is_array()) {
         std::string message = J::text(releases, "message");
         error = message.empty() ? "GitHub's answer isn't a list of releases" : "GitHub says: " + message;
         return false;
     }
     Package best;
+    std::vector<std::pair<std::string, std::string>> problems;
     const std::regex tagRule(entry.tagRule);
     for (const auto& release : releases) {
         if (!release.is_object() || J::flag(release, "draft") || J::flag(release, "prerelease")) continue;
@@ -242,13 +244,13 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry,
             if (J::text(asset, "name") != wanted || (asset.contains("state") && J::text(asset, "state") != "uploaded")) continue;
             std::string digest = J::text(asset, "digest");
             if (digest.rfind("sha256:", 0) == 0) file.sha256 = parseSha256File(digest);
-            if (file.sha256.empty()) { warnings.push_back(entry.name + " " + tag + ": no SHA-256 digest"); continue; }
+            if (file.sha256.empty()) { problems.emplace_back(version, entry.name + " " + tag + ": no SHA-256 digest"); continue; }
             file.url = J::text(asset, "browser_download_url");
             J::count(asset, "size", file.size);
             break;
         }
         if (!file.url.empty() && !fromOrigin(file.url, originOf(entry))) {
-            warnings.push_back(entry.name + " " + tag + ": download URL is outside its release origin");
+            problems.emplace_back(version, entry.name + " " + tag + ": download URL is outside its release origin");
             continue;
         }
         if (file.url.empty()) continue;
@@ -264,6 +266,9 @@ bool parseEmulatorReleases(const std::string& text, const Emulator& entry,
         best.files = { file };
     }
     if (!best.id.empty()) packages.push_back(best);
+    for (const auto& problem : problems) {
+        if (best.id.empty() || compareVersions(problem.first, best.version) > 0) warnings.push_back(problem.second);
+    }
     return true;
 }
 

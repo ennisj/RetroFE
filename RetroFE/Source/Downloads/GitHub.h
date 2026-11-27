@@ -57,7 +57,7 @@ namespace Downloads
     // cacheFolder/<entry>/. now is seconds since 1970. http may be null: then
     // only the cache is read.
     void readGitHubReleases(const std::string& repo, const std::string& cacheFolder, const std::string& entry,
-                            Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result);
+                            Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result, bool latestOnly = false);
 
     // How long a fetched list is used without asking again
     constexpr int64_t gitHubRecheckSeconds = 60;

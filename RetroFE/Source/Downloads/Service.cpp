@@ -65,7 +65,7 @@ namespace
         Downloads::readGitHubReleases(entry.repo, cacheFolder, entry.id, http, now,
             [&](const std::string& text, std::vector<Downloads::Package>& packages, std::vector<std::string>& warnings, std::string& error) {
                 return Downloads::parseEmulatorReleases(text, entry, packages, warnings, error);
-            }, list);
+            }, list, entry.latestOnly);
     }
 
     // Why a list offered nothing, for the screen
