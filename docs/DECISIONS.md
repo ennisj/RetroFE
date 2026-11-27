@@ -730,6 +730,47 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M50. Round 39: emulator downloads on Linux and macOS — Decided (2026-11-27)
+Your request. What each emulator publishes was checked on 2026-11-27.
+- **Offered where there's an official build in a form RetroFE can install:**
+  AppImages (Linux), zips of `.app` bundles (macOS), libretro's 7z (Linux) and
+  DMG (macOS). Not offered: MAME off Windows (no official builds), PCSX2 on
+  macOS (tar.xz), anything on Linux arm64 but DuckStation and PPSSPP.
+- **DuckStation's Linux builds exist only on its rolling "latest" release**,
+  so there its version is the release date (two builds on one day count as
+  one).
+- **Safety rules unchanged, extended:** an AppImage must be an ELF program;
+  stored permissions keep at most rwxr-xr-x (never setuid); a link in an
+  archive is recreated only if it stays inside the emulator's folder when
+  followed as the system follows it, nothing is written through one, and
+  removal deletes the link, never its target. The DMG is attached read-only
+  with Apple's `hdiutil` (no shell, a time limit), only the `.app` is
+  copied out and the image is always detached; nothing from it is run.
+- **HTTP is libcurl outside Windows** (https only, redirects to https only).
+- **Found on macOS CI:** libc++'s `std::filesystem::path` iterator is an
+  input iterator, so `std::prev(end())` didn't step back and the "folders
+  above the file" check also checked the file; the check now splits the path
+  itself.
+- **Codex quit early** (it delivered the first tables); Claude Opus 5.5 did
+  the rest, tested on the worker (Linux) and CI (all four).
+- **Not checked yet:** any real download off Windows, `hdiutil`, and every
+  Linux and macOS launcher's arguments and portable mode (Windows' arguments
+  are reused; the design doc marks each row unverified). A drive used on both
+  Windows and Linux shares what's installed per emulator.
+- **Adversarial review before merging (Claude Fable 5.1, your yes), checked
+  before fixing:** critical, an archive's own links could carry a file
+  outside the emulator's folder during unpacking (a `./link/...` name passed
+  the name check, and the physical link check ran only after unpacking).
+  Now every folder is made one part at a time with each part checked with
+  lstat, "." and empty parts are refused, and each link is checked when it's
+  made. Also: explicit modes (0755/0644) instead of the umask; Windows backs
+  up a user's linked file by content again; a leftover disk image mount is
+  detached; a rolling build replaced on the server is re-read once; curl's
+  status from curl itself and SIGPIPE ignored; the write-through check at
+  install now tested. Accepted (design doc "Limits"): link-to-folder changes
+  in an update fail safe; a core from another OS on a shared drive is left
+  on removal; Stop isn't seen during `hdiutil attach`.
+
 ### M49. Round 36: Linux and macOS back on every push — Decided (2026-11-27)
 - **Linux x86_64 and arm64 passed at once** after weeks of Windows-only work
   (the worker builds with GCC on Linux every round).

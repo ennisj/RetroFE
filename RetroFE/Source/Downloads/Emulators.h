@@ -30,21 +30,46 @@ namespace Downloads
 {
     class Http;
 
+    // What a download is built for. The tables below are per platform and can
+    // be read for any of them, whatever RetroFE runs on (tests check every one).
+    enum class Platform { WindowsX64, LinuxX64, LinuxArm64, MacArm64, MacX64, Other };
+
+    // What this build of RetroFE runs on, decided when it's compiled
+    Platform hostPlatform();
+    // The platform whose table is used: hostPlatform(), unless a test chose another
+    Platform platform();
+    void usePlatform(Platform platform);   // tests only
+    // "Windows x64", "Linux x86_64", "Linux arm64", "macOS", "this system"
+    std::string platformName(Platform platform);
+    // "Windows", "Linux", "macOS"
+    std::string osName(Platform platform);
+    // RetroFE's name for the launcher folder, as Utils::getOSType() gives it on
+    // that system: launchers.windows, launchers.linux or launchers.apple
+    std::string launcherOs(Platform platform);
+
     struct Emulator
     {
         std::string id, name, folder, repo;
         std::string tagRule;     // a regex for release tags; group 1 is the version
-        std::string assetRule;   // the asset's name, or (RetroArch) its URL; <version> and <tag> are filled in
-        std::string archive;     // zip, 7z or sfx (a self-extracting 7z, never run)
+        std::string assetRule;   // the asset's name, or (RetroArch) its URL; <version> and <tag> are filled in. "" = no build for this platform
+        std::string archive;     // zip, 7z, sfx (a self-extracting 7z, never run), appimage (installed as the program) or dmg (macOS)
         std::string topFolder;   // removed from every name in the archive, e.g. "RetroArch-Win64/"
         std::string program;
         std::vector<std::string> portableFiles;   // created empty if missing
         std::string launcher, arguments, description;   // launcher "" = none (RetroArch: per core)
         bool latestOnly = false; // use GitHub's latest stable release endpoint
+        bool rolling = false;    // a rolling release (tag "latest"): the version is its publication date, YYYY.MM.DD
+        std::string appFolder{}; // dmg: the .app folder copied out of the image
+
+        bool available() const { return !assetRule.empty(); }
     };
 
+    // The built-in list for a platform: the same six entries, in the same
+    // order, each with that platform's build or none (available() false)
+    const std::vector<Emulator>& emulators(Platform platform);
+    // platform()'s
     const std::vector<Emulator>& emulators();
-    // The entry whose package id ("emulator-<id>") this is, or nullptr
+    // The entry of platform()'s list whose package id ("emulator-<id>") this is, or nullptr
     const Emulator* findEmulator(const std::string& packageId);
 
     // The package an entry's GitHub release list offers: the highest version
@@ -55,9 +80,19 @@ namespace Downloads
     bool parseEmulatorReleases(const std::string& text, const Emulator& emulator,
                                std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error);
 
-    // libretro's nightly Windows cores, one zip each, listed in .index-extended
+    // libretro's nightly cores, one zip each, listed in .index-extended.
+    // coreIndexUrl is Windows x64's; coreIndexUrlFor() any platform's, "" where
+    // there are none (no stable RetroArch: Linux arm64)
     constexpr const char* coreIndexUrl = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/.index-extended";
-    std::string coreUrl(const std::string& core);   // core: the file stem, e.g. genesis_plus_gx
+    std::string coreIndexUrlFor(Platform platform);
+    // Whether RetroArch and its cores are offered on platform
+    bool coresOffered(Platform platform);
+    // The core's library: genesis_plus_gx_libretro.dll, .so or .dylib
+    std::string coreLibrary(const std::string& core, Platform platform);
+    std::string coreUrl(const std::string& core, Platform platform);   // core: the file stem, e.g. genesis_plus_gx
+    std::string coreUrl(const std::string& core);                      // platform()'s
+    // Where an installed RetroArch keeps its core info files, under emulators/RetroArch
+    std::string coreInfoFolder(Platform platform);
     bool isCoreName(const std::string& core);
     bool isCoreId(const std::string& id);           // core-<core>
     // "RetroArch <name>": printable ASCII, spaces collapsed, no launcher-forbidden
@@ -65,8 +100,9 @@ namespace Downloads
     std::string coreLauncherName(const std::string& name);
 
     // Packages from the text of .index-extended ("<date> <crc32> <core>_libretro.dll.zip"
-    // per line), named from RetroArch's info/<core>_libretro.info under root
-    // when it's there. Lines that don't fit are skipped.
+    // per line, .so or .dylib off Windows: platform()'s), named from RetroArch's
+    // info/<core>_libretro.info under root when it's there. Lines that don't fit
+    // are skipped.
     void parseCoreIndex(const std::string& text, const std::string& root, std::vector<Package>& packages);
 
     struct CoreIndex
@@ -76,21 +112,22 @@ namespace Downloads
         std::string error;          // set when there's no list at all
         bool fromCache = false;
     };
-    // The core list, kept as cacheFolder/cores.index with its Last-Modified in
-    // cores.modified; asks with If-Modified-Since, so a 304 uses the copy.
+    // platform()'s core list, kept as cacheFolder/cores.index with its
+    // Last-Modified in cores.modified (cores-<platform>.index and .modified off
+    // Windows); asks with If-Modified-Since, so a 304 uses the copy.
     void readCores(const std::string& cacheFolder, const std::string& root, Http* http, CoreIndex& index);
 
     // The safety rules for a package about to be downloaded or installed: ""
     // when it may be, otherwise why not. An emulator must be an entry of the
-    // built-in list, going to its own folder, from its own release origin
-    // (https://github.com/<repo>/releases/download/, or libretro's stable
-    // RetroArch.7z), with GitHub's SHA-256 unless it is libretro's. A core
-    // must be libretro's nightly zip of that core, with its CRC-32, going to
-    // RetroArch/cores.
+    // built-in list with a build for platform(), going to its own folder, from
+    // its own release origin (https://github.com/<repo>/releases/download/, or
+    // libretro's stable builds), with GitHub's SHA-256 unless it is libretro's.
+    // A core must be libretro's nightly zip of that core for platform(), with
+    // its CRC-32, going to RetroArch/cores.
     std::string checkPackage(const Package& package);
 
-    // After an install: creates launchers.windows/<launcher>.conf for an
-    // emulator or core, with %RETROFE_PATH% paths, as Manage writes launchers,
+    // After an install: creates launchers.<os>/<launcher>.conf (launcherOs() of
+    // platform()) for an emulator or core, with %RETROFE_PATH% paths, as Manage writes launchers,
     // unless a launcher of that name exists. Records it in the manifest
     // (written to downloadsFolder/installed/). Returns the end of the result
     // sentence: ", with the launcher X.", "; a launcher called X already

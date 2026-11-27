@@ -63,6 +63,7 @@ namespace Downloads
         {
             std::vector<std::string> files;  // a local path per package file, in order
             bool cancelled = false;
+            bool mismatch = false;           // a whole download didn't have the size or SHA-256 it should
             std::string error;
         };
 

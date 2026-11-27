@@ -22,8 +22,11 @@
 #include <string>
 #include <vector>
 
-// HTTP(S) for emulator downloads. Windows uses WinHTTP, so no extra libraries are needed.
-// An Http makes one request at a time; use one per thread.
+// HTTP(S) for emulator downloads. Windows uses WinHTTP, so no extra libraries
+// are needed; Linux and macOS use libcurl, with the same behaviour: headers
+// sent and read, ETag and Last-Modified kept for If-Range, downloads continued
+// with Range, the same timeouts, downloads only over https://, and redirects
+// followed only to https://. An Http makes one request at a time; use one per thread.
 namespace Downloads
 {
     class Http
@@ -82,6 +85,56 @@ namespace Downloads
                               const Progress& progress, Transfer& transfer) = 0;
     };
 
-    // This platform's implementation, or nullptr where there isn't one yet
+    // This platform's implementation (WinHTTP, or libcurl), or nullptr if it
+    // can't be set up
     std::unique_ptr<Http> createHttp();
+
+    // The parts of the libcurl Http that don't need the network, so they're
+    // tested on every system
+    namespace HttpText
+    {
+        // "HTTP/1.1 206 Partial Content" or "HTTP/2 200": its status, or 0
+        int statusOf(const std::string& line);
+        // "Name: value" as a lower-case name and the value without surrounding
+        // blanks; false for anything else (the status line, a blank line,
+        // anything but printable ASCII)
+        bool header(const std::string& line, std::string& name, std::string& value);
+        // Reads one answer's header lines as libcurl passes them, redirects
+        // and all: a status line starts a new answer (dropping the last one's
+        // headers) only where an answer starts, after a blank line or first;
+        // anything shaped like one among the headers is ignored. The status
+        // itself is libcurl's (CURLINFO_RESPONSE_CODE), never read from here.
+        class HeaderReader
+        {
+        public:
+            void line(std::string text);
+            const std::map<std::string, std::string>& headers() const { return headers_; }
+
+        private:
+            std::map<std::string, std::string> headers_;
+            bool start_ = true;
+        };
+
+        // What a download asks for to continue at offset: "Range: bytes=<offset>-",
+        // and "If-Range: <validator>" so only the same file is continued; nothing at 0
+        std::vector<std::string> resumeHeaders(uint64_t offset, const std::string& validator);
+        // A strong ETag, or else Last-Modified, from response headers (lower-case
+        // names): what If-Range accepts. "" if neither, or it isn't printable ASCII
+        std::string validator(const std::map<std::string, std::string>& headers);
+        // Whether a redirect from url to location (absolute, or relative to url)
+        // may be followed: only to https://
+        bool redirectAllowed(const std::string& url, const std::string& location);
+
+        // What a download's answer means, as WinHTTP's is read
+        enum class Answer
+        {
+            Resume,     // 206 to a continued download: append
+            Restart,    // 200: the whole file again
+            Complete,   // 416 to a continued download: nothing is left to send
+            Fail        // anything else
+        };
+        Answer answer(uint64_t offset, int status);
+        // Whether a failed status may go away if tried again (408, 429, 5xx)
+        bool retryable(int status);
+    }
 }

@@ -167,7 +167,11 @@ bool Downloads::Archive::open(const std::string& path, const std::string& publis
             p.zipPositions.push_back(position);
             bool directory = (!entry.empty() && entry.back() == '/') || (info.external_fa & 0x10) != 0
                 || ((info.external_fa >> 16) & 0170000) == 0040000;
-            p.entries.push_back({ entry, info.uncompressed_size, directory, static_cast<uint32_t>(info.crc) });
+            // Made on Unix (3) or macOS (19): the high 16 bits are its mode
+            const uLong host = (info.version >> 8) & 0xff;
+            uint32_t mode = host == 3 || host == 19 ? static_cast<uint32_t>((info.external_fa >> 16) & 0xffff) : 0;
+            p.entries.push_back({ entry, info.uncompressed_size, directory, static_cast<uint32_t>(info.crc), mode,
+                                  !directory && (mode & 0170000) == 0120000 });
             result = unzGoToNextFile(p.zip);
         }
         return result == UNZ_END_OF_LIST_OF_FILE || p.fail(SZ_ERROR_ARCHIVE, error);
@@ -215,7 +219,11 @@ bool Downloads::Archive::open(const std::string& path, const std::string& publis
             }
         }
         std::replace(entry.begin(), entry.end(), '\\', '/');
-        p.entries.push_back({ entry, SzArEx_GetFileSize(&p.db, i), SzArEx_IsDir(&p.db, i) != 0 });
+        bool directory = SzArEx_IsDir(&p.db, i) != 0;
+        // FILE_ATTRIBUTE_UNIX_EXTENSION: the high 16 bits are the Unix mode
+        uint32_t mode = 0;
+        if (SzBitWithVals_Check(&p.db.Attribs, i) && (p.db.Attribs.Vals[i] & 0x8000)) mode = p.db.Attribs.Vals[i] >> 16;
+        p.entries.push_back({ entry, SzArEx_GetFileSize(&p.db, i), directory, 0, mode, !directory && (mode & 0170000) == 0120000 });
     }
     return true;
 }

@@ -89,6 +89,14 @@ const std::vector<KnownEmulator>& knownEmulators()
         { "pcsx2-qt.exe", "PlayStation 2", "iso,chd,cso,zso,gz,elf,irx,m3u,cue,bin,img,mdf,nrg,dump" },
         { "PPSSPPWindows64.exe", "PSP", "iso,cso,chd,pbp,elf,prx" },
         { "flycast.exe", "Dreamcast", "chd,cdi,gdi,cue,m3u,elf,dat,zip,7z,lst" },
+        // The programs emulator downloads install on Linux (AppImages) and macOS (in their .app)
+        { "DuckStation.AppImage", "PlayStation", "cue,chd,bin,img,iso,m3u,pbp,ecm,mds,psexe,psf,minipsf" },
+        { "DuckStation", "PlayStation", "cue,chd,bin,img,iso,m3u,pbp,ecm,mds,psexe,psf,minipsf" },
+        { "PCSX2.AppImage", "PlayStation 2", "iso,chd,cso,zso,gz,elf,irx,m3u,cue,bin,img,mdf,nrg,dump" },
+        { "PPSSPP.AppImage", "PSP", "iso,cso,chd,pbp,elf,prx" },
+        { "PPSSPPSDL", "PSP", "iso,cso,chd,pbp,elf,prx" },
+        { "Flycast.AppImage", "Dreamcast", "chd,cdi,gdi,cue,m3u,elf,dat,zip,7z,lst" },
+        { "Flycast", "Dreamcast", "chd,cdi,gdi,cue,m3u,elf,dat,zip,7z,lst" },
     };
     return table;
 }

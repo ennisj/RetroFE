@@ -33,6 +33,10 @@
 // RetroArch's cores, through one Downloads::Service, made the first time a
 // download screen opens (never at RetroFE's start).
 //
+// An emulator with no build for this platform (Downloads::Emulator::available)
+// says "No <platform> build" in the list and on its screen, which has no
+// Install; the cores screens and links show only where RetroArch has cores.
+//
 // Screens and parameters:
 //   download-emulators  the six emulators with their states; opening it lists
 //                       what's installed at once and checks for releases in
@@ -52,7 +56,7 @@
 //
 // Values, each about the screen's emulator or core where there is one:
 //   supported, unsupported, running, runningHere, installingHere, checkStatus, warnings (list),
-//   hasWarnings, retroArchInstalled, needsRetroArch, name, description,
+//   hasWarnings, retroArchInstalled, needsRetroArch, name, description, folderPath,
 //   installed, available, size, source, launcher, checks, checksumNote,
 //   progress, message, folder, isInstalled, canInstall, canUpdate,
 //   coreSystem (choice, options coreSystems), coresStatus, coreWarnings
@@ -69,7 +73,8 @@ namespace Manager
         {
             // The Http the service uses; Downloads::createHttp() when unset
             std::function<std::unique_ptr<Downloads::Http>()> http;
-            // Whether downloads work here; unset, the service says (Windows x64 only)
+            // Whether downloads work here; unset, the service says (Windows x64,
+            // Linux x86_64 and arm64, macOS, with an Http)
             std::optional<bool> supported;
             // Called with the service once it's made, e.g. to set its clock
             std::function<void(Downloads::Service&)> prepare;
@@ -108,6 +113,10 @@ namespace Manager
 
         Downloads::Service& service();
         bool supported();
+        // supported(), and on the cores screens, that this platform has RetroArch's cores
+        bool supportedOn(const Screen& screen);
+        // Why a screen shows nothing else: downloads aren't supported, or there are no cores here
+        std::string unsupportedText(const Screen& screen);
         bool busy() const { return job_ != Job::None; }
         bool isRunningHere(const Screen& screen) const;
         void start(Job job, const std::string& target, const Screen& screen);

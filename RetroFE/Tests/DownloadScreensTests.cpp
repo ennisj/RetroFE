@@ -52,7 +52,7 @@ using namespace DownloadFakes;
 
 namespace
 {
-    const std::string windowsOnly = "Emulator downloads are Windows-only for now.";
+    const std::string windowsOnly = "Emulator downloads aren't available on this system.";
 
     std::string releasesUrl(const std::string& repo)
     {
@@ -297,6 +297,8 @@ namespace
 }
 
 static Test::Suite downloadScreens("download screens", [] {
+    // These check the Windows x64 table, whatever RetroFE runs on (DownloadsPlatformTests checks the others)
+    Downloads::usePlatform(Downloads::Platform::WindowsX64);
     const std::vector<std::string> forms = { "download-emulators", "download-emulator", "download-cores", "download-core" };
 
     run("download screens: every form parses and binds only what the provider serves", [&] {
@@ -343,7 +345,7 @@ static Test::Suite downloadScreens("download screens", [] {
         check(!fs::exists(root + "/manage/downloads"), "nothing written");
     });
 
-    run("download screens: where downloads aren't supported, only the Windows note", [&] {
+    run("download screens: where downloads aren't supported, only the note", [&] {
         std::string root = makeRoot("download-unsupported");
         Fixture f(root, std::make_unique<ServingHttp>(), false);
         for (const auto& [id, params] : std::vector<std::pair<std::string, Forms::Params>>{
@@ -662,4 +664,5 @@ static Test::Suite downloadScreens("download screens", [] {
         const Forms::Field* first = hub ? Forms::findField(*hub, "emulator-new") : nullptr;
         check(first && first->label == "Add your first launcher/emulator", "the bare hub's link opens Add a launcher, one Select from downloads");
     });
+    Downloads::usePlatform(Downloads::hostPlatform());
 });

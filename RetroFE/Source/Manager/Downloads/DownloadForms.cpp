@@ -60,7 +60,7 @@ const char* const downloadEmulatorForm = R"(
     <button label="Update" action="download.update" visibleWhen="download:canUpdate"
             confirm="Download {bind:download:name} from {bind:download:source}? {bind:download:checks}"/>
     <button label="Remove" action="download.remove" visibleWhen="download:isInstalled"
-            confirm="Remove {bind:download:name}? Its settings and saves stay in emulators\{bind:download:folder}."/>
+            confirm="Remove {bind:download:name}? Its settings and saves stay in {bind:download:folderPath}."/>
     <button label="Stop" action="download.stop" visibleWhen="download:runningHere"/>
   </actions>
 </form>

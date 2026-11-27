@@ -246,6 +246,13 @@ else()
     endif()
 endif()
 
+# Emulator downloads' HTTP (Source/Downloads/Http.cpp): WinHTTP on Windows, libcurl
+# elsewhere (libcurl4-openssl-dev on Linux; macOS has it in its SDK)
+if(NOT WIN32)
+    find_package(CURL REQUIRED)
+    list(APPEND RETROFE_LIBRARIES CURL::libcurl)
+endif()
+
 set(RETROFE_INCLUDE_DIRS
     "${GLIB2_INCLUDE_DIRS}"
     "${GSTREAMER_INCLUDE_DIRS}"
@@ -664,7 +671,7 @@ if(RETROFE_BUILD_TESTS)
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZLIB_ROOT}/lib/zlib.dll" "$<TARGET_FILE_DIR:retrofe_tests>")
 	else()
 		# sqlite3 needs libdl and threads; the library index builds on a thread
-		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT} CURL::libcurl)
 		if(APPLE AND RETROFE_MACOS_BUNDLE)
 			# ThirdPartyMac's libminizip.dylib is @rpath/libminizip.dylib
 			set_target_properties(retrofe_tests PROPERTIES BUILD_RPATH "${MAC_FRAMEWORKS_DIR}")

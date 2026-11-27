@@ -548,8 +548,12 @@ reloads, after you close Manage.
 ### Downloading emulators
 
 RetroFE can download six emulators and make their launchers: RetroArch, MAME,
-DuckStation, PCSX2, PPSSPP and Flycast, the Windows x64 builds (elsewhere the
-screen only says "Emulator downloads are Windows-only for now."). **Download
+DuckStation, PCSX2, PPSSPP and Flycast, on Windows x64, Linux (x86_64 and
+arm64) and macOS, each from what the emulator publishes for that system. Not
+every emulator has a build everywhere: one that hasn't says "No Linux arm64
+build" (or "No macOS build"...) in the list and on its screen, which has no
+Install (see below). On any other system the screens only say "Emulator
+downloads aren't available on this system." **Download
 an emulator** is the first row of **Add a launcher** (which the bare
 install's "Add your first launcher/emulator" opens), and a link right after
 the Launcher choice of **Add a system**; coming back, the Launcher choice
@@ -581,11 +585,32 @@ offers what was just installed, chosen already when it's the one new launcher.
   other files the emulator wrote stay, and the message lists them.
   RetroArch's screen has **Cores**, and RetroArch can't be removed while
   cores are installed.
-- **RetroArch cores** lists libretro's nightly Windows cores, installed ones
+- **RetroArch cores** lists libretro's nightly cores for the system RetroFE
+  runs on (Windows, Linux x86_64, macOS arm64 or x86_64), installed ones
   first, with a **System** choice. A core's screen works like an emulator's;
   installing it makes the launcher `RetroArch <core name>`. libretro
   publishes a CRC-32 for each core (checked) and no checksum for RetroArch
   itself, which its screen says.
+
+On **Linux and macOS** the downloads work the same way, with these builds
+(the launcher arguments are the Windows ones, not yet tried on either):
+
+- **Linux x86_64:** RetroArch (libretro's `RetroArch.7z`, its AppImage with
+  the portable home folder beside it), DuckStation, PCSX2, PPSSPP and Flycast
+  (each an AppImage, installed as `emulators/<name>/<Name>.AppImage`, made
+  executable), and RetroArch's cores (`.so`). DuckStation's Linux builds are
+  only on its rolling release, so its version is the build's date
+  (`2026.11.27`). **No MAME** (MAME publishes Windows builds only).
+- **Linux arm64:** DuckStation and PPSSPP. No RetroArch (libretro has no
+  stable arm64 build), so no cores either; no MAME, PCSX2 or Flycast.
+- **macOS:** RetroArch (libretro's disk image, from which `RetroArch.app` is
+  copied; nothing in the image is opened or run), DuckStation, PPSSPP and
+  Flycast (their `.app` from a zip), and cores (`.dylib`, for the Mac's own
+  processor). **No PCSX2** (its macOS build is a `.tar.xz`, not read yet) and
+  no MAME.
+
+Launchers go in `launchers.linux/` or `launchers.apple/`, with
+`%RETROFE_PATH%/...` paths. Downloads use libcurl there (WinHTTP on Windows).
 
 Downloads, partial downloads and what's installed are kept in
 `manage/downloads/` ([FOLDERS.md](FOLDERS.md)); the emulators go in

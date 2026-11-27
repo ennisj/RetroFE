@@ -163,6 +163,8 @@ namespace
 }
 
 static Suite downloads("downloads", [] {
+    // These check the Windows x64 table, whatever RetroFE runs on (DownloadsPlatformTests checks the others)
+    Downloads::usePlatform(Downloads::Platform::WindowsX64);
     std::string error;
 
     // --- libretro's cores ------------------------------------------------------
@@ -406,6 +408,26 @@ static Suite downloads("downloads", [] {
         std::vector<Package> packages;
         std::vector<std::string> warnings;
         check(parseEmulatorReleases(R"([{"tag_name":"latest"},{"tag_name":"preview"},{"tag_name":"v2.9.148","prerelease":true}])", emulators()[2], packages, warnings, error) && packages.empty(), "rolling tags excluded");
+    });
+
+    run("platform release tables and rolling DuckStation", [&] {
+        const auto& x64 = emulators(Platform::LinuxX64);
+        const auto& arm = emulators(Platform::LinuxArm64);
+        const auto& mac = emulators(Platform::MacArm64);
+        check(x64[0].archive == "7z" && x64[0].topFolder == "RetroArch-Linux-x86_64/", "Linux RetroArch archive");
+        check(arm[0].assetRule.empty() && arm[3].assetRule.empty() && arm[5].assetRule.empty(), "unavailable Linux arm64 builds");
+        check(mac[0].archive == "dmg" && mac[3].assetRule.empty(), "macOS RetroArch and unavailable PCSX2");
+        check(emulators(Platform::MacX64)[4].program == "PPSSPPSDL.app/Contents/MacOS/PPSSPPSDL", "macOS PPSSPP program");
+        check(emulators(Platform::WindowsX64)[1].program == "mame.exe", "Windows table");
+        const auto& entry = x64[2];
+        nlohmann::json release = { { "tag_name", "latest" }, { "published_at", "2026-11-27T12:00:00Z" },
+            { "assets", nlohmann::json::array({ { { "name", entry.assetRule },
+                { "browser_download_url", githubUrl(entry, "latest", entry.assetRule) },
+                { "digest", "sha256:" + std::string(64, 'a') } } }) } };
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        check(parseEmulatorReleases(release.dump(), entry, packages, warnings, error) && packages.size() == 1
+              && packages[0].version == "2026.11.27", "rolling release uses publication date");
     });
 
     run("RetroArch download origin is pinned", [&] {
@@ -1225,7 +1247,7 @@ static Suite downloads("downloads", [] {
         Service service(root, std::move(http));
         int64_t seconds = 1000;
         service.now = [&] { return seconds; };
-        check(!service.supported() || fs::path::preferred_separator == '\\', "downloads are for Windows");
+        check(service.supported(), "downloads are supported where the list has builds");
 
         std::atomic<bool> stop{ true };
         Outcome cancelled = service.install("emulator-duckstation", {}, &stop);
@@ -1342,4 +1364,5 @@ static Suite downloads("downloads", [] {
         check(contains(parentNow.message, "Left in emulators\\RetroArch: info/genesis_plus_gx_libretro.info"), "says what was left: " + parentNow.message);
         checkEqual(service.installCore("genesis_plus_gx").message, "Install RetroArch first.", "cores need RetroArch");
     });
+    Downloads::usePlatform(Downloads::hostPlatform());
 });

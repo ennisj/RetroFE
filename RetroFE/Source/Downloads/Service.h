@@ -41,7 +41,8 @@
 //   manage/downloads/partial/    unfinished downloads, continued next time
 //   manage/downloads/staging/, installed/<id>.json, backups/   see Installer
 //   emulators/<folder>/          what's installed
-//   launchers.windows/           the launchers created, as Manage writes them
+//   launchers.<os>/              the launchers created, as Manage writes them
+//                                (launchers.windows, launchers.linux, launchers.apple)
 // Nothing else is written, and never RetroFE's program folder (retrofe/).
 namespace Downloads
 {
@@ -59,6 +60,8 @@ namespace Downloads
         std::string launcher;           // the launcher an install creates; "" for RetroArch (per core)
         std::string installedVersion;   // "" if not installed
         std::string launcherCreated;    // the launcher the install created, if it's recorded
+        bool available = true;          // false: no build for this platform (unavailable says so)
+        std::string unavailable;        // "No Linux arm64 build"
     };
 
     // The latest release of an entry, from check()
@@ -78,6 +81,7 @@ namespace Downloads
         int64_t checked = 0;            // last successful GitHub fetch or confirmation
         int64_t retryAt = 0;            // GitHub's rate limit: asked again after this (seconds since 1970); 0 if not limited
         std::vector<std::string> warnings;
+        bool available = true;          // false: no build for this platform, so nothing was asked
     };
 
     struct Core
@@ -120,7 +124,8 @@ namespace Downloads
         // manage/downloads under root
         static std::string downloadsFolder(const std::string& root);
 
-        // Whether downloads work here: Windows x64 (what the list's builds are for) with an Http
+        // Whether downloads work here: Windows x64, Linux x86_64 or arm64, or
+        // macOS (the platforms the list has builds for), with an Http
         bool supported() const;
 
         // The built-in entries with their installed versions. No network.
@@ -158,7 +163,9 @@ namespace Downloads
         std::function<bool(const std::string& folder, uint64_t& available)> freeSpace;
 
     private:
-        Outcome installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop);
+        // mismatch: set when the download wasn't what the release list said (its SHA-256 or size)
+        Outcome installPackage(const Package& package, bool updating, const Progress& progress, const std::atomic<bool>* stop,
+                               bool* mismatch = nullptr);
         Release checkOne(size_t entry, const std::map<std::string, Manifest>& installed, int64_t maxAge);
         void readCoreList(CoreList& list, std::vector<Package>& packages);
         std::string cacheFolder() const;

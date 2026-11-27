@@ -67,6 +67,13 @@ namespace Downloads
     // ending in a dot or space
     bool isSafeRelativePath(const std::string& path);
 
+    // Whether a symbolic link at path (relative to the folder it must stay in,
+    // '/' separated) to target stays inside that folder: the target is
+    // relative, has no backslash, drive or control character, and resolved
+    // from the link's own folder names something strictly inside the folder
+    // (not the folder itself, nor anything above it)
+    bool isSafeLink(const std::string& path, const std::string& target);
+
     // Whether a file name is a Windows device name (CON, NUL, COM1, "aux.txt"...)
     bool isReservedName(const std::string& name);
 }

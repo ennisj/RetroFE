@@ -25,17 +25,43 @@
 
 namespace
 {
-    const char* const unsupportedText = "Emulator downloads are Windows-only for now.";
+    const char* const notAvailableText = "Emulator downloads aren't available on this system.";
     const char* const libretroServer = "libretro's server (buildbot.libretro.com)";
     const char* const busyText = "Wait for the current download to finish, or stop it.";
 
     std::string yesNo(bool value) { return value ? "yes" : "no"; }
+
+    // "No Linux arm64 build" -> "no Linux arm64 build", after a comma
+    std::string lowered(std::string text)
+    {
+        if (!text.empty() && text[0] == 'N') text[0] = 'n';
+        return text;
+    }
 
     bool contains(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
 
     bool isEmulatorScreen(const Manager::Screen& screen) { return screen.form == "download-emulator"; }
     bool isCoreScreen(const Manager::Screen& screen) { return screen.form == "download-core"; }
     bool isMine(const Manager::Screen& screen) { return screen.form.rfind("download-", 0) == 0; }
+    bool isCoresScreen(const Manager::Screen& screen) { return screen.form == "download-cores" || isCoreScreen(screen); }
+
+    // Where this platform has RetroArch's cores
+    bool coresHere() { return Downloads::coresOffered(Downloads::platform()); }
+
+    // "No Linux arm64 build"
+    std::string noBuild() { return "No " + Downloads::platformName(Downloads::platform()) + " build"; }
+
+    // What the cores screens say where there are none
+    std::string noCoresText()
+    {
+        return "RetroArch has no " + Downloads::platformName(Downloads::platform()) + " build, so its cores aren't offered here.";
+    }
+
+    // emulators\DuckStation on Windows, emulators/DuckStation elsewhere
+    std::string folderPath(const std::string& folder)
+    {
+        return (Downloads::platform() == Downloads::Platform::WindowsX64 ? "emulators\\" : "emulators/") + folder;
+    }
 
     // What a job on this screen is about: the emulator's package id, the core, or "" for a list
     std::string targetOf(const Manager::Screen& screen)
@@ -98,7 +124,7 @@ const std::set<std::string>& DownloadProvider::keys()
     static const std::set<std::string> served = {
         // values
         "supported", "unsupported", "running", "runningHere", "installingHere", "checkStatus", "hasWarnings",
-        "retroArchInstalled", "needsRetroArch", "hasRetroArch", "name", "description", "folder", "system",
+        "retroArchInstalled", "needsRetroArch", "hasRetroArch", "name", "description", "folder", "folderPath", "system",
         "installed", "available", "size", "source", "launcher", "checks", "checksumNote", "progress", "message",
         "isInstalled", "canInstall", "canUpdate", "isRetroArchInstalled", "coreSystem", "coresStatus", "hasCoreWarnings", "coresReady",
         // lists, rows and options
@@ -132,6 +158,17 @@ Downloads::Service& DownloadProvider::service()
 bool DownloadProvider::supported()
 {
     return hooks_.supported ? *hooks_.supported : service().supported();
+}
+
+bool DownloadProvider::supportedOn(const Screen& screen)
+{
+    return supported() && (!isCoresScreen(screen) || coresHere());
+}
+
+std::string DownloadProvider::unsupportedText(const Screen& screen)
+{
+    if (!supported()) return notAvailableText;
+    return isCoresScreen(screen) && !coresHere() ? noCoresText() : "";
 }
 
 bool DownloadProvider::isRunningHere(const Screen& screen) const
@@ -333,7 +370,7 @@ void DownloadProvider::listNow()
 
 void DownloadProvider::enter(const Screen& screen)
 {
-    if (!isMine(screen) || !supported()) {
+    if (!isMine(screen) || !supportedOn(screen)) {
         return;
     }
     if (screen.form == "download-emulators") {
@@ -404,6 +441,8 @@ const Downloads::Core* DownloadProvider::core(const std::string& name) const
 
 bool DownloadProvider::retroArchInstalled() const
 {
+    // Only where it has cores to offer
+    if (!coresHere()) return false;
     const Downloads::EmulatorStatus* retroArch = status("emulator-retroarch");
     return retroArch && !retroArch->installedVersion.empty();
 }
@@ -411,6 +450,9 @@ bool DownloadProvider::retroArchInstalled() const
 std::string DownloadProvider::emulatorState(const Downloads::EmulatorStatus& entry, Forms::Severity& severity) const
 {
     severity = Forms::Severity::None;
+    if (!entry.available) {
+        return entry.installedVersion.empty() ? noBuild() : "Installed " + entry.installedVersion + ", " + lowered(noBuild());
+    }
     std::string text = entry.installedVersion.empty() ? "Not installed" : "Installed " + entry.installedVersion;
     const Downloads::Release* offered = release(entry.id);
     if (!offered) {
@@ -426,7 +468,7 @@ std::string DownloadProvider::emulatorState(const Downloads::EmulatorStatus& ent
         severity = Forms::Severity::Warning;
         text += offered->retryAt > 0 ? ", not checked (GitHub's limit)"
               : contains(offered->error, "checksum") ? ", no checked download"
-              : contains(offered->error, "No release") ? ", no Windows release" : ", couldn't check";
+              : contains(offered->error, "No release") ? ", no " + Downloads::osName(Downloads::platform()) + " release" : ", couldn't check";
     }
     return text;
 }
@@ -494,8 +536,15 @@ std::string DownloadProvider::emulatorValue(const std::string& key, const Screen
     if (!entry) return key == "description" ? "That isn't an emulator RetroFE can download." : "";
     if (key == "description") return entry->description;
     if (key == "folder") return entry->folder;
+    if (key == "folderPath") return folderPath(entry->folder);
     if (key == "installed") return installed ? entryStatus->installedVersion : "Not installed";
     if (key == "isInstalled") return yesNo(installed);
+    // No build for this platform: nothing to install or update
+    if (!entry->available()) {
+        if (key == "canInstall" || key == "canUpdate" || key == "isRetroArchInstalled") return "no";
+        if (key == "available") return noBuild();
+        if (key == "size" || key == "checksumNote" || (key == "launcher" && !installed)) return "";
+    }
     if (key == "canInstall") return yesNo(!installed);
     if (key == "canUpdate") return yesNo(installed && offered && offered->updateAvailable);
     if (key == "available") {
@@ -517,7 +566,7 @@ std::string DownloadProvider::emulatorValue(const std::string& key, const Screen
                          : "RetroFE checks the published checksum, but not what it contains.";
     }
     if (key == "checksumNote") return retroArch ? "libretro doesn't publish a checksum for this download." : "";
-    if (key == "isRetroArchInstalled") return yesNo(retroArch && installed);
+    if (key == "isRetroArchInstalled") return yesNo(retroArch && installed && coresHere());
     return "";
 }
 
@@ -547,13 +596,13 @@ std::string DownloadProvider::coreValue(const std::string& key, const Screen& sc
 
 std::string DownloadProvider::get(const std::string& key, const Screen& screen)
 {
-    if (key == "supported") return yesNo(supported());
-    if (key == "unsupported") return supported() ? "" : unsupportedText;
+    if (key == "supported") return yesNo(supportedOn(screen));
+    if (key == "unsupported") return unsupportedText(screen);
     if (key == "running") return yesNo(busy());
     if (key == "runningHere") return yesNo(isRunningHere(screen));
     if (key == "installingHere") return yesNo(isRunningHere(screen) && (job_ == Job::Install || job_ == Job::InstallCore));
     if (key == "coreSystem") return coreSystem_;
-    if (!supported() && (key == "canInstall" || key == "canUpdate" || key == "isInstalled" || key == "isRetroArchInstalled")) {
+    if (!supportedOn(screen) && (key == "canInstall" || key == "canUpdate" || key == "isInstalled" || key == "isRetroArchInstalled")) {
         return "no";
     }
     std::lock_guard<std::mutex> lock(mutex_);
@@ -563,7 +612,7 @@ std::string DownloadProvider::get(const std::string& key, const Screen& screen)
     }
     if (key == "hasWarnings") return yesNo(!warnings().empty());
     if (key == "retroArchInstalled") return yesNo(supported() && retroArchInstalled());
-    if (key == "needsRetroArch") return yesNo(supported() && !retroArchInstalled());
+    if (key == "needsRetroArch") return yesNo(supported() && coresHere() && !retroArchInstalled());
     if (key == "hasRetroArch") return yesNo(supported() && retroArchInstalled());
     if (key == "progress") return isRunningHere(screen) ? progressText() : "";
     if (key == "message") {
@@ -605,7 +654,7 @@ Forms::Severity DownloadProvider::severity(const std::string& key, const Screen&
     }
     if (key == "available" && isEmulatorScreen(screen)) {
         const Downloads::Release* offered = release(screen.param("id"));
-        return offered && offered->version.empty() && !offered->error.empty() ? Forms::Severity::Warning : Forms::Severity::None;
+        return offered && offered->available && offered->version.empty() && !offered->error.empty() ? Forms::Severity::Warning : Forms::Severity::None;
     }
     return Forms::Severity::None;
 }
@@ -632,7 +681,7 @@ Forms::Rows DownloadProvider::rows(const std::string& key, size_t limit, const S
 {
     (void)screen;
     Forms::Rows result;
-    if (!supported()) {
+    if (!supportedOn(screen)) {
         return result;
     }
     std::lock_guard<std::mutex> lock(mutex_);
@@ -698,8 +747,8 @@ std::vector<std::pair<std::string, std::string>> DownloadProvider::options(const
 
 std::string DownloadProvider::actionProblem(const std::string& action, const Screen& screen)
 {
-    if (!supported()) {
-        return unsupportedText;
+    if (!supportedOn(screen)) {
+        return unsupportedText(screen);
     }
     if (action == "stop") {
         return busy() ? "" : "Nothing is running.";
@@ -717,13 +766,16 @@ std::string DownloadProvider::actionProblem(const std::string& action, const Scr
     }
     std::lock_guard<std::mutex> lock(mutex_);
     if (action == "checkCores") {
+        if (!coresHere()) return noCoresText();
         return retroArchInstalled() ? "" : "Install RetroArch first.";
     }
     if (isEmulatorScreen(screen)) {
         const std::string id = screen.param("id");
-        if (!Downloads::findEmulator(id)) return "That isn't an emulator RetroFE can download.";
+        const Downloads::Emulator* known = Downloads::findEmulator(id);
+        if (!known) return "That isn't an emulator RetroFE can download.";
         const Downloads::EmulatorStatus* entry = status(id);
         const bool installed = entry && !entry->installedVersion.empty();
+        if (action != "remove" && !known->available()) return noBuild() + " of " + known->name + ".";
         if (action == "install") return installed ? "It's installed already." : "";
         if (!installed) return "It isn't installed.";
         if (action == "update") {
@@ -733,6 +785,7 @@ std::string DownloadProvider::actionProblem(const std::string& action, const Scr
         return "";
     }
     if (isCoreScreen(screen)) {
+        if (!coresHere()) return noCoresText();
         if (!retroArchInstalled()) return "Install RetroArch first.";
         const Downloads::Core* listed = core(screen.param("core"));
         if (!listed) return coresRead_ ? "libretro's list has no core called " + screen.param("core") + "." : "Still reading libretro's core list...";

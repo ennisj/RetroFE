@@ -310,6 +310,7 @@ namespace Downloads
                 continue;
             }
             result.error = problem;
+            result.mismatch = true;
             return false;
         }
     }
