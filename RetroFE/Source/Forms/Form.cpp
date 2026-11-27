@@ -189,6 +189,24 @@ bool isVisible(const Field& field, Model& model)
     return isTruthy(model.get(field.visibleWhen));
 }
 
+std::string confirmText(const Field& button, Model& model)
+{
+    static const std::string open = "{bind:";
+    std::string text;
+    size_t from = 0;
+    for (;;) {
+        size_t at = button.confirm.find(open, from);
+        size_t end = at == std::string::npos ? at : button.confirm.find('}', at + open.size());
+        if (end == std::string::npos) {
+            text += button.confirm.substr(from);
+            return text;
+        }
+        text += button.confirm.substr(from, at - from);
+        text += model.get(button.confirm.substr(at + open.size(), end - at - open.size()));
+        from = end + 1;
+    }
+}
+
 std::string noteText(const Field& field, Model& model)
 {
     return field.bind.empty() ? field.label : model.get(field.bind);

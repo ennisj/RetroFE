@@ -730,6 +730,37 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M44. Round 33: emulator downloads without the Catalog — Decided (2026-11-27)
+Your request: emulator downloads back, without the Catalog or self-update.
+- **The old code came back, trimmed** (from tag `catalog-last`): archives
+  (zip, 7-Zip and self-extracting 7-Zip, never run), SHA-256 and CRC-32,
+  GitHub releases with their cache and rate limit, the six-emulator list,
+  cores, and the installer (staging, recovery, backups, what was
+  installed), now `RetroFE/Source/Downloads`. Sources, package indexes,
+  other package kinds and self-update stay removed. C2's rules hold:
+  programs only from the built-in list and only into its own
+  `emulators/<folder>/`; a core writes only its DLL; GitHub's SHA-256
+  required; only libretro may lack one; a folder RetroFE didn't install is
+  never overwritten.
+- **Trust is a confirmation each time, not a stored setting** (C2 had "I
+  trust these downloads" turning on a source): Install and Update ask
+  "Download <emulator> from <where>?" every time, so nothing is stored and
+  there is no setting to find later. Buttons' `confirm=` text can now read
+  the model (`{bind:key}`) for this.
+- **`manage/downloads/`** holds the cache, unfinished downloads, staging,
+  `installed/<id>.json` and backups, since `catalog/` went with the
+  Catalog.
+- **Releases are read only when the download screen opens** (and Check
+  again), never at start, as round 18 decided. Leaving an emulator's screen
+  stops its download, as leaving Add games stops a copy.
+- **Add a launcher opens on Download an emulator,** its first row, so a
+  bare install reaches downloads in two presses from the hub.
+- **Codex quit early on both jobs** (1-2 minutes, no changes); Claude Opus
+  5.5 implemented them in the round's worktree, tested on the worker.
+- **Not checked yet:** a real download. CI has no network tests; the first
+  real install, the emulators' launcher arguments and portable files are
+  checked on your PC.
+
 ### M43. Round 32: first-setup script is strict — Decided (2026-11-27)
 - **`# soft-fail` removed from `setup-first-setup.txt`** as M38 planned,
   after it passed every CI run from round 27 to round 31. The marker and its

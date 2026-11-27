@@ -254,7 +254,10 @@ Things to know:
   in Y", an edit that wrote no files): it's shown plain (`infoColor`), not
   as a success or an error, whatever `ok` says (`Forms::statusKind`).
 - **Confirming**: put `confirm="Delete this game?"` on the button; the action
-  only runs on the second Select, so `runAction` doesn't need to ask.
+  only runs on the second Select, so `runAction` doesn't need to ask. A
+  `{bind:<key>}` in it is read from the model when the question is shown
+  (`Forms::confirmText`), e.g. `confirm="Download {bind:download:name} from
+  {bind:download:source}?"`.
 - **Buttons that hide themselves** (`visibleWhen` that turns off once
   pressed): focus stays at the same place or moves up, and never lands by
   itself on a file or folder field, a button with `confirm=`, or a button

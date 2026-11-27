@@ -9,10 +9,21 @@ shot first-start
 # BuiltinForms manage: the first link is "Add your first launcher/emulator".
 key Return
 wait 1
-# EmulatorsForms emulator-new: Name (focused), Program, Arguments, Core (once a
-# RetroArch preset is chosen), Working folder, Restarts RetroFE, Runs (a value,
-# not focusable), Create launcher. Select on a text field opens the on-screen
-# keyboard; posted WM_CHAR arrives as SDL_TEXTINPUT; Select again closes it.
+# EmulatorsForms emulator-new: Download an emulator (a link, focused), Name,
+# Program, Arguments, Core (once a RetroArch preset is chosen), Working folder,
+# Restarts RetroFE, Runs (a value, not focusable), Create launcher.
+shot add-launcher
+# DownloadForms download-emulators: the six emulators are listed at once; the
+# check for releases that follows reads GitHub, so what it says varies on CI.
+key Return
+wait 3
+shot download-emulators
+# Back to Add a launcher (leaving stops the check), then Down to Name. Select
+# on a text field opens the on-screen keyboard; posted WM_CHAR arrives as
+# SDL_TEXTINPUT; Select again closes it.
+key Escape
+wait 1
+key Down
 key Return
 type NES
 key Return
@@ -97,11 +108,12 @@ shot hub-before-system
 # Name and Extensions suggested from fceumm's .info file ("Nintendo
 # Entertainment System", fds,nes,unf,unif: no typing; dat isn't added, so
 # Little Lancelot isn't copied), List it in (Main), Games folder (default),
-# then Add system: five down from Launcher. Tune on CI.
+# then Add system: six down from Launcher, past the Download an emulator link
+# under it. Tune on CI.
 key Return
 wait 2
 shot system-form
-key Down x5
+key Down x6
 wait 1
 shot system-form-add-focused
 key Return

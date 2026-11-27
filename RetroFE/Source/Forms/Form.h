@@ -83,7 +83,7 @@ namespace Forms
         std::string label;
         std::string bind;         // model key the value is read from and written to
         std::string action;       // Button: action to run
-        std::string confirm;      // Button: asks this first, e.g. "Delete this game?"; a second Select runs it
+        std::string confirm;      // Button: asks this first, e.g. "Delete this game?"; a second Select runs it ({bind:key}: see confirmText)
         std::string hint;         // placeholder shown while empty
         std::string help;         // fixed text shown under the field
         std::string status;       // model key whose value is shown under the field
@@ -280,6 +280,12 @@ namespace Forms
     private:
         const Field* armed_ = nullptr;
     };
+
+    // The question a button with confirm="..." asks, as it's shown: each
+    // {bind:key} in it is replaced by the model's value for key, read each
+    // time the question is shown, e.g. confirm="Download {bind:download:name}
+    // from {bind:download:source}?". Other text, braces included, stays as written.
+    std::string confirmText(const Field& button, Model& model);
 
     // "yes", "true", "on" and "1" in any case
     bool isTruthy(const std::string& value);

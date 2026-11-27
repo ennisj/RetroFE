@@ -34,7 +34,7 @@ Relative paths in settings are relative to the root.
 ├── layouts/<theme>/              themes: layout.xml, splash.xml, artwork, fonts, sounds
 │   └── collections/<system>/     a system's own pages and layout artwork, inside the theme
 ├── launchers.windows/<name>.conf global launchers (launchers.linux/, launchers.apple/ elsewhere)
-├── emulators/<emulator>/         emulator programs you installed, one folder each
+├── emulators/<emulator>/         emulator programs, one folder each (yours, or downloaded by Manage)
 ├── collections/
 │   ├── <system>/                 a system (a "collection")
 │   │   ├── settings.conf         where its games are, their extensions, its launcher
@@ -54,7 +54,7 @@ Relative paths in settings are relative to the root.
 ├── meta/                         game databases RetroFE imports (hyperlist/, mamelist/, emuarc/)
 ├── meta.db                       the imported game database
 ├── hi2txt/                       hiscore reader
-├── manage/                       Manage's backups and saved game saves
+├── manage/                       Manage's backups, saved game saves and emulator downloads
 ├── start.bat, exit.bat           optional scripts run when RetroFE starts and exits
 └── log.txt
 ```
@@ -63,13 +63,17 @@ Folders whose names start with `_` under `collections/` aren't systems.
 
 ### Emulator programs: `emulators/<emulator>/`
 
-This is where you put the emulators you install yourself, a folder each, named after
-it: `emulators/RetroArch/`, `emulators/MAME/`, `emulators/DuckStation/`. Its program and
-everything it ships go in that folder, and so do its own settings, when the emulator can
-keep them there (its "portable" mode). RetroFE doesn't download or install emulators;
-add a launcher in Manage by choosing the emulator's program. Emulators can go anywhere,
-but here keeps the install self-contained and movable, and a launcher's program inside
-the root is written with `%RETROFE_PATH%`.
+This is where emulators go, a folder each, named after it: `emulators/RetroArch/`,
+`emulators/MAME/`, `emulators/DuckStation/`. Its program and everything it ships go in
+that folder, and so do its own settings, when the emulator can keep them there (its
+"portable" mode). On Windows, Manage can download the built-in six (RetroArch and its
+cores, MAME, DuckStation, PCSX2, PPSSPP, Flycast) into their folders here and make their
+launchers (Add a launcher → Download an emulator; see [MANAGER.md](MANAGER.md#downloading-emulators)).
+It only installs into a folder it made: if `emulators/MAME/` is already there, it says
+so and leaves it. For any other emulator, put it here yourself and add a launcher in
+Manage by choosing its program. Emulators can go anywhere, but here keeps the install
+self-contained and movable, and a launcher's program inside the root is written with
+`%RETROFE_PATH%`.
 
 - **RetroArch** keeps its cores in `emulators/RetroArch/cores/` (its `libretro_directory`),
   their descriptions in `emulators/RetroArch/info/`, and BIOS files in
@@ -123,6 +127,7 @@ when you choose a different folder.
 |---|---|
 | `manage/backups/` | Every file Manage changes or removes, before it does |
 | `manage/saves/<system>/<game>/` | Game saves Manage has put aside |
+| `manage/downloads/` | Emulator downloads: `cache/` (the release lists RetroFE last read, and libretro's core list), `partial/` (unfinished downloads, continued next time), `staging/` (an install being made), `installed/` (what each install put where), `backups/` (files an update replaced) |
 
 ## A split install (OnesaUCE)
 

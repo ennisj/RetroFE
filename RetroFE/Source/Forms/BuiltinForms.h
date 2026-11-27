@@ -37,4 +37,5 @@ namespace Forms
     BuiltinTable themesForms();      // Manager/Themes/ThemesForms.cpp
     BuiltinTable controlsForms();    // Manager/Controls/ControlsForms.cpp (Settings > Controls)
     BuiltinTable browserForms();     // Manager/Browser/BrowserForms.cpp (the file and folder browser)
+    BuiltinTable downloadsForms();   // Manager/Downloads/DownloadForms.cpp (emulator downloads)
 }

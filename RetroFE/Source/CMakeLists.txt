@@ -9,6 +9,12 @@ set(RETROFE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(RETROFE_THIRD_PARTY_DIR "${RETROFE_DIR}/ThirdParty")
 list(APPEND CMAKE_MODULE_PATH "${RETROFE_DIR}/CMake")
 
+# The LZMA SDK's 7-Zip decoder, for emulator downloads (Source/Downloads/Archive.cpp)
+file(GLOB LZMA_SDK_SOURCES "${RETROFE_THIRD_PARTY_DIR}/lzma-sdk/*.c")
+add_library(retrofe_lzma STATIC ${LZMA_SDK_SOURCES})
+target_compile_definitions(retrofe_lzma PRIVATE Z7_PPMD_SUPPORT Z7_EXTRACT_ONLY)
+target_include_directories(retrofe_lzma PUBLIC "${RETROFE_THIRD_PARTY_DIR}/lzma-sdk")
+
 ##############################################################
 # Versioning
 # Ensure versioning.h is generated before compiling
@@ -40,6 +46,7 @@ add_custom_command(
 set(SQLITE3_ROOT "${RETROFE_THIRD_PARTY_DIR}/sqlite3")
 set(RAPIDXML_ROOT "${RETROFE_THIRD_PARTY_DIR}/rapidxml-1.13")
 set(IMGUI_ROOT "${RETROFE_THIRD_PARTY_DIR}/imgui-1.91.5")
+set(NLOHMANN_JSON_ROOT "${RETROFE_THIRD_PARTY_DIR}/nlohmann-json-3.11.3")
 
 if(WIN32)
     if(MSVC)
@@ -246,6 +253,7 @@ set(RETROFE_INCLUDE_DIRS
     "${RAPIDXML_ROOT}"
     "${IMGUI_ROOT}"
     "${IMGUI_ROOT}/backends"
+    "${NLOHMANN_JSON_ROOT}"
     "${PACDRIVE_ROOT}"
     ${RETROFE_PLATFORM_INCLUDE_DIRS}
 )
@@ -269,6 +277,7 @@ if(WIN32)
         "${WEBP_ROOT}/lib/libwebpdemux_dll.lib"
         "${ZLIB_ROOT}/lib/minizip.lib"
         "dxgi.lib"
+        "winhttp.lib"
     )
 endif()
 
@@ -470,6 +479,22 @@ set(RETROFE_SOURCES
 	"${SQLITE3_ROOT}/sqlite3.c"
 )
 
+# Emulator downloads (Source/Downloads): no SDL, so retrofe_tests builds them too
+set(RETROFE_DOWNLOADS_SOURCES
+	"${RETROFE_DIR}/Source/Downloads/Archive.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Download.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Emulators.cpp"
+	"${RETROFE_DIR}/Source/Downloads/GitHub.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Hash.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Http.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Installer.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Package.cpp"
+	"${RETROFE_DIR}/Source/Downloads/Service.cpp"
+)
+file(GLOB RETROFE_DOWNLOADS_HEADERS CONFIGURE_DEPENDS "${RETROFE_DIR}/Source/Downloads/*.h")
+list(APPEND RETROFE_SOURCES ${RETROFE_DOWNLOADS_SOURCES})
+list(APPEND RETROFE_HEADERS ${RETROFE_DOWNLOADS_HEADERS})
+
 # The Manage sections (Manager/Games, Manager/Systems...), one folder each, so
 # a section can add files without touching this list. Files in a section's
 # folder are built into retrofe_tests too, so they mustn't need SDL or
@@ -571,6 +596,7 @@ if(RETROFE_BUILD_TESTS)
 	endforeach()
 	set(RETROFE_TEST_ALL_SOURCES
 		${RETROFE_TEST_SOURCES}
+		${RETROFE_DOWNLOADS_SOURCES}
 		"${RETROFE_DIR}/Source/Builtin/Builtin.cpp"
 		"${RETROFE_DIR}/Source/Database/Configuration.cpp"
 	"${RETROFE_DIR}/Source/Database/ConfigurationLoader.cpp"
@@ -617,19 +643,26 @@ if(RETROFE_BUILD_TESTS)
 	add_dependencies(retrofe_tests GenerateVersioningHeader retrofe_fake_emulator)
 	# The theme editor tests read the bundled font and check the layout
 	# vocabulary against PageBuilder.cpp and Tween.cpp in the source tree
-	target_link_libraries(retrofe_tests retrofe_theme_editor)
+	target_link_libraries(retrofe_tests retrofe_theme_editor retrofe_lzma)
 	target_compile_definitions(retrofe_tests PRIVATE
 		RETROFE_FAKE_EMULATOR="$<TARGET_FILE:retrofe_fake_emulator>"
 		RETROFE_SOURCE_DIR="${RETROFE_DIR}/Source"
 		RETROFE_FIXTURES_DIR="${RETROFE_DIR}/../Scripts/test-build/fixtures"
-		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}")
+		RETROFE_THIRD_PARTY_DIR="${RETROFE_THIRD_PARTY_DIR}"
+		RETROFE_TEST_FIXTURES="${RETROFE_DIR}/Tests/fixtures"
+		RETROFE_TEST_SDK="${RETROFE_THIRD_PARTY_DIR}/lzma-sdk")
+	# The download tests extract and write zip archives
 	if(WIN32)
-		target_link_libraries(retrofe_tests ${ZLIB_LIBRARIES})
+		target_link_libraries(retrofe_tests "${ZLIB_ROOT}/lib/minizip.lib" ${ZLIB_LIBRARIES} winhttp)
 		add_custom_command(TARGET retrofe_tests POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZLIB_ROOT}/lib/zlib.dll" "$<TARGET_FILE_DIR:retrofe_tests>")
 	else()
 		# sqlite3 needs libdl and threads; the library index builds on a thread
-		target_link_libraries(retrofe_tests ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+		target_link_libraries(retrofe_tests ${MINIZIP_LIBRARIES} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+		if(APPLE AND RETROFE_MACOS_BUNDLE)
+			# ThirdPartyMac's libminizip.dylib is @rpath/libminizip.dylib
+			set_target_properties(retrofe_tests PROPERTIES BUILD_RPATH "${MAC_FRAMEWORKS_DIR}")
+		endif()
 	endif()
 	enable_testing()
 	add_test(NAME forms COMMAND retrofe_tests)
@@ -645,7 +678,7 @@ set(LIBRARY_OUTPUT_PATH "${RETROFE_DIR}/Build" CACHE PATH "Build directory" FORC
 include_directories(${RETROFE_INCLUDE_DIRS})
 add_executable(retrofe  ${RETROFE_SOURCES} ${RETROFE_HEADERS})
 add_dependencies(retrofe GenerateVersioningHeader)
-target_link_libraries(retrofe retrofe_theme_editor)
+target_link_libraries(retrofe retrofe_theme_editor retrofe_lzma)
 
 # macOS links what its branch above found, frameworks or Homebrew's
 if(NOT APPLE)

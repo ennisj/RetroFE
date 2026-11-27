@@ -521,7 +521,7 @@ void FormWidget::addField(const Field& field)
             if (field.type == FieldType::Button) {
                 // Why it can't run shows in the hints (and a help panel) while it's focused
                 if (confirm_.armed() == &field) {
-                    addWrapped(RowKind::Note, field.confirm + " Select again to confirm.", true, true);
+                    addWrapped(RowKind::Note, Forms::confirmText(field, *model_) + " Select again to confirm.", true, true);
                 }
                 break;
             }
@@ -1613,7 +1613,8 @@ void FormWidget::drawBar(float barTop, float left, float width, float padding)
     const Field* armed = confirm_.armed();
     if (barFocus_ >= 0 && armed == bar_[barFocus_].field) {
         float noteSize = size * noteScale;
-        painter_.textWith(errorFont_, "! " + armed->confirm + " Select again to confirm.", left, y + (row - noteSize) / 2.0f,
+        std::string question = model_ ? Forms::confirmText(*armed, *model_) : armed->confirm;
+        painter_.textWith(errorFont_, "! " + question + " Select again to confirm.", left, y + (row - noteSize) / 2.0f,
                           width, noteSize, 1.0f);
         y += row;
     }

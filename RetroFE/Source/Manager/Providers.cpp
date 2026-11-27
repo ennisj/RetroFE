@@ -56,6 +56,9 @@
 // browse (the file and folder browser behind <folder> and <file> fields)
 #include "Browser/BrowserProvider.h"
 
+// downloads (emulators and RetroArch cores RetroFE downloads)
+#include "Downloads/DownloadProvider.h"
+
 void Manager::registerProviders(ManagerModel& model, const Services& services)
 {
     (void)model;
@@ -90,4 +93,7 @@ void Manager::registerProviders(ManagerModel& model, const Services& services)
 
     // browse
     model.addProvider(std::make_unique<Browser::BrowserProvider>(services));
+
+    // downloads
+    model.addProvider(std::make_unique<Manager::DownloadProvider>(services));
 }
