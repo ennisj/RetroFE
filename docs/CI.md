@@ -46,7 +46,7 @@ After the unit tests, the Windows job runs `retrofe.exe` in a 960x540 window on 
 https://github.com/ennisj/RetroFE/releases/download/ci-screens/screens-<commit>.zip
 ```
 
-A failing script fails the build (an error annotation names it), except a script with a `# soft-fail` line at its top, which is still settling: its failure is a warning annotation (DECISIONS M34, M38). The screenshots are published either way. When RetroFE crashes, the step runs it again under `cdb` and adds the stack and module list to the zip as `cdb.txt`. The runner has no GPU or sound device: what it can't show is how things look on real hardware, at full size (thin strokes can drop out at 960x540), with videos, sound, controllers or fullscreen.
+A failing script fails the build (an error annotation names it), except a script with a first line starting with `# soft-fail`, which is still settling: ordinary script-step failures are warning annotations; crashes and install or startup failures still fail the build (DECISIONS M34, M38). The screenshots are published either way. When RetroFE crashes, the step runs it again under `cdb` and adds the stack and module list to the zip as `cdb.txt`. The runner has no GPU or sound device: what it can't show is how things look on real hardware, at full size, with videos, sound, controllers or fullscreen.
 
 ## Packages
 

@@ -2,6 +2,12 @@
 #include "../Source/Graphics/ScreenFontSize.h"
 
 static Test::Suite screenFontSizeSuite("screen-font-size", [] {
+    Test::run("font scale follows the larger drawing axis", [] {
+        Test::check(screenFontScale(960, 540, 1920, 1080, 0, false) == 0.5f, "uniform half size");
+        Test::check(screenFontScale(1920, 1080, 1920, 1080, 0, true) == 1.0f, "mirror at full size");
+        Test::check(screenFontScale(1280, 1024, 1920, 1080, 0, false) == 1024.0f / 1080, "nonuniform stretch");
+        Test::check(screenFontScale(540, 960, 1920, 1080, 1, false) == 0.5f, "rotation swaps axes");
+    });
     Test::run("font atlas size follows downscaling", [] {
         Test::check(screenFontSize(35, 1.0f) == 35, "scale 1 leaves size unchanged");
         Test::check(screenFontSize(35, 2.0f) == 35, "upscaling leaves size unchanged");

@@ -164,8 +164,8 @@ jobs:
       # Scripts/test-build/screens: retrofe.exe in a window on this runner, in a bare and a
       # Starter-like test install, driven by key presses posted to its window, with a
       # screenshot after each step (README there). A failing script fails the build, except
-      # one marked "# soft-fail" at its top, which is still being tuned: a warning for that
-      # one (DECISIONS M34, M38).
+      # one marked "# soft-fail" on its first line: step failures are warnings while
+      # crashes and setup failures remain errors (DECISIONS M34, M38).
       id: screens
       shell: pwsh
       run: |
@@ -175,7 +175,7 @@ jobs:
         $soft = @()
         foreach ($script in Get-ChildItem "Scripts\test-build\screens\scripts\*.txt" | Sort-Object Name) {
           $kind = $script.BaseName.Split('-')[0]
-          $isSoft = [bool](Get-Content $script.FullName | Where-Object { $_ -match '^# soft-fail\b' })
+          $isSoft = [bool]((Get-Content $script.FullName -TotalCount 1) -match '^# soft-fail\b')
           $install = Join-Path $env:RUNNER_TEMP "screens-$($script.BaseName)"
           $setup = @()
           if ($kind -eq 'starter') { $setup = @('--setup', "$env:RUNNER_TEMP\first-setup\root") }
@@ -185,7 +185,7 @@ jobs:
             --common Package\Environment\Common @setup $install
           if ($LASTEXITCODE -ne 0) {
             $why = "$($script.BaseName): the install couldn't be made"
-            if ($isSoft) { $soft += $why } else { $failed += $why }
+            $failed += $why
             continue
           }
           $timeout = if ($kind -eq 'setup') { 240 } else { 120 }
@@ -193,8 +193,10 @@ jobs:
             --out "$out\$($script.BaseName)" --timeout $timeout 2>&1 | Tee-Object -Variable lines
           if ($LASTEXITCODE -ne 0) {
             $why = ($lines | ForEach-Object { "$_" } | Where-Object { $_ -match '^FAIL ' } | Select-Object -First 1)
-            if ($isSoft) { $soft += "$($script.BaseName) (soft-fail): $why" } else { $failed += "$($script.BaseName): $why" }
-            if ($why -match 'exit code 0xC') {
+            $resultPath = "$out\$($script.BaseName)\results.json"
+            $failureKind = if (Test-Path $resultPath) { (Get-Content $resultPath -Raw | ConvertFrom-Json).failure_kind } else { 'setup' }
+            if ($isSoft -and $failureKind -eq 'step') { $soft += "$($script.BaseName) (soft-fail): $why" } else { $failed += "$($script.BaseName): $why" }
+            if ($failureKind -eq 'crash') {
               # A crash: run it once more under the debugger, whose stack and module list
               # go into the published zip as cdb.txt
               $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'

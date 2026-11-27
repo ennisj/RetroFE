@@ -121,10 +121,11 @@ def parse_script(text):
                 if not path or not make_test_install.valid_path(path):
                     raise ValueError('invalid relative path')
                 if command == 'wait-file':
-                    timeout = float(value) if value else 30.0
+                    parts = value.split(maxsplit=1) if value else []
+                    timeout = float(parts[0]) if parts else 30.0
                     if not math.isfinite(timeout) or timeout <= 0:
                         raise ValueError('invalid timeout')
-                    args = [path, timeout]
+                    args = [path, timeout, parts[1] if len(parts) > 1 else None]
                 else:
                     args = [path, value]
             elif command == 'quit':
@@ -366,6 +367,7 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
     started = time.monotonic()
     deadline = started + timeout
     current = None
+    window_handle = None
 
     def check():
         """Stop the script when the time is up or RetroFE has gone."""
@@ -481,7 +483,7 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
                         raise RuntimeError('screenshot region did not differ: ' + arguments[0])
                 elif operation == 'wait-file':
                     end = time.monotonic() + arguments[1]
-                    while not (root / arguments[0]).is_file():
+                    while not (root / arguments[0]).is_file() or (arguments[2] is not None and arguments[2] not in contents(root / arguments[0])):
                         check()
                         if time.monotonic() >= end:
                             raise TimeoutError('wait-file timed out: ' + arguments[0])
@@ -516,6 +518,13 @@ def run(install_dir, script, out, width=960, height=540, timeout=120):
             raise RuntimeError('script ended without quit')
         return 0
     except Exception as error:
+        code = process.poll() if process is not None else None
+        if code is not None and exit_text(code).startswith('0xC'):
+            result['failure_kind'] = 'crash'
+        elif not window_handle:
+            result['failure_kind'] = 'setup'
+        else:
+            result['failure_kind'] = 'step'
         message = str(error).replace('\n', ' ')
         if current and (not current['ok']):
             current['message'] = message
