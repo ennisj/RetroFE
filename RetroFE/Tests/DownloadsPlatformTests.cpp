@@ -985,9 +985,11 @@ static Suite downloadsPlatforms("downloads on Linux and macOS", [] {
         check(!fs::exists(root + "/emulators/PPSSPP"), "nothing installed");
 
         // Names with "." or empty parts are refused, so one path has one spelling
+        // (a 7z, which passes names as they are; minizip's non-UTF-8 names are
+        // already read in generic form, which drops a doubled slash)
         for (const std::string& name : { std::string("./PPSSPPSDL.app/x"), std::string("PPSSPPSDL.app/./x"), std::string("PPSSPPSDL.app//x") }) {
-            check(makeZip(zip, { { program, "p" }, { name, "x" } }), "zip: " + name);
-            check(!installer.install(package, { zip }, error) && contains(error, "safely"), "refused: " + name + ": " + error);
+            check(SevenZipWriter::write(archive, { { program, "p", 0x20 }, { name, "x", 0x20 } }), "7z: " + name);
+            check(!installer.install(package, { archive }, error) && contains(error, "safely"), "refused: " + name + ": " + error);
         }
 #ifndef _WIN32
         // Through a link by another spelling of its name
