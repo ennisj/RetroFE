@@ -50,7 +50,6 @@ concurrency:
 
 jobs:
   linux:
-    if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -283,7 +282,6 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "Could not publish the pre-release" }
 
   macos:
-    if: github.ref == 'refs/heads/master' || github.base_ref == 'master' || github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     name: macOS arm64 (Homebrew)
     # Homebrew's libraries, as a developer's Mac would have them; build-macos.yml makes
