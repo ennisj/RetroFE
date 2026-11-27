@@ -1,0 +1,26 @@
+{
+ "files": {
+  "Top/readme.txt": {
+   "size": 22,
+   "sha256": "64106d8bd6b651a3cccaba94ee7b97e399861da347057b38ef8928c67cbf4a28"
+  },
+  "Top/sub/data.bin": {
+   "size": 70000,
+   "sha256": "84bc50d4d2f6f3a614f6720911ca67c9e4c8771648a9d7934a556450e4e8192b"
+  },
+  "Top/über.txt": {
+   "size": 11,
+   "sha256": "c72048548a494a815f7cc6e12372d17edde774326f047e4013f2854da9c33490"
+  },
+  "Top/empty.txt": {
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ },
+ "sfxStubSize": 3162,
+ "unsafe": [
+  "Top/aux.txt",
+  "Top/name:stream.txt"
+ ],
+ "lzma-sdk-2604.7z": "the LZMA SDK's own archive: BCJ2 + LZMA for bin/*.exe; C/7zDec.c matches RetroFE/ThirdParty/lzma-sdk/7zDec.c once CRLF becomes LF"
+}
