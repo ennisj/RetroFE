@@ -4,6 +4,23 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 39 — emulator downloads on Linux and macOS (2026-11-27)
+
+Unit tests: 8,577 → 9,246 checks (Windows CI); Linux and macOS pass too.
+Choices in M50 of [DECISIONS.md](DECISIONS.md).
+
+- **Download an emulator works on Linux and macOS** with what each emulator
+  publishes: on Linux x86_64 RetroArch, DuckStation, PCSX2, PPSSPP and
+  Flycast; on Linux arm64 DuckStation and PPSSPP; on macOS RetroArch,
+  DuckStation, PPSSPP and Flycast; RetroArch cores wherever RetroArch is.
+  What has no build there says so ("No Linux arm64 build"). MAME stays
+  Windows-only.
+- Linux AppImages install as single programs; macOS apps unpack from their
+  zips with their permissions and in-app links, and RetroArch's macOS disk
+  image is opened read-only and its app copied out. Launchers go in
+  `launchers.linux` or `launchers.apple`.
+- Downloads use libcurl outside Windows.
+
 ## Round 38 — a larger test install (2026-11-27)
 
 Unit tests unchanged; test-build scripts' tests from 36 to 39. Choices in

@@ -730,6 +730,34 @@ Made while building the design review (M22); the option not taken in brackets.
   thin characters drop out of small text on Home ("v deos", "Ted s"). It is
   probably the half-size window; check Home on the PC at full size.
 
+### M50. Round 39: emulator downloads on Linux and macOS — Decided (2026-11-27)
+Your request. What each emulator publishes was checked on 2026-11-27.
+- **Offered where there's an official build in a form RetroFE can install:**
+  AppImages (Linux), zips of `.app` bundles (macOS), libretro's 7z (Linux) and
+  DMG (macOS). Not offered: MAME off Windows (no official builds), PCSX2 on
+  macOS (tar.xz), anything on Linux arm64 but DuckStation and PPSSPP.
+- **DuckStation's Linux builds exist only on its rolling "latest" release**,
+  so there its version is the release date (two builds on one day count as
+  one).
+- **Safety rules unchanged, extended:** an AppImage must be an ELF program;
+  stored permissions keep at most rwxr-xr-x (never setuid); a link in an
+  archive is recreated only if it stays inside the emulator's folder when
+  followed as the system follows it, nothing is written through one, and
+  removal deletes the link, never its target. The DMG is attached read-only
+  with Apple's `hdiutil` (no shell, a time limit), only the `.app` is
+  copied out and the image is always detached; nothing from it is run.
+- **HTTP is libcurl outside Windows** (https only, redirects to https only).
+- **Found on macOS CI:** libc++'s `std::filesystem::path` iterator is an
+  input iterator, so `std::prev(end())` didn't step back and the "folders
+  above the file" check also checked the file; the check now splits the path
+  itself.
+- **Codex quit early** (it delivered the first tables); Claude Opus 5.5 did
+  the rest, tested on the worker (Linux) and CI (all four).
+- **Not checked yet:** any real download off Windows, `hdiutil`, and every
+  Linux and macOS launcher's arguments and portable mode (Windows' arguments
+  are reused; the design doc marks each row unverified). A drive used on both
+  Windows and Linux shares what's installed per emulator.
+
 ### M49. Round 36: Linux and macOS back on every push — Decided (2026-11-27)
 - **Linux x86_64 and arm64 passed at once** after weeks of Windows-only work
   (the worker builds with GCC on Linux every round).
