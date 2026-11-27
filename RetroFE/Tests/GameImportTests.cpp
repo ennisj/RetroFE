@@ -15,7 +15,10 @@
  */
 #include "TestSupport.h"
 #include "../Source/Manager/Systems/GameImport.h"
+#include "../Source/Database/MetadataRefresh.h"
+#include "../Source/Library/Properties.h"
 #include <atomic>
+#include <fstream>
 #include <chrono>
 
 namespace fs = std::filesystem;
@@ -23,6 +26,76 @@ using namespace Test;
 using Manager::GameImport;
 
 static Test::Suite imports("game imports", [] {
+    run("metadata refresh respects Manage and lock", [] {
+        using T = fs::file_time_type;
+        auto old = T::min() + std::chrono::seconds(10);
+        auto newer = old + std::chrono::seconds(1);
+        check(MetadataRefresh::needed(true, 1, old, old, old, newer), "Manage overrides lock");
+        check(!MetadataRefresh::needed(true, 0, old, newer, newer, old), "lock skips ordinary changes and empty database");
+        check(MetadataRefresh::needed(false, 0, old, old, old, old), "empty database imports");
+        check(MetadataRefresh::needed(false, 1, old, newer, old, old), "new executable imports");
+        check(!MetadataRefresh::needed(false, 1, newer, old, old, old), "old executable does not repeatedly import");
+    });
+    run("metadata siblings, invalid types and trailing separator", [] {
+        std::string root = makeRoot("import-metadata-siblings");
+        fs::path source = fs::path(root) / "source";
+        writeFile((source / "collections/S/roms/a.nes").string(), "game");
+        writeFile((source / "collections/S/medium_artwork/logo/a.png").string(), "art");
+        writeFile((source / "meta/hyperlist/S.xml").string(), "one");
+        writeFile((source / "meta/hyperlist/S.extra.xml").string(), "two");
+        GameImport::Request r;
+        r.from = (source / "collections/S/roms").string() + "/";
+        r.installRoot = fs::path(root) / "dest"; r.into = r.installRoot / "roms";
+        r.extensions = { "nes" }; r.metadataType = "T"; r.copyMetadata = true; r.copyArtwork = true;
+        r.mediaPath = [root](const std::string& type, bool) { return fs::path(root) / "media" / type; };
+        std::atomic<bool> stop{ false };
+        auto count = GameImport::run(r, false, stop);
+        check(count.metadataFound && count.artworkFound, "trailing separator finds siblings");
+        auto first = GameImport::run(r, true, stop);
+        check(first.copied == 1 && first.artworkCopied == 1 && fs::exists(r.installRoot / "manage/metadata/.reimport"), "copy requests import");
+        auto again = GameImport::run(r, true, stop);
+        check(again.message.find("T.xml was already there") != std::string::npos && again.message.find("T.extra.xml was already there") != std::string::npos && again.message.find("kept your") == std::string::npos, "both siblings already present");
+        writeFile((r.installRoot / "meta/hyperlist/T.xml").string(), "different size");
+        again = GameImport::run(r, true, stop);
+        check(again.message.find("kept your meta/hyperlist/T.xml") != std::string::npos, "same name different size kept");
+        r.metadataType = "MAME 0.139";
+        count = GameImport::run(r, false, stop);
+        check(!count.metadataFound && count.message.find("cannot match") != std::string::npos, "invalid type hidden and explained");
+        again = GameImport::run(r, true, stop);
+        check(again.already == 1, "metadata never enters game counts");
+    });
+    run("an artwork name Windows can't narrow doesn't stop the games", [] {
+        // U+014C isn't in the usual ANSI code pages: on Windows path::string() throws for it
+        std::string root = makeRoot("import-art-unusable");
+        writeFile(root + "/source/roms/a.nes", "game");
+        writeFile(root + "/source/medium_artwork/logo/a.png", "art");
+        fs::path odd = fs::path(root) / "source" / "medium_artwork" / "logo" / fs::u8path(u8"\u014Ckami.png");
+        { std::ofstream out(odd, std::ios::binary); out << "x"; }
+        check(fs::exists(odd), "the oddly named file exists");
+        GameImport::Request r;
+        r.from = root + "/source/roms"; r.into = root + "/dest/roms"; r.extensions = { "nes" }; r.copyArtwork = true;
+        r.mediaPath = [root](const std::string& type, bool) { return fs::path(root) / "media" / type; };
+        std::atomic<bool> stop{ false };
+        auto count = GameImport::run(r, false, stop);
+        check(count.found == 1, "counted: " + count.message);
+        check(count.artworkFound, "artwork found beside it");
+        auto done = GameImport::run(r, true, stop);
+        check(done.copied == 1 && done.artworkCopied == 1, "game and its art copied: " + done.message);
+        // Unusable where the code page can't hold it, else simply art for another game
+        check(done.artworkUnusable + done.artworkLeft == 1, "the odd file is left: " + done.message);
+    });
+    run("artwork failure preserves game result", [] {
+        std::string root = makeRoot("import-art-failure");
+        writeFile(root + "/source/roms/a.nes", "game");
+        writeFile(root + "/source/medium_artwork/logo/a.png", "art");
+        writeFile(root + "/blocked", "file");
+        GameImport::Request r;
+        r.from = root + "/source/roms"; r.into = root + "/dest/roms"; r.extensions = { "nes" }; r.copyArtwork = true;
+        r.mediaPath = [root](const std::string&, bool) { return fs::path(root) / "blocked" / "logo"; };
+        std::atomic<bool> stop{ false };
+        auto done = GameImport::run(r, true, stop);
+        check(done.copied == 1 && done.artworkConflicts == 1 && done.message.find("Artwork skipped") != std::string::npos, "game and failed art reported");
+    });
     run("add games: copied message", [] {
         std::string root = makeRoot("import-message-copied");
         writeFile(root + "/source/a.md", "a");
@@ -159,7 +232,11 @@ static Test::Suite imports("game imports", [] {
         GameImport::Request r;
         r.from = root + "/source/roms"; r.into = root + "/dest/roms"; r.extensions = { "nes" };
         r.hierarchy = true; r.copyArtwork = true;
-        r.mediaPath = [root](const std::string& type, bool system) { return fs::path(root) / "custom" / (system ? "system" : type); };
+        Library::Properties properties(root);
+        properties.set("collections.NES.media.logo", root + "/custom/logo");
+        properties.set("collections.NES.media.fanart", root + "/custom/fanart");
+        properties.set("collections.NES.media.system_artwork", root + "/custom/system");
+        r.mediaPath = [properties](const std::string& type, bool system) { return fs::path(properties.mediaPath("NES", type, system)); };
         std::atomic<bool> stop{ false };
         auto count = GameImport::run(r, false, stop);
         check(count.artworkFound && count.artworkGames == 1 && count.systemArtwork && count.artworkLeft == 1, "count matching and unrelated artwork");
@@ -246,7 +323,7 @@ static Test::Suite imports("game imports", [] {
         fs::path install = fs::path(root) / "split";
         r.from = install / "content/retrofe/collections/Source/roms";
         writeFile((r.from / "a.nes").string(), "game");
-        writeFile((install / "appdata/retrofe/collections/Source/settings.conf").string(), "list.metadataType = Custom\n");
+        writeFile((install / "appdata/retrofe/collections/Source/settings.conf").string(), "metadata.type = Custom\n");
         writeFile((install / "appdata/retrofe/meta/hyperlist/Custom.xml").string(), "split metadata");
         r.installRoot = fs::path(root) / "splitdest"; r.into = r.installRoot / "roms"; r.copyMetadata = true;
         done = GameImport::run(r, true, stop);

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'screens' / 'screens.py'
 spec = importlib.util.spec_from_file_location('screens', SCRIPT)
@@ -128,6 +129,53 @@ class ScreensTests(unittest.TestCase):
         self.assertTrue(output.getvalue().startswith('FAIL line 2:'))
         self.assertEqual(result['steps'][0]['line'], 2)
         self.assertFalse(result['steps'][0]['ok'])
+        self.assertEqual(result['failure_kind'], 'setup')
+
+    def test_run_failure_kinds_and_wait_file_content(self):
+        """Classify process crashes and wait for complete file contents."""
+        class Process:
+            pid = 1
+            returncode = None
+            def poll(self):
+                return self.returncode
+            def kill(self):
+                self.returncode = 1
+            def wait(self):
+                return self.returncode
+
+        process = Process()
+        class Window:
+            def window(self, pid):
+                return 1
+            def post(self, *args):
+                process.returncode = 0
+
+        script = self.root / 'script.txt'
+        script.write_text('wait-file launches.txt 30 expected game\nquit\n')
+        launches = self.root / 'launches.txt'
+        launches.write_text('partial')
+        def finish_write(seconds):
+            launches.write_text('expected game')
+        with patch.object(screens, 'Windows', Window), patch.object(screens.subprocess, 'Popen', return_value=process), patch.object(screens.time, 'sleep', side_effect=finish_write):
+            self.assertEqual(screens.run(self.root, script, self.root / 'out'), 0)
+        result = json.loads((self.root / 'out/results.json').read_text())
+        self.assertTrue(result['steps'][0]['ok'])
+        self.assertEqual(launches.read_text(), 'expected game')
+
+        process = Process()
+        process.returncode = -1073741819
+        with patch.object(screens, 'Windows', Window), patch.object(screens.subprocess, 'Popen', return_value=process), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(screens.run(self.root, script, self.root / 'crash'), 1)
+        result = json.loads((self.root / 'crash/results.json').read_text())
+        self.assertEqual(result['failure_kind'], 'crash')
+        self.assertEqual(result['exit_code'], '0xC0000005')
+
+        process = Process()
+        script.write_text('expect-file missing\n')
+        with patch.object(screens, 'Windows', Window), patch.object(screens.subprocess, 'Popen', return_value=process), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(screens.run(self.root, script, self.root / 'step'), 1)
+        result = json.loads((self.root / 'step/results.json').read_text())
+        self.assertEqual(result['failure_kind'], 'step')
 
     def test_bare_install(self):
         """Copy only the release files needed for a bare install."""
@@ -169,7 +217,8 @@ class ScreensTests(unittest.TestCase):
             self.install('setup', self.setup)
 
     def test_wait_file_parse(self):
-        self.assertEqual(screens.parse_script('wait-file "a b/file" 12')[0]['args'], ['a b/file', 12])
+        self.assertEqual(screens.parse_script('wait-file "a b/file" 12')[0]['args'], ['a b/file', 12, None])
+        self.assertEqual(screens.parse_script('wait-file x 30 expected game')[0]['args'], ['x', 30, 'expected game'])
         self.assertEqual(screens.parse_script('expect-file "a b/file" text')[0]['args'], ['a b/file', 'text'])
         for command in ('wait-file ../bad', 'wait-file x 0', 'wait-file x nope'):
             with self.assertRaises(ValueError):

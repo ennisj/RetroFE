@@ -323,21 +323,8 @@ EditResult Editor::clearMetadata(const Index& index, const std::string& collecti
 void Editor::requestMetadataImport()
 {
     std::lock_guard<std::recursive_mutex> writeLock(libraryWriteMutex());
-    // MetadataDatabase::needsRefresh re-imports when anything in the override
-    // folder is newer than meta.db; make sure this marker is, whatever the file
-    // system's time resolution (FAT keeps 2 s)
-    std::error_code ec;
-    std::string marker = Utils::combinePath(MetadataOverrides::folder(root_), ".reimport");
     std::string error;
-    if (!writeFileAtomic(marker, "Asks RetroFE to re-import its metadata (written by Manage).\n", error)) {
-        LOG_ERROR("Library", error);
-        return;
-    }
-    std::string db = Utils::combinePath(root_, "meta.db");
-    fs::file_time_type dbTime = fs::last_write_time(db, ec);
-    if (!ec && fs::last_write_time(marker, ec) <= dbTime + std::chrono::seconds(2)) {
-        fs::last_write_time(marker, dbTime + std::chrono::seconds(3), ec);
-    }
+    if (!MetadataOverrides::requestImport(root_, error)) LOG_ERROR("Library", error);
 }
 
 std::map<std::string, std::string> Editor::metadataOverrides(const Index& index, const std::string& collection,

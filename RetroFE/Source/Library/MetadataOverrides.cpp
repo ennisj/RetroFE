@@ -20,6 +20,7 @@
 #include <rapidxml.hpp>
 #include <sqlite3.h>
 #include <system_error>
+#include <chrono>
 
 namespace fs = std::filesystem;
 
@@ -282,6 +283,17 @@ int applyAll(sqlite3* db, const std::string& root)
     }
     sqlite3_exec(db, "COMMIT TRANSACTION;", nullptr, nullptr, nullptr);
     return applied;
+}
+
+bool requestImport(const std::string& root, std::string& error)
+{
+    std::string marker = Utils::combinePath(folder(root), ".reimport");
+    if (!writeFileAtomic(marker, "Asks RetroFE to re-import its metadata (written by Manage).\n", error)) return false;
+    std::error_code ec;
+    fs::file_time_type dbTime = fs::last_write_time(Utils::combinePath(root, "meta.db"), ec);
+    if (!ec && fs::last_write_time(marker, ec) <= dbTime + std::chrono::seconds(2))
+        fs::last_write_time(marker, dbTime + std::chrono::seconds(3), ec);
+    return true;
 }
 
 fs::file_time_type newestChange(const std::string& root)

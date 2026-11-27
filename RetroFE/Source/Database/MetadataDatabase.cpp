@@ -14,6 +14,7 @@
  * along with RetroFE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "MetadataDatabase.h"
+#include "MetadataRefresh.h"
 #include "../Collection/CollectionInfo.h"
 #include "../Collection/Item.h"
 #include "../Utility/Log.h"
@@ -225,8 +226,6 @@ bool MetadataDatabase::needsRefresh()
 {
     bool metaLock = false;
     config_.getProperty(OPTION_METALOCK, metaLock);
-    if (metaLock)
-        return false;
 
     sqlite3* handle = db_.handle;
     sqlite3_stmt* stmt;
@@ -251,11 +250,11 @@ bool MetadataDatabase::needsRefresh()
 
         fs::file_time_type metaDbTime = fs::exists(metaDbPath) ? fs::last_write_time(metaDbPath) : fs::file_time_type::min();
         fs::file_time_type exeTime = fs::exists(exePath) ? fs::last_write_time(exePath) : fs::file_time_type::min();
-        fs::file_time_type metadirTime = timeDir(Utils::combinePath(Configuration::absolutePath, "meta"));
+        fs::file_time_type metadirTime = metaLock ? fs::file_time_type::min() : timeDir(Utils::combinePath(Configuration::absolutePath, "meta"));
         // A hand edit to the user's metadata changes also needs a re-import
         fs::file_time_type overridesTime = Library::MetadataOverrides::newestChange(Configuration::absolutePath);
 
-        result = (count == 0 || metaDbTime < metadirTime || exeTime < metadirTime || metaDbTime < overridesTime) ? true : false;
+        result = MetadataRefresh::needed(metaLock, count, metaDbTime, exeTime, metadirTime, overridesTime);
     }
     else {
         result = true;
