@@ -77,7 +77,7 @@ static Test::Suite imports("game imports", [] {
         r.mediaPath = [root](const std::string& type, bool) { return fs::path(root) / "media" / type; };
         std::atomic<bool> stop{ false };
         auto count = GameImport::run(r, false, stop);
-        checkEqual(count.found, size_t(1), "counted: " + count.message);
+        check(count.found == 1, "counted: " + count.message);
         check(count.artworkFound, "artwork found beside it");
         auto done = GameImport::run(r, true, stop);
         check(done.copied == 1 && done.artworkCopied == 1, "game and its art copied: " + done.message);
