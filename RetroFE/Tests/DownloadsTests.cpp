@@ -716,7 +716,8 @@ static Suite downloads("downloads", [] {
         check(contains(content, R"(%RETROFE_PATH%\emulators\DuckStation\duckstation-qt-x64-ReleaseLTCG.exe)") && contains(content, R"(-batch -fullscreen -- "%ITEM_FILEPATH%")"), "launcher executable and arguments");
         checkEqual(createEmulatorLauncher(root, downloadsFolder, manifest), "; a launcher called DuckStation already exists, so it was left as it is.", "existing launcher message");
         check(readFile(launcher) == content, "existing launcher untouched");
-        checkEqual(createEmulatorLauncher(root, downloadsFolder, retroarchManifest()), " Add a core next from Cores.", "RetroArch explains cores");
+        Manifest retroarch = retroarchManifest();
+        checkEqual(createEmulatorLauncher(root, downloadsFolder, retroarch), " Add a core next from Cores.", "RetroArch explains cores");
         writeFile(root + "/emulators/DuckStation/duckstation-qt-x64-ReleaseLTCG.exe", "self-updated");
         package.version = "0.1.12084";
         check(installer.install(package, { zip }, error), "update: " + error);
