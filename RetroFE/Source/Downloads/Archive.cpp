@@ -67,7 +67,7 @@ namespace
     };
 }
 
-struct Catalog::Archive::Impl
+struct Downloads::Archive::Impl
 {
     OffsetStream stream;
     CLookToRead2 look{};
@@ -96,10 +96,10 @@ struct Catalog::Archive::Impl
     }
 };
 
-Catalog::Archive::Archive() : impl_(new Impl) {}
-Catalog::Archive::~Archive() = default;
+Downloads::Archive::Archive() : impl_(new Impl) {}
+Downloads::Archive::~Archive() = default;
 
-Catalog::Archive::Form Catalog::Archive::detect(const std::string& path, uint64_t& offset)
+Downloads::Archive::Form Downloads::Archive::detect(const std::string& path, uint64_t& offset)
 {
     offset = 0;
     std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
@@ -128,7 +128,7 @@ Catalog::Archive::Form Catalog::Archive::detect(const std::string& path, uint64_
     return Form::None;
 }
 
-bool Catalog::Archive::open(const std::string& path, const std::string& publishedName, std::string& error)
+bool Downloads::Archive::open(const std::string& path, const std::string& publishedName, std::string& error)
 {
     impl_.reset(new Impl);
     auto& p = *impl_;
@@ -220,9 +220,9 @@ bool Catalog::Archive::open(const std::string& path, const std::string& publishe
     return true;
 }
 
-const std::vector<Catalog::Archive::Entry>& Catalog::Archive::entries() const { return impl_->entries; }
+const std::vector<Downloads::Archive::Entry>& Downloads::Archive::entries() const { return impl_->entries; }
 
-bool Catalog::Archive::extract(size_t index, const Writer& writer, const std::atomic<bool>* stop, std::string& error)
+bool Downloads::Archive::extract(size_t index, const Writer& writer, const std::atomic<bool>* stop, std::string& error)
 {
     auto& p = *impl_;
     auto stopped = [&] { if (stop && *stop) { error = "Stopped"; return true; } return false; };

@@ -15,7 +15,6 @@
  */
 #include "Download.h"
 #include "Hash.h"
-#include "Index.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -46,7 +45,7 @@ namespace
     }
 }
 
-namespace Catalog
+namespace Downloads
 {
     std::string describeSize(uint64_t bytes)
     {
@@ -99,10 +98,8 @@ namespace Catalog
             error = name + " is " + describeSize(size) + " but should be " + describeSize(file.size);
             return false;
         }
-        std::string expected = !file.sha256.empty() ? file.sha256 : file.md5;
-        if (!expected.empty()) {
-            std::string actual = !file.sha256.empty() ? sha256File(path) : md5File(path);
-            if (actual != expected) {
+        if (!file.sha256.empty()) {
+            if (sha256File(path) != file.sha256) {
                 error = name + " doesn't match its checksum: it's damaged, or changed on the server";
                 return false;
             }
@@ -125,26 +122,23 @@ namespace Catalog
         }
         fs::path folder = fs::path(folder_) / package.id;
 
-        // Where each remote file goes, and how much of it is here already
+        // Where each file goes, and how much of it is here already
         std::vector<fs::path> finals(package.files.size());
         std::set<fs::path> keep;
         uint64_t total = 0;
-        uint64_t remoteTotal = 0;
         uint64_t already = 0;
         bool sizesKnown = true;
-        bool anyRemote = false;
         for (size_t i = 0; i < package.files.size(); ++i) {
             const PackageFile& file = package.files[i];
             total += file.size;
             sizesKnown = sizesKnown && file.size > 0;
-            if (!isUrl(file.url)) continue;
-            if (!isAllowedLocation(file.url)) {
-                result.error = displayName(file.url) + " would be downloaded without https://, which is only allowed on your own network";
+            if (!isHttpsUrl(file.url)) {
+                result.error = displayName(file.url) + " would be downloaded without https://, which RetroFE doesn't do";
                 return false;
             }
-            anyRemote = true;
             Sha256 key;
-            std::string identity = file.url + "|" + std::to_string(file.size) + "|" + file.sha256 + "|" + file.md5;
+            std::string identity = file.url + "|" + std::to_string(file.size) + "|" + file.sha256
+                                 + "|" + (file.crc32 ? std::to_string(*file.crc32) : "");
             key.update(identity.data(), identity.size());
             finals[i] = folder / (std::to_string(i) + "-" + key.hex().substr(0, 12));
             fs::path part = finals[i];
@@ -154,13 +148,13 @@ namespace Catalog
             keep.insert(finals[i]);
             keep.insert(part);
             keep.insert(validator);
-            remoteTotal += file.size;
             already += fs::exists(finals[i]) ? sizeOf(finals[i]) : sizeOf(part);
         }
+        uint64_t remoteTotal = total;
         if (!sizesKnown) total = 0;
 
-        if (anyRemote && !http_) {
-            result.error = "Downloading isn't supported on this system yet; use a folder source";
+        if (!http_) {
+            result.error = "Downloading isn't supported on this system yet";
             return false;
         }
 
@@ -174,7 +168,7 @@ namespace Catalog
             }
         }
 
-        if (anyRemote) {
+        {
             fs::create_directories(folder, ec);
             if (ec) {
                 result.error = "Could not create " + folder.string();
@@ -201,20 +195,6 @@ namespace Catalog
         uint64_t done = 0;
         for (size_t i = 0; i < package.files.size(); ++i) {
             const PackageFile& file = package.files[i];
-            if (finals[i].empty()) {
-                // From a folder source: use it where it is
-                if (!fs::exists(file.url, ec)) {
-                    result.error = "Can't find " + file.url;
-                    return false;
-                }
-                if (!verifyFile(file.url, file, result.error)) {
-                    return false;
-                }
-                result.files.push_back(file.url);
-                done += sizeOf(file.url);
-                continue;
-            }
-
             std::string problem;
             if (fs::exists(finals[i], ec) && verifyFile(finals[i].string(), file, problem)) {
                 result.files.push_back(finals[i].string());

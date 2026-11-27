@@ -22,9 +22,9 @@
 #include <string>
 #include <vector>
 
-// HTTP(S) for the Catalog. Windows uses WinHTTP, so no extra libraries are needed.
+// HTTP(S) for emulator downloads. Windows uses WinHTTP, so no extra libraries are needed.
 // An Http makes one request at a time; use one per thread.
-namespace Catalog
+namespace Downloads
 {
     class Http
     {

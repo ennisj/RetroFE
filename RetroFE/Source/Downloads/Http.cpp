@@ -59,7 +59,7 @@ namespace
         operator HINTERNET() const { return handle; }
     };
 
-    class WinHttp : public Catalog::Http
+    class WinHttp : public Downloads::Http
     {
     public:
         WinHttp()
@@ -373,7 +373,7 @@ namespace
     };
 }
 
-namespace Catalog
+namespace Downloads
 {
     std::unique_ptr<Http> createHttp()
     {
@@ -383,9 +383,9 @@ namespace Catalog
 
 #else
 
-namespace Catalog
+namespace Downloads
 {
-    // Linux and macOS get libcurl later; until then only folder sources work there
+    // Linux and macOS get libcurl later; until then nothing is downloaded there
     std::unique_ptr<Http> createHttp()
     {
         return nullptr;

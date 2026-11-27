@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-namespace Catalog
+namespace Downloads
 {
     class Archive
     {

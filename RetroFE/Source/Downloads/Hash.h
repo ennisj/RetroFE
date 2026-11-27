@@ -22,7 +22,7 @@
 
 // Checksums for verifying downloads and recording installed files.
 // Both work incrementally, so large files are hashed as they're read.
-namespace Catalog
+namespace Downloads
 {
     class Sha256
     {
@@ -39,23 +39,18 @@ namespace Catalog
         uint64_t length_ = 0;
     };
 
-    class Md5
+    // CRC-32 as zip archives and libretro's core list record it
+    class Crc32
     {
     public:
-        Md5();
         void update(const void* data, size_t size);
-        std::string hex();  // finishes the hash; lowercase hex
+        uint32_t value() const { return value_; }
 
     private:
-        void block(const uint8_t* data);
-        uint32_t state_[4];
-        uint8_t buffer_[64];
-        size_t buffered_ = 0;
-        uint64_t length_ = 0;
+        uint32_t value_ = 0;
     };
 
-    // Hash of a whole file, or "" if it can't be read
+    // SHA-256 of a whole file, or "" if it can't be read
     // Opened by path, so names outside the system code page work on Windows
     std::string sha256File(const std::filesystem::path& path);
-    std::string md5File(const std::filesystem::path& path);
 }

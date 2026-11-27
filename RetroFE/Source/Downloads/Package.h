@@ -16,58 +16,57 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <string>
 #include <vector>
 
-// Content the Catalog can install. See docs/design/catalog-sources.md.
-namespace Catalog
+// What emulator downloads install: one emulator of the built-in list
+// (Emulators.h), or one RetroArch core. See docs/design/emulator-downloads.md.
+// Packages are made by this module's own code from the built-in list and
+// the release lists it reads; nothing downloaded describes a package.
+namespace Downloads
 {
     struct PackageFile
     {
-        std::string url;       // absolute: http(s):// or a local path
+        std::string url;       // https://
         uint64_t size = 0;     // 0 if unknown
-        std::string sha256;    // lowercase hex, or ""
-        std::optional<uint32_t> crc32; // unpacked core CRC, set only by the emulators source
-        std::string md5;       // lowercase hex, or ""
-        std::string sha256Url; // where the SHA-256 can be fetched when it isn't known yet (GitHub's <asset>.sha256)
-        std::string target;    // root, collections, items, media, layouts, meta or emulators
-        std::string path;      // folder under the target, "" for the target itself
-        std::optional<bool> extract; // unset uses the kind and published name
-    };
-
-    struct Requirement
-    {
-        std::string id;
-        std::string version;   // e.g. ">=1.0", or "" for any
+        std::string sha256;    // lowercase hex, or "" (libretro's downloads only)
+        std::optional<uint32_t> crc32; // a core's unpacked DLL, from libretro's list
+        std::string folder;    // under emulators/, '/' separated: "DuckStation", "RetroArch/cores"
     };
 
     struct Package
     {
-        std::string source;    // name of the source it came from
-        std::string id;
+        std::string id;        // emulator-<entry id> or core-<core>
         std::string name;
-        std::string kind;      // collection, layout, media, bundle, other, app, emulator or core
+        std::string kind;      // emulator or core
         std::string version;
         std::string description;
-        std::string system; // installed RetroArch info systemname
-        std::map<std::string, std::string> artwork;   // type ("logo"...) -> absolute URL or path
-        std::vector<Requirement> requirements;   // "requires" in the index
+        std::string system;    // a core's systemname, from RetroArch's info file
         std::vector<PackageFile> files;
 
-        bool noChecksum = false; // libretro does not publish a checksum
+        bool noChecksum = false; // libretro doesn't publish a checksum for RetroArch.7z
 
         uint64_t totalSize() const;
     };
-
-    // The install targets a package file may name
-    bool isKnownTarget(const std::string& target);
 
     // Compares versions part by part, numbers numerically ("1.10" > "1.9"):
     // negative if a is older, 0 if the same, positive if newer
     int compareVersions(const std::string& a, const std::string& b);
 
-    // Whether version satisfies a requirement such as ">=1.0", "1.2" or ""
-    bool satisfies(const std::string& version, const std::string& requirement);
+    // Whether a location is an https:// URL
+    bool isHttpsUrl(const std::string& location);
+
+    // Whether an id is safe to use as a file name: letters, digits, . _ -,
+    // not a Windows device name such as CON or COM1, and no trailing dot
+    bool isValidId(const std::string& id);
+
+    // Whether a relative path stays inside its folder and names an ordinary
+    // file on every system: no "..", no absolute paths, no drive or stream
+    // (":"), no device names, no characters Windows forbids, no segment
+    // ending in a dot or space
+    bool isSafeRelativePath(const std::string& path);
+
+    // Whether a file name is a Windows device name (CON, NUL, COM1, "aux.txt"...)
+    bool isReservedName(const std::string& name);
 }

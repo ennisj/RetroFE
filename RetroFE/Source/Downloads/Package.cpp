@@ -16,9 +16,17 @@
 #include "Package.h"
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <set>
 
 namespace
 {
+    std::string lower(std::string s)
+    {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    }
+
     // "v2.10b3" -> {"2", ".", "10", "b", "3"}: runs of digits and of everything else
     std::vector<std::string> tokens(const std::string& version)
     {
@@ -48,7 +56,7 @@ namespace
     }
 }
 
-namespace Catalog
+namespace Downloads
 {
 
 uint64_t Package::totalSize() const
@@ -58,12 +66,6 @@ uint64_t Package::totalSize() const
         total += file.size;
     }
     return total;
-}
-
-bool isKnownTarget(const std::string& target)
-{
-    return target == "root" || target == "collections" || target == "items"
-        || target == "media" || target == "layouts" || target == "meta" || target == "emulators";
 }
 
 int compareVersions(const std::string& a, const std::string& b)
@@ -94,27 +96,64 @@ int compareVersions(const std::string& a, const std::string& b)
     return 0;
 }
 
-bool satisfies(const std::string& version, const std::string& requirement)
+bool isHttpsUrl(const std::string& location)
 {
-    if (requirement.empty()) {
+    return lower(location.substr(0, 8)) == "https://" && location.size() > 8
+        && location.find_first_of(" \t\r\n") == std::string::npos;
+}
+
+bool isReservedName(const std::string& name)
+{
+    // Windows opens these as devices whatever the extension, and ignores trailing spaces before it
+    std::string stem = name.substr(0, name.find('.'));
+    while (!stem.empty() && stem.back() == ' ') stem.pop_back();
+    stem = lower(stem);
+    static const std::set<std::string> devices = { "con", "prn", "aux", "nul", "conin$", "conout$" };
+    if (devices.count(stem)) {
         return true;
     }
-    std::string op;
-    size_t i = 0;
-    while (i < requirement.size() && (requirement[i] == '<' || requirement[i] == '>' || requirement[i] == '=')) {
-        op += requirement[i++];
-    }
-    std::string wanted = requirement.substr(i);
-    while (!wanted.empty() && wanted[0] == ' ') {
-        wanted.erase(0, 1);
-    }
+    return stem.size() == 4 && (stem.rfind("com", 0) == 0 || stem.rfind("lpt", 0) == 0) && std::isdigit(static_cast<unsigned char>(stem[3]));
+}
 
-    int comparison = compareVersions(version, wanted);
-    if (op == ">=") return comparison >= 0;
-    if (op == "<=") return comparison <= 0;
-    if (op == ">") return comparison > 0;
-    if (op == "<") return comparison < 0;
-    return comparison == 0;   // "", "=" or "=="
+bool isValidId(const std::string& id)
+{
+    if (id.empty() || id.size() > 100 || id[0] == '.' || id.back() == '.' || isReservedName(id)) {
+        return false;
+    }
+    return std::all_of(id.begin(), id.end(), [](unsigned char c) {
+        return std::isalnum(c) != 0 || c == '.' || c == '_' || c == '-';
+    });
+}
+
+bool isSafeRelativePath(const std::string& path)
+{
+    if (path.empty()) {
+        return true;
+    }
+    if (path[0] == '/' || path[0] == '\\' || path.find(':') != std::string::npos) {
+        return false;
+    }
+    std::string part;
+    for (size_t i = 0; i <= path.size(); i++) {
+        if (i == path.size() || path[i] == '/' || path[i] == '\\') {
+            if (part == "..") {
+                return false;
+            }
+            // Windows drops trailing dots and spaces, so "a." would be another name for "a"
+            if (part != "." && !part.empty() && (part.back() == '.' || part.back() == ' ' || isReservedName(part))) {
+                return false;
+            }
+            part.clear();
+        }
+        else {
+            unsigned char c = static_cast<unsigned char>(path[i]);
+            if (c < 0x20 || std::strchr("<>\"|?*", c)) {
+                return false;
+            }
+            part += path[i];
+        }
+    }
+    return true;
 }
 
 }

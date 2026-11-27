@@ -24,11 +24,11 @@
 
 // Fetches a package's files so the Installer can install them.
 //
-// Each file downloads to catalog/downloads/<id>/<n>-<key>.part, where the key
-// changes whenever the file's URL, size or hash does, so a partial download is
-// only ever continued from the same file. Once its size and hash check out it
-// loses the .part. Files from folder sources are used where they are.
-namespace Catalog
+// Each file downloads to manage/downloads/partial/<id>/<n>-<key>.part, where
+// the key changes whenever the file's URL, size or hash does, so a partial
+// download is only ever continued from the same file. Once its size and hash
+// check out it loses the .part. Only https:// is fetched.
+namespace Downloads
 {
     // What to do with a partial download already on disk
     enum class Resume
@@ -66,8 +66,9 @@ namespace Catalog
             std::string error;
         };
 
-        // http may be null, in which case only folder sources work
-        Downloader(Http* http, const std::string& downloadsFolder);
+        // partialFolder: manage/downloads/partial. http may be null, which
+        // fails every fetch with "Downloading isn't supported on this system".
+        Downloader(Http* http, const std::string& partialFolder);
 
         bool fetch(const Package& package, const Progress& progress, Result& result);
 

@@ -16,76 +16,48 @@
 #pragma once
 
 #include "Package.h"
-#include "Sources.h"
 #include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
 
-// GitHub sources: a repository's releases, offered as RetroFE itself (a
-// package of kind "app"). See docs/design/catalog-sources.md.
-//
-// Release assets are named RetroFE-<version>-<os>-<arch>.zip, e.g.
-// RetroFE-2504.3-windows-x64.zip, and hold a retrofe/ folder (the program)
-// and optionally layouts/<name>/ folders.
-namespace Catalog
+// Reading a GitHub repository's list of releases, for the built-in emulator
+// list. GitHub allows 60 unauthenticated requests an hour, so each entry's
+// list is kept with its ETag under cache/<entry>/ and fetched at most once a
+// minute, asking only for changes (which don't count against the limit), and
+// not at all while GitHub says the limit is reached (cache/rate-limit.json,
+// shared by every entry).
+namespace Downloads
 {
     class Http;
-
-    // The repository "Add RetroFE from GitHub" adds. Change it here to follow another fork.
-    constexpr const char* retrofeRepository = "ennisj/RetroFE";
-
-    // The id of RetroFE itself; only GitHub sources may offer it
-    constexpr const char* appPackageId = "retrofe";
 
     // Whether text is a GitHub repository as owner/name
     bool isValidRepository(const std::string& repo);
 
-    // "owner/name" or a github.com address of a repository, as owner/name; "" if it's neither
-    std::string parseRepository(const std::string& text);
-
-    struct Platform
-    {
-        std::string os;     // windows, linux or macos
-        std::string arch;   // x64, arm64 or x86
-    };
-
-    // The platform this RetroFE was built for
-    Platform currentPlatform();
-
-    // Which asset name is the package for platform: a .zip naming the system
-    // and either this architecture or none, and not symbols, debug or source;
-    // of equals, the shortest name. -1 if there isn't one.
-    int pickAsset(const std::vector<std::string>& names, const Platform& platform);
-
-    // Whether repo is RetroFE's own (retrofeRepository), which may offer RetroFE
-    // without the source saying app = yes
-    bool isOfficialRepository(const std::string& repo);
-
-    // What a .sha256 file (or a "sha256:<hex>" digest) says the SHA-256 of
+    // What a "sha256:<hex>" digest (or a .sha256 file) says the SHA-256 of
     // fileName is: "<hex>", sha256sum's "<hex>  <name>" or "<hex> *<name>",
     // "<name> <hex>", or BSD's "SHA256 (<name>) = <hex>". With several files
     // listed, the line naming fileName. "" if it doesn't say.
     std::string parseSha256File(const std::string& text, const std::string& fileName = "");
 
-    // Turns GitHub's list of releases into the RetroFE package: the highest
-    // version that isn't a draft (nor a pre-release, unless the source allows
-    // them) and has an asset for platform. Only the official repository, or a
-    // source with app = yes, offers it. The SHA-256 comes from the asset's
-    // digest, or else sha256Url names the <asset>.sha256 beside it.
-    bool parseReleases(const std::string& json, const SourceConfig& source, const Platform& platform,
-                       std::vector<Package>& packages, std::vector<std::string>& warnings, std::string& error);
+    // Turns the text of GitHub's list into packages; false and error when it isn't one
+    using ReleaseParser = std::function<bool(const std::string& json, std::vector<Package>& packages,
+                                             std::vector<std::string>& warnings, std::string& error)>;
 
-    // Reads a github source. GitHub allows 60 unauthenticated requests an hour,
-    // so the list is fetched at most once a minute, asking only for changes
-    // since the last copy (which don't count), and not at all while GitHub
-    // says the limit is reached. now is seconds since 1970.
-    void readGitHub(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now,
-                    SourceContents& contents);
+    struct ReleaseList
+    {
+        std::vector<Package> packages;
+        std::vector<std::string> warnings;
+        std::string error;          // set when nothing could be read
+        bool fromCache = false;     // GitHub couldn't be asked or answered; this is the last copy
+        int64_t retryAt = 0;        // GitHub's limit is reached until then (seconds since 1970); 0 if it isn't
+    };
 
-    using ReleaseParser = std::function<bool(const std::string&, std::vector<Package>&, std::vector<std::string>&, std::string&)>;
-    void readGitHubReleases(const SourceConfig& source, const std::string& cacheFolder, Http* http, int64_t now,
-                            SourceContents& contents, const ReleaseParser& parse, const std::string& subfolder = "");
+    // Reads repo's releases into result, through the cache in
+    // cacheFolder/<entry>/. now is seconds since 1970. http may be null: then
+    // only the cache is read.
+    void readGitHubReleases(const std::string& repo, const std::string& cacheFolder, const std::string& entry,
+                            Http* http, int64_t now, const ReleaseParser& parse, ReleaseList& result);
 
     // How long a fetched list is used without asking again
     constexpr int64_t gitHubRecheckSeconds = 60;

@@ -19,10 +19,10 @@
 #include <cstdint>
 #include <string>
 
-// Reading fields of JSON the Catalog didn't write itself (or that may have been
+// Reading fields of JSON this module didn't write itself (or that may have been
 // edited): a field of the wrong type reads as missing instead of throwing, as
 // nlohmann's value() does.
-namespace Catalog::JsonFields
+namespace Downloads::JsonFields
 {
     inline std::string text(const nlohmann::json& object, const char* name, const std::string& fallback = "")
     {
