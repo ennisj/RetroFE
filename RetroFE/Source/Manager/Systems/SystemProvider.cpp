@@ -1358,6 +1358,7 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
             + (state.systemArtwork ? ", and the system's art" : "");
     }
     if (key == "importRunning") return yesNo(import_.status().running);
+    if (key == "importCopying") { auto state = import_.status(); return yesNo(state.running && state.copying); }
     if (key == "importCount") {
         auto state = import_.status();
         if (importFolder_.empty()) return "";
@@ -1550,8 +1551,15 @@ std::string SystemProvider::get(const std::string& key, const Screen& screen)
 
 void SystemProvider::set(const std::string& key, const std::string& value, const Screen& screen)
 {
-    if (key == "importMetadata") { if (!import_.status().running) importMetadata_ = iequals(value, "yes") || iequals(value, "true"); return; }
-    if (key == "importArtwork") { if (!import_.status().running) importArtwork_ = iequals(value, "yes") || iequals(value, "true"); return; }
+    if (key == "importMetadata" || key == "importArtwork") {
+        auto state = import_.status();
+        if (!state.running || !state.copying) {
+            bool enabled = iequals(value, "yes") || iequals(value, "true");
+            if (key == "importMetadata") importMetadata_ = enabled;
+            else importArtwork_ = enabled;
+        }
+        return;
+    }
     if (key == "importFrom" || key == "importSubfolders") {
         updateImport();
         if (import_.status().running && import_.status().copying) return;

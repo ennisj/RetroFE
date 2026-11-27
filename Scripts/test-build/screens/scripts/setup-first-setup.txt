@@ -144,9 +144,11 @@ shot browser-roms
 key Return
 wait 3
 shot add-games-from-chosen
-# Back from the browser, focus is on Copy games already (the form's primary
-# button: its help line says "Select: Copy games"); Include subfolders and
-# Copy artwork too start on.
+# Focus stays on From after the browser; jump to Copy games on the button bar.
+# Include subfolders and Copy artwork too start on.
+key PageDown
+wait 1
+shot copy-focused
 key Return
 wait-file "collections/Nintendo Entertainment System/roms/Addams Family, The (USA).nes" 45
 wait-file "collections/Nintendo Entertainment System/medium_artwork/logo/Addams Family, The (USA).png" 45

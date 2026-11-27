@@ -723,10 +723,19 @@ Made while building the design review (M22); the option not taken in brackets.
   probably the half-size window; check Home on the PC at full size.
 
 ### M43. Round 32: first-setup script is strict — Decided (2026-11-27)
-- **`# soft-fail` removed from `setup-first-setup.txt`** as M38 planned: it
-  passed every CI run from round 27 to round 31 (branch and merge runs),
-  with no warnings. The marker and its handling in `build.yml` stay for
-  future scripts.
+- **`# soft-fail` removed from `setup-first-setup.txt`** as M38 planned,
+  after it passed every CI run from round 27 to round 31. The marker and its
+  handling in `build.yml` stay for future scripts.
+- **Its first strict run failed, on a real race:** choosing From in Add
+  games starts a count, during which every row was disabled
+  (`importRunning`); a frame built then moved focus to the bar (Copy games),
+  otherwise it stayed on From. The script had been tuned to the first case.
+- **Rows lock only while copying** (`importCopying`), so focus stays on From
+  (the rule in MANAGER.md: after an action focus stays where it was), and
+  the artwork and titles toggles aren't refused during a count. Rejected:
+  moving focus to Copy games after every pick, which would also make a
+  mistaken pick one press from copying. The script uses Page Down, as the
+  hint says.
 
 ### M42. Round 31: review of rounds 25-30 — Decided (2026-11-27)
 An adversarial review (Claude Fable 5.1) of rounds 25-30 found four bugs, all
