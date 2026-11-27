@@ -4,6 +4,18 @@ What changed in this fork of CoinOPS RetroFE, round by round. Upstream's
 changes are in [../CHANGELOG.md](../CHANGELOG.md). Open questions and the
 reasoning behind choices are in [DECISIONS.md](DECISIONS.md).
 
+## Round 37 — Add a launcher opens on Name (2026-11-27)
+
+Unit tests: 8,569 → CHECKS checks (Windows CI). Choice in M47 of
+[DECISIONS.md](DECISIONS.md).
+
+- **Add a launcher opens with focus on Name**; Download an emulator stays
+  the row above it. Coming back from the download screen, focus is on the
+  link again.
+- Forms can name the field to focus when they open (`focus="..."`), in both
+  of Manage's renderers; the ImGui one now also remembers the focused field
+  across screens, as the layout-drawn one does.
+
 ## Round 35 — fewer requests to GitHub (2026-11-27)
 
 Unit tests: 8,556 → 8,569 checks (Windows CI). Choice in M46 of
