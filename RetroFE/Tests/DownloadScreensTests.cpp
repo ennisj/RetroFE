@@ -467,8 +467,8 @@ static Test::Suite downloadScreens("download screens", [] {
         Forms::Params duck = { { "id", "emulator-duckstation" } };
         f.model->setScreen("download-emulator", duck);
         check(f.model->runAction("download.install").ok, "Install starts");
-        check(f.waitFor("download:progress", "Downloading "), "downloading: " + f.model->get("download:progress"));
-        checkEqual(f.model->get("download:progress"), "Downloading 1 of 3 MB", "in MB");
+        // The service reports 0 bytes first; the fake then sits at half of 3 MB
+        check(f.waitFor("download:progress", "Downloading 1 of 3 MB"), "downloading, in MB: " + f.model->get("download:progress"));
         check(f.model->get("download:runningHere") == "yes" && f.model->get("download:installingHere") == "yes", "Stop and the leaving note show");
         checkEqual(f.model->actionProblem("download.remove"), "Wait for the current download to finish, or stop it.", "one job at a time");
         Forms::Model::Result stopped = f.model->runAction("download.stop");
